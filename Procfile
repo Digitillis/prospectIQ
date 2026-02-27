@@ -1,1 +1,1 @@
-web: pip install -r backend/requirements.txt && uvicorn backend.app.api.main:app --host 0.0.0.0 --port ${PORT:-8000}
+web: pip install -r backend/requirements.txt && uvicorn backend.app.api.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'
