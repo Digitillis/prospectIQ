@@ -5,8 +5,10 @@ email_clicked, reply_received, email_bounced) and delegates
 processing to the EngagementAgent.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
@@ -20,7 +22,7 @@ router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 @router.post("/instantly")
 async def instantly_webhook(
     request: Request,
-    x_webhook_secret: str | None = Header(default=None),
+    x_webhook_secret: Optional[str] = Header(default=None),
 ):
     """Receive webhook events from Instantly.ai.
 

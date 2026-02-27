@@ -3,6 +3,10 @@
 CRUD operations for companies, contacts, research, and interactions.
 """
 
+from __future__ import annotations
+
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.app.core.database import Database
@@ -16,9 +20,9 @@ def get_db() -> Database:
 
 @router.get("/")
 async def list_companies(
-    status: str | None = None,
-    tier: str | None = None,
-    min_pqs: int | None = None,
+    status: Optional[str] = None,
+    tier: Optional[str] = None,
+    min_pqs: Optional[int] = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -96,3 +100,23 @@ async def get_interactions(
     db = get_db()
     interactions = db.get_interactions(company_id=company_id, limit=limit)
     return {"data": interactions}
+
+
+@router.post("/{company_id}/interactions")
+async def create_interaction(company_id: str, body: dict):
+    """Create a new interaction (note, call log, etc.) for a company."""
+    db = get_db()
+    existing = db.get_company(company_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    data = {
+        "company_id": company_id,
+        "type": body.get("type", "note"),
+        "channel": body.get("channel", "other"),
+        "subject": body.get("subject"),
+        "body": body.get("body"),
+        "source": "manual",
+    }
+    result = db.insert_interaction(data)
+    return {"data": result}

@@ -4,6 +4,8 @@ Uses Claude (1 call per message) to generate deeply personalized
 outreach messages based on research intelligence and sequence config.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 

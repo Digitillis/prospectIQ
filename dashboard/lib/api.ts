@@ -30,6 +30,13 @@ export const updateCompany = (id: string, data: Record<string, unknown>) =>
     body: JSON.stringify(data),
   });
 
+// Interactions
+export const addNote = (companyId: string, body: string, subject?: string) =>
+  fetchAPI(`/api/companies/${companyId}/interactions`, {
+    method: "POST",
+    body: JSON.stringify({ type: "note", body, subject }),
+  });
+
 // Approvals
 export const getPendingDrafts = () =>
   fetchAPI<{ data: OutreachDraft[]; count: number }>("/api/approvals");

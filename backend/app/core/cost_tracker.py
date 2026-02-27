@@ -3,6 +3,8 @@
 Logs every API call's token usage and estimated cost to the api_costs table.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Optional
 

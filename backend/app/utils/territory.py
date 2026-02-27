@@ -3,6 +3,8 @@
 Maps US state codes to sales territories. No LLM needed.
 """
 
+from __future__ import annotations
+
 # Direct lookup table for O(1) performance
 STATE_TO_TERRITORY: dict[str, str] = {
     # New England

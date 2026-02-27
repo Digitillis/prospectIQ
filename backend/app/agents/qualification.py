@@ -4,6 +4,8 @@ Rule-based scoring driven by scoring.yaml configuration.
 No LLM calls needed — scans research intelligence for keyword matches.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re

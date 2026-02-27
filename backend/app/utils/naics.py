@@ -1,5 +1,7 @@
 """NAICS code utilities for manufacturing sub-sector classification."""
 
+from __future__ import annotations
+
 from backend.app.core.config import get_manufacturing_ontology
 
 

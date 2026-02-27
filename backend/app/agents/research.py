@@ -4,6 +4,8 @@ Uses Perplexity (1 call) + Claude (1 call) per company.
 Populates research_intelligence and updates company fields.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 

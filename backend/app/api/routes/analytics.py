@@ -3,6 +3,10 @@
 Pipeline overview, API cost tracking, and outreach performance metrics.
 """
 
+from __future__ import annotations
+
+from typing import Optional
+
 from fastapi import APIRouter, Query
 
 from backend.app.core.database import Database
@@ -23,7 +27,7 @@ async def get_pipeline_overview():
 
 
 @router.get("/costs")
-async def get_costs(batch_id: str | None = None):
+async def get_costs(batch_id: Optional[str] = None):
     """Get API cost summary, optionally filtered by batch_id."""
     db = get_db()
     costs = db.get_api_costs_summary(batch_id=batch_id)

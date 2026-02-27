@@ -3,6 +3,8 @@
 Used by the Research Agent for deep company research with live web search.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

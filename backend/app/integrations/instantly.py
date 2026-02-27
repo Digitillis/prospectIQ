@@ -4,6 +4,8 @@ Handles campaign management, lead ingestion, and campaign analytics
 for cold outreach sequences.
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from typing import Any

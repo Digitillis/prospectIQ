@@ -24,6 +24,7 @@ const PIPELINE_COLUMNS = [
   "discovered",
   "researched",
   "qualified",
+  "outreach_pending",
   "contacted",
   "engaged",
   "meeting_scheduled",
@@ -33,6 +34,7 @@ const COLUMN_LABELS: Record<string, string> = {
   discovered: "Discovered",
   researched: "Researched",
   qualified: "Qualified",
+  outreach_pending: "Outreach Pending",
   contacted: "Contacted",
   engaged: "Engaged",
   meeting_scheduled: "Meeting",
@@ -178,7 +180,7 @@ export default function PipelinePage() {
           <span className="ml-2 text-gray-500">Loading pipeline...</span>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {PIPELINE_COLUMNS.map((status) => {
             const col = pipeline[status];
             return (

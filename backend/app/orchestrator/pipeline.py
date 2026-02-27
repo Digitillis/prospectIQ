@@ -4,6 +4,8 @@ Provides a high-level API for running the full prospecting pipeline
 or specific segments of it.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
 

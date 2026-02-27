@@ -4,6 +4,8 @@ All agents inherit from BaseAgent and implement the `run` method.
 Provides common functionality: logging, cost tracking, error handling.
 """
 
+from __future__ import annotations
+
 import logging
 import time
 import uuid

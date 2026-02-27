@@ -4,6 +4,8 @@ Handles people search (free, no credits), organization search,
 and people enrichment (credits consumed).
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from typing import Any

@@ -56,8 +56,26 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance."""
-    return Settings()
+    """Get cached settings instance.
+
+    Loads from .env file first, then patches any values that were
+    overridden by empty environment variables (e.g. ANTHROPIC_API_KEY
+    set to '' by the shell).
+    """
+    from dotenv import dotenv_values
+
+    settings = Settings()
+    env_values = dotenv_values(PROJECT_ROOT / ".env")
+
+    # Patch: if an env var is empty but .env has a value, use .env
+    for field_name in settings.model_fields:
+        env_key = field_name.upper()
+        current = getattr(settings, field_name)
+        file_val = env_values.get(env_key, "")
+        if not current and file_val:
+            object.__setattr__(settings, field_name, file_val)
+
+    return settings
 
 
 def load_yaml_config(filename: str) -> dict:

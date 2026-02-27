@@ -4,6 +4,8 @@ Uses Claude Haiku (1 call per reply) to classify prospect replies,
 determine sentiment, and draft appropriate follow-up responses.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 

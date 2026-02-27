@@ -4,6 +4,8 @@ Searches Apollo for companies + contacts matching the ICP.
 No LLM calls — pure API + data processing.
 """
 
+from __future__ import annotations
+
 import logging
 
 from rich.console import Console

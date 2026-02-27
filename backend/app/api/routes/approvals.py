@@ -36,7 +36,7 @@ async def list_pending_drafts(limit: int = 50):
 
 
 @router.post("/{draft_id}/approve")
-async def approve_draft(draft_id: str, body: ApproveRequest | None = None):
+async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
     """Approve an outreach draft.
 
     Optionally provide an edited body. Logs an email_sent interaction

@@ -37,6 +37,7 @@ import {
 import {
   getCompany,
   updateCompany,
+  addNote,
   type CompanyDetail,
   type Contact,
   type Research,
@@ -170,6 +171,8 @@ export default function ProspectDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [saving, setSaving] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
 
   // --- Fetch company ---
   const fetchCompany = useCallback(async () => {
@@ -213,6 +216,21 @@ export default function ProspectDetailPage() {
       setCompany((prev) => (prev ? { ...prev, priority_flag: next } : prev));
     } catch {
       // Revert silently
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!company || !noteText.trim()) return;
+    setSaving(true);
+    try {
+      await addNote(id, noteText.trim());
+      setNoteText("");
+      setNoteModalOpen(false);
+      await fetchCompany();
+    } catch {
+      // silent for now
     } finally {
       setSaving(false);
     }
@@ -368,12 +386,47 @@ export default function ProspectDetailPage() {
           </button>
 
           {/* Add Note */}
-          <button className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <button
+            onClick={() => setNoteModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
             <StickyNote className="h-4 w-4 text-gray-400" />
             Add Note
           </button>
         </div>
       </div>
+
+      {/* ---- Note modal ---- */}
+      {noteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="mb-3 text-lg font-semibold text-gray-900">Add Note</h3>
+            <textarea
+              autoFocus
+              rows={4}
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Write a note about this prospect..."
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { setNoteModalOpen(false); setNoteText(""); }}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddNote}
+                disabled={saving || !noteText.trim()}
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save Note"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Tab navigation ---- */}
       <div className="border-b border-gray-200">

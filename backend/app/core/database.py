@@ -4,6 +4,8 @@ Provides a thin wrapper around the Supabase Python client
 with convenience methods for common operations.
 """
 
+from __future__ import annotations
+
 from functools import lru_cache
 from typing import Any
 
