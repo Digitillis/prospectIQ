@@ -31,7 +31,7 @@ Digitillis capabilities:
 - Pilot program: 6-8 weeks, no long-term commitment
 
 Founder sending these emails: Avi, Co-Founder & MD at Digitillis
-Email: avi@digitillis.com
+Email: avi@digitillis.io
 
 Classify the reply into exactly one of these categories:
 - positive: Prospect is interested, wants a meeting, demo, or more info
