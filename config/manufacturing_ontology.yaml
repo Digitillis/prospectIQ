@@ -1,0 +1,322 @@
+# ProspectIQ — Manufacturing Domain Knowledge
+# NAICS mapping, technology systems, competitors, value messaging, territories
+
+version: "1.0"
+
+# =========================================================
+# NAICS CODE → SUB-SECTOR MAPPING
+# =========================================================
+naics_mapping:
+  "331":
+    label: "Primary Metal Manufacturing"
+    sub_sectors: ["steel", "aluminum", "foundry", "forging"]
+    common_equipment: ["furnace", "casting machine", "rolling mill", "forging press", "heat treatment"]
+    tier: "2"
+    digitillis_fit: "medium"
+
+  "332":
+    label: "Fabricated Metal Product Manufacturing"
+    sub_sectors: ["stamping", "machining", "welding", "sheet metal", "spring", "valve", "tool & die"]
+    common_equipment: ["CNC machining center", "press brake", "welding robot", "laser cutter", "punch press", "grinding machine"]
+    tier: "2"
+    digitillis_fit: "high"
+
+  "333":
+    label: "Machinery Manufacturing"
+    sub_sectors: ["industrial machinery", "construction equipment", "HVAC", "turbines", "engines", "pumps", "compressors"]
+    common_equipment: ["CNC", "assembly line", "testing equipment", "robotics", "paint booth", "inspection station"]
+    tier: "1a"
+    digitillis_fit: "very_high"
+
+  "334":
+    label: "Computer & Electronic Product Manufacturing"
+    sub_sectors: ["semiconductor", "PCB assembly", "instruments", "sensors", "telecommunications"]
+    common_equipment: ["SMT line", "pick and place", "reflow oven", "AOI", "test equipment", "clean room"]
+    tier: "4"
+    digitillis_fit: "high"
+
+  "335":
+    label: "Electrical Equipment Manufacturing"
+    sub_sectors: ["motors", "generators", "transformers", "lighting", "batteries", "wiring"]
+    common_equipment: ["winding machines", "assembly stations", "testing", "coating", "dipping"]
+    tier: "2"
+    digitillis_fit: "medium"
+
+  "336":
+    label: "Transportation Equipment Manufacturing"
+    sub_sectors: ["automotive parts", "truck components", "powertrain", "chassis", "body parts", "interior"]
+    common_equipment: ["CNC machining", "stamping press", "robotics", "painting line", "assembly line", "CMM"]
+    tier: "1b"
+    digitillis_fit: "very_high"
+
+  "3364":
+    label: "Aerospace Product & Parts Manufacturing"
+    sub_sectors: ["aerostructures", "engine components", "avionics", "landing gear", "composites"]
+    common_equipment: ["5-axis CNC", "composite layup", "NDT equipment", "CMM", "EDM", "autoclave"]
+    tier: "5"
+    digitillis_fit: "high"
+
+  "326":
+    label: "Plastics & Rubber Product Manufacturing"
+    sub_sectors: ["injection molding", "extrusion", "blow molding", "thermoforming", "rubber"]
+    common_equipment: ["injection molding machine", "extruder", "blow mold", "thermoformer", "robot", "conveyor"]
+    tier: "3"
+    digitillis_fit: "high"
+
+# =========================================================
+# TECHNOLOGY SYSTEMS CATALOG
+# =========================================================
+technology_systems:
+  erp:
+    - name: "SAP (S/4HANA, ECC)"
+      signal_strength: "high"
+      notes: "Enterprise-grade, data-rich, strong integration potential"
+    - name: "Oracle (Cloud, E-Business Suite)"
+      signal_strength: "high"
+      notes: "Common in large manufacturers"
+    - name: "Epicor (Kinetic)"
+      signal_strength: "medium"
+      notes: "Mid-market focused, very common in discrete manufacturing"
+    - name: "Infor (CloudSuite Industrial)"
+      signal_strength: "medium"
+      notes: "Strong in manufacturing verticals"
+    - name: "Microsoft Dynamics 365"
+      signal_strength: "medium"
+    - name: "SYSPRO"
+      signal_strength: "medium"
+      notes: "Mid-market manufacturing focus"
+    - name: "Plex (Rockwell)"
+      signal_strength: "high"
+      notes: "Cloud-native manufacturing ERP — indicates digital maturity"
+    - name: "QAD"
+      signal_strength: "medium"
+      notes: "Automotive manufacturing focus"
+
+  cmms_apm:
+    - name: "IBM Maximo"
+      signal_strength: "high"
+      notes: "Legacy, complex, expensive — prime replacement target"
+    - name: "SAP PM / SAP EAM"
+      signal_strength: "high"
+      notes: "Integrated with SAP ERP — data rich"
+    - name: "UpKeep"
+      signal_strength: "medium"
+      notes: "Modern CMMS, mobile-first"
+    - name: "Fiix (Rockwell)"
+      signal_strength: "medium"
+      notes: "Cloud CMMS acquired by Rockwell"
+    - name: "eMaint (Fluke)"
+      signal_strength: "medium"
+    - name: "Limble CMMS"
+      signal_strength: "low"
+      notes: "Simpler, smaller operations"
+    - name: "MaintainX"
+      signal_strength: "medium"
+    - name: "ManagerPlus"
+      signal_strength: "low"
+
+  scada_mes:
+    - name: "Rockwell (FactoryTalk)"
+      signal_strength: "high"
+      notes: "Dominant in North American discrete manufacturing"
+    - name: "Siemens (WinCC, Opcenter)"
+      signal_strength: "high"
+      notes: "Strong in automotive and aerospace"
+    - name: "GE Digital (Proficy)"
+      signal_strength: "high"
+    - name: "Honeywell (Experion)"
+      signal_strength: "high"
+    - name: "OSIsoft PI (AVEVA)"
+      signal_strength: "high"
+      notes: "Data historian — indicates high data maturity"
+    - name: "Ignition (Inductive Automation)"
+      signal_strength: "medium"
+      notes: "Growing rapidly, modern architecture"
+    - name: "Wonderware / AVEVA"
+      signal_strength: "high"
+    - name: "Kepware"
+      signal_strength: "medium"
+      notes: "OPC connectivity — indicates protocol awareness"
+
+  plc_controls:
+    - name: "Allen-Bradley (Rockwell)"
+      signal_strength: "high"
+      notes: "Dominant in North America"
+    - name: "Siemens (S7, TIA Portal)"
+      signal_strength: "high"
+    - name: "Mitsubishi"
+      signal_strength: "medium"
+    - name: "Fanuc"
+      signal_strength: "high"
+      notes: "CNC controls — very relevant for Digitillis"
+    - name: "Omron"
+      signal_strength: "medium"
+    - name: "Beckhoff"
+      signal_strength: "medium"
+
+# =========================================================
+# AI/ML COMPETITORS
+# =========================================================
+competitors:
+  direct:
+    - name: "Uptake"
+      focus: "Industrial AI platform — asset performance management"
+      differentiator: "Digitillis offers 32 specialized agents vs generic platform"
+    - name: "SparkCognition"
+      focus: "AI for industrial — predictive maintenance"
+      differentiator: "Digitillis provides explainability + counterfactual ROI"
+    - name: "Augury"
+      focus: "Machine health monitoring"
+      differentiator: "Digitillis covers 7 domains, not just vibration/health"
+    - name: "Senseye (Siemens)"
+      focus: "Predictive maintenance"
+      differentiator: "Digitillis is vendor-agnostic, multi-protocol"
+  partial:
+    - name: "C3.ai"
+      focus: "Enterprise AI platform"
+      differentiator: "Digitillis is manufacturing-native, not generic enterprise AI"
+    - name: "Sight Machine"
+      focus: "Manufacturing analytics"
+      differentiator: "Digitillis has autonomous execution capability"
+    - name: "MachineMetrics"
+      focus: "Machine monitoring and analytics"
+      differentiator: "Digitillis goes beyond monitoring to prediction and auto-execution"
+    - name: "Falkonry"
+      focus: "Time series AI"
+      differentiator: "Digitillis provides full-stack intelligence, not just time series"
+
+# =========================================================
+# VALUE MESSAGING BY TIER
+# =========================================================
+value_messaging:
+  "1a":  # Industrial Machinery
+    primary_pains:
+      - "Unplanned downtime on critical equipment costing $10K-100K+ per hour"
+      - "Skilled maintenance workforce retiring, institutional knowledge leaving"
+      - "Reactive maintenance consuming 60%+ of maintenance budget"
+      - "Equipment complexity growing faster than team capability"
+    value_hooks:
+      - "Predict equipment failures 18+ days in advance with 87% confidence"
+      - "Capture institutional maintenance knowledge in AI models that learn continuously"
+      - "Shift from reactive to predictive maintenance, reducing costs by 25-40%"
+      - "Quantify the financial ROI of every maintenance intervention"
+    opener_angles:
+      - "Industry trend: machinery OEMs losing $X to unplanned downtime"
+      - "How peer companies are using AI to extend equipment life"
+
+  "1b":  # Automotive Parts
+    primary_pains:
+      - "OEM quality requirements with zero-defect expectations"
+      - "Just-in-time delivery pressure — zero room for unplanned downtime"
+      - "Continuous cost reduction mandates from tier-1 customers"
+      - "Traceability requirements growing with each audit"
+    value_hooks:
+      - "Detect quality deviations before defective parts are produced"
+      - "Eliminate unplanned stops that disrupt JIT delivery commitments"
+      - "Quantify ROI of every intervention to justify maintenance investments"
+      - "Full production traceability across your operation"
+    opener_angles:
+      - "How automotive suppliers are meeting zero-defect mandates with AI"
+      - "Reducing scrap rates in precision machining operations"
+
+  "2":  # Metal Fabrication
+    primary_pains:
+      - "CNC machine utilization consistently below 65%"
+      - "Tool wear causing quality drift mid-production run"
+      - "High scrap rates on complex parts"
+      - "Quote accuracy suffering from unpredictable machine performance"
+    value_hooks:
+      - "Optimize machine utilization with predictive scheduling"
+      - "Detect tool wear in real-time before quality impact"
+      - "Reduce scrap by predicting defect conditions before they occur"
+      - "Data-driven insights for more accurate job quoting"
+    opener_angles:
+      - "Getting more from existing CNC capacity without new equipment"
+      - "How precision shops are reducing scrap with predictive AI"
+
+  "3":  # Plastics / Injection Molding
+    primary_pains:
+      - "Process parameter drift causing quality variation"
+      - "Mold maintenance timing is guesswork"
+      - "Energy costs rising with no visibility into consumption patterns"
+      - "Color and dimension consistency across production runs"
+    value_hooks:
+      - "Monitor process parameters in real-time, predict quality deviations"
+      - "Predict optimal mold maintenance timing based on actual wear patterns"
+      - "Identify energy waste and optimize consumption per part"
+    opener_angles:
+      - "Reducing process variation in injection molding with AI"
+
+  "4":  # Electronics Assembly
+    primary_pains:
+      - "First-pass yield rates need continuous improvement"
+      - "SMT placement accuracy degradation over time"
+      - "Reflow profile optimization is trial-and-error"
+      - "Traceability demands from customers"
+    value_hooks:
+      - "Predict yield issues before they propagate through the line"
+      - "Detect placement accuracy drift in real-time"
+      - "Optimize process parameters based on continuous learning"
+    opener_angles:
+      - "How electronics manufacturers are improving first-pass yield with AI"
+
+  "5":  # Aerospace Components
+    primary_pains:
+      - "AS9100 compliance overhead and documentation burden"
+      - "NDT and inspection bottlenecks"
+      - "Long-cycle-time machining on expensive materials — zero tolerance for scrap"
+      - "Supply chain traceability requirements"
+    value_hooks:
+      - "Automated compliance documentation with evidence packages"
+      - "Predict machining issues on high-value parts before material is wasted"
+      - "Full audit trail with explainable AI decisions"
+    opener_angles:
+      - "Reducing scrap on high-value aerospace machining operations"
+
+# =========================================================
+# TERRITORY MAPPING (Deterministic: state → territory)
+# =========================================================
+territories:
+  "New England":
+    states: ["CT", "MA", "ME", "NH", "RI", "VT"]
+  "Central US + Canada":
+    states: ["AZ", "CO", "DC", "DE", "IA", "ID", "IL", "IN", "KS", "MD", "MI", "MN", "MO", "MT", "ND", "NE", "NJ", "NM", "NV", "NY", "OH", "PA", "SD", "UT", "WI", "WY"]
+  "Southern US + International":
+    states: ["AL", "AR", "FL", "GA", "KY", "LA", "MS", "NC", "OK", "PR", "SC", "TN", "TX", "VA", "WV"]
+  "West Coast":
+    states: ["AK", "CA", "HI", "OR", "WA"]
+  default: "Southern US + International"
+
+# =========================================================
+# DIGITILLIS PLATFORM CAPABILITIES (for outreach context)
+# =========================================================
+digitillis:
+  tagline: "AI-Native Manufacturing Intelligence"
+  core_capabilities:
+    - "32 specialized AI agents across 7 manufacturing domains"
+    - "Predictive maintenance with 18+ day advance warning"
+    - "Anomaly detection with ensemble models across 100+ sensors"
+    - "Quality control with defect prediction and SPC analytics"
+    - "Energy and sustainability tracking with ESG reporting"
+    - "Supply chain visibility with demand forecasting"
+    - "Production optimization with OEE analytics"
+    - "Conversational AI copilot (ARIA) for natural language queries"
+  key_metrics:
+    - "87% confidence in remaining useful life predictions"
+    - "847ms average response time"
+    - "18-day advance failure prediction"
+    - "35+ production ML models"
+  differentiators:
+    - "Purpose-built for manufacturing (not adapted IT software)"
+    - "Explainable AI — evidence packages on every prediction"
+    - "Counterfactual ROI on every intervention"
+    - "5-tier autonomy model (observe → auto-execute)"
+    - "Multi-tenant, multi-site architecture"
+  pilot_offer:
+    duration: "6-8 weeks"
+    commitment: "No long-term commitment required"
+    deliverables:
+      - "Full platform deployment on your data"
+      - "Predictive maintenance models trained on your equipment"
+      - "ROI analysis with quantified savings"
+      - "Go/no-go decision based on results"

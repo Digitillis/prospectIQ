@@ -1,0 +1,141 @@
+# ProspectIQ — Ideal Customer Profile (ICP)
+# Defines the target market filters for Apollo.io discovery
+
+version: "1.0"
+
+target_market:
+  name: "Midwest US Discrete Manufacturing"
+  description: "Mid-market discrete manufacturers with sensor-equipped equipment"
+
+# Company-level filters (used for Apollo search)
+company_filters:
+  industries:
+    - naics_prefix: "333"
+      tier: "1a"
+      label: "Industrial Machinery & Heavy Equipment"
+      apollo_industry: "machinery"
+    - naics_prefix: "336"
+      tier: "1b"
+      label: "Automotive Parts & Components"
+      apollo_industry: "automotive"
+    - naics_prefix: "332"
+      tier: "2"
+      label: "Metal Fabrication & Precision Machining"
+      apollo_industry: "fabricated metal products"
+    - naics_prefix: "326"
+      tier: "3"
+      label: "Plastics & Injection Molding"
+      apollo_industry: "plastics"
+    - naics_prefix: "334"
+      tier: "4"
+      label: "Electronics Assembly & Semiconductor"
+      apollo_industry: "computer hardware"
+    - naics_prefix: "3364"
+      tier: "5"
+      label: "Aerospace Components"
+      apollo_industry: "aviation & aerospace"
+
+  revenue:
+    min: 500000000   # $500M
+    max: 8000000000  # $8B
+
+  employee_count:
+    min: 500
+    max: 20000
+
+  geography:
+    primary_states:
+      - "Illinois"
+      - "Indiana"
+      - "Michigan"
+      - "Ohio"
+      - "Wisconsin"
+      - "Minnesota"
+      - "Iowa"
+      - "Missouri"
+    countries:
+      - "United States"
+
+  company_type:
+    trading_status:
+      - "private"
+      - "public"
+
+# Contact-level filters
+contact_filters:
+  titles:
+    include:
+      - "VP Operations"
+      - "Vice President Operations"
+      - "VP Manufacturing"
+      - "Vice President Manufacturing"
+      - "VP Engineering"
+      - "Vice President Engineering"
+      - "VP Supply Chain"
+      - "Plant Manager"
+      - "General Manager"
+      - "Director of Operations"
+      - "Director of Manufacturing"
+      - "Director of Engineering"
+      - "Head of Digital Transformation"
+      - "Director Digital Transformation"
+      - "VP Digital Transformation"
+      - "Chief Operating Officer"
+      - "COO"
+      - "Chief Information Officer"
+      - "CIO"
+      - "Chief Technology Officer"
+      - "CTO"
+    exclude:
+      - "Marketing"
+      - "Sales"
+      - "HR"
+      - "Human Resources"
+      - "Legal"
+      - "Finance"
+      - "Accounting"
+
+  seniority:
+    - "vp"
+    - "director"
+    - "c_suite"
+
+# Persona classification rules (auto-classify from title)
+persona_classification:
+  vp_ops:
+    title_keywords: ["VP Operations", "Vice President Operations", "VP Manufacturing", "Vice President Manufacturing"]
+  plant_manager:
+    title_keywords: ["Plant Manager", "General Manager", "Factory Manager"]
+  coo:
+    title_keywords: ["Chief Operating Officer", "COO"]
+  cio:
+    title_keywords: ["Chief Information Officer", "CIO", "Chief Technology Officer", "CTO"]
+  digital_transformation:
+    title_keywords: ["Digital Transformation", "Industry 4.0", "Smart Factory", "Innovation"]
+  director_ops:
+    title_keywords: ["Director of Operations", "Director of Manufacturing", "Director of Engineering"]
+  vp_supply_chain:
+    title_keywords: ["VP Supply Chain", "Vice President Supply Chain"]
+
+# Persona priority for primary contact selection (higher = preferred)
+persona_priority:
+  vp_ops: 100
+  coo: 95
+  plant_manager: 90
+  digital_transformation: 85
+  vp_supply_chain: 80
+  director_ops: 75
+  cio: 70
+
+# Plant qualification criteria (used during research phase)
+plant_qualification:
+  min_employees: 100
+  min_critical_equipment: 10
+  required_data_infrastructure: true
+  required_erp_cmms: true
+
+# Discovery batch settings
+discovery:
+  max_results_per_run: 200
+  pages_per_tier: 5       # 5 pages x 100 results = 500 per tier
+  default_campaign_name: "prospectiq_discovery"

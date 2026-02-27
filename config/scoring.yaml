@@ -1,0 +1,338 @@
+# ProspectIQ — Prospect Quality Score (PQS) Configuration
+# 4 dimensions, 0-25 points each, total 0-100
+# All weights and keywords editable without code changes
+
+version: "1.0"
+
+dimensions:
+  # =========================================================
+  # DIMENSION 1: Firmographic Fit (0-25 pts)
+  # Source: Apollo data (available at discovery time)
+  # =========================================================
+  firmographic:
+    max_points: 25
+    signals:
+      discrete_manufacturing:
+        points: 5
+        description: "NAICS 31-33 discrete manufacturing"
+        source: "apollo"
+        evaluation: "naics_prefix_match"
+        qualifying_prefixes: ["31", "32", "33"]
+
+      revenue_range:
+        points: 5
+        description: "Revenue $500M-$8B"
+        source: "apollo"
+        evaluation: "revenue_range"
+        min: 500000000
+        max: 8000000000
+
+      midwest_us:
+        points: 5
+        description: "Headquarters in Midwest US"
+        source: "apollo"
+        evaluation: "state_match"
+        qualifying_states: ["IL", "IN", "MI", "OH", "WI", "MN", "IA", "MO"]
+
+      employee_count:
+        points: 3
+        description: "500-20,000 employees"
+        source: "apollo"
+        evaluation: "employee_range"
+        min: 500
+        max: 20000
+
+      multi_plant:
+        points: 4
+        description: "Multiple plant/manufacturing locations"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "multiple plants"
+          - "multiple facilities"
+          - "manufacturing sites"
+          - "locations across"
+          - "plants in"
+          - "facilities in"
+
+      private_company:
+        points: 3
+        description: "Private company (often faster decision cycles)"
+        source: "apollo"
+        evaluation: "boolean_field"
+        field: "is_private"
+
+  # =========================================================
+  # DIMENSION 2: Technographic Readiness (0-25 pts)
+  # Source: Research intelligence (requires research agent)
+  # =========================================================
+  technographic:
+    max_points: 25
+    signals:
+      legacy_cmms:
+        points: 5
+        description: "Uses legacy CMMS/APM system"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "SAP PM"
+          - "SAP Plant Maintenance"
+          - "Maximo"
+          - "IBM Maximo"
+          - "UpKeep"
+          - "Fiix"
+          - "eMaint"
+          - "Limble"
+          - "CMMS"
+          - "computerized maintenance"
+          - "maintenance management system"
+
+      iot_infrastructure:
+        points: 5
+        description: "Has IoT/sensor infrastructure or deploying"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "IoT"
+          - "Internet of Things"
+          - "connected equipment"
+          - "smart sensors"
+          - "condition monitoring"
+          - "vibration sensors"
+          - "temperature sensors"
+          - "Industry 4.0"
+          - "smart factory"
+          - "digital twin"
+          - "IIoT"
+          - "Industrial IoT"
+
+      erp_in_place:
+        points: 4
+        description: "ERP system in use"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "SAP"
+          - "Oracle"
+          - "Epicor"
+          - "Infor"
+          - "Microsoft Dynamics"
+          - "SYSPRO"
+          - "Plex"
+          - "ERP"
+          - "enterprise resource planning"
+
+      industrial_protocols:
+        points: 4
+        description: "OPC-UA/MQTT/Modbus infrastructure"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "OPC-UA"
+          - "OPC UA"
+          - "MQTT"
+          - "Modbus"
+          - "PLC"
+          - "programmable logic"
+          - "SCADA"
+          - "MES"
+          - "manufacturing execution"
+          - "Rockwell"
+          - "Siemens"
+          - "Allen-Bradley"
+          - "FactoryTalk"
+          - "Wonderware"
+          - "AVEVA"
+          - "Ignition"
+          - "OSIsoft PI"
+          - "PI historian"
+
+      no_existing_ai:
+        points: 4
+        description: "No existing AI/ML platform for manufacturing"
+        source: "research"
+        evaluation: "negative_keyword_match"
+        negative_keywords:
+          - "Uptake"
+          - "SparkCognition"
+          - "C3.ai"
+          - "C3 AI"
+          - "Sight Machine"
+          - "MachineMetrics"
+          - "Falkonry"
+          - "Augury"
+          - "Senseye"
+          - "AI-powered predictive maintenance"
+          - "machine learning for manufacturing"
+
+      industry_4_initiative:
+        points: 3
+        description: "Industry 4.0 / smart factory initiative announced"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "Industry 4.0"
+          - "digital transformation"
+          - "smart factory"
+          - "smart manufacturing"
+          - "digital manufacturing"
+          - "factory of the future"
+          - "manufacturing innovation"
+          - "operational technology"
+
+  # =========================================================
+  # DIMENSION 3: Timing & Pain Signals (0-25 pts)
+  # Source: Research intelligence
+  # =========================================================
+  timing:
+    max_points: 25
+    signals:
+      new_digital_role:
+        points: 5
+        description: "Recently hired digital transformation / innovation role"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "hired"
+          - "appointed"
+          - "new role"
+          - "joined as"
+          - "digital transformation"
+          - "VP Digital"
+          - "Chief Digital"
+          - "Head of Innovation"
+          - "Director of Digital"
+
+      downtime_mentioned:
+        points: 5
+        description: "Unplanned downtime or equipment failure mentioned"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "downtime"
+          - "unplanned"
+          - "equipment failure"
+          - "production stoppage"
+          - "line down"
+          - "machine breakdown"
+          - "outage"
+          - "reliability issues"
+
+      recent_capex:
+        points: 4
+        description: "Recent capital expenditure on equipment or expansion"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "capital investment"
+          - "new equipment"
+          - "plant expansion"
+          - "capacity expansion"
+          - "new facility"
+          - "production line"
+          - "capex"
+          - "capital expenditure"
+          - "modernization"
+
+      sustainability_mandate:
+        points: 3
+        description: "Sustainability / ESG mandates driving efficiency"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "sustainability"
+          - "ESG"
+          - "carbon footprint"
+          - "carbon neutral"
+          - "energy efficiency"
+          - "environmental"
+          - "green manufacturing"
+          - "net zero"
+
+      quality_issues:
+        points: 3
+        description: "Quality issues, recalls, or customer complaints"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "recall"
+          - "quality issue"
+          - "defect"
+          - "customer complaint"
+          - "non-conformance"
+          - "scrap rate"
+          - "rework"
+          - "warranty claim"
+
+      workforce_challenges:
+        points: 3
+        description: "Skilled labor shortage or workforce challenges"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "labor shortage"
+          - "skilled workers"
+          - "workforce"
+          - "hiring challenge"
+          - "talent gap"
+          - "aging workforce"
+          - "operator shortage"
+          - "technician shortage"
+
+      recent_ma:
+        points: 2
+        description: "Recent M&A activity (integrating new plants)"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "acquisition"
+          - "acquired"
+          - "merger"
+          - "merged"
+          - "integration"
+          - "combined operations"
+
+  # =========================================================
+  # DIMENSION 4: Engagement Progress (0-25 pts)
+  # Source: System tracking (updated by engagement agent)
+  # =========================================================
+  engagement:
+    max_points: 25
+    stages:
+      cold: 0
+      delivered: 2
+      opened: 5
+      engaged: 10
+      interested: 15
+      evaluating: 20
+      committed: 25
+
+# =========================================================
+# QUALIFICATION THRESHOLDS
+# =========================================================
+thresholds:
+  unqualified:
+    max_score: 25
+    action: "disqualify"
+    new_status: "disqualified"
+  research_needed:
+    max_score: 45
+    action: "flag_for_review"
+    new_status: null  # stays at current status
+  qualified:
+    max_score: 60
+    action: "qualify"
+    new_status: "qualified"
+  high_priority:
+    max_score: 75
+    action: "qualify_priority"
+    new_status: "qualified"
+    priority_flag: true
+  hot_prospect:
+    max_score: 100
+    action: "qualify_urgent"
+    new_status: "qualified"
+    priority_flag: true
+
+# Minimum firmographic score to proceed to research (pre-filter)
+min_firmographic_for_research: 10

@@ -1,0 +1,171 @@
+# ProspectIQ — Engagement Sequence Definitions
+# Multi-stage, multi-channel outreach sequences
+
+version: "1.0"
+
+sequences:
+  # =========================================================
+  # PRIMARY: Initial Outreach for Qualified Prospects
+  # =========================================================
+  initial_outreach:
+    name: "Initial Outreach — Manufacturing Intelligence"
+    description: "First-touch sequence for qualified manufacturing prospects"
+    total_steps: 5
+    steps:
+      - step: 1
+        channel: email
+        delay_days: 0
+        template: "initial_value_prop"
+        instructions:
+          subject_approach: "Reference a specific pain point or trigger event from research"
+          body_approach: >
+            Lead with their specific manufacturing challenge (from personalization hooks).
+            Briefly introduce how Digitillis addresses it with autonomous AI agents.
+            End with a low-friction CTA (e.g., 'Would it be worth a 15-minute conversation?').
+          tone: "Peer-to-peer, consultative. Not salesy."
+          max_words: 150
+          anti_patterns:
+            - "No 'I hope this email finds you well'"
+            - "No urgency manipulation ('limited spots', 'act now')"
+            - "No name-dropping without context"
+            - "No feature lists — lead with their problem"
+
+      - step: 2
+        channel: linkedin
+        delay_days: 2
+        template: "linkedin_connection"
+        instructions:
+          approach: >
+            Connection request with a brief, personalized note referencing
+            their role and a relevant manufacturing challenge.
+          max_words: 50
+          note: "Manual execution — AI drafts, founder sends via LinkedIn"
+
+      - step: 3
+        channel: email
+        delay_days: 5
+        template: "follow_up_insight"
+        instructions:
+          subject_approach: "Share a relevant industry insight or data point"
+          body_approach: >
+            Provide genuine value — a relevant statistic, industry trend, or
+            insight about their sub-sector. No selling. Build credibility.
+            Light reference to Digitillis only if natural.
+          tone: "Thought leader sharing useful information"
+          max_words: 120
+
+      - step: 4
+        channel: email
+        delay_days: 7
+        template: "case_relevance"
+        instructions:
+          subject_approach: "Reference a similar company's challenge and outcome"
+          body_approach: >
+            Describe how a similar manufacturing challenge was addressed
+            (use training data results: 18-day RUL prediction, 87% confidence,
+            25-40% maintenance cost reduction). Don't fabricate case studies —
+            reference the platform's validated capabilities.
+          tone: "Evidence-based, specific"
+          max_words: 130
+
+      - step: 5
+        channel: email
+        delay_days: 10
+        template: "soft_close"
+        instructions:
+          subject_approach: "Direct but respectful ask"
+          body_approach: >
+            Offer something specific and valuable: a free manufacturing
+            readiness assessment, a custom ROI estimate for their operation,
+            or a 15-minute demo. Make it easy to say yes or no.
+          tone: "Direct, respectful of their time"
+          max_words: 100
+
+  # =========================================================
+  # WARM FOLLOW-UP: For prospects who opened but didn't reply
+  # =========================================================
+  warm_follow_up:
+    name: "Warm Follow-up — Post Engagement"
+    description: "For prospects who showed engagement signals (opens/clicks) but didn't reply"
+    total_steps: 3
+    steps:
+      - step: 1
+        channel: email
+        delay_days: 0
+        template: "engagement_acknowledgment"
+        instructions:
+          body_approach: >
+            Don't mention that you know they opened (feels creepy).
+            Instead, add new value — a fresh insight, a relevant
+            development in their industry, or a more specific use case.
+          max_words: 120
+
+      - step: 2
+        channel: linkedin
+        delay_days: 3
+        template: "linkedin_message"
+        instructions:
+          approach: >
+            If connected: Direct message with a specific value offer.
+            If not connected: Connection request (if not already sent).
+          max_words: 80
+          note: "Manual execution"
+
+      - step: 3
+        channel: email
+        delay_days: 7
+        template: "final_value_offer"
+        instructions:
+          body_approach: >
+            Clear, specific offer: 'We're running 6-8 week pilot programs
+            with select manufacturers. No commitment beyond the pilot.
+            Would this be worth exploring?' Make it easy to decline gracefully.
+          max_words: 100
+
+  # =========================================================
+  # REPLY HANDLING: Positive reply next steps
+  # =========================================================
+  reply_positive:
+    name: "Positive Reply — Next Steps"
+    description: "When a prospect expresses interest"
+    total_steps: 2
+    steps:
+      - step: 1
+        channel: email
+        delay_days: 0
+        template: "meeting_booking"
+        instructions:
+          body_approach: >
+            Acknowledge their interest warmly. Propose 2-3 specific meeting
+            times in the next week. Keep it brief.
+          max_words: 80
+
+      - step: 2
+        channel: email
+        delay_days: 3
+        template: "meeting_reminder"
+        instructions:
+          body_approach: >
+            Gentle follow-up if no response to meeting proposal.
+            Offer alternative times or async demo option.
+          max_words: 60
+
+# =========================================================
+# GLOBAL OUTREACH PRINCIPLES (included in every prompt)
+# =========================================================
+global_principles:
+  voice:
+    - "Speak as a peer who understands manufacturing — not a vendor pitching"
+    - "Use their industry language (OEE, MTBF, RUL, unplanned downtime)"
+    - "Be specific, not generic. Reference their actual situation."
+  anti_patterns:
+    - "Never use 'I hope this finds you well' or similar filler"
+    - "Never create false urgency or scarcity"
+    - "Never make claims without evidence"
+    - "Never use manipulative sales language"
+    - "Never send walls of text — respect their time"
+    - "Never attach files in initial outreach"
+  personalization_requirements:
+    - "Every email must reference at least 1 specific fact about the company"
+    - "Subject lines must be relevant to their situation, not generic"
+    - "CTA must be appropriate for the relationship stage"
