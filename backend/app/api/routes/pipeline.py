@@ -13,6 +13,7 @@ from backend.app.agents.discovery import DiscoveryAgent
 from backend.app.agents.research import ResearchAgent
 from backend.app.agents.qualification import QualificationAgent
 from backend.app.agents.outreach import OutreachAgent
+from backend.app.agents.engagement import EngagementAgent
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -43,6 +44,11 @@ class OutreachRequest(BaseModel):
     sequence_name: str = "initial_outreach"
     step: int = 1
     limit: int = 20
+
+
+class EngagementRequest(BaseModel):
+    action: str = "send_approved"  # send_approved | process_due | check_status | poll_events
+    campaign_name: Optional[str] = None
 
 
 # ------------------------------------------------------------------
@@ -113,4 +119,32 @@ async def run_outreach(body: OutreachRequest):
         sequence_step=body.step,
         limit=body.limit,
     )
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/engagement")
+async def run_engagement(body: EngagementRequest):
+    """Trigger an engagement action (send approved drafts, process sequences, poll events).
+
+    Actions:
+    - send_approved: Send all approved outreach drafts via Instantly
+    - process_due: Process sequences with due follow-up actions
+    - check_status: Fetch aggregate campaign analytics from Instantly
+    - poll_events: Poll Instantly for per-lead opens/clicks/replies/bounces
+                   (webhook-free alternative for lower-tier Instantly plans)
+    """
+    agent = EngagementAgent()
+    result = agent.execute(action=body.action, campaign_name=body.campaign_name)
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/poll-instantly")
+async def poll_instantly():
+    """Convenience endpoint: poll Instantly for new lead events and sync to DB.
+
+    Equivalent to POST /run/engagement with action=poll_events.
+    Designed to be called on a schedule (e.g. every hour via cron or Railway cron job).
+    """
+    agent = EngagementAgent()
+    result = agent.execute(action="poll_events")
     return {"data": _serialize_result(result)}

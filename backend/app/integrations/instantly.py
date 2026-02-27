@@ -214,6 +214,43 @@ class InstantlyClient:
         """
         return self._get("/leads", params={"email": email})
 
+    def list_campaign_leads(
+        self,
+        campaign_id: str,
+        limit: int = 100,
+        skip: int = 0,
+    ) -> list[dict]:
+        """List leads in a campaign with their activity status.
+
+        Used by the polling mechanism to detect opens, replies, and bounces
+        without requiring webhook support.
+
+        Args:
+            campaign_id: Instantly campaign ID.
+            limit: Max leads per page (max 100).
+            skip: Offset for pagination.
+
+        Returns:
+            List of lead dicts with activity fields (is_opened, is_replied,
+            is_bounced, is_clicked, etc.).
+        """
+        logger.info(
+            f"Listing leads for campaign {campaign_id} "
+            f"(limit={limit}, skip={skip})"
+        )
+        result = self._get(
+            "/leads",
+            params={
+                "campaign_id": campaign_id,
+                "limit": limit,
+                "skip": skip,
+            },
+        )
+        # API may return {"items": [...]} or a plain list
+        if isinstance(result, list):
+            return result
+        return result.get("items", result.get("leads", []))
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
