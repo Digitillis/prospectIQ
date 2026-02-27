@@ -117,7 +117,7 @@ class ApolloClient:
         if q_organization_keyword_tags:
             payload["q_organization_keyword_tags"] = q_organization_keyword_tags
 
-        return self._post("/mixed_people/search", payload)
+        return self._post("/mixed_people/api_search", payload)
 
     def search_people_paginated(
         self,

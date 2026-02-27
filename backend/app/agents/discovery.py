@@ -116,7 +116,7 @@ class DiscoveryAgent(BaseAgent):
                 self.track_cost(
                     provider="apollo",
                     model="people_search",
-                    endpoint="/mixed_people/search",
+                    endpoint="/mixed_people/api_search",
                     input_tokens=0,
                     output_tokens=0,
                 )
