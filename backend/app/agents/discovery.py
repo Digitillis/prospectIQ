@@ -106,9 +106,10 @@ class DiscoveryAgent(BaseAgent):
                     person_not_titles=contact_filters["titles"]["exclude"],
                     person_seniorities=contact_filters["seniority"],
                     organization_locations=company_filters["geography"]["primary_states"],
-                    organization_num_employees_ranges=[
-                        f"{company_filters['employee_count']['min']},{company_filters['employee_count']['max']}"
-                    ],
+                    organization_num_employees_ranges=(
+                        company_filters["employee_count"].get("apollo_ranges")
+                        or [f"{company_filters['employee_count']['min']},{company_filters['employee_count']['max']}"]
+                    ),
                     q_organization_keyword_tags=[industry_config.get("apollo_industry", label)],
                 )
 

@@ -42,6 +42,13 @@ company_filters:
   employee_count:
     min: 500
     max: 20000
+    # Apollo-specific range buckets covering 500–20000 employees
+    apollo_ranges:
+      - "501,1000"
+      - "1001,2000"
+      - "2001,5000"
+      - "5001,10000"
+      - "10001"
 
   geography:
     primary_states:
