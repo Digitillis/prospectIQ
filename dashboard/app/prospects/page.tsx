@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -12,9 +12,11 @@ import {
   Loader2,
   AlertCircle,
   Flag,
+  MoreHorizontal,
+  Ban,
 } from "lucide-react";
 
-import { getCompanies, type Company } from "@/lib/api";
+import { getCompanies, updateCompany, type Company } from "@/lib/api";
 import {
   cn,
   formatTimeAgo,
@@ -60,7 +62,123 @@ type SortKey =
 type SortDir = "asc" | "desc";
 
 // ---------------------------------------------------------------------------
-// Component
+// Row action menu
+// ---------------------------------------------------------------------------
+
+function RowActions({
+  company,
+  onFlagToggle,
+  onDisqualify,
+  loading,
+}: {
+  company: Company;
+  onFlagToggle: (c: Company) => void;
+  onDisqualify: (c: Company) => void;
+  loading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirmDisqualify, setConfirmDisqualify] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setConfirmDisqualify(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        onClick={() => { setOpen((o) => !o); setConfirmDisqualify(false); }}
+        disabled={loading}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
+      >
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <MoreHorizontal className="h-4 w-4" />
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-8 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+          {/* Flag priority */}
+          <button
+            onClick={() => { onFlagToggle(company); setOpen(false); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <Flag
+              className={cn(
+                "h-4 w-4",
+                company.priority_flag
+                  ? "fill-orange-400 text-orange-400"
+                  : "text-gray-400"
+              )}
+            />
+            {company.priority_flag ? "Remove flag" : "Flag priority"}
+          </button>
+
+          <div className="my-1 border-t border-gray-100" />
+
+          {/* Disqualify */}
+          {company.status !== "disqualified" && (
+            confirmDisqualify ? (
+              <div className="px-3 py-2">
+                <p className="mb-2 text-xs text-gray-500">Disqualify this company?</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { onDisqualify(company); setOpen(false); setConfirmDisqualify(false); }}
+                    className="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => setConfirmDisqualify(false)}
+                    className="flex-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDisqualify(true)}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                <Ban className="h-4 w-4" />
+                Disqualify
+              </button>
+            )
+          )}
+
+          {/* Re-enable if already disqualified */}
+          {company.status === "disqualified" && (
+            <button
+              onClick={() => { onFlagToggle(company); setOpen(false); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Restore to discovered
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
 // ---------------------------------------------------------------------------
 
 export default function ProspectsPage() {
@@ -71,6 +189,7 @@ export default function ProspectsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // --- Filter state ---
   const [statusFilter, setStatusFilter] = useState("");
@@ -184,6 +303,44 @@ export default function ProspectsPage() {
     ) : (
       <ChevronDown className="ml-1 inline h-3.5 w-3.5 text-gray-700" />
     );
+  };
+
+  // --- Row actions ---
+  const handleFlagToggle = async (company: Company) => {
+    setActionLoading(company.id);
+    const newFlag = !company.priority_flag;
+    // Optimistic update
+    setCompanies((prev) =>
+      prev.map((c) => (c.id === company.id ? { ...c, priority_flag: newFlag } : c))
+    );
+    try {
+      await updateCompany(company.id, { priority_flag: newFlag });
+    } catch {
+      // Revert on failure
+      setCompanies((prev) =>
+        prev.map((c) => (c.id === company.id ? { ...c, priority_flag: !newFlag } : c))
+      );
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDisqualify = async (company: Company) => {
+    setActionLoading(company.id);
+    // Optimistic update
+    setCompanies((prev) =>
+      prev.map((c) => (c.id === company.id ? { ...c, status: "disqualified" } : c))
+    );
+    try {
+      await updateCompany(company.id, { status: "disqualified" });
+    } catch {
+      // Revert on failure
+      setCompanies((prev) =>
+        prev.map((c) => (c.id === company.id ? { ...c, status: company.status } : c))
+      );
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   // --- Pagination ---
@@ -301,6 +458,7 @@ export default function ProspectsPage() {
                     <SortIcon column={key} />
                   </th>
                 ))}
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -308,7 +466,10 @@ export default function ProspectsPage() {
                 <tr
                   key={c.id}
                   onClick={() => router.push(`/prospects/${c.id}`)}
-                  className="cursor-pointer transition-colors hover:bg-gray-50"
+                  className={cn(
+                    "cursor-pointer transition-colors hover:bg-gray-50",
+                    c.status === "disqualified" && "opacity-50"
+                  )}
                 >
                   {/* Name */}
                   <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900">
@@ -364,6 +525,16 @@ export default function ProspectsPage() {
                   {/* Last Activity */}
                   <td className="whitespace-nowrap px-4 py-3 text-gray-500">
                     {c.updated_at ? formatTimeAgo(c.updated_at) : "\u2014"}
+                  </td>
+
+                  {/* Actions */}
+                  <td className="whitespace-nowrap px-2 py-3">
+                    <RowActions
+                      company={c}
+                      onFlagToggle={handleFlagToggle}
+                      onDisqualify={handleDisqualify}
+                      loading={actionLoading === c.id}
+                    />
                   </td>
                 </tr>
               ))}
