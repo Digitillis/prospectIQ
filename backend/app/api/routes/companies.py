@@ -35,7 +35,8 @@ async def list_companies(
         limit=limit,
         offset=offset,
     )
-    return {"data": companies, "count": len(companies), "limit": limit, "offset": offset}
+    total = db.count_companies(status=status, tier=tier, min_pqs=min_pqs)
+    return {"data": companies, "count": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{company_id}")

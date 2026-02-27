@@ -19,7 +19,7 @@ import {
 import { getPendingDrafts, runAgent, OutreachDraft } from "@/lib/api";
 import { cn, TIER_LABELS } from "@/lib/utils";
 
-type AgentName = "discovery" | "research" | "qualification" | "outreach";
+type AgentName = "discovery" | "research" | "qualification" | "outreach" | "full";
 
 interface AgentStatus {
   loading: boolean;
@@ -64,6 +64,7 @@ export default function ActionsPage() {
   const [loading, setLoading] = useState(true);
   const [agentStatus, setAgentStatus] = useState<Record<AgentName, AgentStatus>>(
     {
+      full: { loading: false, result: null, message: null },
       discovery: { loading: false, result: null, message: null },
       research: { loading: false, result: null, message: null },
       qualification: { loading: false, result: null, message: null },
@@ -235,6 +236,62 @@ export default function ActionsPage() {
             Pipeline Actions
           </h3>
         </div>
+
+        {/* Run Full Pipeline */}
+        <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-5 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-purple-600" />
+                <h4 className="font-semibold text-gray-900">Run Full Pipeline</h4>
+              </div>
+              <p className="mt-1 text-sm text-gray-500">
+                Discovery → Research → Qualification → Outreach drafts. Outreach still requires your approval before sending.
+              </p>
+              {agentStatus.full.result && (
+                <div
+                  className={cn(
+                    "mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
+                    agentStatus.full.result === "success"
+                      ? "bg-green-50 text-green-700"
+                      : "bg-red-50 text-red-700"
+                  )}
+                >
+                  {agentStatus.full.result === "success" ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span>{agentStatus.full.message}</span>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => handleRunAgent("full")}
+              disabled={agentStatus.full.loading}
+              className={cn(
+                "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold transition-colors",
+                agentStatus.full.loading
+                  ? "cursor-not-allowed bg-gray-100 text-gray-400"
+                  : "bg-purple-600 text-white hover:bg-purple-700"
+              )}
+            >
+              {agentStatus.full.loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Running pipeline...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Run Full Pipeline
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        <p className="text-xs text-gray-400">Or run individual stages:</p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {AGENTS.map((agent) => {
             const status = agentStatus[agent.name];

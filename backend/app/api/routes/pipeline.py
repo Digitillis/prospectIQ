@@ -14,6 +14,7 @@ from backend.app.agents.research import ResearchAgent
 from backend.app.agents.qualification import QualificationAgent
 from backend.app.agents.outreach import OutreachAgent
 from backend.app.agents.engagement import EngagementAgent
+from backend.app.orchestrator.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -44,6 +45,13 @@ class OutreachRequest(BaseModel):
     sequence_name: str = "initial_outreach"
     step: int = 1
     limit: int = 20
+
+
+class FullPipelineRequest(BaseModel):
+    max_pages: Optional[int] = None
+    campaign: Optional[str] = None
+    tiers: Optional[list[str]] = None
+    skip_outreach: bool = False
 
 
 class EngagementRequest(BaseModel):
@@ -148,3 +156,27 @@ async def poll_instantly():
     agent = EngagementAgent()
     result = agent.execute(action="poll_events")
     return {"data": _serialize_result(result)}
+
+
+@router.post("/run/full")
+async def run_full_pipeline(body: FullPipelineRequest):
+    """Run the full pipeline: discovery → research → qualification → outreach.
+
+    Chains all four agents in sequence. Stops early if any stage fails.
+    Human approval of outreach drafts is still required before sending.
+
+    Set skip_outreach=true to stop after qualification (no drafts generated).
+    """
+    pipeline = Pipeline()
+    results = pipeline.run_full(
+        max_pages=body.max_pages,
+        campaign_name=body.campaign,
+        skip_outreach=body.skip_outreach,
+        tiers=body.tiers,
+    )
+    return {
+        "data": {
+            stage: _serialize_result(result)
+            for stage, result in results.items()
+        }
+    }
