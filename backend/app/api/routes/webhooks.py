@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from backend.app.core.config import get_settings
 
@@ -22,11 +22,12 @@ router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 @router.post("/instantly")
 async def instantly_webhook(
     request: Request,
-    x_webhook_secret: Optional[str] = Header(default=None),
+    secret: Optional[str] = Query(default=None),
 ):
     """Receive webhook events from Instantly.ai.
 
-    Validates the webhook secret, then delegates all processing to
+    Validates via URL query param ?secret=... (baked into the webhook URL
+    configured in Instantly dashboard). Delegates all processing to
     EngagementAgent.process_webhook_event which handles:
     - Interaction logging
     - PQS engagement score updates
@@ -35,8 +36,8 @@ async def instantly_webhook(
     """
     settings = get_settings()
 
-    # Validate webhook secret
-    if settings.webhook_secret and x_webhook_secret != settings.webhook_secret:
+    # Validate webhook secret passed as query param
+    if settings.webhook_secret and secret != settings.webhook_secret:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
     payload: dict[str, Any] = await request.json()

@@ -57,8 +57,13 @@ class ApolloClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"Apollo API error {e.response.status_code}: {e.response.text[:500]}")
-            raise
+            body = e.response.text[:500]
+            logger.error(f"Apollo API error {e.response.status_code}: {body}")
+            raise httpx.HTTPStatusError(
+                f"{e} | Apollo response: {body}",
+                request=e.request,
+                response=e.response,
+            )
         except httpx.RequestError as e:
             logger.error(f"Apollo request error: {e}")
             raise

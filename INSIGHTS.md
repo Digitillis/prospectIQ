@@ -418,6 +418,36 @@ Based on the architecture, logical next steps are:
 2. **Tune PQS thresholds** after seeing actual pipeline data (current thresholds are assumptions)
 3. **LinkedIn outreach** — sequences.yaml already has LinkedIn steps but Instantly.ai is email-only; would need a separate LinkedIn automation tool
 4. **Learning loop activation** — `learning_outcomes` table is populated but no automated feedback to prompt tuning yet
-5. **Instantly.ai webhook** — needs the Railway URL configured in Instantly dashboard to start receiving open/click/reply events and drive `pqs_engagement` scoring
+5. **Instantly.ai webhook** — needs the Railway URL configured in Instantly dashboard to start receiving open/click/reply events and drive `pqs_engagement` scoring (Hyper Growth plan required; polling fallback now available via `POST /api/pipeline/run/poll-instantly`)
 6. **Supabase RLS policies** — schema has no Row Level Security configured; should add before any multi-user access
 7. **Rate limiting on API** — FastAPI currently has no rate limiting; should add before exposing to production
+
+---
+
+## TODO: Multi-Sector Configuration Page
+
+**Idea:** Add a UI configuration page to ProspectIQ so the same system can serve different industries, geographies, and company profiles without code changes.
+
+**Why it has merit:**
+- All business logic is already YAML-driven (`icp.yaml`, `scoring.yaml`, `sequences.yaml`, `manufacturing_ontology.yaml`) — the foundation is there
+- Digitillis may want to expand beyond Midwest discrete manufacturing (different verticals, geographies, or company sizes)
+- A non-technical user (e.g. sales/founder) could reconfigure the system without touching code or YAML files
+
+**What the config page would cover:**
+
+| Section | Fields |
+|---|---|
+| **Target Industries** | Industry categories, NAICS codes, sub-sectors, priority tiers |
+| **Geography** | Target states/regions, territory mapping |
+| **Company Size** | Employee count range, revenue range |
+| **Personas** | Target job titles, seniority levels, exclusion list |
+| **ICP Scoring** | PQS dimension weights, threshold values (qualified/hot/disqualified) |
+| **Sequences** | Steps, delay days, channels (email/LinkedIn), per-step instructions |
+| **Value Messaging** | Pain points and value hooks per tier |
+| **Sender Identity** | Sender email, founder name, product description for outreach prompts |
+
+**Implementation approach when ready:**
+- Backend: CRUD API endpoints that read/write the YAML config files (or migrate config to Supabase for easier editing)
+- Frontend: New `/config` dashboard page with tabbed sections per config area
+- Validation: Schema validation before saving (prevent broken configs going live)
+- Versioning: Keep a history of config changes so rollback is possible
