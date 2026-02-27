@@ -11,6 +11,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
+import { getCompanies, getPendingDrafts } from "@/lib/api";
 import type { Company } from "@/lib/api";
 import {
   cn,
@@ -58,21 +59,15 @@ export default function PipelinePage() {
       const [results, approvalsRes] = await Promise.all([
         Promise.all(
           PIPELINE_COLUMNS.map(async (status) => {
-            const res = await fetch(
-              `/api/companies?status=${status}&limit=5`
-            );
-            if (!res.ok) throw new Error(`Failed to fetch ${status}`);
-            const json = await res.json();
+            const json = await getCompanies({ status, limit: "5" });
             return {
               status,
-              companies: json.data as Company[],
-              count: json.count as number,
+              companies: json.data,
+              count: json.count,
             };
           })
         ),
-        fetch("/api/approvals").then((r) =>
-          r.ok ? r.json() : { count: 0 }
-        ),
+        getPendingDrafts().catch(() => ({ data: [], count: 0 })),
       ]);
 
       const data: PipelineData = {};
