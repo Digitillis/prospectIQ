@@ -33,7 +33,6 @@ class ApolloClient:
             headers={
                 "Content-Type": "application/json",
                 "Cache-Control": "no-cache",
-                "X-Api-Key": self.api_key,
             },
             timeout=30.0,
         )
@@ -50,11 +49,11 @@ class ApolloClient:
         """Make a POST request with rate limiting and error handling."""
         self._rate_limit()
         try:
-            response = self.client.post(endpoint, json=payload)
+            response = self.client.post(endpoint, json={**payload, "api_key": self.api_key})
             if response.status_code == 429:
                 logger.warning("Apollo rate limit hit, waiting 60s...")
                 time.sleep(60)
-                response = self.client.post(endpoint, json=payload)
+                response = self.client.post(endpoint, json={**payload, "api_key": self.api_key})
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
