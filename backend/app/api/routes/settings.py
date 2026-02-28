@@ -2,17 +2,18 @@
 
 from fastapi import APIRouter, HTTPException
 
-from backend.app.core.config import get_icp_config, get_scoring_config
+from backend.app.core.config import get_icp_config, get_scoring_config, get_sequences_config
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 @router.get("")
 async def get_settings():
-    """Return current ICP and scoring configuration."""
+    """Return current ICP, scoring, and sequences configuration."""
     try:
         icp = get_icp_config()
         scoring = get_scoring_config()
+        sequences_cfg = get_sequences_config()
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -50,5 +51,6 @@ async def get_settings():
                     "min_firmographic_for_research", 10
                 ),
             },
+            "sequences": sequences_cfg.get("sequences", {}),
         }
     }

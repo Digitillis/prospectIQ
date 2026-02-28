@@ -14,9 +14,12 @@ import {
   Flag,
   MoreHorizontal,
   Ban,
+  Download,
+  Plus,
+  X,
 } from "lucide-react";
 
-import { getCompanies, updateCompany, type Company } from "@/lib/api";
+import { getCompanies, updateCompany, createCompany, type Company } from "@/lib/api";
 import {
   cn,
   formatTimeAgo,
@@ -51,6 +54,8 @@ const STATUS_OPTIONS = [
 
 const TIER_OPTIONS = Object.keys(TIER_LABELS);
 
+const MIDWEST_STATES = ["IL", "IN", "MI", "OH", "WI", "MN", "IA", "MO"];
+
 type SortKey =
   | "name"
   | "tier"
@@ -60,6 +65,336 @@ type SortKey =
   | "state"
   | "updated_at";
 type SortDir = "asc" | "desc";
+
+// ---------------------------------------------------------------------------
+// CSV export helper
+// ---------------------------------------------------------------------------
+
+function exportToCSV(companies: Company[], filename = "prospects.csv") {
+  const headers = [
+    "Name",
+    "Domain",
+    "Tier",
+    "PQS Score",
+    "Status",
+    "Sub-Sector",
+    "State",
+    "Employee Count",
+    "Industry",
+    "Priority Flag",
+    "Last Activity",
+  ];
+
+  const rows = companies.map((c) => [
+    c.name,
+    c.domain ?? "",
+    c.tier ?? "",
+    String(c.pqs_total),
+    c.status,
+    c.sub_sector ?? "",
+    c.state ?? "",
+    c.employee_count != null ? String(c.employee_count) : "",
+    c.industry ?? "",
+    c.priority_flag ? "Yes" : "No",
+    c.updated_at ? new Date(c.updated_at).toLocaleDateString() : "",
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map((row) =>
+      row
+        .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+        .join(",")
+    )
+    .join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Add Company Modal
+// ---------------------------------------------------------------------------
+
+interface AddCompanyForm {
+  name: string;
+  domain: string;
+  industry: string;
+  sub_sector: string;
+  tier: string;
+  state: string;
+  employee_count: string;
+  revenue_range: string;
+  contact_name: string;
+  contact_email: string;
+  contact_title: string;
+  contact_is_dm: boolean;
+}
+
+const EMPTY_FORM: AddCompanyForm = {
+  name: "",
+  domain: "",
+  industry: "",
+  sub_sector: "",
+  tier: "",
+  state: "",
+  employee_count: "",
+  revenue_range: "",
+  contact_name: "",
+  contact_email: "",
+  contact_title: "",
+  contact_is_dm: false,
+};
+
+const inputCls =
+  "w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent";
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-gray-600">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function AddCompanyModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState<AddCompanyForm>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (field: keyof AddCompanyForm, value: string | boolean) =>
+    setForm((f) => ({ ...f, [field]: value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await createCompany({
+        name: form.name.trim(),
+        domain: form.domain.trim() || undefined,
+        industry: form.industry || undefined,
+        sub_sector: form.sub_sector.trim() || undefined,
+        tier: form.tier || undefined,
+        state: form.state || undefined,
+        employee_count: form.employee_count
+          ? parseInt(form.employee_count, 10)
+          : undefined,
+        revenue_range: form.revenue_range.trim() || undefined,
+        contact:
+          form.contact_name.trim() || form.contact_email.trim()
+            ? {
+                full_name: form.contact_name.trim() || undefined,
+                email: form.contact_email.trim() || undefined,
+                title: form.contact_title.trim() || undefined,
+                is_decision_maker: form.contact_is_dm,
+              }
+            : undefined,
+      });
+      onCreated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create company");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/30 sm:items-center sm:justify-center">
+      <div className="w-full max-w-lg rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+          <h2 className="text-base font-semibold text-gray-900">Add Company Manually</h2>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <form onSubmit={handleSubmit} className="max-h-[80vh] overflow-y-auto">
+          <div className="space-y-4 px-6 py-5">
+            {error && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Company Details
+            </p>
+
+            <Field label="Company Name *">
+              <input
+                required
+                value={form.name}
+                onChange={(e) => set("name", e.target.value)}
+                placeholder="Acme Manufacturing Co."
+                className={inputCls}
+              />
+            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Domain">
+                <input
+                  value={form.domain}
+                  onChange={(e) => set("domain", e.target.value)}
+                  placeholder="acme.com"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="State">
+                <select
+                  value={form.state}
+                  onChange={(e) => set("state", e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">Select state…</option>
+                  {MIDWEST_STATES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Industry">
+                <input
+                  value={form.industry}
+                  onChange={(e) => set("industry", e.target.value)}
+                  placeholder="Industrial Machinery"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Tier">
+                <select
+                  value={form.tier}
+                  onChange={(e) => set("tier", e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">Select tier…</option>
+                  {TIER_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t} — {TIER_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Employee Count">
+                <input
+                  type="number"
+                  min={1}
+                  value={form.employee_count}
+                  onChange={(e) => set("employee_count", e.target.value)}
+                  placeholder="5000"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Revenue Range">
+                <input
+                  value={form.revenue_range}
+                  onChange={(e) => set("revenue_range", e.target.value)}
+                  placeholder="$500M–$1B"
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+
+            <div className="border-t border-gray-100 pt-2">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Primary Contact (optional)
+              </p>
+              <div className="space-y-3">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Full Name">
+                    <input
+                      value={form.contact_name}
+                      onChange={(e) => set("contact_name", e.target.value)}
+                      placeholder="Jane Smith"
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Email">
+                    <input
+                      type="email"
+                      value={form.contact_email}
+                      onChange={(e) => set("contact_email", e.target.value)}
+                      placeholder="jane@acme.com"
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+                <Field label="Title">
+                  <input
+                    value={form.contact_title}
+                    onChange={(e) => set("contact_title", e.target.value)}
+                    placeholder="VP Operations"
+                    className={inputCls}
+                  />
+                </Field>
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={form.contact_is_dm}
+                    onChange={(e) => set("contact_is_dm", e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-digitillis-accent"
+                  />
+                  Mark as decision maker
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !form.name.trim()}
+              className="inline-flex items-center gap-2 rounded-lg bg-digitillis-accent px-5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Add Company
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Row action menu
@@ -202,6 +537,10 @@ export default function ProspectsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("pqs_total");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // --- UI state ---
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
   // --- Fetch ---
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -305,18 +644,37 @@ export default function ProspectsPage() {
     );
   };
 
+  // --- Export ---
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const params: Record<string, string> = { limit: "500", offset: "0" };
+      if (statusFilter) params.status = statusFilter;
+      if (tierFilter) params.tier = tierFilter;
+      if (minPqs) params.min_pqs = minPqs;
+      const res = await getCompanies(params);
+      let data = res.data ?? [];
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        data = data.filter((c) => c.name.toLowerCase().includes(q));
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      exportToCSV(data, `prospects-${date}.csv`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // --- Row actions ---
   const handleFlagToggle = async (company: Company) => {
     setActionLoading(company.id);
     const newFlag = !company.priority_flag;
-    // Optimistic update
     setCompanies((prev) =>
       prev.map((c) => (c.id === company.id ? { ...c, priority_flag: newFlag } : c))
     );
     try {
       await updateCompany(company.id, { priority_flag: newFlag });
     } catch {
-      // Revert on failure
       setCompanies((prev) =>
         prev.map((c) => (c.id === company.id ? { ...c, priority_flag: !newFlag } : c))
       );
@@ -327,14 +685,12 @@ export default function ProspectsPage() {
 
   const handleDisqualify = async (company: Company) => {
     setActionLoading(company.id);
-    // Optimistic update
     setCompanies((prev) =>
       prev.map((c) => (c.id === company.id ? { ...c, status: "disqualified" } : c))
     );
     try {
       await updateCompany(company.id, { status: "disqualified" });
     } catch {
-      // Revert on failure
       setCompanies((prev) =>
         prev.map((c) => (c.id === company.id ? { ...c, status: company.status } : c))
       );
@@ -351,11 +707,32 @@ export default function ProspectsPage() {
   return (
     <div className="space-y-4">
       {/* Page heading */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-gray-900">Prospects</h2>
-        <span className="text-sm text-gray-500">
-          {totalCount} {totalCount === 1 ? "company" : "companies"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 text-sm text-gray-500">
+            {totalCount} {totalCount === 1 ? "company" : "companies"}
+          </span>
+          <button
+            onClick={handleExport}
+            disabled={exporting || loading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Export CSV
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" />
+            Add Company
+          </button>
+        </div>
       </div>
 
       {/* ---- Filter bar ---- */}
@@ -569,6 +946,14 @@ export default function ProspectsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ---- Add Company Modal ---- */}
+      {showAddModal && (
+        <AddCompanyModal
+          onClose={() => setShowAddModal(false)}
+          onCreated={fetchData}
+        />
       )}
     </div>
   );

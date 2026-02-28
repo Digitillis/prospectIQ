@@ -10,6 +10,7 @@ import {
   Clock,
   AlertCircle,
   RefreshCw,
+  ArrowRight,
 } from "lucide-react";
 import { getCompanies, getPendingDrafts } from "@/lib/api";
 import type { Company } from "@/lib/api";
@@ -100,8 +101,58 @@ export default function PipelinePage() {
       ? Math.round((engagedCount / contactedCount) * 100)
       : 0;
 
+  const nudges = [];
+  if (!loading) {
+    if (approvalCount > 0)
+      nudges.push({
+        id: "approvals",
+        label: `${approvalCount} draft${approvalCount !== 1 ? "s" : ""} pending your approval`,
+        href: "/approvals",
+        color: "border-amber-200 bg-amber-50 text-amber-800",
+        dot: "bg-amber-400",
+      });
+    const qualifiedCount2 = pipeline["qualified"]?.count ?? 0;
+    if (qualifiedCount2 > 0)
+      nudges.push({
+        id: "outreach",
+        label: `${qualifiedCount2} qualified prospect${qualifiedCount2 !== 1 ? "s" : ""} ready for outreach`,
+        href: "/prospects?status=qualified",
+        color: "border-blue-200 bg-blue-50 text-blue-800",
+        dot: "bg-digitillis-accent",
+      });
+    const engagedCount2 = pipeline["engaged"]?.count ?? 0;
+    if (engagedCount2 > 0)
+      nudges.push({
+        id: "engaged",
+        label: `${engagedCount2} prospect${engagedCount2 !== 1 ? "s" : ""} replied — follow up now`,
+        href: "/prospects?status=engaged",
+        color: "border-purple-200 bg-purple-50 text-purple-800",
+        dot: "bg-purple-500",
+      });
+  }
+
   return (
     <div className="space-y-6">
+      {/* Nudges */}
+      {nudges.length > 0 && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {nudges.map((n) => (
+            <Link
+              key={n.id}
+              href={n.href}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-opacity hover:opacity-80",
+                n.color
+              )}
+            >
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", n.dot)} />
+              {n.label}
+              <ArrowRight className="ml-auto h-3.5 w-3.5 shrink-0" />
+            </Link>
+          ))}
+        </div>
+      )}
+
       {/* Page header with approval badge */}
       <div className="flex items-center justify-between">
         <div>
