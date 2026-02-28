@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -32,12 +32,18 @@ import {
   Sparkles,
   FileText,
   ExternalLink,
+  Building2,
+  Plus,
+  DollarSign,
+  Users,
+  MapPin,
 } from "lucide-react";
 
 import {
   getCompany,
   updateCompany,
   addNote,
+  createContact,
   type CompanyDetail,
   type Contact,
   type Research,
@@ -451,10 +457,272 @@ export default function ProspectDetailPage() {
       {/* ---- Tab content ---- */}
       <div>
         {activeTab === "Overview" && <OverviewTab company={company} />}
-        {activeTab === "Contacts" && <ContactsTab contacts={company.contacts} />}
+        {activeTab === "Contacts" && <ContactsTab contacts={company.contacts} companyId={id} onRefresh={fetchCompany} />}
         {activeTab === "Timeline" && <TimelineTab interactions={company.interactions} />}
         {activeTab === "Outreach" && <OutreachTab company={company} />}
       </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// Helpers
+// ===========================================================================
+
+function getClassificationLabel(pqs: number): string {
+  if (pqs >= 85) return "Hot Prospect";
+  if (pqs >= 70) return "High Priority";
+  if (pqs >= 46) return "Qualified";
+  if (pqs >= 30) return "Research Needed";
+  return "Unqualified";
+}
+
+function getNextAction(status: string, pqs: number): string {
+  switch (status) {
+    case "discovered":
+      return "Run Research → Qualification agents to score this company";
+    case "researched":
+      return "Run Qualification agent to compute full PQS score";
+    case "qualified":
+      return pqs >= 46
+        ? "Generate a personalized outreach draft"
+        : "Review — consider disqualifying due to low PQS";
+    case "disqualified":
+      return "No further action needed";
+    case "outreach_pending":
+      return "Review and approve the pending outreach draft";
+    case "contacted":
+      return "Monitor for engagement; follow-up sequence is active";
+    case "engaged":
+      return "Schedule a discovery call or meeting";
+    case "meeting_scheduled":
+      return "Prepare discovery call materials & Digitillis demo";
+    case "pilot_discussion":
+      return "Send pilot proposal and timeline";
+    case "pilot_signed":
+      return "Kick off the pilot program";
+    case "active_pilot":
+      return "Track pilot KPIs and document early wins";
+    case "converted":
+      return "Onboard and begin expansion conversations";
+    case "not_interested":
+      return "Closed — no further outreach";
+    case "paused":
+      return "Revisit in 30–60 days";
+    case "bounced":
+      return "Find an alternative contact email address";
+    default:
+      return "Review and determine next step";
+  }
+}
+
+// ===========================================================================
+// InsightsBox
+// ===========================================================================
+
+function InsightsBox({ company }: { company: CompanyDetail }) {
+  const research = company.research;
+  const classification = getClassificationLabel(company.pqs_total);
+  const nextAction = getNextAction(company.status, company.pqs_total);
+  const confidence = research?.confidence_level;
+
+  // Gather the 3 best signals to surface
+  const keySignals: string[] = [
+    ...(company.personalization_hooks?.slice(0, 2) ?? []),
+    ...(research?.opportunities?.slice(0, 2) ?? []),
+    ...(company.pain_signals?.slice(0, 2) ?? []),
+  ].filter(Boolean).slice(0, 3);
+
+  const scoreBreakdown = [
+    { label: "Firmographic", value: company.pqs_firmographic, max: 25 },
+    { label: "Technographic", value: company.pqs_technographic, max: 25 },
+    { label: "Timing", value: company.pqs_timing, max: 25 },
+    { label: "Engagement", value: company.pqs_engagement, max: 25 },
+  ];
+
+  return (
+    <div className="rounded-xl border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 p-5 lg:col-span-2">
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <Sparkles className="h-4 w-4 text-indigo-500" />
+        AI Prospect Assessment
+      </h3>
+
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        {/* Fit classification */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            Fit Assessment
+          </p>
+          <div className={cn("text-xl font-bold", getPQSColor(company.pqs_total))}>
+            {classification}
+          </div>
+          <p className="text-xs text-gray-500">
+            PQS {company.pqs_total}/100
+          </p>
+          {confidence && (
+            <span
+              className={cn(
+                "inline-block rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                confidence === "high"
+                  ? "bg-green-100 text-green-700"
+                  : confidence === "medium"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-gray-100 text-gray-600"
+              )}
+            >
+              {confidence} research confidence
+            </span>
+          )}
+          {/* Score breakdown */}
+          <div className="mt-2 space-y-1">
+            {scoreBreakdown.map((d) => (
+              <div key={d.label} className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="w-20 shrink-0">{d.label}</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className="h-full rounded-full bg-indigo-400"
+                    style={{ width: `${(d.value / d.max) * 100}%` }}
+                  />
+                </div>
+                <span className="w-8 text-right font-medium text-gray-700">
+                  {d.value}/{d.max}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Why this prospect */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            Why This Prospect
+          </p>
+          {keySignals.length > 0 ? (
+            <ul className="space-y-2">
+              {keySignals.map((signal, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                  {signal}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-400 italic">
+              Run the Research agent to unlock AI-generated insights for this prospect.
+            </p>
+          )}
+        </div>
+
+        {/* Recommended next action */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            Recommended Next Action
+          </p>
+          <p className="text-sm font-medium leading-relaxed text-indigo-800">
+            {nextAction}
+          </p>
+          {company.qualification_notes && (
+            <div className="mt-3 rounded-md bg-white/70 px-3 py-2 text-xs text-gray-600 border border-indigo-100">
+              <span className="font-medium text-gray-700">Qualification note: </span>
+              {company.qualification_notes}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// FirmographicsCard
+// ===========================================================================
+
+function FirmographicsCard({ company }: { company: CompanyDetail }) {
+  const hq = [company.city, company.state].filter(Boolean).join(", ");
+
+  const plantCount =
+    (company.manufacturing_profile as Record<string, unknown> | undefined)?.plant_count ??
+    (company.manufacturing_profile as Record<string, unknown> | undefined)?.facilities_count ??
+    null;
+
+  const rows: { label: string; value: string; icon?: ReactNode }[] = [
+    hq ? { label: "HQ", value: hq, icon: <MapPin className="h-3.5 w-3.5" /> } : null,
+    company.territory ? { label: "Territory", value: company.territory } : null,
+    company.employee_count
+      ? {
+          label: "Employees",
+          value: company.employee_count.toLocaleString(),
+          icon: <Users className="h-3.5 w-3.5" />,
+        }
+      : null,
+    company.revenue_range
+      ? { label: "Revenue", value: company.revenue_range, icon: <DollarSign className="h-3.5 w-3.5" /> }
+      : company.estimated_revenue
+      ? {
+          label: "Est. Revenue",
+          value: `$${(company.estimated_revenue / 1e6).toFixed(0)}M`,
+          icon: <DollarSign className="h-3.5 w-3.5" />,
+        }
+      : null,
+    company.founded_year
+      ? { label: "Founded", value: String(company.founded_year) }
+      : null,
+    typeof company.is_private === "boolean"
+      ? { label: "Type", value: company.is_private ? "Private" : "Public" }
+      : null,
+    plantCount ? { label: "Plants", value: String(plantCount) } : null,
+    company.phone ? { label: "Phone", value: company.phone, icon: <Phone className="h-3.5 w-3.5" /> } : null,
+  ].filter(Boolean) as { label: string; value: string; icon?: React.ReactNode }[];
+
+  const websiteUrl = company.website || (company.domain ? `https://${company.domain}` : null);
+
+  if (!rows.length && !websiteUrl && !company.linkedin_url) return null;
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-5">
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <Building2 className="h-4 w-4 text-gray-500" />
+        Company Profile
+      </h3>
+
+      <dl className="space-y-2.5 text-sm">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-2">
+            <dt className="flex items-center gap-1.5 text-gray-500">
+              {row.icon}
+              {row.label}
+            </dt>
+            <dd className="text-right font-medium text-gray-900">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {(websiteUrl || company.linkedin_url) && (
+        <div className="mt-3 flex flex-wrap gap-3 border-t border-gray-100 pt-3">
+          {websiteUrl && (
+            <a
+              href={websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Website
+            </a>
+          )}
+          {company.linkedin_url && (
+            <a
+              href={company.linkedin_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+            >
+              <Linkedin className="h-3 w-3" />
+              LinkedIn
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -468,6 +736,12 @@ function OverviewTab({ company }: { company: CompanyDetail }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      {/* AI Insights */}
+      <InsightsBox company={company} />
+
+      {/* Firmographics */}
+      <FirmographicsCard company={company} />
+
       {/* Research Summary */}
       {company.research_summary && (
         <div className="rounded-lg border border-gray-200 bg-white p-5 lg:col-span-2">
@@ -603,15 +877,6 @@ function OverviewTab({ company }: { company: CompanyDetail }) {
         </div>
       )}
 
-      {/* Qualification Notes */}
-      {company.qualification_notes && (
-        <div className="rounded-lg border border-gray-200 bg-white p-5 lg:col-span-2">
-          <h3 className="mb-2 text-sm font-semibold text-gray-900">
-            Qualification Notes
-          </h3>
-          <p className="text-sm text-gray-600">{company.qualification_notes}</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -620,73 +885,288 @@ function OverviewTab({ company }: { company: CompanyDetail }) {
 // Tab 2 - Contacts
 // ===========================================================================
 
-function ContactsTab({ contacts }: { contacts: Contact[] }) {
-  if (!contacts || contacts.length === 0) {
-    return (
-      <div className="py-16 text-center text-sm text-gray-500">
-        No contacts found for this company.
-      </div>
-    );
-  }
+const PERSONA_OPTIONS = [
+  { value: "vp_ops", label: "VP Operations" },
+  { value: "coo", label: "COO" },
+  { value: "plant_manager", label: "Plant Manager" },
+  { value: "digital_transformation", label: "Digital Transformation" },
+  { value: "vp_supply_chain", label: "VP Supply Chain" },
+  { value: "director_ops", label: "Director of Operations" },
+  { value: "cio", label: "CIO / CTO" },
+];
+
+const SENIORITY_OPTIONS = ["C-Level", "VP", "Director", "Manager", "Senior", "Individual Contributor"];
+
+function ContactsTab({
+  contacts,
+  companyId,
+  onRefresh,
+}: {
+  contacts: Contact[];
+  companyId: string;
+  onRefresh: () => void;
+}) {
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    full_name: "",
+    title: "",
+    email: "",
+    phone: "",
+    linkedin_url: "",
+    seniority: "",
+    persona_type: "",
+    is_decision_maker: false,
+  });
+
+  const handleAdd = async () => {
+    if (!form.full_name.trim() && !form.email.trim()) return;
+    setSaving(true);
+    try {
+      await createContact(companyId, {
+        ...form,
+        full_name: form.full_name.trim() || undefined,
+        title: form.title.trim() || undefined,
+        email: form.email.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        linkedin_url: form.linkedin_url.trim() || undefined,
+        seniority: form.seniority || undefined,
+        persona_type: form.persona_type || undefined,
+      });
+      setAddModalOpen(false);
+      setForm({ full_name: "", title: "", email: "", phone: "", linkedin_url: "", seniority: "", persona_type: "", is_decision_maker: false });
+      onRefresh();
+    } catch {
+      // silent
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {contacts.map((contact) => (
-        <div
-          key={contact.id}
-          className="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
+    <div className="space-y-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          {contacts.length} contact{contacts.length !== 1 ? "s" : ""}
+        </p>
+        <button
+          onClick={() => setAddModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
         >
-          <div className="mb-3 flex items-start justify-between">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100">
-                <User className="h-4 w-4 text-indigo-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-semibold text-gray-900">
-                    {contact.full_name || "Unknown"}
-                  </span>
-                  {contact.is_decision_maker && (
-                    <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                  )}
+          <Plus className="h-4 w-4" />
+          Add Contact
+        </button>
+      </div>
+
+      {/* Contact cards */}
+      {contacts.length === 0 ? (
+        <div className="py-12 text-center text-sm text-gray-400">
+          No contacts found. Add one manually or run the Discovery agent.
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {contacts.map((contact) => (
+            <div
+              key={contact.id}
+              className="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
+            >
+              <div className="mb-3 flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100">
+                    <User className="h-4 w-4 text-indigo-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-semibold text-gray-900">
+                        {contact.full_name || "Unknown"}
+                      </span>
+                      {contact.is_decision_maker && (
+                        <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+                      )}
+                    </div>
+                    {contact.title && (
+                      <p className="text-xs text-gray-500">{contact.title}</p>
+                    )}
+                    {contact.seniority && (
+                      <p className="text-xs text-gray-400">{contact.seniority}</p>
+                    )}
+                  </div>
                 </div>
-                {contact.title && (
-                  <p className="text-xs text-gray-500">{contact.title}</p>
+              </div>
+
+              {/* Persona badge */}
+              {contact.persona_type && (
+                <span className="mb-3 inline-block rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium capitalize text-indigo-700">
+                  {contact.persona_type.replace(/_/g, " ")}
+                </span>
+              )}
+
+              {/* Contact details */}
+              <div className="space-y-1.5 text-sm">
+                {contact.email && (
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="flex items-center gap-2 text-gray-600 hover:text-indigo-600"
+                  >
+                    <Mail className="h-3.5 w-3.5 text-gray-400" />
+                    <span className="truncate">{contact.email}</span>
+                  </a>
+                )}
+                {contact.phone && (
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Phone className="h-3.5 w-3.5 text-gray-400" />
+                    <span>{contact.phone}</span>
+                  </div>
+                )}
+                {contact.linkedin_url && (
+                  <a
+                    href={contact.linkedin_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-blue-600 hover:underline"
+                  >
+                    <Linkedin className="h-3.5 w-3.5" />
+                    <span className="truncate text-xs">LinkedIn Profile</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
                 )}
               </div>
             </div>
-          </div>
+          ))}
+        </div>
+      )}
 
-          {/* Persona badge */}
-          {contact.persona_type && (
-            <span className="mb-3 inline-block rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium capitalize text-indigo-700">
-              {contact.persona_type.replace(/_/g, " ")}
-            </span>
-          )}
+      {/* Add Contact Modal */}
+      {addModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">Add Contact</h3>
 
-          {/* Contact details */}
-          <div className="space-y-1.5 text-sm">
-            {contact.email && (
-              <div className="flex items-center gap-2 text-gray-600">
-                <Mail className="h-3.5 w-3.5 text-gray-400" />
-                <span className="truncate">{contact.email}</span>
+            <div className="space-y-3">
+              {/* Name + Title row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Full Name <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={form.full_name}
+                    onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+                    placeholder="Jane Smith"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Title</label>
+                  <input
+                    type="text"
+                    value={form.title}
+                    onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="VP of Operations"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
-            )}
-            {contact.linkedin_url && (
-              <a
-                href={contact.linkedin_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-blue-600 hover:underline"
+
+              {/* Email + Phone row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Email</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    placeholder="jane@company.com"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Phone</label>
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                    placeholder="+1 312 555 0100"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* LinkedIn */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">LinkedIn URL</label>
+                <input
+                  type="url"
+                  value={form.linkedin_url}
+                  onChange={(e) => setForm((f) => ({ ...f, linkedin_url: e.target.value }))}
+                  placeholder="https://linkedin.com/in/janesmith"
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Seniority + Persona row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Seniority</label>
+                  <select
+                    value={form.seniority}
+                    onChange={(e) => setForm((f) => ({ ...f, seniority: e.target.value }))}
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">Select…</option>
+                    {SENIORITY_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Persona</label>
+                  <select
+                    value={form.persona_type}
+                    onChange={(e) => setForm((f) => ({ ...f, persona_type: e.target.value }))}
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">Select…</option>
+                    {PERSONA_OPTIONS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Decision maker checkbox */}
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.is_decision_maker}
+                  onChange={(e) => setForm((f) => ({ ...f, is_decision_maker: e.target.checked }))}
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Mark as Decision Maker
+                <Star className="h-3.5 w-3.5 text-yellow-400" />
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => { setAddModalOpen(false); }}
+                className="rounded-md border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                <Linkedin className="h-3.5 w-3.5" />
-                <span className="truncate text-xs">LinkedIn Profile</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
+                Cancel
+              </button>
+              <button
+                onClick={handleAdd}
+                disabled={saving || (!form.full_name.trim() && !form.email.trim())}
+                className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Add Contact"}
+              </button>
+            </div>
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }

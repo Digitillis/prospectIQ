@@ -52,6 +52,28 @@ export const createCompany = (data: {
     body: JSON.stringify(data),
   });
 
+// Contacts
+export const createContact = (
+  companyId: string,
+  data: {
+    full_name?: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    title?: string;
+    phone?: string;
+    linkedin_url?: string;
+    seniority?: string;
+    department?: string;
+    persona_type?: string;
+    is_decision_maker?: boolean;
+  }
+) =>
+  fetchAPI<{ data: Contact }>(`/api/companies/${companyId}/contacts`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
 // Interactions
 export const addNote = (companyId: string, body: string, subject?: string) =>
   fetchAPI(`/api/companies/${companyId}/interactions`, {
@@ -100,12 +122,23 @@ export interface Company {
   id: string;
   name: string;
   domain?: string;
+  website?: string;
   industry?: string;
+  naics_code?: string;
   tier?: string;
   sub_sector?: string;
+  city?: string;
   state?: string;
   territory?: string;
   employee_count?: number;
+  revenue_range?: string;
+  estimated_revenue?: number;
+  founded_year?: number;
+  is_private?: boolean;
+  linkedin_url?: string;
+  twitter_url?: string;
+  phone?: string;
+  campaign_name?: string;
   pqs_total: number;
   pqs_firmographic: number;
   pqs_technographic: number;
@@ -114,6 +147,7 @@ export interface Company {
   status: string;
   priority_flag?: boolean;
   updated_at: string;
+  created_at?: string;
 }
 
 export interface CompanyDetail extends Company {
@@ -132,11 +166,18 @@ export interface Contact {
   id: string;
   company_id: string;
   full_name?: string;
+  first_name?: string;
+  last_name?: string;
   email?: string;
+  phone?: string;
   title?: string;
+  seniority?: string;
+  department?: string;
+  headline?: string;
   persona_type?: string;
   is_decision_maker: boolean;
   linkedin_url?: string;
+  status?: string;
 }
 
 export interface Research {

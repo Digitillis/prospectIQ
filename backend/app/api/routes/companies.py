@@ -137,6 +137,37 @@ async def get_contacts(company_id: str):
     return {"data": contacts}
 
 
+@router.post("/{company_id}/contacts")
+async def create_contact(company_id: str, body: dict):
+    """Manually create a new contact for a company."""
+    db = get_db()
+    existing = db.get_company(company_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    contact_data: dict = {
+        "company_id": company_id,
+        "status": "identified",
+        "is_decision_maker": bool(body.get("is_decision_maker", False)),
+    }
+    for field in ("full_name", "first_name", "last_name", "email", "title",
+                  "phone", "linkedin_url", "seniority", "department", "persona_type"):
+        val = body.get(field)
+        if val not in (None, ""):
+            contact_data[field] = val
+
+    # Derive full_name from first/last if not explicitly provided
+    if not contact_data.get("full_name"):
+        first = contact_data.get("first_name", "")
+        last = contact_data.get("last_name", "")
+        combined = f"{first} {last}".strip()
+        if combined:
+            contact_data["full_name"] = combined
+
+    contact = db.insert_contact(contact_data)
+    return {"data": contact}
+
+
 @router.get("/{company_id}/research")
 async def get_research(company_id: str):
     """Get research intelligence for a company."""
