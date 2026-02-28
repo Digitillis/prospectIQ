@@ -78,6 +78,7 @@ async def list_companies(
     status: Optional[str] = None,
     tier: Optional[str] = None,
     min_pqs: Optional[int] = None,
+    search: Optional[str] = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -87,10 +88,11 @@ async def list_companies(
         status=status,
         tier=tier,
         min_pqs=min_pqs,
+        search=search,
         limit=limit,
         offset=offset,
     )
-    total = db.count_companies(status=status, tier=tier, min_pqs=min_pqs)
+    total = db.count_companies(status=status, tier=tier, min_pqs=min_pqs, search=search)
     return {"data": companies, "count": total, "limit": limit, "offset": offset}
 
 

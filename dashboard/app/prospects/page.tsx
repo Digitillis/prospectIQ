@@ -554,15 +554,10 @@ export default function ProspectsPage() {
       if (statusFilter) params.status = statusFilter;
       if (tierFilter) params.tier = tierFilter;
       if (minPqs) params.min_pqs = minPqs;
+      if (search.trim()) params.search = search.trim();
 
       const res = await getCompanies(params);
       let data = res.data ?? [];
-
-      // Client-side search filter
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        data = data.filter((c) => c.name.toLowerCase().includes(q));
-      }
 
       // Client-side sort
       data.sort((a, b) => {
@@ -652,12 +647,9 @@ export default function ProspectsPage() {
       if (statusFilter) params.status = statusFilter;
       if (tierFilter) params.tier = tierFilter;
       if (minPqs) params.min_pqs = minPqs;
+      if (search.trim()) params.search = search.trim();
       const res = await getCompanies(params);
-      let data = res.data ?? [];
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        data = data.filter((c) => c.name.toLowerCase().includes(q));
-      }
+      const data = res.data ?? [];
       const date = new Date().toISOString().slice(0, 10);
       exportToCSV(data, `prospects-${date}.csv`);
     } finally {
@@ -849,12 +841,25 @@ export default function ProspectsPage() {
                   )}
                 >
                   {/* Name */}
-                  <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900">
+                  <td className="px-4 py-3 font-medium text-gray-900">
                     <div className="flex items-center gap-1.5">
                       {c.priority_flag && (
                         <Flag className="h-3.5 w-3.5 fill-orange-400 text-orange-400" />
                       )}
-                      {c.name}
+                      <div>
+                        <div className="whitespace-nowrap">{c.name}</div>
+                        {(c.employee_count != null || c.revenue_range) && (
+                          <div className="mt-0.5 flex items-center gap-2 text-xs font-normal text-gray-400">
+                            {c.employee_count != null && (
+                              <span>{c.employee_count.toLocaleString()} emp</span>
+                            )}
+                            {c.employee_count != null && c.revenue_range && (
+                              <span>&middot;</span>
+                            )}
+                            {c.revenue_range && <span>{c.revenue_range}</span>}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
 
