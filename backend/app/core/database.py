@@ -92,7 +92,11 @@ class Database:
     def update_company(self, company_id: str, data: dict) -> dict:
         """Update a company record."""
         result = (
-            self.client.table("companies").update(data).eq("id", company_id).execute()
+            self.client.table("companies")
+            .update(data)
+            .eq("id", company_id)
+            .select()
+            .execute()
         )
         return result.data[0] if result.data else {}
 
