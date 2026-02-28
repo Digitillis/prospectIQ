@@ -174,9 +174,11 @@ class QualificationAgent(BaseAgent):
             if sig.get("min", 0) <= revenue <= sig.get("max", float("inf")):
                 score += sig["points"]
 
-        # Midwest US
+        # Midwest US — award if state is a known Midwest state OR if state is not stored.
+        # All companies are discovered via a Midwest-filtered Apollo search, so NULL state
+        # still means Midwest; we should not penalise missing Apollo location data.
         state = company.get("state")
-        if state and is_midwest(state):
+        if not state or is_midwest(state):
             score += signals["midwest_us"]["points"]
 
         # Employee count
