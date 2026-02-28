@@ -18,6 +18,61 @@ def get_db() -> Database:
     return Database()
 
 
+@router.post("/")
+async def create_company(body: dict):
+    """Manually create a new company with an optional contact."""
+    if not body.get("name", "").strip():
+        raise HTTPException(status_code=422, detail="Company name is required")
+
+    db = get_db()
+
+    # Deduplicate by domain
+    raw_domain = body.get("domain", "") or ""
+    domain = raw_domain.strip().lower() or None
+    if domain:
+        existing = db.get_company_by_domain(domain)
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A company with domain '{domain}' already exists",
+            )
+
+    company_data: dict = {
+        "name": body["name"].strip(),
+        "status": "discovered",
+        "pqs_total": 0,
+        "pqs_firmographic": 0,
+        "pqs_technographic": 0,
+        "pqs_timing": 0,
+        "pqs_engagement": 0,
+    }
+    for field in ("domain", "website", "industry", "sub_sector", "tier", "state",
+                  "employee_count", "revenue_range", "phone", "linkedin_url"):
+        val = body.get(field)
+        if val not in (None, ""):
+            company_data[field] = val
+    if domain:
+        company_data["domain"] = domain
+
+    company = db.insert_company(company_data)
+
+    contact = None
+    contact_body = body.get("contact") or {}
+    if contact_body.get("full_name") or contact_body.get("email"):
+        contact_row: dict = {
+            "company_id": company["id"],
+            "status": "identified",
+            "is_decision_maker": bool(contact_body.get("is_decision_maker", False)),
+        }
+        for cf in ("full_name", "first_name", "last_name", "email", "title", "phone"):
+            v = contact_body.get(cf)
+            if v not in (None, ""):
+                contact_row[cf] = v
+        contact = db.insert_contact(contact_row)
+
+    return {"data": {**company, "contact": contact}}
+
+
 @router.get("/")
 async def list_companies(
     status: Optional[str] = None,

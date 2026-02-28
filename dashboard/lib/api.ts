@@ -30,6 +30,28 @@ export const updateCompany = (id: string, data: Record<string, unknown>) =>
     body: JSON.stringify(data),
   });
 
+export const createCompany = (data: {
+  name: string;
+  domain?: string;
+  website?: string;
+  industry?: string;
+  sub_sector?: string;
+  tier?: string;
+  state?: string;
+  employee_count?: number;
+  revenue_range?: string;
+  contact?: {
+    full_name?: string;
+    email?: string;
+    title?: string;
+    is_decision_maker?: boolean;
+  };
+}) =>
+  fetchAPI<{ data: Company & { contact: Contact | null } }>("/api/companies", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
 // Interactions
 export const addNote = (companyId: string, body: string, subject?: string) =>
   fetchAPI(`/api/companies/${companyId}/interactions`, {
@@ -161,6 +183,21 @@ export interface StatusCount {
   count: number;
 }
 
+export interface SequenceStep {
+  step: number;
+  channel: string;
+  delay_days: number;
+  template: string;
+  instructions?: Record<string, unknown>;
+}
+
+export interface Sequence {
+  name: string;
+  description: string;
+  total_steps: number;
+  steps: SequenceStep[];
+}
+
 export interface AppSettings {
   icp: {
     target_market: { name: string; description: string };
@@ -180,4 +217,5 @@ export interface AppSettings {
     thresholds: Record<string, { max_score?: number; action: string; new_status: string | null }>;
     min_firmographic_for_research: number;
   };
+  sequences: Record<string, Sequence>;
 }

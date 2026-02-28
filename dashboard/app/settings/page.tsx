@@ -13,11 +13,15 @@ import {
   AlertCircle,
   CheckCircle2,
   Info,
+  Mail,
+  Linkedin,
+  Phone,
+  MessageSquare,
 } from "lucide-react";
-import { getAppSettings, AppSettings } from "@/lib/api";
+import { getAppSettings, AppSettings, Sequence } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Tab = "icp" | "scoring";
+type Tab = "icp" | "scoring" | "sequences";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -45,6 +49,7 @@ export default function SettingsPage() {
   const tabs: { id: Tab; label: string; icon: typeof Target }[] = [
     { id: "icp", label: "Ideal Customer Profile", icon: Target },
     { id: "scoring", label: "PQS Scoring", icon: BarChart3 },
+    { id: "sequences", label: "Sequences", icon: Mail },
   ];
 
   return (
@@ -108,6 +113,9 @@ export default function SettingsPage() {
         <>
           {activeTab === "icp" && <ICPTab icp={settings.icp} />}
           {activeTab === "scoring" && <ScoringTab scoring={settings.scoring} />}
+          {activeTab === "sequences" && (
+            <SequencesTab sequences={settings.sequences ?? {}} />
+          )}
         </>
       ) : null}
     </div>
@@ -335,6 +343,126 @@ function ScoringTab({ scoring }: { scoring: AppSettings["scoring"] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Sequences Tab
+// ---------------------------------------------------------------------------
+
+const CHANNEL_ICON: Record<string, typeof Mail> = {
+  email: Mail,
+  linkedin: Linkedin,
+  phone: Phone,
+};
+
+const CHANNEL_COLOR: Record<string, string> = {
+  email: "bg-blue-100 text-digitillis-accent",
+  linkedin: "bg-sky-100 text-sky-700",
+  phone: "bg-green-100 text-digitillis-success",
+};
+
+function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
+  const entries = Object.entries(sequences);
+
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+        No sequences configured. Add sequences to{" "}
+        <code className="font-mono text-xs">config/sequences.yaml</code>.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {entries.map(([key, seq]) => (
+        <div key={key} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          {/* Sequence header */}
+          <div className="mb-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">{seq.name}</h3>
+                <p className="mt-0.5 text-sm text-gray-500">{seq.description}</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+                {seq.total_steps} step{seq.total_steps !== 1 ? "s" : ""}
+              </span>
+            </div>
+          </div>
+
+          {/* Steps timeline */}
+          <div className="relative space-y-0">
+            {(seq.steps ?? []).map((step, idx) => {
+              const Icon = CHANNEL_ICON[step.channel] ?? MessageSquare;
+              const isLast = idx === (seq.steps ?? []).length - 1;
+              return (
+                <div key={step.step} className="flex gap-4">
+                  {/* Timeline spine */}
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={cn(
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                        CHANNEL_COLOR[step.channel] ?? "bg-gray-100 text-gray-600"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    {!isLast && (
+                      <div className="mt-1 w-px flex-1 bg-gray-200" style={{ minHeight: "1.5rem" }} />
+                    )}
+                  </div>
+
+                  {/* Step content */}
+                  <div className={cn("pb-5 min-w-0 flex-1", isLast && "pb-0")}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-gray-900 capitalize">
+                        Step {step.step} — {step.channel}
+                      </span>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                        Day {step.delay_days}
+                      </span>
+                      <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-mono text-gray-500">
+                        {step.template}
+                      </code>
+                    </div>
+                    {step.instructions && (
+                      <div className="mt-2 space-y-1">
+                        {(step.instructions.body_approach as string | undefined) && (
+                          <p className="text-xs text-gray-500 leading-relaxed">
+                            {step.instructions.body_approach as string}
+                          </p>
+                        )}
+                        {(step.instructions.approach as string | undefined) && (
+                          <p className="text-xs text-gray-500 leading-relaxed">
+                            {step.instructions.approach as string}
+                          </p>
+                        )}
+                        {(step.instructions.tone as string | undefined) && (
+                          <p className="mt-1 text-xs font-medium text-gray-400">
+                            Tone: {step.instructions.tone as string}
+                          </p>
+                        )}
+                        {(step.instructions.max_words as number | undefined) && (
+                          <p className="text-xs text-gray-400">
+                            Max {step.instructions.max_words as number} words
+                          </p>
+                        )}
+                        {(step.instructions.note as string | undefined) && (
+                          <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                            {step.instructions.note as string}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Shared primitives
 // ---------------------------------------------------------------------------
 
@@ -357,11 +485,6 @@ function Section({
             "h-5 w-5",
             accent ? "text-white" : "text-digitillis-accent"
           )}
-          style={
-            accent
-              ? { background: "none" }
-              : undefined
-          }
         />
         <h3 className="text-base font-semibold text-gray-900">{title}</h3>
         {accent && (
