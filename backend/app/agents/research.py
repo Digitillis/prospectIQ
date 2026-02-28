@@ -105,7 +105,7 @@ class ResearchAgent(BaseAgent):
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         elif batch_id:
-            companies = self.db.get_companies(batch_id=batch_id, limit=batch_limit)
+            companies = self.db.get_companies(batch_id=batch_id, status="discovered", limit=batch_limit)
         else:
             companies = self.db.get_companies(status="discovered", min_pqs=min_score, limit=batch_limit)
 
