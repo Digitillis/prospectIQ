@@ -18,7 +18,7 @@ app = FastAPI(
 # CORS — allow Next.js dev server, Vercel, and Netlify domains
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://localhost:3000$|^https://.*\.vercel\.app$|^https://.*\.netlify\.app$",
+    allow_origin_regex=r"^https?://localhost(:\d+)?$|^https://.*\.vercel\.app$|^https://.*\.netlify\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
