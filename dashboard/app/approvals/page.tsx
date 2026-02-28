@@ -102,7 +102,7 @@ export default function ApprovalsPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-digitillis-accent" />
       </div>
     );
   }
@@ -113,14 +113,14 @@ export default function ApprovalsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-gray-900">Approval Queue</h2>
-          <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700">
+          <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-digitillis-accent">
             {drafts.length} pending
           </span>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-digitillis-danger">
           {error}
         </div>
       )}
@@ -205,7 +205,7 @@ export default function ApprovalsPage() {
                     value={editBody}
                     onChange={(e) => setEditBody(e.target.value)}
                     rows={6}
-                    className="mt-2 w-full rounded-md border border-gray-300 p-3 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="mt-2 w-full rounded-md border border-gray-300 p-3 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
                   />
                 ) : (
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
@@ -229,7 +229,7 @@ export default function ApprovalsPage() {
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                     placeholder="Rejection reason..."
-                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-digitillis-danger focus:outline-none focus:ring-1 focus:ring-digitillis-danger"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleReject(draft.id);
                     }}
@@ -239,7 +239,7 @@ export default function ApprovalsPage() {
                     disabled={
                       !rejectReason.trim() || actionLoading === draft.id
                     }
-                    className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    className="rounded-md bg-digitillis-danger px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
                   >
                     {actionLoading === draft.id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -263,7 +263,7 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => handleEditApprove(draft.id)}
                       disabled={actionLoading === draft.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
                     >
                       {actionLoading === draft.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -287,7 +287,7 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => handleApprove(draft.id)}
                       disabled={actionLoading === draft.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-success px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
                     >
                       {actionLoading === draft.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -298,14 +298,14 @@ export default function ApprovalsPage() {
                     </button>
                     <button
                       onClick={() => startEditing(draft)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
                     >
                       <Pencil className="h-4 w-4" />
                       Edit & Approve
                     </button>
                     <button
                       onClick={() => startRejecting(draft.id)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-danger px-4 py-2 text-sm font-medium text-white hover:opacity-90"
                     >
                       <XCircle className="h-4 w-4" />
                       Reject

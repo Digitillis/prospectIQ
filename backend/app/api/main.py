@@ -7,7 +7,7 @@ companies, approvals, pipeline agents, analytics, and webhooks.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings
 
 app = FastAPI(
     title="ProspectIQ API",
@@ -30,6 +30,7 @@ app.include_router(approvals.router)
 app.include_router(pipeline.router)
 app.include_router(analytics.router)
 app.include_router(webhooks.router)
+app.include_router(settings.router)
 
 
 @app.get("/health")

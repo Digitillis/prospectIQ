@@ -35,13 +35,13 @@ interface CostData {
 }
 
 const FUNNEL_STAGES = [
-  { key: "discovered", label: "Discovered", color: "bg-gray-400" },
-  { key: "researched", label: "Researched", color: "bg-blue-500" },
-  { key: "qualified", label: "Qualified", color: "bg-green-500" },
-  { key: "contacted", label: "Contacted", color: "bg-indigo-500" },
+  { key: "discovered", label: "Discovered", color: "bg-slate-400" },
+  { key: "researched", label: "Researched", color: "bg-digitillis-accent" },
+  { key: "qualified", label: "Qualified", color: "bg-digitillis-success" },
+  { key: "contacted", label: "Contacted", color: "bg-blue-600" },
   { key: "engaged", label: "Engaged", color: "bg-purple-500" },
   { key: "meeting_scheduled", label: "Meeting", color: "bg-pink-500" },
-  { key: "pilot_discussion", label: "Pilot", color: "bg-orange-500" },
+  { key: "pilot_discussion", label: "Pilot", color: "bg-digitillis-warning" },
 ];
 
 export default function AnalyticsPage() {
@@ -99,7 +99,7 @@ export default function AnalyticsPage() {
       {/* Section 1: Pipeline Funnel */}
       <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-6">
-          <TrendingUp className="h-5 w-5 text-indigo-600" />
+          <TrendingUp className="h-5 w-5 text-digitillis-accent" />
           <h3 className="text-lg font-semibold text-gray-900">
             Pipeline Funnel
           </h3>
@@ -170,7 +170,7 @@ export default function AnalyticsPage() {
       {/* Section 2: API Costs */}
       <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-6">
-          <DollarSign className="h-5 w-5 text-green-600" />
+          <DollarSign className="h-5 w-5 text-digitillis-success" />
           <h3 className="text-lg font-semibold text-gray-900">API Costs</h3>
         </div>
 
@@ -291,14 +291,14 @@ export default function AnalyticsPage() {
               label: "Open Rate",
               value: "--",
               icon: MailOpen,
-              color: "text-blue-600",
+              color: "text-digitillis-accent",
               bg: "bg-blue-50",
             },
             {
               label: "Reply Rate",
               value: "--",
               icon: MessageSquareReply,
-              color: "text-green-600",
+              color: "text-digitillis-success",
               bg: "bg-green-50",
             },
             {
@@ -312,8 +312,8 @@ export default function AnalyticsPage() {
               label: "Meetings Booked",
               value: "--",
               icon: CalendarCheck,
-              color: "text-orange-600",
-              bg: "bg-orange-50",
+              color: "text-digitillis-warning",
+              bg: "bg-amber-50",
             },
           ].map((metric) => {
             const Icon = metric.icon;

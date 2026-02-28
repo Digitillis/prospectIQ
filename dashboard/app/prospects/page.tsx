@@ -139,7 +139,7 @@ function RowActions({
                 <div className="flex gap-2">
                   <button
                     onClick={() => { onDisqualify(company); setOpen(false); setConfirmDisqualify(false); }}
-                    className="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+                    className="flex-1 rounded-md bg-digitillis-danger px-2 py-1 text-xs font-medium text-white hover:opacity-90"
                   >
                     Confirm
                   </button>
@@ -154,7 +154,7 @@ function RowActions({
             ) : (
               <button
                 onClick={() => setConfirmDisqualify(true)}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-digitillis-danger hover:bg-red-50"
               >
                 <Ban className="h-4 w-4" />
                 Disqualify
@@ -368,7 +368,7 @@ export default function ProspectsPage() {
             placeholder="Search by company name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-sm focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
           />
         </div>
 
@@ -376,7 +376,7 @@ export default function ProspectsPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
         >
           <option value="">All Statuses</option>
           {STATUS_OPTIONS.map((s) => (
@@ -390,7 +390,7 @@ export default function ProspectsPage() {
         <select
           value={tierFilter}
           onChange={(e) => setTierFilter(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
         >
           <option value="">All Tiers</option>
           {TIER_OPTIONS.map((t) => (
@@ -413,7 +413,7 @@ export default function ProspectsPage() {
             value={minPqs}
             onChange={(e) => setMinPqs(e.target.value)}
             placeholder="0"
-            className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
           />
         </div>
       </div>
@@ -422,11 +422,11 @@ export default function ProspectsPage() {
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+            <Loader2 className="h-6 w-6 animate-spin text-digitillis-accent" />
             <span className="ml-2 text-sm text-gray-500">Loading prospects...</span>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center gap-2 py-20 text-red-600">
+          <div className="flex items-center justify-center gap-2 py-20 text-digitillis-danger">
             <AlertCircle className="h-5 w-5" />
             <span className="text-sm">{error}</span>
           </div>

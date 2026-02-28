@@ -139,19 +139,19 @@ export default function PipelinePage() {
           label="Total Prospects"
           value={totalProspects}
           icon={Users}
-          color="bg-blue-50 text-blue-600"
+          color="bg-blue-50 text-digitillis-accent"
         />
         <MetricCard
           label="Qualified"
           value={qualifiedCount}
           icon={Target}
-          color="bg-green-50 text-green-600"
+          color="bg-green-50 text-digitillis-success"
         />
         <MetricCard
           label="Contacted"
           value={contactedCount}
           icon={Send}
-          color="bg-indigo-50 text-indigo-600"
+          color="bg-blue-50 text-digitillis-accent"
         />
         <MetricCard
           label="Response Rate"
@@ -163,7 +163,7 @@ export default function PipelinePage() {
 
       {/* Error state */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-digitillis-danger">
           {error}
         </div>
       )}
@@ -260,7 +260,7 @@ function PipelineColumn({
         {count > 5 && (
           <Link
             href={`/prospects?status=${status}`}
-            className="mt-1 text-center text-xs font-medium text-blue-600 hover:text-blue-800"
+            className="mt-1 text-center text-xs font-medium text-digitillis-accent hover:opacity-80"
           >
             View all {count} &rarr;
           </Link>

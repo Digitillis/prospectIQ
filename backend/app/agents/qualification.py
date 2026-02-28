@@ -65,6 +65,7 @@ class QualificationAgent(BaseAgent):
         for company in companies:
             company_name = company["name"]
             company_id = company["id"]
+            is_discovered = company.get("status") == "discovered"
 
             try:
                 # Get research intelligence
@@ -78,9 +79,32 @@ class QualificationAgent(BaseAgent):
                 pqs.engagement = company.get("pqs_engagement", 0)
                 pqs.total = pqs.firmographic + pqs.technographic + pqs.timing + pqs.engagement
 
-                # Classify
-                pqs.classification, new_status, priority = self._classify(pqs.total, config)
-                pqs.notes = self._generate_notes(pqs, company, research)
+                # For discovered companies (no research yet) only apply the
+                # firmographic pre-filter: disqualify obvious non-fits, leave
+                # good fits in `discovered` state so research can run on them.
+                # Full PQS classification is deferred until after research.
+                if is_discovered:
+                    min_firmographic = config.get("min_firmographic_for_research", 10)
+                    if pqs.firmographic < min_firmographic:
+                        pqs.classification = "unqualified"
+                        new_status = "disqualified"
+                        priority = False
+                        pqs.notes = (
+                            f"Failed firmographic pre-filter (score {pqs.firmographic} "
+                            f"< {min_firmographic}). Total PQS: {pqs.total}/100."
+                        )
+                    else:
+                        pqs.classification = "research_needed"
+                        new_status = None  # keep as discovered, needs research
+                        priority = False
+                        pqs.notes = (
+                            f"Firmographic pre-filter passed (score {pqs.firmographic}). "
+                            f"Pending full scoring after research. Total PQS: {pqs.total}/100."
+                        )
+                else:
+                    # Full classification for researched companies
+                    pqs.classification, new_status, priority = self._classify(pqs.total, config)
+                    pqs.notes = self._generate_notes(pqs, company, research)
 
                 # Update database
                 update_data = {
@@ -104,7 +128,7 @@ class QualificationAgent(BaseAgent):
                     "qualified": "[green]QUALIFIED[/green]",
                     "high_priority": "[bold green]HIGH PRIORITY[/bold green]",
                     "hot_prospect": "[bold magenta]HOT PROSPECT[/bold magenta]",
-                    "research_needed": "[yellow]NEEDS REVIEW[/yellow]",
+                    "research_needed": "[yellow]NEEDS RESEARCH[/yellow]",
                     "unqualified": "[dim]Disqualified[/dim]",
                 }.get(pqs.classification, pqs.classification)
 

@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ListTodo,
   BarChart3,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,13 +18,14 @@ const NAV_ITEMS = [
   { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
   { label: "Actions", href: "/actions", icon: ListTodo },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <nav className="group flex h-full w-16 flex-col bg-[#1a1a2e] transition-all duration-200 hover:w-60">
+    <nav className="group flex h-full w-16 flex-col bg-digitillis-darker transition-all duration-200 hover:w-60">
       {/* Logo area */}
       <div className="flex h-14 items-center justify-center border-b border-white/10 px-4">
         <span className="text-xl font-bold text-white">P</span>
@@ -48,11 +50,11 @@ export function Sidebar() {
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-white/15 text-white"
-                    : "text-gray-400 hover:bg-white/10 hover:text-white"
+                    ? "bg-digitillis-accent/20 text-white"
+                    : "text-slate-400 hover:bg-white/10 hover:text-white"
                 )}
               >
-                <Icon className="h-5 w-5 shrink-0" />
+                <Icon className={cn("h-5 w-5 shrink-0", isActive && "text-digitillis-accent")} />
                 <span className="hidden truncate group-hover:inline">
                   {item.label}
                 </span>
