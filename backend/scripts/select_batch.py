@@ -148,10 +148,21 @@ def _select_group(
     selected: list[tuple[dict, int, bool]] = []
     seen: set[str] = set()
 
-    def _fill(states: set[str], is_primary: bool) -> None:
+    def _fill(states: set[str], is_primary: bool, include_unknown: bool = False) -> None:
+        """Fill from a given state set.
+
+        include_unknown=True also pulls companies with no state stored.
+        This handles the case where Apollo did not return location data —
+        companies discovered via Midwest-filtered searches are still Midwest
+        even if state=NULL in the database.
+        """
         candidates = [
             c for c in pool
-            if (c.get("state") or "").upper() in states and c["id"] not in seen
+            if (
+                (c.get("state") or "").upper() in states
+                or (include_unknown and not c.get("state"))
+            )
+            and c["id"] not in seen
         ]
         scored = [(c, _best_contact_score(contacts_map.get(c["id"], []))) for c in candidates]
         scored.sort(key=lambda x: _sort_key(x[0], x[1]))
@@ -161,9 +172,13 @@ def _select_group(
             selected.append((company, cq, is_primary))
             seen.add(company["id"])
 
-    _fill(primary_states, is_primary=True)
+    all_states_null = all(not c.get("state") for c in pool)
+
+    # Primary pass: known primary-state companies, plus NULL-state if no state data available
+    _fill(primary_states, is_primary=True, include_unknown=all_states_null)
     if len(selected) < target_min:
-        _fill(secondary_states, is_primary=False)
+        # Secondary pass: known secondary-state companies only (NULLs already consumed above)
+        _fill(secondary_states, is_primary=False, include_unknown=False)
 
     return selected[:target_max]
 

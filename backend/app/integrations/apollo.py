@@ -239,6 +239,47 @@ class ApolloClient:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _parse_state_from_raw_address(raw_address: str | None) -> str | None:
+        """Extract a 2-letter US state code from Apollo's raw_address string.
+
+        Apollo raw_address examples:
+          "Cleveland, OH, United States"
+          "Detroit, Michigan, United States"
+          "Rolling Meadows, IL 60008, United States"
+        """
+        if not raw_address:
+            return None
+
+        _STATE_ABBREVS = {
+            "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+            "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+            "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+            "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+            "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+            "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+            "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+            "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+            "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+            "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+            "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+            "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
+            "wisconsin": "WI", "wyoming": "WY",
+        }
+        _VALID_ABBREVS = set(_STATE_ABBREVS.values())
+
+        parts = [p.strip() for p in raw_address.split(",")]
+        for part in parts:
+            # Strip zip codes: "IL 60008" → "IL"
+            token = part.split()[0].upper() if part.split() else ""
+            if token in _VALID_ABBREVS:
+                return token
+            # Full state name match
+            part_lower = part.strip().lower()
+            if part_lower in _STATE_ABBREVS:
+                return _STATE_ABBREVS[part_lower]
+        return None
+
+    @staticmethod
     def extract_company_data(person: dict) -> dict:
         """Extract company-level data from an Apollo person record.
 
@@ -246,6 +287,14 @@ class ApolloClient:
         This extracts and normalizes it.
         """
         org = person.get("organization", {}) or {}
+
+        # Apollo often omits city/state as separate fields; fall back to raw_address
+        city = org.get("city") or org.get("headquarters_city")
+        state = org.get("state") or org.get("headquarters_state")
+        if not state:
+            raw = org.get("raw_address") or org.get("headquarters_address")
+            state = ApolloClient._parse_state_from_raw_address(raw)
+
         return {
             "apollo_id": org.get("id"),
             "name": org.get("name", ""),
@@ -257,8 +306,8 @@ class ApolloClient:
             "revenue_range": org.get("revenue_range"),
             "estimated_revenue": org.get("annual_revenue"),
             "founded_year": org.get("founded_year"),
-            "city": org.get("city"),
-            "state": org.get("state"),
+            "city": city,
+            "state": state,
             "country": org.get("country"),
             "linkedin_url": org.get("linkedin_url"),
             "twitter_url": org.get("twitter_url"),
