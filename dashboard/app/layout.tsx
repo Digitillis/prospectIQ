@@ -22,8 +22,8 @@ export default function RootLayout({
           <Sidebar />
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* Top bar */}
-            <header className="flex h-14 items-center border-b border-gray-200 bg-white px-6">
-              <h1 className="text-lg font-semibold text-gray-900">
+            <header className="flex h-14 items-center border-b border-white/10 bg-digitillis-dark px-6">
+              <h1 className="text-lg font-semibold text-white">
                 ProspectIQ
               </h1>
             </header>

@@ -60,6 +60,10 @@ export const runAgent = (agent: string, body: Record<string, unknown> = {}) =>
     body: JSON.stringify(body),
   });
 
+// Settings
+export const getAppSettings = () =>
+  fetchAPI<{ data: AppSettings }>("/api/settings");
+
 // Analytics
 export const getPipelineOverview = () =>
   fetchAPI<{ data: StatusCount[] }>("/api/analytics/pipeline");
@@ -155,4 +159,25 @@ export interface Interaction {
 export interface StatusCount {
   status: string;
   count: number;
+}
+
+export interface AppSettings {
+  icp: {
+    target_market: { name: string; description: string };
+    revenue: { min: number; max: number };
+    employee_count: { min: number; max: number };
+    geography: { primary_states: string[]; countries: string[] };
+    industries: { tier: string; label: string; apollo_industry: string }[];
+    contact_titles_include: string[];
+    seniority: string[];
+    discovery: { max_results_per_run: number; pages_per_tier: number };
+  };
+  scoring: {
+    dimensions: Record<string, {
+      max_points: number;
+      signals: Record<string, { points: number; description: string; evaluation: string }>;
+    }>;
+    thresholds: Record<string, { max_score?: number; action: string; new_status: string | null }>;
+    min_firmographic_for_research: number;
+  };
 }

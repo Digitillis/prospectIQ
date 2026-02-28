@@ -132,18 +132,18 @@ export default function ActionsPage() {
       {/* Section 1: Follow-ups Due */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <Send className="h-5 w-5 text-indigo-600" />
+          <Send className="h-5 w-5 text-digitillis-accent" />
           <h3 className="text-lg font-semibold text-gray-900">
             Follow-ups Due
           </h3>
-          <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+          <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-accent">
             {loading ? "..." : followUps.length}
           </span>
         </div>
 
         {loading ? (
           <div className="flex h-24 items-center justify-center rounded-xl border border-gray-200 bg-white">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-digitillis-accent" />
           </div>
         ) : followUps.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
@@ -187,11 +187,11 @@ export default function ActionsPage() {
       {/* Section 2: LinkedIn Touches */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <Linkedin className="h-5 w-5 text-blue-600" />
+          <Linkedin className="h-5 w-5 text-digitillis-accent" />
           <h3 className="text-lg font-semibold text-gray-900">
             LinkedIn Touches
           </h3>
-          <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+          <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-accent">
             0
           </span>
         </div>
@@ -210,9 +210,9 @@ export default function ActionsPage() {
       {/* Section 3: Hot Replies */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <MessageSquare className="h-5 w-5 text-orange-600" />
+          <MessageSquare className="h-5 w-5 text-digitillis-warning" />
           <h3 className="text-lg font-semibold text-gray-900">Hot Replies</h3>
-          <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-warning">
             0
           </span>
         </div>
@@ -231,18 +231,18 @@ export default function ActionsPage() {
       {/* Section 4: Pipeline Actions */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <Zap className="h-5 w-5 text-purple-600" />
+          <Zap className="h-5 w-5 text-digitillis-accent" />
           <h3 className="text-lg font-semibold text-gray-900">
             Pipeline Actions
           </h3>
         </div>
 
         {/* Run Full Pipeline */}
-        <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-5 shadow-sm">
+        <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-slate-50 p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-purple-600" />
+                <Zap className="h-5 w-5 text-digitillis-accent" />
                 <h4 className="font-semibold text-gray-900">Run Full Pipeline</h4>
               </div>
               <p className="mt-1 text-sm text-gray-500">
@@ -253,8 +253,8 @@ export default function ActionsPage() {
                   className={cn(
                     "mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
                     agentStatus.full.result === "success"
-                      ? "bg-green-50 text-green-700"
-                      : "bg-red-50 text-red-700"
+                      ? "bg-green-50 text-digitillis-success"
+                      : "bg-red-50 text-digitillis-danger"
                   )}
                 >
                   {agentStatus.full.result === "success" ? (
@@ -273,7 +273,7 @@ export default function ActionsPage() {
                 "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold transition-colors",
                 agentStatus.full.loading
                   ? "cursor-not-allowed bg-gray-100 text-gray-400"
-                  : "bg-purple-600 text-white hover:bg-purple-700"
+                  : "bg-digitillis-accent text-white hover:opacity-90"
               )}
             >
               {agentStatus.full.loading ? (
@@ -302,7 +302,7 @@ export default function ActionsPage() {
                 className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
               >
                 <div className="flex items-center gap-2">
-                  <Icon className="h-5 w-5 text-gray-600" />
+                  <Icon className="h-5 w-5 text-digitillis-accent" />
                   <h4 className="font-medium text-gray-900">{agent.label}</h4>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
@@ -315,7 +315,7 @@ export default function ActionsPage() {
                     "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
                     status.loading
                       ? "cursor-not-allowed bg-gray-100 text-gray-400"
-                      : "bg-purple-600 text-white hover:bg-purple-700"
+                      : "bg-digitillis-accent text-white hover:opacity-90"
                   )}
                 >
                   {status.loading ? (
@@ -337,8 +337,8 @@ export default function ActionsPage() {
                     className={cn(
                       "mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
                       status.result === "success"
-                        ? "bg-green-50 text-green-700"
-                        : "bg-red-50 text-red-700"
+                        ? "bg-green-50 text-digitillis-success"
+                        : "bg-red-50 text-digitillis-danger"
                     )}
                   >
                     {status.result === "success" ? (
