@@ -95,7 +95,6 @@ class Database:
             self.client.table("companies")
             .update(data)
             .eq("id", company_id)
-            .select()
             .execute()
         )
         return result.data[0] if result.data else {}
