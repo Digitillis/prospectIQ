@@ -78,13 +78,15 @@ class ResearchAgent(BaseAgent):
     def run(
         self,
         company_ids: list[str] | None = None,
+        batch_id: str | None = None,
         min_firmographic_score: int | None = None,
         limit: int | None = None,
     ) -> AgentResult:
         """Run research on discovered companies.
 
         Args:
-            company_ids: Specific company IDs to research (overrides query).
+            company_ids: Specific company IDs to research (highest priority).
+            batch_id: Research all companies tagged with this batch ID (from select_batch).
             min_firmographic_score: Minimum firmographic PQS to research (default from config).
             limit: Max companies to research in this batch.
 
@@ -98,10 +100,12 @@ class ResearchAgent(BaseAgent):
         min_score = min_firmographic_score or scoring_config.get("min_firmographic_for_research", 10)
         batch_limit = limit or settings.batch_size
 
-        # Get companies to research
+        # Get companies to research — explicit IDs > batch_id > default query
         if company_ids:
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
+        elif batch_id:
+            companies = self.db.get_companies(batch_id=batch_id, limit=batch_limit)
         else:
             companies = self.db.get_companies(status="discovered", min_pqs=min_score, limit=batch_limit)
 
