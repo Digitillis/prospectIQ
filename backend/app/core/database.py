@@ -269,6 +269,23 @@ class Database:
     # Analytics helpers
     # ------------------------------------------------------------------
 
+    def count_companies(
+        self,
+        status: str | None = None,
+        tier: str | None = None,
+        min_pqs: int | None = None,
+    ) -> int:
+        """Return total count of companies matching the given filters."""
+        query = self.client.table("companies").select("id", count="exact")
+        if status:
+            query = query.eq("status", status)
+        if tier:
+            query = query.eq("tier", tier)
+        if min_pqs is not None:
+            query = query.gte("pqs_total", min_pqs)
+        result = query.execute()
+        return result.count or 0
+
     def count_companies_by_status(self) -> list[dict]:
         """Get company counts grouped by status."""
         result = (
