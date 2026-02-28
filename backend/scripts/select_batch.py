@@ -232,6 +232,20 @@ def main(
         raise typer.Exit(code=1)
 
     # ------------------------------------------------------------------
+    # 1b. Diagnostics — show what tier and state values actually exist
+    # ------------------------------------------------------------------
+    from collections import Counter
+    tier_counts = Counter((c.get("tier") or "NULL") for c in eligible)
+    state_counts = Counter((c.get("state") or "NULL") for c in eligible)
+    console.print("[dim]Tier distribution in eligible companies:[/dim]")
+    for t, n in sorted(tier_counts.items()):
+        console.print(f"  tier=[bold]{t}[/bold] : {n}")
+    console.print("[dim]Top states:[/dim]")
+    for s, n in state_counts.most_common(10):
+        console.print(f"  state=[bold]{s}[/bold] : {n}")
+    console.print()
+
+    # ------------------------------------------------------------------
     # 2. Pre-load contacts for all eligible companies
     # ------------------------------------------------------------------
     console.print("[cyan]Step 2 — Loading contacts...[/cyan]")
