@@ -40,6 +40,7 @@ class Database:
         status: str | None = None,
         tier: str | None = None,
         min_pqs: int | None = None,
+        batch_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -51,6 +52,8 @@ class Database:
             query = query.eq("tier", tier)
         if min_pqs is not None:
             query = query.gte("pqs_total", min_pqs)
+        if batch_id:
+            query = query.eq("batch_id", batch_id)
         query = query.order("pqs_total", desc=True).range(offset, offset + limit - 1)
         return query.execute().data
 
@@ -274,6 +277,7 @@ class Database:
         status: str | None = None,
         tier: str | None = None,
         min_pqs: int | None = None,
+        batch_id: str | None = None,
     ) -> int:
         """Return total count of companies matching the given filters."""
         query = self.client.table("companies").select("id", count="exact")
@@ -283,6 +287,8 @@ class Database:
             query = query.eq("tier", tier)
         if min_pqs is not None:
             query = query.gte("pqs_total", min_pqs)
+        if batch_id:
+            query = query.eq("batch_id", batch_id)
         result = query.execute()
         return result.count or 0
 
