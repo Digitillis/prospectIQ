@@ -66,24 +66,16 @@ TARGET_DISTRIBUTION = [
         "tier": "1a",
         "primary_states": {"OH", "MI"},
         "secondary_states": {"IL"},
-        "target_min": 5,
-        "target_max": 6,
-    },
-    {
-        "label": "Tier 5 — Aerospace",
-        "tier": "5",
-        "primary_states": {"OH", "IL"},
-        "secondary_states": {"IN", "MI"},
-        "target_min": 2,
-        "target_max": 2,
+        "target_min": 6,
+        "target_max": 7,
     },
     {
         "label": "Tier 2 — Metal Fabrication",
         "tier": "2",
         "primary_states": {"IN", "MI"},
         "secondary_states": {"OH", "IL"},
-        "target_min": 3,
-        "target_max": 4,
+        "target_min": 4,
+        "target_max": 5,
     },
 ]
 
