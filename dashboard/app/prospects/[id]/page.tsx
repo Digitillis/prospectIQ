@@ -44,6 +44,8 @@ import {
   updateCompany,
   addNote,
   createContact,
+  enrichCompany,
+  recordOutcome,
   type CompanyDetail,
   type Contact,
   type Research,
@@ -179,6 +181,9 @@ export default function ProspectDetailPage() {
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [outcomeLoading, setOutcomeLoading] = useState<string | null>(null);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<string | null>(null);
 
   // --- Fetch company ---
   const fetchCompany = useCallback(async () => {
@@ -239,6 +244,42 @@ export default function ProspectDetailPage() {
       // silent for now
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOutcome = async (outcome: "won" | "lost" | "no_response") => {
+    if (!company) return;
+    setOutcomeLoading(outcome);
+    try {
+      const res = await recordOutcome(id, outcome);
+      setCompany((prev) =>
+        prev ? { ...prev, status: res.data.new_status } : prev
+      );
+    } catch {
+      // silent
+    } finally {
+      setOutcomeLoading(null);
+    }
+  };
+
+  const handleEnrich = async () => {
+    setEnrichLoading(true);
+    setEnrichResult(null);
+    try {
+      const res = await enrichCompany(id);
+      const { contacts_enriched, errors } = res.data;
+      if (contacts_enriched > 0) {
+        setEnrichResult(`${contacts_enriched} contact email(s) found.`);
+        await fetchCompany();
+      } else if (errors > 0) {
+        setEnrichResult("Apollo enrichment failed. Check API key.");
+      } else {
+        setEnrichResult("No new emails found (contacts may already be enriched or have no Apollo profile).");
+      }
+    } catch {
+      setEnrichResult("Enrichment failed. Check Apollo API key.");
+    } finally {
+      setEnrichLoading(false);
     }
   };
 
@@ -399,6 +440,71 @@ export default function ProspectDetailPage() {
             <StickyNote className="h-4 w-4 text-gray-400" />
             Add Note
           </button>
+
+          {/* Enrich Contacts */}
+          <button
+            onClick={handleEnrich}
+            disabled={enrichLoading}
+            className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            title="Find emails for contacts via Apollo.io (consumes credits)"
+          >
+            {enrichLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Users className="h-4 w-4" />
+            )}
+            Enrich Contacts
+          </button>
+          {enrichResult && (
+            <p className="text-xs text-gray-500">{enrichResult}</p>
+          )}
+
+          {/* Outcome buttons — show when company has been contacted */}
+          {["contacted", "engaged", "meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot"].includes(
+            company.status
+          ) && (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-xs font-medium text-gray-500">Record Outcome</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleOutcome("won")}
+                  disabled={outcomeLoading !== null}
+                  className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  {outcomeLoading === "won" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  Won
+                </button>
+                <button
+                  onClick={() => handleOutcome("lost")}
+                  disabled={outcomeLoading !== null}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {outcomeLoading === "lost" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <XCircle className="h-3.5 w-3.5" />
+                  )}
+                  Lost
+                </button>
+                <button
+                  onClick={() => handleOutcome("no_response")}
+                  disabled={outcomeLoading !== null}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  {outcomeLoading === "no_response" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Clock className="h-3.5 w-3.5" />
+                  )}
+                  No Response
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
