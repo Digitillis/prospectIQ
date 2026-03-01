@@ -127,6 +127,18 @@ async def run_outreach(body: OutreachRequest):
         sequence_step=body.step,
         limit=body.limit,
     )
+
+    if result.processed > 0:
+        try:
+            from backend.app.utils.notifications import notify_slack
+            notify_slack(
+                f"*{result.processed} new outreach draft(s) ready for approval.* "
+                f"Open the ProspectIQ Approvals page to review and send.",
+                emoji=":pencil:",
+            )
+        except Exception:
+            pass
+
     return {"data": _serialize_result(result)}
 
 

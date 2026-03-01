@@ -5,11 +5,15 @@ CRUD operations for companies, contacts, research, and interactions.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from backend.app.core.database import Database
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -209,3 +213,137 @@ async def create_interaction(company_id: str, body: dict):
     }
     result = db.insert_interaction(data)
     return {"data": result}
+
+
+@router.post("/{company_id}/enrich")
+async def enrich_company(company_id: str):
+    """Enrich contact emails via Apollo.io (consumes credits — use selectively).
+
+    Iterates contacts that have no email but have an apollo_id or linkedin_url,
+    calls Apollo People enrichment, and persists any discovered email addresses.
+    """
+    from backend.app.integrations.apollo import ApolloClient
+
+    db = get_db()
+    company = db.get_company(company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    contacts = db.get_contacts_for_company(company_id)
+    enriched = 0
+    skipped = 0
+    errors = 0
+
+    try:
+        with ApolloClient() as apollo:
+            for contact in contacts:
+                if contact.get("email"):
+                    skipped += 1
+                    continue
+
+                apollo_id = contact.get("apollo_id")
+                linkedin_url = contact.get("linkedin_url")
+
+                if not apollo_id and not linkedin_url:
+                    skipped += 1
+                    continue
+
+                try:
+                    result = apollo.enrich_person(
+                        person_id=apollo_id if apollo_id else None,
+                        linkedin_url=linkedin_url if not apollo_id else None,
+                        reveal_personal_emails=True,
+                    )
+                    person = result.get("person", {}) or {}
+                    email = person.get("email")
+
+                    if email:
+                        db.update_contact(contact["id"], {
+                            "email": email,
+                            "status": "enriched",
+                        })
+                        enriched += 1
+                    else:
+                        skipped += 1
+
+                except Exception as e:
+                    logger.error(f"Apollo enrichment failed for contact {contact['id']}: {e}")
+                    errors += 1
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return {
+        "data": {
+            "company_id": company_id,
+            "contacts_enriched": enriched,
+            "contacts_skipped": skipped,
+            "errors": errors,
+        }
+    }
+
+
+class OutcomeRequest(BaseModel):
+    outcome: str  # "won" | "lost" | "no_response"
+    notes: Optional[str] = None
+
+
+@router.post("/{company_id}/outcome")
+async def record_outcome(company_id: str, body: OutcomeRequest):
+    """Record the final outcome for a prospect.
+
+    Maps outcome to a company status and inserts a learning_outcome record
+    so the Learning Agent can include this prospect in analysis.
+
+    outcome values:
+      - "won"         → status: converted, outcome: meeting_booked
+      - "lost"        → status: not_interested, outcome: replied_negative
+      - "no_response" → status: paused, outcome: no_response
+    """
+    if body.outcome not in ("won", "lost", "no_response"):
+        raise HTTPException(
+            status_code=422,
+            detail="outcome must be 'won', 'lost', or 'no_response'",
+        )
+
+    db = get_db()
+    company = db.get_company(company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    status_map = {"won": "converted", "lost": "not_interested", "no_response": "paused"}
+    outcome_map = {"won": "meeting_booked", "lost": "replied_negative", "no_response": "no_response"}
+
+    new_status = status_map[body.outcome]
+    db.update_company(company_id, {"status": new_status})
+
+    db.insert_interaction({
+        "company_id": company_id,
+        "type": "status_change",
+        "channel": "other",
+        "subject": f"Outcome recorded: {body.outcome}",
+        "body": body.notes or f"Outcome marked as '{body.outcome}' via dashboard",
+        "source": "manual",
+    })
+
+    contacts = db.get_contacts_for_company(company_id)
+    primary = next((c for c in contacts if c.get("is_decision_maker")), contacts[0] if contacts else None)
+
+    db.insert_learning_outcome({
+        "company_id": company_id,
+        "contact_id": primary["id"] if primary else None,
+        "outreach_approach": "initial_outreach",
+        "channel": "email",
+        "outcome": outcome_map[body.outcome],
+        "company_tier": company.get("tier"),
+        "sub_sector": company.get("sub_sector") or company.get("industry", ""),
+        "persona_type": (primary or {}).get("persona_type", ""),
+        "pqs_at_time": company.get("pqs_total", 0),
+    })
+
+    return {
+        "data": {
+            "company_id": company_id,
+            "outcome": body.outcome,
+            "new_status": new_status,
+        }
+    }

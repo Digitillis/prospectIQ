@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Webhook
     webhook_secret: str = ""
 
+    # Slack notifications (optional)
+    slack_webhook_url: str = ""
+
     # App settings
     log_level: str = "INFO"
     batch_size: int = 10

@@ -15,8 +15,18 @@ import {
   FileSearch,
   Filter,
   Mail,
+  ExternalLink,
+  Reply,
 } from "lucide-react";
-import { getPendingDrafts, runAgent, OutreachDraft } from "@/lib/api";
+import {
+  getPendingDrafts,
+  runAgent,
+  getLinkedInTasks,
+  completeLinkedInTask,
+  getHotReplies,
+  type OutreachDraft,
+  type LinkedInTask,
+} from "@/lib/api";
 import { cn, TIER_LABELS } from "@/lib/utils";
 
 type AgentName = "discovery" | "research" | "qualification" | "outreach" | "full";
@@ -61,7 +71,10 @@ const AGENTS: {
 
 export default function ActionsPage() {
   const [followUps, setFollowUps] = useState<OutreachDraft[]>([]);
+  const [linkedInTasks, setLinkedInTasks] = useState<LinkedInTask[]>([]);
+  const [hotReplies, setHotReplies] = useState<OutreachDraft[]>([]);
   const [loading, setLoading] = useState(true);
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const [agentStatus, setAgentStatus] = useState<Record<AgentName, AgentStatus>>(
     {
       full: { loading: false, result: null, message: null },
@@ -72,24 +85,49 @@ export default function ActionsPage() {
     }
   );
 
-  const fetchFollowUps = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await getPendingDrafts();
-      const approved = res.data.filter(
-        (d) => d.approval_status === "approved"
-      );
-      setFollowUps(approved);
+      const [draftsRes, linkedInRes, hotRes] = await Promise.allSettled([
+        getPendingDrafts(),
+        getLinkedInTasks(),
+        getHotReplies(),
+      ]);
+
+      if (draftsRes.status === "fulfilled") {
+        const approved = draftsRes.value.data.filter(
+          (d) => d.approval_status === "approved"
+        );
+        setFollowUps(approved);
+      }
+      if (linkedInRes.status === "fulfilled") {
+        setLinkedInTasks(linkedInRes.value.data);
+      }
+      if (hotRes.status === "fulfilled") {
+        setHotReplies(hotRes.value.data);
+      }
     } catch {
-      // Silently handle - section will show empty state
+      // Silently handle — sections will show empty state
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchFollowUps();
-  }, [fetchFollowUps]);
+    fetchData();
+  }, [fetchData]);
+
+  const handleCompleteLinkedIn = async (sequenceId: string) => {
+    setCompletingId(sequenceId);
+    try {
+      await completeLinkedInTask(sequenceId);
+      setLinkedInTasks((prev) => prev.filter((t) => t.id !== sequenceId));
+    } catch {
+      // silent
+    } finally {
+      setCompletingId(null);
+    }
+  };
 
   const handleRunAgent = async (agent: AgentName) => {
     setAgentStatus((prev) => ({
@@ -192,19 +230,80 @@ export default function ActionsPage() {
             LinkedIn Touches
           </h3>
           <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-accent">
-            0
+            {loading ? "..." : linkedInTasks.length}
           </span>
         </div>
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-6">
-          <p className="text-sm text-gray-500">
-            Manual LinkedIn engagement actions will appear here: profile views,
-            connection requests, post likes, and comment interactions aligned
-            with your outreach sequences.
-          </p>
-          <p className="mt-2 text-xs text-gray-400">
-            Coming soon &mdash; LinkedIn integration in progress
-          </p>
-        </div>
+
+        {loading ? (
+          <div className="flex h-24 items-center justify-center rounded-xl border border-gray-200 bg-white">
+            <Loader2 className="h-6 w-6 animate-spin text-digitillis-accent" />
+          </div>
+        ) : linkedInTasks.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+            No LinkedIn actions due. They appear here when a sequence step requires a LinkedIn touch.
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {linkedInTasks.map((task) => (
+              <div
+                key={task.id}
+                className="rounded-xl border border-blue-100 bg-white p-4 shadow-sm"
+              >
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-gray-900">
+                      {task.companies?.name ?? "Unknown"}
+                    </p>
+                    <p className="truncate text-xs text-gray-500">
+                      {task.contacts?.full_name ?? "Unknown"} &mdash;{" "}
+                      {task.contacts?.title ?? ""}
+                    </p>
+                  </div>
+                  {task.companies?.tier && (
+                    <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                      {TIER_LABELS[task.companies.tier] ?? task.companies.tier}
+                    </span>
+                  )}
+                </div>
+
+                <p className="mb-3 text-xs text-gray-500">
+                  Step {task.current_step + 1}/{task.total_steps} &mdash;{" "}
+                  {task.next_action_type === "send_linkedin"
+                    ? task.current_step <= 1
+                      ? "Connection request"
+                      : "Direct message"
+                    : task.next_action_type}
+                </p>
+
+                <div className="flex items-center gap-2">
+                  {task.contacts?.linkedin_url && (
+                    <a
+                      href={task.contacts.linkedin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Open LinkedIn
+                    </a>
+                  )}
+                  <button
+                    onClick={() => handleCompleteLinkedIn(task.id)}
+                    disabled={completingId === task.id}
+                    className="inline-flex items-center gap-1 rounded-md bg-digitillis-accent px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {completingId === task.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3 w-3" />
+                    )}
+                    Mark Done
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Section 3: Hot Replies */}
@@ -213,19 +312,50 @@ export default function ActionsPage() {
           <MessageSquare className="h-5 w-5 text-digitillis-warning" />
           <h3 className="text-lg font-semibold text-gray-900">Hot Replies</h3>
           <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-warning">
-            0
+            {loading ? "..." : hotReplies.length}
           </span>
         </div>
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-6">
-          <p className="text-sm text-gray-500">
-            Urgent replies needing your response will surface here. Positive
-            replies, meeting requests, and objections that require immediate
-            attention get flagged automatically.
-          </p>
-          <p className="mt-2 text-xs text-gray-400">
-            Coming soon &mdash; reply detection in progress
-          </p>
-        </div>
+
+        {loading ? (
+          <div className="flex h-24 items-center justify-center rounded-xl border border-gray-200 bg-white">
+            <Loader2 className="h-6 w-6 animate-spin text-digitillis-warning" />
+          </div>
+        ) : hotReplies.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+            No hot replies pending. Positive and question replies will surface here for your response.
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {hotReplies.map((draft) => (
+              <a
+                key={draft.id}
+                href="/approvals"
+                className="block rounded-xl border border-amber-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+              >
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-gray-900">
+                      {draft.companies?.name ?? "Unknown"}
+                    </p>
+                    <p className="truncate text-xs text-gray-500">
+                      {draft.contacts?.full_name ?? "Unknown"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-digitillis-warning">
+                    Reply
+                  </span>
+                </div>
+                <p className="mb-2 truncate text-xs font-medium text-gray-700">
+                  {draft.subject}
+                </p>
+                <div className="flex items-center gap-1 text-xs text-amber-600">
+                  <Reply className="h-3.5 w-3.5" />
+                  <span>Response draft ready — review in Approvals</span>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Section 4: Pipeline Actions */}

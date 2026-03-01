@@ -51,12 +51,10 @@ async def instantly_webhook(
 
         result = EngagementAgent.process_webhook_event(event_type, payload)
 
-        # If it was a reply, also trigger classification
+        # If it was a reply, also trigger classification and notify Slack
         if event_type == "reply_received" and result.get("status") == "processed":
             try:
                 from backend.app.agents.reply import ReplyAgent
-
-                # Find the most recent outreach draft for this company/contact
                 from backend.app.core.database import Database
 
                 db = Database()
@@ -73,13 +71,33 @@ async def instantly_webhook(
                 outreach_draft_id = drafts[0]["id"] if drafts else ""
 
                 reply_agent = ReplyAgent()
-                reply_agent.execute(reply_data={
+                reply_result = reply_agent.execute(reply_data={
                     "company_id": result["company_id"],
                     "contact_id": result["contact_id"],
                     "subject": payload.get("subject", ""),
                     "body": payload.get("body", ""),
                     "outreach_draft_id": outreach_draft_id,
                 })
+
+                # Notify Slack for positive or question replies
+                try:
+                    from backend.app.utils.notifications import notify_slack
+                    company = db.get_company(result["company_id"])
+                    company_name = company.get("name", "Unknown") if company else "Unknown"
+
+                    if reply_result and reply_result.details:
+                        detail = reply_result.details[0] if reply_result.details else {}
+                        classification = detail.get("status", "unknown")
+                        if classification in ("positive", "question"):
+                            notify_slack(
+                                f"*Hot reply from {company_name}* — "
+                                f"classified as *{classification}*. "
+                                f"Response draft waiting in Approvals.",
+                                emoji=":fire:",
+                            )
+                except Exception:
+                    pass
+
             except Exception as e:
                 logger.error(f"Reply classification failed: {e}")
 

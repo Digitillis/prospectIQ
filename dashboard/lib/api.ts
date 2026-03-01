@@ -117,6 +117,39 @@ export const getCosts = (batchId?: string) => {
   return fetchAPI(`/api/analytics/costs${qs}`);
 };
 
+// Enrichment (Apollo — consumes credits)
+export const enrichCompany = (companyId: string) =>
+  fetchAPI<{
+    data: { contacts_enriched: number; contacts_skipped: number; errors: number };
+  }>(`/api/companies/${companyId}/enrich`, { method: "POST" });
+
+// Outcome tagging
+export const recordOutcome = (
+  companyId: string,
+  outcome: "won" | "lost" | "no_response",
+  notes?: string
+) =>
+  fetchAPI<{ data: { company_id: string; outcome: string; new_status: string } }>(
+    `/api/companies/${companyId}/outcome`,
+    {
+      method: "POST",
+      body: JSON.stringify({ outcome, notes }),
+    }
+  );
+
+// LinkedIn task queue
+export const getLinkedInTasks = () =>
+  fetchAPI<{ data: LinkedInTask[]; count: number }>("/api/actions/linkedin-tasks");
+
+export const completeLinkedInTask = (sequenceId: string) =>
+  fetchAPI(`/api/actions/linkedin-tasks/${sequenceId}/complete`, {
+    method: "POST",
+  });
+
+// Hot replies (positive/question reply responses needing approval)
+export const getHotReplies = () =>
+  fetchAPI<{ data: OutreachDraft[]; count: number }>("/api/actions/hot-replies");
+
 // Types
 export interface Company {
   id: string;
@@ -222,6 +255,19 @@ export interface Interaction {
 export interface StatusCount {
   status: string;
   count: number;
+}
+
+export interface LinkedInTask {
+  id: string;
+  company_id: string;
+  contact_id: string;
+  sequence_name: string;
+  current_step: number;
+  total_steps: number;
+  next_action_at: string;
+  next_action_type: string;
+  companies?: { name: string; domain?: string; tier?: string; pqs_total: number; linkedin_url?: string };
+  contacts?: { full_name?: string; title?: string; linkedin_url?: string };
 }
 
 export interface SequenceStep {
