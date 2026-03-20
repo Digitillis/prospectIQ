@@ -1,16 +1,19 @@
 # ProspectIQ — Ideal Customer Profile (ICP)
 # Defines the target market filters for Apollo.io discovery
+#
+# Strategy: F&B is primary (FSMA compliance = urgent pain), Discrete Mfg is secondary (PdM = cost savings)
+# Sweet spot: $50M-$150M revenue, 50-500 employees — one decision maker can sign without a committee
 
-version: "1.0"
+version: "2.0"
 
 target_market:
-  name: "US Manufacturing & Food Production"
-  description: "Mid-market manufacturers and food producers with compliance and maintenance needs"
+  name: "US Mid-Market Manufacturing & Food Production"
+  description: "Mid-market manufacturers and food producers where the VP can sign a $3-5K/mo pilot without procurement"
 
 # Company-level filters (used for Apollo search)
 company_filters:
   industries:
-    # Food & Beverage (Primary — FSMA compliance angle)
+    # Food & Beverage (PRIMARY vertical — FSMA compliance angle)
     - naics_prefix: "311"
       tier: "fb1"
       label: "Food Manufacturing"
@@ -31,50 +34,34 @@ company_filters:
       tier: "fb5"
       label: "Beverage Manufacturing"
       apollo_industry: "food & beverages"
-    # Discrete Manufacturing (Secondary — PdM angle)
+    # Discrete Manufacturing (SECONDARY vertical — PdM angle)
     - naics_prefix: "333"
-      tier: "1a"
+      tier: "mfg1"
       label: "Industrial Machinery & Heavy Equipment"
       apollo_industry: "machinery"
-    - naics_prefix: "336"
-      tier: "1b"
-      label: "Automotive Parts & Components"
-      apollo_industry: "automotive"
     - naics_prefix: "332"
-      tier: "2"
+      tier: "mfg2"
       label: "Metal Fabrication & Precision Machining"
       apollo_industry: "fabricated metal products"
-    - naics_prefix: "326"
-      tier: "3"
-      label: "Plastics & Injection Molding"
-      apollo_industry: "plastics"
-    - naics_prefix: "334"
-      tier: "4"
-      label: "Electronics Assembly & Semiconductor"
-      apollo_industry: "computer hardware"
-    - naics_prefix: "3364"
-      tier: "5"
-      label: "Aerospace Components"
-      apollo_industry: "aviation & aerospace"
+    - naics_prefix: "336"
+      tier: "mfg3"
+      label: "Automotive Parts & Components"
+      apollo_industry: "automotive"
 
   revenue:
-    min: 20000000    # $20M
-    max: 8000000000  # $8B
+    min: 20000000    # $20M — below this they can't afford $3K/mo
+    max: 200000000   # $200M — above this they have procurement teams and 12-month sales cycles
 
   employee_count:
     min: 50
-    max: 20000
-    # Apollo-specific range buckets covering 50–20000 employees
+    max: 500
+    # Apollo-specific range buckets
     apollo_ranges:
       - "51,200"
       - "201,500"
-      - "501,1000"
-      - "1001,2000"
-      - "2001,5000"
-      - "5001,10000"
-      - "10001"
 
   geography:
+    # All US — F&B is national, not just Midwest
     primary_states:
       - "Illinois"
       - "Indiana"
@@ -89,6 +76,21 @@ company_filters:
       - "Pennsylvania"
       - "Georgia"
       - "North Carolina"
+      - "New York"
+      - "New Jersey"
+      - "Florida"
+      - "Virginia"
+      - "Tennessee"
+      - "Alabama"
+      - "Arkansas"
+      - "Kansas"
+      - "Nebraska"
+      - "Oklahoma"
+      - "Oregon"
+      - "Washington"
+      - "Colorado"
+      - "Massachusetts"
+      - "Maryland"
     countries:
       - "United States"
 
@@ -101,28 +103,18 @@ company_filters:
 contact_filters:
   titles:
     include:
+      # Operations (both verticals)
       - "VP Operations"
       - "Vice President Operations"
       - "VP Manufacturing"
       - "Vice President Manufacturing"
-      - "VP Engineering"
-      - "Vice President Engineering"
-      - "VP Supply Chain"
       - "Plant Manager"
       - "General Manager"
       - "Director of Operations"
       - "Director of Manufacturing"
-      - "Director of Engineering"
-      - "Head of Digital Transformation"
-      - "Director Digital Transformation"
-      - "VP Digital Transformation"
       - "Chief Operating Officer"
       - "COO"
-      - "Chief Information Officer"
-      - "CIO"
-      - "Chief Technology Officer"
-      - "CTO"
-      # F&B specific
+      # F&B specific — these are the buyers for compliance
       - "VP Quality"
       - "VP Food Safety"
       - "Vice President Quality"
@@ -133,6 +125,15 @@ contact_filters:
       - "VP Quality Assurance"
       - "Director Food Safety & Quality"
       - "VP Food Safety & Quality"
+      - "Director of Quality Assurance"
+      - "VP Regulatory"
+      - "Director Regulatory Affairs"
+      # Maintenance (discrete mfg buyer)
+      - "Director of Maintenance"
+      - "VP Maintenance"
+      - "Maintenance Manager"
+      - "Reliability Manager"
+      - "Director of Reliability"
     exclude:
       - "Marketing"
       - "Sales"
@@ -146,40 +147,41 @@ contact_filters:
     - "vp"
     - "director"
     - "c_suite"
+    - "manager"  # Include managers for smaller companies where Plant Manager is the buyer
 
 # Persona classification rules (auto-classify from title)
 persona_classification:
+  vp_quality_food_safety:
+    title_keywords: ["VP Quality", "VP Food Safety", "Vice President Quality", "Vice President Food Safety", "VP Food Safety & Quality", "VP Quality Assurance"]
+  director_quality_food_safety:
+    title_keywords: ["Director of Quality", "Director of Food Safety", "Director Quality Assurance", "Director Food Safety & Quality", "Director Regulatory"]
   vp_ops:
     title_keywords: ["VP Operations", "Vice President Operations", "VP Manufacturing", "Vice President Manufacturing"]
   plant_manager:
     title_keywords: ["Plant Manager", "General Manager", "Factory Manager"]
   coo:
     title_keywords: ["Chief Operating Officer", "COO"]
-  cio:
-    title_keywords: ["Chief Information Officer", "CIO", "Chief Technology Officer", "CTO"]
-  digital_transformation:
-    title_keywords: ["Digital Transformation", "Industry 4.0", "Smart Factory", "Innovation"]
   director_ops:
-    title_keywords: ["Director of Operations", "Director of Manufacturing", "Director of Engineering"]
-  vp_supply_chain:
-    title_keywords: ["VP Supply Chain", "Vice President Supply Chain"]
+    title_keywords: ["Director of Operations", "Director of Manufacturing"]
+  maintenance_leader:
+    title_keywords: ["Director of Maintenance", "VP Maintenance", "Maintenance Manager", "Reliability Manager", "Director of Reliability"]
 
 # Persona priority for primary contact selection (higher = preferred)
 persona_priority:
-  vp_ops: 100
+  vp_quality_food_safety: 100    # F&B primary buyer
   coo: 95
-  plant_manager: 90
-  digital_transformation: 85
-  vp_supply_chain: 80
-  director_ops: 75
-  cio: 70
+  vp_ops: 90
+  plant_manager: 85
+  director_quality_food_safety: 80
+  maintenance_leader: 75
+  director_ops: 70
 
 # Plant qualification criteria (used during research phase)
 plant_qualification:
-  min_employees: 100
-  min_critical_equipment: 10
-  required_data_infrastructure: true
-  required_erp_cmms: true
+  min_employees: 50
+  min_critical_equipment: 5       # Lower bar — F&B plants may have fewer monitored assets
+  required_data_infrastructure: false  # Many F&B targets won't have OT infrastructure yet
+  required_erp_cmms: false             # Don't disqualify F&B companies without CMMS
 
 # Discovery batch settings
 discovery:
