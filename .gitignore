@@ -51,3 +51,6 @@ Thumbs.db
 
 # Tasks (local working files)
 tasks/
+.env
+.env.*
+*.env
