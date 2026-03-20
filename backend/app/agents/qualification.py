@@ -157,40 +157,52 @@ class QualificationAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _score_firmographic(self, company: dict, config: dict) -> int:
-        """Score firmographic fit (Dimension 1)."""
+        """Score firmographic fit (Dimension 1).
+
+        Dynamically evaluates all signals defined in the scoring YAML
+        rather than hardcoding signal names.
+        """
         signals = config["dimensions"]["firmographic"]["signals"]
         max_pts = config["dimensions"]["firmographic"]["max_points"]
         score = 0
 
-        # Discrete manufacturing
-        tier = company.get("tier")
-        if tier:
-            score += signals["discrete_manufacturing"]["points"]
-
-        # Revenue range
         revenue = company.get("estimated_revenue")
-        if revenue:
-            sig = signals["revenue_range"]
-            if sig.get("min", 0) <= revenue <= sig.get("max", float("inf")):
-                score += sig["points"]
-
-        # Midwest US — award if state is a known Midwest state OR if state is not stored.
-        # All companies are discovered via a Midwest-filtered Apollo search, so NULL state
-        # still means Midwest; we should not penalise missing Apollo location data.
-        state = company.get("state")
-        if not state or is_midwest(state):
-            score += signals["midwest_us"]["points"]
-
-        # Employee count
         employees = company.get("employee_count")
-        if employees:
-            sig = signals["employee_count"]
-            if sig.get("min", 0) <= employees <= sig.get("max", float("inf")):
-                score += sig["points"]
+        state = company.get("state")
+        tier = company.get("tier") or ""
 
-        # Private company
-        if company.get("is_private"):
-            score += signals["private_company"]["points"]
+        for signal_name, sig in signals.items():
+            eval_type = sig.get("evaluation", "")
+
+            if eval_type == "naics_prefix_match":
+                # Award if company has a tier (meaning it matched an industry filter)
+                if tier:
+                    score += sig["points"]
+
+            elif eval_type == "revenue_range":
+                if revenue and sig.get("min", 0) <= revenue <= sig.get("max", float("inf")):
+                    score += sig["points"]
+
+            elif eval_type == "state_match":
+                qualifying = sig.get("qualifying_states", [])
+                if not state or state in qualifying:
+                    score += sig["points"]
+
+            elif eval_type == "employee_range":
+                if employees and sig.get("min", 0) <= employees <= sig.get("max", float("inf")):
+                    score += sig["points"]
+
+            elif eval_type == "boolean_field":
+                field = sig.get("field", "")
+                if company.get(field):
+                    score += sig["points"]
+
+            elif eval_type == "keyword_match":
+                # Firmographic keyword signals (e.g. multi_plant) checked against research text
+                search_text = self._build_search_text(company, None)
+                keywords = sig.get("keywords", [])
+                if search_text and self._has_keyword_match(search_text, keywords):
+                    score += sig["points"]
 
         return min(score, max_pts)
 
