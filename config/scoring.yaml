@@ -354,19 +354,19 @@ dimensions:
 # =========================================================
 thresholds:
   unqualified:
-    max_score: 25
+    max_score: 10
     action: "disqualify"
     new_status: "disqualified"
   research_needed:
-    max_score: 45
+    max_score: 25
     action: "flag_for_review"
     new_status: null  # stays at current status
   qualified:
-    max_score: 60
+    max_score: 45
     action: "qualify"
     new_status: "qualified"
   high_priority:
-    max_score: 75
+    max_score: 60
     action: "qualify_priority"
     new_status: "qualified"
     priority_flag: true
@@ -377,4 +377,5 @@ thresholds:
     priority_flag: true
 
 # Minimum firmographic score to proceed to research (pre-filter)
-min_firmographic_for_research: 10
+# Lowered to 5 — F&B companies with just food_production (5pts) should get researched
+min_firmographic_for_research: 5
