@@ -4,12 +4,34 @@
 version: "1.0"
 
 target_market:
-  name: "Midwest US Discrete Manufacturing"
-  description: "Mid-market discrete manufacturers with sensor-equipped equipment"
+  name: "US Manufacturing & Food Production"
+  description: "Mid-market manufacturers and food producers with compliance and maintenance needs"
 
 # Company-level filters (used for Apollo search)
 company_filters:
   industries:
+    # Food & Beverage (Primary — FSMA compliance angle)
+    - naics_prefix: "311"
+      tier: "fb1"
+      label: "Food Manufacturing"
+      apollo_industry: "food production"
+    - naics_prefix: "3116"
+      tier: "fb2"
+      label: "Meat & Poultry Processing"
+      apollo_industry: "food production"
+    - naics_prefix: "3115"
+      tier: "fb3"
+      label: "Dairy Product Manufacturing"
+      apollo_industry: "dairy"
+    - naics_prefix: "3114"
+      tier: "fb4"
+      label: "Fruit & Vegetable Preserving"
+      apollo_industry: "food production"
+    - naics_prefix: "3121"
+      tier: "fb5"
+      label: "Beverage Manufacturing"
+      apollo_industry: "food & beverages"
+    # Discrete Manufacturing (Secondary — PdM angle)
     - naics_prefix: "333"
       tier: "1a"
       label: "Industrial Machinery & Heavy Equipment"
@@ -36,14 +58,16 @@ company_filters:
       apollo_industry: "aviation & aerospace"
 
   revenue:
-    min: 500000000   # $500M
+    min: 20000000    # $20M
     max: 8000000000  # $8B
 
   employee_count:
-    min: 500
+    min: 50
     max: 20000
-    # Apollo-specific range buckets covering 500–20000 employees
+    # Apollo-specific range buckets covering 50–20000 employees
     apollo_ranges:
+      - "51,200"
+      - "201,500"
       - "501,1000"
       - "1001,2000"
       - "2001,5000"
@@ -60,6 +84,11 @@ company_filters:
       - "Minnesota"
       - "Iowa"
       - "Missouri"
+      - "Texas"
+      - "California"
+      - "Pennsylvania"
+      - "Georgia"
+      - "North Carolina"
     countries:
       - "United States"
 
@@ -93,6 +122,17 @@ contact_filters:
       - "CIO"
       - "Chief Technology Officer"
       - "CTO"
+      # F&B specific
+      - "VP Quality"
+      - "VP Food Safety"
+      - "Vice President Quality"
+      - "Vice President Food Safety"
+      - "Director of Quality"
+      - "Director of Food Safety"
+      - "Director Quality Assurance"
+      - "VP Quality Assurance"
+      - "Director Food Safety & Quality"
+      - "VP Food Safety & Quality"
     exclude:
       - "Marketing"
       - "Sales"
