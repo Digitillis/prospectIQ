@@ -54,3 +54,6 @@ tasks/
 .env
 .env.*
 *.env
+.netlify/
+.venv/
+node_modules/
