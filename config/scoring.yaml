@@ -12,52 +12,54 @@ dimensions:
   firmographic:
     max_points: 25
     signals:
-      discrete_manufacturing:
+      manufacturing_or_food:
         points: 5
-        description: "NAICS 31-33 discrete manufacturing"
+        description: "Manufacturing or food production company"
         source: "apollo"
         evaluation: "naics_prefix_match"
         qualifying_prefixes: ["31", "32", "33"]
 
-      revenue_range:
+      revenue_sweet_spot:
         points: 5
-        description: "Revenue $500M-$8B"
+        description: "Revenue $50M-$200M (sweet spot: VP signs without committee)"
         source: "apollo"
         evaluation: "revenue_range"
-        min: 500000000
-        max: 8000000000
+        min: 50000000
+        max: 200000000
 
-      midwest_us:
-        points: 5
-        description: "Headquarters in Midwest US"
+      revenue_acceptable:
+        points: 3
+        description: "Revenue $20M-$50M (acceptable but tighter budgets)"
+        source: "apollo"
+        evaluation: "revenue_range"
+        min: 20000000
+        max: 50000000
+
+      us_based:
+        points: 3
+        description: "US-based operations"
         source: "apollo"
         evaluation: "state_match"
-        qualifying_states: ["IL", "IN", "MI", "OH", "WI", "MN", "IA", "MO"]
+        qualifying_states: ["IL", "IN", "MI", "OH", "WI", "MN", "IA", "MO", "TX", "CA", "PA", "GA", "NC", "NY", "NJ", "FL", "VA", "TN", "AL", "AR", "KS", "NE", "OK", "OR", "WA", "CO", "MA", "MD"]
 
       employee_count:
         points: 3
-        description: "500-20,000 employees"
+        description: "50-500 employees"
         source: "apollo"
         evaluation: "employee_range"
-        min: 500
-        max: 20000
+        min: 50
+        max: 500
 
-      multi_plant:
-        points: 4
-        description: "Multiple plant/manufacturing locations"
-        source: "research"
-        evaluation: "keyword_match"
-        keywords:
-          - "multiple plants"
-          - "multiple facilities"
-          - "manufacturing sites"
-          - "locations across"
-          - "plants in"
-          - "facilities in"
+      food_production:
+        points: 5
+        description: "Food/beverage production (FSMA compliance = urgent buyer pain)"
+        source: "apollo"
+        evaluation: "naics_prefix_match"
+        qualifying_prefixes: ["311", "312"]
 
       private_company:
-        points: 3
-        description: "Private company (often faster decision cycles)"
+        points: 4
+        description: "Private company (faster decision cycles, no board approval needed)"
         source: "apollo"
         evaluation: "boolean_field"
         field: "is_private"
@@ -263,6 +265,46 @@ dimensions:
           - "scrap rate"
           - "rework"
           - "warranty claim"
+
+      fsma_compliance_pressure:
+        points: 5
+        description: "FSMA/FDA compliance burden or audit concerns"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "FSMA"
+          - "FDA"
+          - "food safety"
+          - "HACCP"
+          - "preventive controls"
+          - "483 observation"
+          - "FDA inspection"
+          - "food safety audit"
+          - "SQF"
+          - "BRC"
+          - "GFSI"
+          - "FSSC 22000"
+          - "compliance"
+          - "audit readiness"
+          - "corrective action"
+          - "CCP monitoring"
+
+      recall_risk:
+        points: 4
+        description: "Product recall history or risk factors"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "product recall"
+          - "voluntary recall"
+          - "FDA warning"
+          - "warning letter"
+          - "listeria"
+          - "salmonella"
+          - "E. coli"
+          - "contamination"
+          - "allergen"
+          - "undeclared allergen"
 
       workforce_challenges:
         points: 3
