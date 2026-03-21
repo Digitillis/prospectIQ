@@ -62,6 +62,182 @@ interface PipelineData {
   [status: string]: { companies: Company[]; count: number };
 }
 
+// ---------------------------------------------------------------------------
+// How It Works — collapsible visual guide
+// ---------------------------------------------------------------------------
+
+const FLOW_STEPS = [
+  {
+    step: 1,
+    title: "Discovery",
+    description: "Search Apollo for decision-makers matching your ICP",
+    details: "Finds VP/Directors at F&B and manufacturing companies by title, revenue, and industry. Free, no credits.",
+    action: "Actions → Run Discovery",
+    color: "bg-gray-500",
+    status: "discovered",
+  },
+  {
+    step: 2,
+    title: "Research",
+    description: "Deep-dive each company with Perplexity + Claude",
+    details: "Web research extracts tech stack, pain signals, IoT maturity, personalization hooks. ~$0.05/company.",
+    action: "Actions → Run Research",
+    color: "bg-blue-500",
+    status: "researched",
+  },
+  {
+    step: 3,
+    title: "Qualification",
+    description: "Score prospects 0-100 across 4 dimensions (PQS)",
+    details: "Firmographic fit + technographic readiness + timing signals + engagement. Companies scoring 15+ qualify.",
+    action: "Actions → Run Qualification",
+    color: "bg-purple-500",
+    status: "qualified",
+  },
+  {
+    step: 4,
+    title: "Enrichment",
+    description: "Get verified emails and phone numbers",
+    details: "Apollo People Match reveals contact details. Domain MX verification prevents bounces. Uses Apollo credits.",
+    action: "Actions → Run Enrichment",
+    color: "bg-indigo-500",
+    status: "enriched",
+  },
+  {
+    step: 5,
+    title: "Outreach",
+    description: "Claude generates personalized email drafts",
+    details: "Uses your Outreach Guidelines (Settings tab) for tone, structure, and signature. ~$0.02/draft.",
+    action: "Actions → Run Outreach",
+    color: "bg-amber-500",
+    status: "outreach_pending",
+  },
+  {
+    step: 6,
+    title: "Review & Approve",
+    description: "Read each draft, edit if needed, send test to yourself",
+    details: "Quality score shown per draft. 'Send Test to Me' delivers to your inbox. Nothing sends without your approval.",
+    action: "Approvals page",
+    color: "bg-orange-500",
+    status: "approved",
+  },
+  {
+    step: 7,
+    title: "Send & Engage",
+    description: "Approved drafts sent via Instantly.ai, track opens/replies",
+    details: "Multi-step sequences with follow-ups. Buying signals auto-detected. Hot replies trigger Slack alerts.",
+    action: "Actions → Run Engagement",
+    color: "bg-green-500",
+    status: "contacted",
+  },
+];
+
+function HowItWorksGuide() {
+  const [open, setOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("prospectiq_guide_dismissed") !== "true";
+    }
+    return true;
+  });
+
+  const dismiss = () => {
+    setOpen(false);
+    localStorage.setItem("prospectiq_guide_dismissed", "true");
+  };
+
+  const show = () => {
+    setOpen(true);
+    localStorage.removeItem("prospectiq_guide_dismissed");
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={show}
+        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-digitillis-accent"
+      >
+        <AlertCircle className="h-3 w-3" />
+        Show pipeline guide
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">
+            How ProspectIQ Works
+          </h3>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Your AI-powered prospecting pipeline in 7 steps
+          </p>
+        </div>
+        <button
+          onClick={dismiss}
+          className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+        >
+          Dismiss
+        </button>
+      </div>
+
+      {/* Flowchart */}
+      <div className="flex items-start gap-0 overflow-x-auto pb-2">
+        {FLOW_STEPS.map((step, idx) => (
+          <div key={step.step} className="flex items-start shrink-0">
+            {/* Step card */}
+            <div className="group relative w-36">
+              {/* Step number circle */}
+              <div className="flex justify-center mb-2">
+                <div
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm",
+                    step.color
+                  )}
+                >
+                  {step.step}
+                </div>
+              </div>
+              {/* Title + description */}
+              <div className="text-center px-1">
+                <p className="text-xs font-semibold text-gray-900">{step.title}</p>
+                <p className="mt-0.5 text-[10px] leading-tight text-gray-500">
+                  {step.description}
+                </p>
+              </div>
+              {/* Hover tooltip with details */}
+              <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-52 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                <p className="text-xs text-gray-700 leading-relaxed">{step.details}</p>
+                <p className="mt-2 text-[10px] font-medium text-digitillis-accent">{step.action}</p>
+              </div>
+            </div>
+            {/* Arrow connector */}
+            {idx < FLOW_STEPS.length - 1 && (
+              <div className="flex items-center pt-3 px-0.5 shrink-0">
+                <ArrowRight className="h-3.5 w-3.5 text-gray-300" />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Quick links */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-blue-100 pt-3">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Quick start:</span>
+        <Link href="/actions" className="rounded-full bg-digitillis-accent/10 px-2.5 py-1 text-[10px] font-medium text-digitillis-accent hover:bg-digitillis-accent/20">
+          Run Pipeline →
+        </Link>
+        <Link href="/settings" className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
+          Configure ICP
+        </Link>
+        <Link href="/approvals" className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
+          Review Drafts
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function PipelinePage() {
   const [pipeline, setPipeline] = useState<PipelineData>({});
   const [approvalCount, setApprovalCount] = useState(0);
@@ -247,6 +423,9 @@ export default function PipelinePage() {
           ))}
         </div>
       )}
+
+      {/* How It Works — collapsible flowchart guide */}
+      <HowItWorksGuide />
 
       {/* Page header with approval badge */}
       <div className="flex items-center justify-between">
