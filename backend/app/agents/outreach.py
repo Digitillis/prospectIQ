@@ -488,16 +488,48 @@ class OutreachAgent(BaseAgent):
         value_messaging: dict,
         global_principles: dict,
     ) -> str:
-        """Build the Claude prompt with all context."""
-        # Extract research fields
-        research_summary = company.get("research_summary", "No research available")
-        hooks = company.get("personalization_hooks", [])
-        tech_stack = company.get("technology_stack", [])
-        pain_signals = company.get("pain_signals", [])
-        mfg_profile = company.get("manufacturing_profile", {})
+        """Build the Claude prompt with all context.
+
+        Merges data from both the company record AND the research table
+        to maximize personalization depth.
+        """
+        # Pull from company record first
+        research_summary = company.get("research_summary", "")
+        hooks = list(company.get("personalization_hooks", []) or [])
+        tech_stack = list(company.get("technology_stack", []) or [])
+        pain_signals = list(company.get("pain_signals", []) or [])
+        mfg_profile = dict(company.get("manufacturing_profile", {}) or {})
         existing = []
+
+        # Merge in research intelligence (often richer than company record)
         if research:
-            existing = research.get("existing_solutions", [])
+            ri = research.get("research_intelligence", {}) or {}
+            existing = research.get("existing_solutions", []) or ri.get("existing_solutions", []) or []
+            if not research_summary:
+                research_summary = research.get("summary", "") or ri.get("summary", "")
+            # Merge pain points
+            for p in (ri.get("pain_points", []) or research.get("pain_points", []) or []):
+                if p and p not in pain_signals:
+                    pain_signals.append(p)
+            # Merge personalization hooks
+            for h in (ri.get("personalization_hooks", []) or []):
+                if h and h not in hooks:
+                    hooks.append(h)
+            # Merge known systems into tech stack
+            for s in (ri.get("known_systems", []) or research.get("known_systems", []) or []):
+                if s and s not in tech_stack:
+                    tech_stack.append(s)
+            # Merge products/services into profile
+            products = ri.get("products_services", []) or []
+            if products:
+                mfg_profile["products_services"] = products
+            # Recent news
+            recent_news = ri.get("recent_news", []) or []
+            if recent_news:
+                mfg_profile["recent_news"] = recent_news[:3]
+
+        if not research_summary:
+            research_summary = "No research available — use company industry and contact title to infer specific challenges"
 
         # Format step instructions
         instructions = step_config.get("instructions", {})
