@@ -31,10 +31,10 @@ import {
   Save,
   RotateCcw,
 } from "lucide-react";
-import { getAppSettings, saveSettings, AppSettings, Sequence } from "@/lib/api";
+import { getAppSettings, saveSettings, getOutreachGuidelines, saveOutreachGuidelines, AppSettings, Sequence, OutreachGuidelines } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Tab = "icp" | "scoring" | "sequences";
+type Tab = "icp" | "scoring" | "sequences" | "outreach";
 
 // ---------------------------------------------------------------------------
 // Industry catalog — all NAICS manufacturing sectors available for selection
@@ -202,6 +202,7 @@ export default function SettingsPage() {
   const tabs: { id: Tab; label: string; icon: typeof Target }[] = [
     { id: "icp", label: "Ideal Customer Profile", icon: Target },
     { id: "scoring", label: "PQS Scoring", icon: BarChart3 },
+    { id: "outreach", label: "Outreach Guidelines", icon: MessageSquare },
     { id: "sequences", label: "Sequences", icon: Mail },
   ];
 
@@ -344,6 +345,9 @@ export default function SettingsPage() {
                 setDraft((prev) => prev ? { ...prev, scoring: updated } : prev)
               }
             />
+          )}
+          {activeTab === "outreach" && (
+            <OutreachGuidelinesTab />
           )}
           {activeTab === "sequences" && (
             <SequencesTab sequences={draft.sequences ?? {}} />
@@ -712,6 +716,206 @@ function ICPTab({
           </>
         )}
       </Section>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Outreach Guidelines Tab (self-contained — has its own fetch/save lifecycle)
+// ---------------------------------------------------------------------------
+
+function OutreachGuidelinesTab() {
+  const [guidelines, setGuidelines] = useState<OutreachGuidelines | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState<OutreachGuidelines | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await getOutreachGuidelines();
+        setGuidelines(res.data);
+        setDraft(JSON.parse(JSON.stringify(res.data)));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load guidelines");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const payload: Record<string, unknown> = {
+        voice_and_tone: draft.voice_and_tone,
+        email_structure: draft.email_structure,
+        must_include: draft.must_include,
+        never_include: draft.never_include,
+        banned_phrases: draft.banned_phrases,
+        digitillis_facts: draft.digitillis_facts,
+        subject_line_rules: draft.subject_line_rules,
+        sender_name: draft.sender.name,
+        sender_title: draft.sender.title,
+        sender_email: draft.sender.email,
+        sender_phone: draft.sender.phone,
+        sender_signature: draft.sender.signature,
+      };
+      const res = await saveOutreachGuidelines(payload);
+      setGuidelines(res.data);
+      setDraft(JSON.parse(JSON.stringify(res.data)));
+      setEditMode(false);
+      setSaveMsg("Guidelines saved. Changes apply to the next outreach run.");
+      setTimeout(() => setSaveMsg(null), 5000);
+    } catch (e) {
+      setSaveMsg(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-digitillis-accent" /></div>;
+  if (error) return <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>;
+  if (!draft) return null;
+
+  const updateField = (field: string, value: unknown) => {
+    setDraft((prev) => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const updateSender = (field: string, value: string) => {
+    setDraft((prev) => prev ? { ...prev, sender: { ...prev.sender, [field]: value } } : prev);
+  };
+
+  const updateList = (field: string, idx: number, value: string) => {
+    const list = [...((draft as unknown as Record<string, unknown>)[field] as string[])];
+    list[idx] = value;
+    updateField(field, list);
+  };
+
+  const removeFromList = (field: string, idx: number) => {
+    const list = [...((draft as unknown as Record<string, unknown>)[field] as string[])];
+    list.splice(idx, 1);
+    updateField(field, list);
+  };
+
+  const addToList = (field: string) => {
+    const list = [...((draft as unknown as Record<string, unknown>)[field] as string[]), ""];
+    updateField(field, list);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Edit/Save */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-gray-500">
+            {editMode
+              ? "Edit your outreach guidelines below. Changes apply to the next outreach run."
+              : `Version ${draft.version}. Click Edit to refine your outreach voice and rules.`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {editMode ? (
+            <>
+              <button onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"><RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">{saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}{saving ? "Saving…" : "Save"}</button>
+            </>
+          ) : (
+            <button onClick={() => setEditMode(true)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Pencil className="mr-1 inline h-3.5 w-3.5" />Edit</button>
+          )}
+        </div>
+      </div>
+      {saveMsg && <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-600")}>{saveMsg}</div>}
+
+      {/* Sender Info */}
+      <Section icon={Users} title="Sender Identity">
+        {editMode ? (
+          <div className="space-y-3">
+            {[["Name", "name"], ["Title", "title"], ["Email", "email"], ["Phone", "phone"]].map(([label, field]) => (
+              <div key={field} className="flex items-center justify-between gap-4 text-sm">
+                <span className="text-gray-500 w-20">{label}</span>
+                <input type="text" value={(draft.sender as Record<string, string>)[field] || ""} onChange={(e) => updateSender(field, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none" />
+              </div>
+            ))}
+            <div>
+              <p className="mb-1 text-xs font-medium text-gray-500">Signature Block</p>
+              <textarea value={draft.sender.signature} onChange={(e) => updateSender("signature", e.target.value)} rows={6} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm font-mono text-gray-700 focus:border-digitillis-accent focus:outline-none" />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1 text-sm">
+            <KV label="Name" value={draft.sender.name} />
+            <KV label="Title" value={draft.sender.title} />
+            <KV label="Email" value={draft.sender.email} />
+            <KV label="Phone" value={draft.sender.phone} />
+            <div className="mt-3">
+              <p className="text-xs font-medium text-gray-400 mb-1">Signature Preview</p>
+              <pre className="whitespace-pre-wrap rounded bg-gray-50 border border-gray-100 p-3 text-xs text-gray-600 font-mono">{draft.sender.signature}</pre>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Voice & Tone */}
+      <Section icon={Target} title="Voice & Tone">
+        {editMode ? (
+          <textarea value={draft.voice_and_tone} onChange={(e) => updateField("voice_and_tone", e.target.value)} rows={10} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none" placeholder="Describe how outreach emails should sound..." />
+        ) : (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.voice_and_tone}</p>
+        )}
+      </Section>
+
+      {/* Email Structure */}
+      <Section icon={Sliders} title="Email Structure">
+        {editMode ? (
+          <textarea value={draft.email_structure} onChange={(e) => updateField("email_structure", e.target.value)} rows={7} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none" />
+        ) : (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.email_structure}</p>
+        )}
+      </Section>
+
+      {/* Subject Line Rules */}
+      <Section icon={Mail} title="Subject Line Rules">
+        {editMode ? (
+          <textarea value={draft.subject_line_rules} onChange={(e) => updateField("subject_line_rules", e.target.value)} rows={5} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none" />
+        ) : (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.subject_line_rules}</p>
+        )}
+      </Section>
+
+      {/* Must Include / Never Include / Banned Phrases / Digitillis Facts */}
+      {[
+        { field: "must_include", title: "Must Include (in every email)", icon: Target },
+        { field: "never_include", title: "Never Include", icon: Sliders },
+        { field: "banned_phrases", title: "Banned Phrases", icon: Sliders },
+        { field: "digitillis_facts", title: "Digitillis Facts (agent picks selectively)", icon: Building2 },
+      ].map(({ field, title, icon }) => (
+        <Section key={field} icon={icon} title={title}>
+          <div className="space-y-1">
+            {((draft as unknown as Record<string, unknown>)[field] as string[]).map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                {editMode ? (
+                  <>
+                    <input type="text" value={item} onChange={(e) => updateList(field, idx, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none" />
+                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-red-500"><X className="h-3.5 w-3.5" /></button>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-700">• {item}</span>
+                )}
+              </div>
+            ))}
+            {editMode && (
+              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-digitillis-accent hover:underline"><Plus className="h-3 w-3" />Add</button>
+            )}
+          </div>
+        </Section>
+      ))}
     </div>
   );
 }

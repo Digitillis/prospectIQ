@@ -119,6 +119,15 @@ def get_sequences_config() -> dict:
     return load_yaml_config("sequences.yaml")
 
 
+def get_outreach_guidelines() -> dict:
+    """Load outreach guidelines configuration.
+
+    NOT cached — always reads the latest version from disk so that
+    edits from the dashboard are picked up immediately without restart.
+    """
+    return load_yaml_config("outreach_guidelines.yaml")
+
+
 @lru_cache()
 def get_manufacturing_ontology() -> dict:
     """Load manufacturing ontology configuration."""

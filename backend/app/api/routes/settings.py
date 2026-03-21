@@ -10,6 +10,7 @@ from backend.app.core.config import (
     get_icp_config,
     get_scoring_config,
     get_sequences_config,
+    get_outreach_guidelines,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -120,6 +121,95 @@ class ScoringPatch(BaseModel):
 class SettingsPatch(BaseModel):
     icp: Optional[ICPPatch] = None
     scoring: Optional[ScoringPatch] = None
+
+
+# ---------------------------------------------------------------------------
+# Outreach Guidelines CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/outreach-guidelines")
+async def get_guidelines():
+    """Get the current outreach guidelines (tone, structure, rules, signature)."""
+    try:
+        data = get_outreach_guidelines()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="outreach_guidelines.yaml not found")
+    return {"data": data}
+
+
+class GuidelinesPatch(BaseModel):
+    voice_and_tone: Optional[str] = None
+    email_structure: Optional[str] = None
+    must_include: Optional[list[str]] = None
+    never_include: Optional[list[str]] = None
+    banned_phrases: Optional[list[str]] = None
+    banned_characters: Optional[list[str]] = None
+    digitillis_facts: Optional[list[str]] = None
+    subject_line_rules: Optional[str] = None
+    sender_name: Optional[str] = None
+    sender_title: Optional[str] = None
+    sender_email: Optional[str] = None
+    sender_phone: Optional[str] = None
+    sender_signature: Optional[str] = None
+
+
+@router.patch("/outreach-guidelines")
+async def patch_guidelines(payload: GuidelinesPatch):
+    """Update outreach guidelines. Changes take effect on the next outreach run.
+
+    Only provided fields are updated. Others are left unchanged.
+    The outreach agent reads this file fresh on every run (no cache).
+    """
+    import yaml
+
+    guidelines_path = CONFIG_DIR / "outreach_guidelines.yaml"
+    try:
+        with open(guidelines_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="outreach_guidelines.yaml not found")
+
+    # Update top-level text fields
+    for field in ["voice_and_tone", "email_structure", "subject_line_rules"]:
+        value = getattr(payload, field, None)
+        if value is not None:
+            data[field] = value
+
+    # Update list fields
+    for field in ["must_include", "never_include", "banned_phrases",
+                   "banned_characters", "digitillis_facts"]:
+        value = getattr(payload, field, None)
+        if value is not None:
+            data[field] = value
+
+    # Update sender fields
+    sender = data.setdefault("sender", {})
+    if payload.sender_name is not None:
+        sender["name"] = payload.sender_name
+        # Auto-update short_name
+        sender["short_name"] = payload.sender_name.split()[0]
+    if payload.sender_title is not None:
+        sender["title"] = payload.sender_title
+    if payload.sender_email is not None:
+        sender["email"] = payload.sender_email
+    if payload.sender_phone is not None:
+        sender["phone"] = payload.sender_phone
+    if payload.sender_signature is not None:
+        sender["signature"] = payload.sender_signature
+
+    # Bump version
+    ver = data.get("version", "1.0")
+    try:
+        major, minor = ver.split(".")
+        data["version"] = f"{major}.{int(minor) + 1}"
+    except (ValueError, AttributeError):
+        data["version"] = "1.1"
+
+    # Write back
+    with open(guidelines_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    return {"data": data, "message": "Outreach guidelines updated. Changes apply to the next outreach run."}
 
 
 # ---------------------------------------------------------------------------

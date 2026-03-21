@@ -158,6 +158,39 @@ export const saveSettings = (data: Record<string, unknown>) =>
     body: JSON.stringify(data),
   });
 
+// Outreach Guidelines
+export interface OutreachGuidelines {
+  version: string;
+  sender: {
+    name: string;
+    short_name: string;
+    title: string;
+    company: string;
+    email: string;
+    phone: string;
+    website: string;
+    signature: string;
+  };
+  voice_and_tone: string;
+  email_structure: string;
+  must_include: string[];
+  never_include: string[];
+  banned_phrases: string[];
+  banned_characters: string[];
+  digitillis_facts: string[];
+  subject_line_rules: string;
+  max_words: Record<string, number>;
+}
+
+export const getOutreachGuidelines = () =>
+  fetchAPI<{ data: OutreachGuidelines }>("/api/settings/outreach-guidelines");
+
+export const saveOutreachGuidelines = (data: Record<string, unknown>) =>
+  fetchAPI<{ data: OutreachGuidelines; message: string }>("/api/settings/outreach-guidelines", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+
 export const testSlack = () =>
   fetchAPI<{ data: { status: string } }>("/api/settings/test-slack", { method: "POST" });
 
