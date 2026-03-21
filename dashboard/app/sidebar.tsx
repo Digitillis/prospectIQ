@@ -114,8 +114,8 @@ export function Sidebar() {
         </kbd>
       </button>
 
-      {/* Navigation links */}
-      <ul className="mt-2 flex flex-1 flex-col gap-1 px-2">
+      {/* Navigation links — scrollable when viewport is short */}
+      <ul className="mt-2 flex flex-1 flex-col gap-1 overflow-y-auto px-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
 
         {/* TODAY — always first, with notification badge */}
         <li>
