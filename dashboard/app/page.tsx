@@ -42,6 +42,7 @@ const PIPELINE_COLUMNS = [
   "discovered",
   "researched",
   "qualified",
+  "outreach_pending",
   "contacted",
   "engaged",
   "meeting_scheduled",
@@ -51,9 +52,10 @@ const COLUMN_LABELS: Record<string, string> = {
   discovered: "Discovered",
   researched: "Researched",
   qualified: "Qualified",
+  outreach_pending: "Outreach Pending",
   contacted: "Contacted",
   engaged: "Engaged",
-  meeting_scheduled: "Meeting Scheduled",
+  meeting_scheduled: "Meeting",
 };
 
 interface PipelineData {
@@ -505,7 +507,7 @@ export default function PipelinePage() {
           <span className="ml-2 text-gray-500">Loading pipeline...</span>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {PIPELINE_COLUMNS.map((status) => {
             const col = pipeline[status];
             return (
@@ -579,10 +581,10 @@ function PipelineColumn({
   count: number;
 }) {
   return (
-    <div className="flex flex-col rounded-xl border border-gray-200 bg-white min-h-[200px]">
+    <div className="flex flex-col rounded-xl border border-gray-200 bg-white">
       {/* Column header */}
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <h3 className="text-base font-semibold text-gray-800">{label}</h3>
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <h3 className="text-sm font-semibold text-gray-800">{label}</h3>
         <span
           className={cn(
             "rounded-full px-2 py-0.5 text-xs font-medium",
@@ -594,7 +596,7 @@ function PipelineColumn({
       </div>
 
       {/* Company cards */}
-      <div className="flex flex-col gap-2.5 p-4">
+      <div className="flex flex-col gap-2.5 p-3">
         {companies.length === 0 ? (
           <p className="py-4 text-center text-xs text-gray-400">
             No prospects
