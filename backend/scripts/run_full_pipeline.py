@@ -33,6 +33,7 @@ def main(
     from backend.app.agents.discovery import DiscoveryAgent
     from backend.app.agents.research import ResearchAgent
     from backend.app.agents.qualification import QualificationAgent
+    from backend.app.agents.enrichment import EnrichmentAgent
     from backend.app.agents.outreach import OutreachAgent
 
     batch_prefix = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
@@ -46,7 +47,7 @@ def main(
     results: dict[str, object] = {}
 
     # --- Stage 1: Discovery ---
-    console.print("[bold cyan]Stage 1/4: Discovery[/bold cyan]")
+    console.print("[bold cyan]Stage 1/5: Discovery[/bold cyan]")
     discovery = DiscoveryAgent(batch_id=f"{batch_prefix}_discovery")
     results["discovery"] = discovery.execute(max_pages=max_pages, campaign_name=campaign)
 
@@ -56,7 +57,7 @@ def main(
         raise typer.Exit(code=1)
 
     # --- Stage 2: Research ---
-    console.print("[bold cyan]Stage 2/4: Research[/bold cyan]")
+    console.print("[bold cyan]Stage 2/5: Research[/bold cyan]")
     research = ResearchAgent(batch_id=f"{batch_prefix}_research")
     results["research"] = research.execute()
 
@@ -66,7 +67,7 @@ def main(
         raise typer.Exit(code=1)
 
     # --- Stage 3: Qualification ---
-    console.print("[bold cyan]Stage 3/4: Qualification[/bold cyan]")
+    console.print("[bold cyan]Stage 3/5: Qualification[/bold cyan]")
     qualification = QualificationAgent(batch_id=f"{batch_prefix}_qualification")
     results["qualification"] = qualification.execute()
 
@@ -75,11 +76,21 @@ def main(
         _print_pipeline_summary(results, pipeline_start)
         raise typer.Exit(code=1)
 
-    # --- Stage 4: Outreach ---
+    # --- Stage 4: Enrichment ---
+    console.print("[bold cyan]Stage 4/5: Enrichment[/bold cyan]")
+    enrichment = EnrichmentAgent(batch_id=f"{batch_prefix}_enrichment")
+    results["enrichment"] = enrichment.execute()
+
+    if not results["enrichment"].success:
+        console.print("[bold red]Enrichment failed. Pipeline stopped.[/bold red]")
+        _print_pipeline_summary(results, pipeline_start)
+        raise typer.Exit(code=1)
+
+    # --- Stage 5: Outreach ---
     if skip_outreach:
-        console.print("[yellow]Stage 4/4: Outreach — SKIPPED (--skip-outreach)[/yellow]")
+        console.print("[yellow]Stage 5/5: Outreach — SKIPPED (--skip-outreach)[/yellow]")
     else:
-        console.print("[bold cyan]Stage 4/4: Outreach[/bold cyan]")
+        console.print("[bold cyan]Stage 5/5: Outreach[/bold cyan]")
         outreach = OutreachAgent(batch_id=f"{batch_prefix}_outreach")
         results["outreach"] = outreach.execute()
 

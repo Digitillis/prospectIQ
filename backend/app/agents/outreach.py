@@ -23,13 +23,16 @@ logger = logging.getLogger(__name__)
 
 # Persona priority order — higher value = preferred primary contact
 PERSONA_PRIORITY = {
-    "vp_ops": 100,
-    "coo": 90,
-    "plant_manager": 80,
-    "digital_transformation": 70,
-    "cio": 60,
-    "director_ops": 50,
-    "vp_supply_chain": 40,
+    "vp_quality_food_safety": 100,     # F&B primary buyer (FSMA compliance)
+    "coo": 95,
+    "vp_ops": 90,
+    "plant_manager": 85,
+    "director_quality_food_safety": 80, # F&B secondary buyer
+    "maintenance_leader": 75,
+    "director_ops": 70,
+    "digital_transformation": 65,
+    "vp_supply_chain": 60,
+    "cio": 55,
 }
 
 OUTREACH_SYSTEM = """You are an expert B2B sales copywriter for Digitillis, an AI-native manufacturing intelligence platform. You write concise, personalized outreach messages that lead with the prospect's specific challenges — not product features.
@@ -122,6 +125,8 @@ class OutreachAgent(BaseAgent):
         sequence_name: str = "initial_outreach",
         sequence_step: int = 1,
         limit: int = 20,
+        multi_thread: bool = True,
+        max_contacts_per_company: int = 2,
     ) -> AgentResult:
         """Generate outreach drafts for qualified companies.
 
@@ -182,94 +187,133 @@ class OutreachAgent(BaseAgent):
             company_id = company["id"]
 
             try:
-                # Select best contact
-                contacts = self.db.get_contacts_for_company(company_id)
-                contact = self._select_primary_contact(contacts)
+                # Suppression check — block outreach to suppressed companies
+                from backend.app.core.suppression import is_suppressed
 
-                if not contact:
+                suppressed, reason = is_suppressed(self.db, company_id)
+                if suppressed:
+                    console.print(
+                        f"  [dim]{company_name}: Suppressed ({reason}). Skipping.[/dim]"
+                    )
+                    result.skipped += 1
+                    result.add_detail(company_name, "suppressed", reason or "")
+                    continue
+
+                # Select contacts — multi-thread if enabled
+                contacts = self.db.get_contacts_for_company(company_id)
+
+                if multi_thread and max_contacts_per_company > 1:
+                    target_contacts = self._select_contacts_for_threading(
+                        contacts, max_contacts_per_company
+                    )
+                else:
+                    primary = self._select_primary_contact(contacts)
+                    target_contacts = [primary] if primary else []
+
+                if not target_contacts:
                     console.print(f"  [yellow]{company_name}: No suitable contact found. Skipping.[/yellow]")
                     result.skipped += 1
                     result.add_detail(company_name, "skipped", "No suitable contact")
                     continue
 
+                # Filter out suppressed contacts
+                valid_contacts = []
+                for contact in target_contacts:
+                    contact_suppressed, contact_reason = is_suppressed(
+                        self.db, company_id, contact["id"]
+                    )
+                    if contact_suppressed:
+                        console.print(
+                            f"  [dim]{company_name}: {contact.get('full_name', '?')} suppressed ({contact_reason})[/dim]"
+                        )
+                    else:
+                        valid_contacts.append(contact)
+
+                if not valid_contacts:
+                    result.skipped += 1
+                    result.add_detail(company_name, "all_contacts_suppressed", "")
+                    continue
+
                 # Get research intelligence
                 research = self.db.get_research(company_id)
 
-                # Build value messaging for this tier
-                tier = company.get("tier", "2")
-                value_msg = ontology.get("value_messaging", {}).get(tier, {})
+                # Generate drafts for each valid contact
+                for contact in valid_contacts:
+                    # Build value messaging for this tier
+                    tier = company.get("tier", "2")
+                    value_msg = ontology.get("value_messaging", {}).get(tier, {})
 
-                # Build the prompt
-                prompt = self._build_prompt(
-                    company=company,
-                    contact=contact,
-                    research=research,
-                    step_config=step_config,
-                    sequence_name=sequence_name,
-                    value_messaging=value_msg,
-                    global_principles=seq_config.get("global_principles", {}),
-                )
+                    # Build the prompt
+                    prompt = self._build_prompt(
+                        company=company,
+                        contact=contact,
+                        research=research,
+                        step_config=step_config,
+                        sequence_name=sequence_name,
+                        value_messaging=value_msg,
+                        global_principles=seq_config.get("global_principles", {}),
+                    )
 
-                # Call Claude
-                console.print(f"  [dim]{company_name} → {contact.get('full_name', 'Unknown')}...[/dim]")
+                    # Call Claude
+                    console.print(f"  [dim]{company_name} → {contact.get('full_name', 'Unknown')}...[/dim]")
 
-                response = client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=1000,
-                    system=OUTREACH_SYSTEM,
-                    messages=[{"role": "user", "content": prompt}],
-                )
+                    response = client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=1000,
+                        system=OUTREACH_SYSTEM,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
 
-                # Track cost
-                usage = response.usage
-                self.track_cost(
-                    provider="anthropic",
-                    model="claude-sonnet-4-20250514",
-                    endpoint="/messages",
-                    company_id=company_id,
-                    input_tokens=usage.input_tokens,
-                    output_tokens=usage.output_tokens,
-                )
+                    # Track cost
+                    usage = response.usage
+                    self.track_cost(
+                        provider="anthropic",
+                        model="claude-sonnet-4-20250514",
+                        endpoint="/messages",
+                        company_id=company_id,
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens,
+                    )
 
-                # Parse response
-                content = response.content[0].text.strip()
-                if content.startswith("```"):
-                    content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-                    if content.endswith("```"):
-                        content = content[:-3]
-                    content = content.strip()
+                    # Parse response
+                    content = response.content[0].text.strip()
+                    if content.startswith("```"):
+                        content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+                        if content.endswith("```"):
+                            content = content[:-3]
+                        content = content.strip()
 
-                parsed = json.loads(content)
+                    parsed = json.loads(content)
 
-                # Create outreach draft
-                draft_data = {
-                    "company_id": company_id,
-                    "contact_id": contact["id"],
-                    "channel": step_config["channel"],
-                    "sequence_name": sequence_name,
-                    "sequence_step": sequence_step,
-                    "subject": parsed.get("subject", ""),
-                    "body": parsed.get("body", ""),
-                    "personalization_notes": parsed.get("personalization_notes", ""),
-                    "approval_status": "pending",
-                }
+                    # Create outreach draft
+                    draft_data = {
+                        "company_id": company_id,
+                        "contact_id": contact["id"],
+                        "channel": step_config["channel"],
+                        "sequence_name": sequence_name,
+                        "sequence_step": sequence_step,
+                        "subject": parsed.get("subject", ""),
+                        "body": parsed.get("body", ""),
+                        "personalization_notes": parsed.get("personalization_notes", ""),
+                        "approval_status": "pending",
+                    }
 
-                self.db.insert_outreach_draft(draft_data)
+                    self.db.insert_outreach_draft(draft_data)
 
-                # Update company status
+                    console.print(
+                        f"  [green]{company_name} → {contact.get('full_name', 'Unknown')}: Draft created. "
+                        f"Subject: \"{parsed.get('subject', '')[:50]}\"[/green]"
+                    )
+
+                    result.processed += 1
+                    result.add_detail(
+                        company_name,
+                        "draft_created",
+                        f"Contact: {contact.get('full_name')}, Channel: {step_config['channel']}",
+                    )
+
+                # Update company status (once per company, after all contacts processed)
                 self.db.update_company(company_id, {"status": "outreach_pending"})
-
-                console.print(
-                    f"  [green]{company_name} → Draft created. "
-                    f"Subject: \"{parsed.get('subject', '')[:50]}\"[/green]"
-                )
-
-                result.processed += 1
-                result.add_detail(
-                    company_name,
-                    "draft_created",
-                    f"Contact: {contact.get('full_name')}, Channel: {step_config['channel']}",
-                )
 
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse Claude response for {company_name}: {e}")
@@ -281,6 +325,50 @@ class OutreachAgent(BaseAgent):
                 result.add_detail(company_name, "error", str(e)[:200])
 
         return result
+
+    def _select_contacts_for_threading(
+        self, contacts: list[dict], max_contacts: int = 2
+    ) -> list[dict]:
+        """Select multiple contacts for multi-threaded outreach.
+
+        Picks the top N contacts by persona priority, preferring contacts
+        with different persona types (e.g., VP Ops + VP Quality) over
+        two contacts with the same role.
+        """
+        if not contacts:
+            return []
+
+        # Score and sort all contacts
+        def contact_score(c: dict) -> int:
+            persona = c.get("persona_type", "")
+            priority = PERSONA_PRIORITY.get(persona, 0)
+            dm_bonus = 50 if c.get("is_decision_maker") else 0
+            email_bonus = 20 if c.get("email") else 0
+            return priority + dm_bonus + email_bonus
+
+        scored = sorted(contacts, key=contact_score, reverse=True)
+
+        # Select diverse personas — avoid two contacts with the same persona_type
+        selected = []
+        seen_personas: set[str] = set()
+
+        for c in scored:
+            if len(selected) >= max_contacts:
+                break
+            persona = c.get("persona_type", "unknown")
+            if persona not in seen_personas:
+                selected.append(c)
+                seen_personas.add(persona)
+
+        # If we didn't fill max_contacts with unique personas, add duplicates
+        if len(selected) < max_contacts:
+            for c in scored:
+                if len(selected) >= max_contacts:
+                    break
+                if c not in selected:
+                    selected.append(c)
+
+        return selected
 
     def _select_primary_contact(self, contacts: list[dict]) -> dict | None:
         """Select the best contact for outreach based on persona priority."""

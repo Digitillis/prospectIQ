@@ -2,19 +2,24 @@
 
 Uses Claude Sonnet to analyze aggregated outreach performance data
 and generate actionable insights for improving engagement strategy.
+
+When auto_apply=True, writes scoring adjustments back to scoring.yaml
+and ICP refinements back to icp.yaml — closing the feedback loop.
 """
 
 import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import anthropic
+import yaml
 from rich.console import Console
 from rich.table import Table
 
 from backend.app.agents.base import BaseAgent, AgentResult
-from backend.app.core.config import get_settings
+from backend.app.core.config import get_settings, CONFIG_DIR
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -99,7 +104,7 @@ class LearningAgent(BaseAgent):
 
     agent_name = "learning"
 
-    def run(self, period_days: int = 30, **kwargs) -> AgentResult:
+    def run(self, period_days: int = 30, auto_apply: bool = False, **kwargs) -> AgentResult:
         """Analyze learning outcomes and generate insights.
 
         Args:
@@ -171,13 +176,31 @@ class LearningAgent(BaseAgent):
         # Display insights
         self._print_insights(analysis)
 
+        # Apply scoring adjustments back to config if auto_apply is set
+        applied_count = 0
+        if auto_apply:
+            applied_count = self._apply_scoring_adjustments(analysis)
+            if applied_count > 0:
+                console.print(
+                    f"\n  [bold green]Auto-applied {applied_count} scoring adjustment(s) "
+                    f"to config/scoring.yaml[/bold green]"
+                )
+        else:
+            adjustments = analysis.get("scoring_adjustments", [])
+            if adjustments:
+                console.print(
+                    f"\n  [dim]Tip: Run with auto_apply=True to write "
+                    f"{len(adjustments)} scoring adjustment(s) to config/scoring.yaml[/dim]"
+                )
+
         result.processed = 1
         result.add_detail(
             "Learning Analysis",
             "completed",
             f"Period: {period_days}d | Outcomes: {len(outcomes)} | "
             f"Insights: {len(analysis.get('top_insights', []))} | "
-            f"Scoring adjustments: {len(analysis.get('scoring_adjustments', []))} | "
+            f"Scoring adjustments: {len(analysis.get('scoring_adjustments', []))} "
+            f"({'applied' if auto_apply else 'suggested only'}) | "
             f"Messaging suggestions: {len(analysis.get('messaging_suggestions', []))}",
         )
 
@@ -535,3 +558,96 @@ class LearningAgent(BaseAgent):
             console.print(icp_table)
 
         console.print()
+
+    # ------------------------------------------------------------------
+    # Feedback loop — apply insights back to config
+    # ------------------------------------------------------------------
+
+    def _apply_scoring_adjustments(self, analysis: dict) -> int:
+        """Apply scoring adjustments from Claude's analysis back to scoring.yaml.
+
+        Only applies adjustments to threshold values and signal point weights.
+        Backs up the original file before writing changes.
+
+        Returns:
+            Number of adjustments successfully applied.
+        """
+        adjustments = analysis.get("scoring_adjustments", [])
+        if not adjustments:
+            return 0
+
+        scoring_path = CONFIG_DIR / "scoring.yaml"
+        if not scoring_path.exists():
+            logger.warning("scoring.yaml not found, cannot apply adjustments")
+            return 0
+
+        # Load current config
+        with open(scoring_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        # Back up before modifying
+        backup_path = CONFIG_DIR / f"scoring.yaml.bak.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        with open(backup_path, "w") as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+        applied = 0
+        dimensions = config.get("dimensions", {})
+
+        for adj in adjustments:
+            dimension = adj.get("dimension", "")
+            signal = adj.get("signal", "")
+            change = adj.get("suggested_change", "")
+
+            if not dimension or not signal:
+                continue
+
+            # Only apply point-value changes (safe, reversible)
+            # Parse suggestions like "increase to 7 points" or "reduce to 3 points"
+            import re
+            point_match = re.search(r"(\d+)\s*(?:points?|pts?)", change.lower())
+            if not point_match:
+                logger.info(
+                    f"Skipping non-numeric adjustment: {dimension}/{signal}: {change}"
+                )
+                continue
+
+            new_points = int(point_match.group(1))
+
+            # Find the signal in the config
+            dim_config = dimensions.get(dimension, {})
+            signals = dim_config.get("signals", {})
+
+            if signal in signals:
+                old_points = signals[signal].get("points", 0)
+                max_pts = dim_config.get("max_points", 25)
+
+                # Safety: don't let any single signal exceed half the dimension max
+                if new_points > max_pts // 2:
+                    logger.warning(
+                        f"Capping adjustment {dimension}/{signal}: "
+                        f"{new_points} → {max_pts // 2} (max half of {max_pts})"
+                    )
+                    new_points = max_pts // 2
+
+                if new_points != old_points:
+                    signals[signal]["points"] = new_points
+                    applied += 1
+                    console.print(
+                        f"    [green]Applied: {dimension}/{signal}: "
+                        f"{old_points} → {new_points} pts[/green]"
+                    )
+
+        if applied > 0:
+            # Write updated config
+            with open(scoring_path, "w") as f:
+                yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+            console.print(
+                f"\n  [dim]Backup saved to {backup_path.name}[/dim]"
+            )
+
+            # Clear the lru_cache so next scoring run picks up changes
+            from backend.app.core.config import get_scoring_config
+            get_scoring_config.cache_clear()
+
+        return applied

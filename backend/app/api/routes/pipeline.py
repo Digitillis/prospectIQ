@@ -12,8 +12,10 @@ from pydantic import BaseModel
 from backend.app.agents.discovery import DiscoveryAgent
 from backend.app.agents.research import ResearchAgent
 from backend.app.agents.qualification import QualificationAgent
+from backend.app.agents.enrichment import EnrichmentAgent
 from backend.app.agents.outreach import OutreachAgent
 from backend.app.agents.engagement import EngagementAgent
+from backend.app.agents.reengagement import ReengagementAgent
 from backend.app.orchestrator.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
@@ -32,12 +34,20 @@ class DiscoveryRequest(BaseModel):
 class ResearchRequest(BaseModel):
     company_ids: Optional[list[str]] = None
     min_score: Optional[int] = None
+    tier: Optional[str] = None
+    tiers: Optional[list[str]] = None
     limit: Optional[int] = None
 
 
 class QualificationRequest(BaseModel):
     company_ids: Optional[list[str]] = None
     limit: int = 100
+
+
+class EnrichmentRequest(BaseModel):
+    company_ids: Optional[list[str]] = None
+    limit: int = 25
+    include_phone: bool = False
 
 
 class OutreachRequest(BaseModel):
@@ -52,6 +62,11 @@ class FullPipelineRequest(BaseModel):
     campaign: Optional[str] = None
     tiers: Optional[list[str]] = None
     skip_outreach: bool = False
+
+
+class ReengagementRequest(BaseModel):
+    limit: int = 50
+    cooldown_days: int = 90
 
 
 class EngagementRequest(BaseModel):
@@ -101,6 +116,8 @@ async def run_research(body: ResearchRequest):
     result = agent.execute(
         company_ids=body.company_ids,
         min_firmographic_score=body.min_score,
+        tier=body.tier,
+        tiers=body.tiers,
         limit=body.limit,
     )
     return {"data": _serialize_result(result)}
@@ -113,6 +130,22 @@ async def run_qualification(body: QualificationRequest):
     result = agent.execute(
         company_ids=body.company_ids,
         limit=body.limit,
+    )
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/enrichment")
+async def run_enrichment(body: EnrichmentRequest):
+    """Trigger the enrichment agent to get emails/phones for qualified contacts.
+
+    Consumes Apollo credits — only enriches the top-priority contact per company.
+    Must run after qualification, before outreach.
+    """
+    agent = EnrichmentAgent()
+    result = agent.execute(
+        company_ids=body.company_ids,
+        limit=body.limit,
+        include_phone=body.include_phone,
     )
     return {"data": _serialize_result(result)}
 
@@ -142,6 +175,18 @@ async def run_outreach(body: OutreachRequest):
     return {"data": _serialize_result(result)}
 
 
+@router.post("/run/reengagement")
+async def run_reengagement(body: ReengagementRequest):
+    """Re-queue stale prospects whose sequences completed without reply.
+
+    Scans for contacts past the cooldown period (default 90 days) and
+    moves them back to 'qualified' status for warm follow-up outreach.
+    """
+    agent = ReengagementAgent()
+    result = agent.execute(limit=body.limit, cooldown_days=body.cooldown_days)
+    return {"data": _serialize_result(result)}
+
+
 @router.post("/run/engagement")
 async def run_engagement(body: EngagementRequest):
     """Trigger an engagement action (send approved drafts, process sequences, poll events).
@@ -156,6 +201,45 @@ async def run_engagement(body: EngagementRequest):
     agent = EngagementAgent()
     result = agent.execute(action=body.action, campaign_name=body.campaign_name)
     return {"data": _serialize_result(result)}
+
+
+@router.post("/run/buying-signals")
+async def run_buying_signals():
+    """Scan contacted/engaged prospects for buying signals and auto-escalate.
+
+    Detects: multi-opens, link clicks, multi-contact engagement,
+    re-engagement after silence. Auto-bumps PQS and notifies Slack.
+    """
+    from backend.app.core.buying_signals import BuyingSignalDetector
+    agent = BuyingSignalDetector()
+    result = agent.execute()
+    return {"data": _serialize_result(result)}
+
+
+@router.get("/intent/{company_id}")
+async def get_intent_signals(company_id: str):
+    """Get intent signal analysis for a specific company."""
+    from backend.app.core.intent_signals import analyze_intent
+    db = Database()
+    report = analyze_intent(db, company_id)
+    return {
+        "data": {
+            "company_id": report.company_id,
+            "company_name": report.company_name,
+            "intent_level": report.intent_level,
+            "total_score": report.total_score,
+            "signals": [
+                {
+                    "type": s.signal_type,
+                    "strength": s.strength,
+                    "points": s.points,
+                    "evidence": s.evidence,
+                    "source": s.source,
+                }
+                for s in report.signals
+            ],
+        }
+    }
 
 
 @router.post("/run/poll-instantly")

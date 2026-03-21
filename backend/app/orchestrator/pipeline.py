@@ -32,12 +32,12 @@ class Pipeline:
         skip_outreach: bool = False,
         tiers: list[str] | None = None,
     ) -> dict[str, AgentResult]:
-        """Run the full pipeline: discovery → research → qualification → outreach.
+        """Run the full pipeline: discovery → research → qualification → enrichment → outreach.
 
         Args:
             max_pages: Max pages per tier for Apollo discovery.
             campaign_name: Campaign name for tracking.
-            skip_outreach: If True, stop after qualification.
+            skip_outreach: If True, stop after enrichment.
             tiers: Specific tiers to target.
 
         Returns:
@@ -49,7 +49,7 @@ class Pipeline:
         console.print("[bold magenta]{'='*60}[/bold magenta]\n")
 
         # Step 1: Discovery
-        console.print("[bold]Step 1/4: Discovery[/bold]")
+        console.print("[bold]Step 1/5: Discovery[/bold]")
         discovery_result = self.run_discovery(
             max_pages=max_pages,
             campaign_name=campaign_name,
@@ -60,25 +60,32 @@ class Pipeline:
             return self.results
 
         # Step 2: Research
-        console.print("\n[bold]Step 2/4: Research[/bold]")
+        console.print("\n[bold]Step 2/5: Research[/bold]")
         research_result = self.run_research()
         if not research_result.success:
             console.print("[red]Research failed. Stopping pipeline.[/red]")
             return self.results
 
         # Step 3: Qualification
-        console.print("\n[bold]Step 3/4: Qualification[/bold]")
+        console.print("\n[bold]Step 3/5: Qualification[/bold]")
         qualification_result = self.run_qualification()
         if not qualification_result.success:
             console.print("[red]Qualification failed. Stopping pipeline.[/red]")
             return self.results
 
-        # Step 4: Outreach (optional)
+        # Step 4: Enrichment (get emails/phones for qualified contacts)
+        console.print("\n[bold]Step 4/5: Enrichment[/bold]")
+        enrichment_result = self.run_enrichment()
+        if not enrichment_result.success:
+            console.print("[red]Enrichment failed. Stopping pipeline.[/red]")
+            return self.results
+
+        # Step 5: Outreach (optional)
         if not skip_outreach:
-            console.print("\n[bold]Step 4/4: Outreach Generation[/bold]")
+            console.print("\n[bold]Step 5/5: Outreach Generation[/bold]")
             self.run_outreach()
         else:
-            console.print("\n[dim]Step 4/4: Outreach skipped[/dim]")
+            console.print("\n[dim]Step 5/5: Outreach skipped[/dim]")
 
         self._print_summary()
         return self.results
@@ -108,6 +115,15 @@ class Pipeline:
         agent = QualificationAgent(batch_id=f"{self.batch_prefix}_qualification")
         result = agent.execute(**kwargs)
         self.results["qualification"] = result
+        return result
+
+    def run_enrichment(self, **kwargs) -> AgentResult:
+        """Run enrichment agent."""
+        from backend.app.agents.enrichment import EnrichmentAgent
+
+        agent = EnrichmentAgent(batch_id=f"{self.batch_prefix}_enrichment")
+        result = agent.execute(**kwargs)
+        self.results["enrichment"] = result
         return result
 
     def run_outreach(self, **kwargs) -> AgentResult:
