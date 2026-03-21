@@ -49,8 +49,8 @@ Thumbs.db
 # Logs
 *.log
 
-# Tasks (local working files)
-tasks/
+# Tasks (local working files — root only, not dashboard/app/tasks)
+/tasks/
 .env
 .env.*
 *.env
