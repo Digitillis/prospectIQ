@@ -155,17 +155,32 @@ sequences:
 # =========================================================
 global_principles:
   voice:
-    - "Speak as a peer who understands manufacturing — not a vendor pitching"
-    - "Use their industry language (OEE, MTBF, RUL, unplanned downtime)"
-    - "Be specific, not generic. Reference their actual situation."
+    - "Write as Avi — a technical founder who understands manufacturing, not a salesperson"
+    - "Direct, confident, conversational. Short sentences. No corporate jargon."
+    - "Show genuine curiosity about their operation — ask smart questions"
+    - "Use their industry language naturally (OEE, MTBF, RUL, CCP, HACCP, FSMA)"
+    - "Be specific, not generic. Reference their actual situation from research."
+    - "One email = one idea. Don't cram multiple points into one message."
   anti_patterns:
-    - "Never use 'I hope this finds you well' or similar filler"
+    - "Never use 'I hope this finds you well' or any filler opener"
     - "Never create false urgency or scarcity"
-    - "Never make claims without evidence"
+    - "Never make claims without evidence or numbers"
     - "Never use manipulative sales language"
-    - "Never send walls of text — respect their time"
+    - "Never send walls of text — respect their time (under 150 words)"
     - "Never attach files in initial outreach"
+    - "Never use feature lists or bullet points of capabilities"
+    - "Never use words: leverage, synergy, cutting-edge, game-changing, revolutionary"
+    - "Never compliment their company in a way that feels like flattery"
+    - "Never mention Digitillis funding, stage, or team size"
   personalization_requirements:
     - "Every email must reference at least 1 specific fact about the company"
-    - "Subject lines must be relevant to their situation, not generic"
-    - "CTA must be appropriate for the relationship stage"
+    - "Subject lines must reference their company name or specific situation"
+    - "CTA must be a single, low-friction ask (15-min call, not a demo)"
+  signature: |
+    Best regards,
+    Avanish
+
+    Avanish Mehrotra
+    Founder & CEO
+    Digitillis | www.digitillis.com
+    avi@digitillis.com | 224.355.4500

@@ -189,11 +189,33 @@ def validate_draft(
             f"Found {cta_count} CTAs — emails with a single clear CTA convert better"
         )
 
-    # 7. Sign-off check
-    if "avi" not in body_lower and "avanish" not in body_lower:
+    # 7. AI-sounding language check
+    ai_tells = [
+        ("—", "em_dash", "Contains em dash (—) — use comma or period instead"),
+        ("–", "en_dash", "Contains en dash (–) — use comma or period instead"),
+        ("moreover", "moreover", "Contains 'moreover' — sounds like AI, not a person"),
+        ("furthermore", "furthermore", "Contains 'furthermore' — too formal, sounds AI-generated"),
+        ("in today's", "in_todays", "Contains 'in today's...' — generic AI opener"),
+        ("i'd love to", "id_love_to", "Contains 'I'd love to' — overused AI phrase"),
+        ("i came across", "came_across", "Contains 'I came across' — overused AI opener"),
+        ("it's worth noting", "worth_noting", "Contains 'it's worth noting' — AI filler"),
+        ("needless to say", "needless", "Contains 'needless to say' — if needless, don't say it"),
+        ("at the end of the day", "end_of_day", "Contains 'at the end of the day' — cliché"),
+    ]
+    for marker, check_name, message in ai_tells:
+        if marker in body if marker in ("—", "–") else marker in body_lower:
+            report.add_issue("warning", f"ai_tell_{check_name}", message)
+
+    # 8. Sign-off check — must include the full signature block
+    if "avanish mehrotra" not in body_lower:
         report.add_issue(
             "warning", "no_signoff",
-            "Missing founder sign-off (Avi / Avanish)"
+            "Missing full signature (should end with 'Avanish Mehrotra / Founder & CEO / Digitillis')"
+        )
+    if "224.355.4500" not in body:
+        report.add_issue(
+            "warning", "no_phone_in_sig",
+            "Missing phone number in signature (224.355.4500)"
         )
 
     return report
