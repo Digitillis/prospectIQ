@@ -27,6 +27,7 @@ import {
   PenTool,
   ClipboardCheck,
   TrendingUp,
+  Brain,
   Copy,
   Check,
   ExternalLink,
@@ -55,6 +56,7 @@ import {
   rejectDraft,
   testSendDraft,
   runAgent,
+  updateNextAction,
   type TodayData,
   type TodayHotSignal,
   type TodayInteraction,
@@ -189,11 +191,11 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
 
       {open && (
         <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs space-y-3">
-          {/* WHY THIS MESSAGE */}
-          {intel.personalization_notes && (
+          {/* RESEARCH SUMMARY — full narrative from Perplexity/Claude research */}
+          {intel.company?.research_summary && (
             <div>
-              <div className="font-semibold text-gray-700 mb-1">WHY THIS MESSAGE</div>
-              <p className="text-gray-600">{intel.personalization_notes}</p>
+              <div className="font-semibold text-gray-700 mb-1">RESEARCH SUMMARY</div>
+              <p className="text-gray-600 whitespace-pre-wrap">{intel.company.research_summary}</p>
             </div>
           )}
 
@@ -204,27 +206,27 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             (intel.company?.pain_signals?.length ?? 0) > 0 ||
             intel.research?.known_systems?.length) ? (
             <div>
-              <div className="font-semibold text-gray-700 mb-1">COMPANY RESEARCH</div>
-              <div className="space-y-1 text-gray-600">
+              <div className="font-semibold text-gray-700 mb-1">KEY FINDINGS</div>
+              <div className="space-y-1.5 text-gray-600">
                 {(intel.research?.products_services?.length ?? 0) > 0 && (
-                  <p>Products: {intel.research!.products_services!.join(", ")}</p>
+                  <div><span className="font-medium text-gray-700">Products/Services:</span> {intel.research!.products_services!.join(", ")}</div>
                 )}
                 {(intel.research?.recent_news?.length ?? 0) > 0 && (
-                  <p>Recent: {intel.research!.recent_news!.join("; ")}</p>
+                  <div><span className="font-medium text-gray-700">Recent News:</span>{intel.research!.recent_news!.map((n: string, i: number) => <span key={i} className="block ml-3">• {n}</span>)}</div>
                 )}
                 {((intel.research?.pain_points?.length ?? 0) > 0 ||
                   (intel.company?.pain_signals?.length ?? 0) > 0) && (
-                  <p>
-                    Pain points:{" "}
-                    {(
+                  <div><span className="font-medium text-gray-700">Pain Points:</span>{(
                       intel.research?.pain_points ||
                       intel.company?.pain_signals ||
                       []
-                    ).join(", ")}
-                  </p>
+                    ).map((p: string, i: number) => <span key={i} className="block ml-3">• {p}</span>)}</div>
                 )}
                 {(intel.research?.known_systems?.length ?? 0) > 0 && (
-                  <p>Systems: {intel.research!.known_systems!.join(", ")}</p>
+                  <div><span className="font-medium text-gray-700">Known Systems/Tech:</span> {intel.research!.known_systems!.join(", ")}</div>
+                )}
+                {(intel.company?.personalization_hooks?.length ?? 0) > 0 && (
+                  <div><span className="font-medium text-gray-700">Outreach Hooks:</span>{(intel.company!.personalization_hooks as string[]).map((h: string, i: number) => <span key={i} className="block ml-3">• {h}</span>)}</div>
                 )}
               </div>
             </div>
@@ -471,6 +473,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   "pen-tool": PenTool,
   "clipboard-check": ClipboardCheck,
   "trending-up": TrendingUp,
+  brain: Brain,
 };
 
 function SectionWrapper({
@@ -1349,6 +1352,118 @@ function PipelineRow({ label, count, nextAction, agentName, agentLabel, limit = 
 }
 
 // ---------------------------------------------------------------------------
+// NextActionCard — AI-recommended next action from contact_events
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: string) => void; onSkip: (id: string) => void }) {
+  const [copied, setCopied] = useState(false);
+
+  // Supabase joins may return arrays or objects depending on cardinality
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let contact: any = action.contacts || {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let company: any = action.companies || {};
+  if (Array.isArray(contact)) contact = contact[0] || {};
+  if (Array.isArray(company)) company = company[0] || {};
+
+  return (
+    <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm text-gray-900">{contact.full_name || "Unknown contact"}</span>
+          {contact.title && (
+            <span className="text-xs text-gray-500">{contact.title}</span>
+          )}
+          {company.name && (
+            <>
+              <span className="text-xs text-gray-400">·</span>
+              <span className="text-xs text-gray-500">{company.name}</span>
+            </>
+          )}
+        </div>
+        {action.next_action_date && (
+          <span className="text-xs text-purple-600 font-medium">Due: {action.next_action_date}</span>
+        )}
+      </div>
+
+      {/* What triggered this */}
+      <div className="text-xs text-gray-500 mb-2">
+        Based on:{" "}
+        {action.event_type === "response_received" ? "Their response" : (action.event_type || "event").replace(/_/g, " ")}
+        {action.sentiment && ` (${action.sentiment})`}
+        {action.channel && ` via ${action.channel}`}
+      </div>
+
+      {/* The recommendation */}
+      <div className="bg-white rounded p-3 border border-purple-100 mb-2">
+        <p className="text-sm text-gray-800">{action.next_action}</p>
+      </div>
+
+      {/* Suggested message */}
+      {action.suggested_message && (
+        <div className="bg-white rounded p-3 border border-blue-100 mb-2">
+          <div className="text-xs font-medium text-blue-700 mb-1">Suggested message:</div>
+          <p className="text-sm text-gray-800 whitespace-pre-wrap">{action.suggested_message}</p>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(action.suggested_message).catch(() => {
+                const el = document.createElement("textarea");
+                el.value = action.suggested_message;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand("copy");
+                document.body.removeChild(el);
+              });
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+            className="mt-2 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+          >
+            {copied ? "✓ Copied!" : "📋 Copy message"}
+          </button>
+        </div>
+      )}
+
+      {/* Reasoning (collapsible) */}
+      {action.action_reasoning && (
+        <details className="text-xs text-gray-500 mb-2">
+          <summary className="cursor-pointer hover:text-gray-700">Why this recommendation</summary>
+          <p className="mt-1 pl-2 border-l-2 border-gray-200">{action.action_reasoning}</p>
+        </details>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2 flex-wrap mt-2">
+        {contact.linkedin_url && (
+          <a
+            href={contact.linkedin_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+          >
+            Open LinkedIn
+          </a>
+        )}
+        <button
+          onClick={() => onDone(action.id)}
+          className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+        >
+          ✓ Done
+        </button>
+        <button
+          onClick={() => onSkip(action.id)}
+          className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+        >
+          Skip
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -1365,6 +1480,7 @@ export default function TodayCockpitPage() {
   const [doneApprovals, setDoneApprovals] = useState<Set<string>>(new Set());
   const [doneContent, setDoneContent] = useState<Set<string>>(new Set());
   const [doneOutcomes, setDoneOutcomes] = useState<Set<string>>(new Set());
+  const [doneNextActions, setDoneNextActions] = useState<Set<string>>(new Set());
 
   // Local progress delta (optimistic)
   const [localExtraDone, setLocalExtraDone] = useState(0);
@@ -1420,6 +1536,34 @@ export default function TodayCockpitPage() {
     setLocalExtraDone((n) => n + 1);
   };
 
+  const handleNextActionDone = async (eventId: string) => {
+    // Optimistic update first
+    setDoneNextActions((prev) => new Set([...prev, eventId]));
+    setLocalExtraDone((n) => n + 1);
+    try {
+      await updateNextAction(eventId, "done");
+      fetchData(true); // Refresh in background
+    } catch (e) {
+      console.error("Failed to mark action done:", e);
+      // Revert optimistic update on error
+      setDoneNextActions((prev) => { const s = new Set(prev); s.delete(eventId); return s; });
+      setLocalExtraDone((n) => n - 1);
+    }
+  };
+
+  const handleNextActionSkip = async (eventId: string) => {
+    // Optimistic update first
+    setDoneNextActions((prev) => new Set([...prev, eventId]));
+    try {
+      await updateNextAction(eventId, "skipped");
+      fetchData(true); // Refresh in background
+    } catch (e) {
+      console.error("Failed to skip action:", e);
+      // Revert optimistic update on error
+      setDoneNextActions((prev) => { const s = new Set(prev); s.delete(eventId); return s; });
+    }
+  };
+
   if (loading && !data) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -1435,6 +1579,7 @@ export default function TodayCockpitPage() {
   const pipelineSummary = data?.pipeline_summary ?? {};
   const recentInteractions = data?.recent_interactions ?? [];
   const progressDetail = data?.progress_detail;
+  const pendingNextActions = (data?.pending_next_actions ?? []).filter((a) => !doneNextActions.has(a.id));
 
   // LinkedIn items from daily_plan sections
   const linkedInConnectSection = data?.daily_plan?.sections.find((s) => s.id === "linkedin_connect");
@@ -1492,7 +1637,14 @@ export default function TodayCockpitPage() {
       {/* PROGRESS BAR + HEADER                                               */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex items-center justify-between pt-1">
-        <div /> {/* spacer */}
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          {pendingNextActions.length > 0 && (
+            <span className="flex items-center gap-1 rounded-full bg-purple-100 px-2 py-1 font-medium text-purple-700">
+              <Brain className="h-3 w-3" />
+              {pendingNextActions.length} AI action{pendingNextActions.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs text-gray-400">
           {lastRefresh && (
             <span>Updated {formatTimeAgo(lastRefresh.toISOString())}</span>
@@ -1545,7 +1697,39 @@ export default function TodayCockpitPage() {
       </SectionWrapper>
 
       {/* ------------------------------------------------------------------ */}
-      {/* SECTION 2: SEND CONNECTION REQUESTS                                 */}
+      {/* SECTION 2: AI-RECOMMENDED NEXT ACTIONS                              */}
+      {/* ------------------------------------------------------------------ */}
+      {(data?.pending_next_actions?.length ?? 0) > 0 && (
+        <SectionWrapper
+          id="next_actions"
+          icon="brain"
+          title="AI-Recommended Actions"
+          subtitle={`${pendingNextActions.length} action${pendingNextActions.length !== 1 ? "s" : ""} due today`}
+          count={pendingNextActions.length}
+          accentColor="bg-purple-100 text-purple-600"
+          defaultCollapsed={pendingNextActions.length === 0}
+        >
+          {pendingNextActions.length === 0 ? (
+            <p className="py-4 text-center text-sm text-gray-400">
+              All AI-recommended actions are done for today.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {pendingNextActions.map((action) => (
+                <NextActionCard
+                  key={action.id}
+                  action={action}
+                  onDone={handleNextActionDone}
+                  onSkip={handleNextActionSkip}
+                />
+              ))}
+            </div>
+          )}
+        </SectionWrapper>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* SECTION 3: SEND CONNECTION REQUESTS                                 */}
       {/* ------------------------------------------------------------------ */}
       <SectionWrapper
         id="linkedin_connect"

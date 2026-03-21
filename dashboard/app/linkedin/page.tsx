@@ -201,17 +201,17 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
 
       {open && (
         <div className="mt-2 rounded-lg bg-white/5 border border-white/10 p-3 text-xs space-y-3">
-          {/* WHY THIS MESSAGE */}
-          {intel.personalization_notes && (
+          {/* RESEARCH SUMMARY */}
+          {intel.company?.research_summary && (
             <div>
               <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
-                WHY THIS MESSAGE
+                RESEARCH SUMMARY
               </div>
-              <p className="text-slate-300">{intel.personalization_notes}</p>
+              <p className="text-slate-300 whitespace-pre-wrap">{intel.company.research_summary}</p>
             </div>
           )}
 
-          {/* COMPANY RESEARCH */}
+          {/* KEY FINDINGS */}
           {(intel.research?.products_services?.length ||
             intel.research?.recent_news?.length ||
             intel.research?.pain_points?.length ||
@@ -219,7 +219,7 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             intel.research?.known_systems?.length) ? (
             <div>
               <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
-                COMPANY RESEARCH
+                KEY FINDINGS
               </div>
               <div className="space-y-1 text-slate-400">
                 {(intel.research?.products_services?.length ?? 0) > 0 && (

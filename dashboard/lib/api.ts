@@ -557,6 +557,9 @@ export interface TodayData {
   // New structured fields
   daily_plan?: DailyPlan;
   progress_detail?: ProgressDetail;
+  // AI-recommended next actions
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pending_next_actions?: any[];
 }
 
 export const getTodayData = () =>
@@ -950,3 +953,64 @@ export interface AppSettings {
   };
   sequences: Record<string, Sequence>;
 }
+
+// ---------------------------------------------------------------------------
+// Contact Event Thread — /api/events
+// ---------------------------------------------------------------------------
+
+export interface ContactEvent {
+  id: string;
+  contact_id: string;
+  company_id: string;
+  event_type: string;
+  channel: string | null;
+  direction: string | null;
+  subject: string | null;
+  body: string | null;
+  sentiment: string | null;
+  sentiment_reason: string | null;
+  signals: string[];
+  tags: string[];
+  next_action: string | null;
+  next_action_date: string | null;
+  next_action_status: string | null;
+  suggested_message: string | null;
+  action_reasoning: string | null;
+  action_type?: string | null;
+  ai_analyzed?: boolean;
+  pqs_delta: number;
+  created_by: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export const getContactEvents = (contactId: string, limit?: number) =>
+  fetchAPI<{ data: ContactEvent[] }>(`/api/contacts/${contactId}/events?limit=${limit || 50}`);
+
+export const createContactEvent = (
+  contactId: string,
+  data: {
+    event_type: string;
+    channel?: string;
+    direction?: string;
+    subject?: string;
+    body?: string;
+    tags?: string[];
+    analyze?: boolean;
+  }
+) =>
+  fetchAPI<{ data: ContactEvent }>(`/api/contacts/${contactId}/events`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const updateNextAction = (eventId: string, status: string) =>
+  fetchAPI<{ data: ContactEvent }>(`/api/contacts/events/${eventId}/next-action`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+
+export const getPendingActions = (contactId?: string) =>
+  fetchAPI<{ data: ContactEvent[]; count: number }>(
+    `/api/contacts/events/pending-actions${contactId ? `?contact_id=${contactId}` : ""}`
+  );

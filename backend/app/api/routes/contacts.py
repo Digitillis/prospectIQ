@@ -1,12 +1,15 @@
 """Top-level contacts route for ProspectIQ API.
 
 Provides cross-company contact listing, individual contact detail,
-update (including relationship strength), and relationship summary.
+update (including relationship strength), relationship summary,
+and per-contact event thread with optional AI analysis.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -39,6 +42,18 @@ class ContactUpdate(BaseModel):
     linkedin_url: Optional[str] = None
     relationship_strength: Optional[int] = None  # 0-100
     last_interaction_note: Optional[str] = None
+
+
+class ContactEventCreate(BaseModel):
+    event_type: str  # response_received | connection_accepted | note_added | meeting_scheduled | meeting_held | phone_call | email_reply
+    channel: Optional[str] = None  # linkedin | email | phone | in_person
+    body: Optional[str] = None
+    tags: Optional[list[str]] = None
+    analyze: bool = False  # if True, run Claude AI analysis on the event
+
+
+class NextActionUpdate(BaseModel):
+    status: str  # done | skipped
 
 
 # ---------------------------------------------------------------------------
@@ -171,3 +186,166 @@ async def update_contact(contact_id: str, body: ContactUpdate):
 
     result = db.update_contact(contact_id, updates)
     return {"data": result}
+
+
+# ---------------------------------------------------------------------------
+# Contact Events — event thread (read / write / next-action)
+# NOTE: event_analyzer.py and events.py are handled by another agent.
+# These endpoints provide the minimal surface needed for the contact detail UI.
+# ---------------------------------------------------------------------------
+
+# IMPORTANT: pending-actions must be declared before /{contact_id}/events so
+# the static path segment isn't captured by the dynamic route.
+
+@router.get("/events/pending-actions")
+async def get_pending_actions(contact_id: Optional[str] = None):
+    """Return events that have a pending next_action for a contact (or all contacts)."""
+    db = get_db()
+    try:
+        query = (
+            db.client.table("contact_events")
+            .select("*")
+            .eq("next_action_status", "pending")
+            .not_.is_("next_action", "null")
+        )
+        if contact_id:
+            query = query.eq("contact_id", contact_id)
+        result = query.order("created_at", desc=True).limit(50).execute()
+        return {"data": result.data or [], "count": len(result.data or [])}
+    except Exception as exc:
+        logger.warning("contact_events table may not exist yet: %s", exc)
+        return {"data": [], "count": 0}
+
+
+@router.patch("/events/{event_id}/next-action")
+async def update_next_action(event_id: str, body: NextActionUpdate):
+    """Mark a next_action as done or skipped."""
+    if body.status not in ("done", "skipped"):
+        raise HTTPException(status_code=422, detail="status must be 'done' or 'skipped'")
+    db = get_db()
+    try:
+        result = (
+            db.client.table("contact_events")
+            .update({"next_action_status": body.status, "updated_at": datetime.now(timezone.utc).isoformat()})
+            .eq("id", event_id)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Event not found")
+        return {"data": result.data[0]}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to update next action: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/{contact_id}/events")
+async def list_contact_events(contact_id: str):
+    """Return all events for a contact, newest first."""
+    db = get_db()
+    # Verify contact exists
+    contact_result = (
+        db.client.table("contacts").select("id").eq("id", contact_id).execute()
+    )
+    if not contact_result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    try:
+        result = (
+            db.client.table("contact_events")
+            .select("*")
+            .eq("contact_id", contact_id)
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+        )
+        return {"data": result.data or [], "count": len(result.data or [])}
+    except Exception as exc:
+        # Table may not exist yet — return empty rather than 500
+        logger.warning("contact_events table may not exist yet: %s", exc)
+        return {"data": [], "count": 0}
+
+
+@router.post("/{contact_id}/events")
+async def create_contact_event(contact_id: str, body: ContactEventCreate):
+    """Create a new event on the contact's thread.
+
+    When analyze=True the endpoint attempts to call event_analyzer if it is
+    available; if not, the event is saved without AI enrichment so the UI
+    never hard-fails.
+    """
+    db = get_db()
+
+    # Validate contact + get company_id
+    contact_result = (
+        db.client.table("contacts")
+        .select("id, company_id, full_name, title")
+        .eq("id", contact_id)
+        .execute()
+    )
+    if not contact_result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    contact = contact_result.data[0]
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Determine direction from event type
+    inbound_types = {"response_received", "email_reply", "connection_accepted"}
+    outbound_types = {"outreach_sent", "connection_sent", "meeting_scheduled"}
+    direction: str
+    if body.event_type in inbound_types:
+        direction = "inbound"
+    elif body.event_type in outbound_types:
+        direction = "outbound"
+    else:
+        direction = "internal"
+
+    event_row: dict = {
+        "id": str(uuid.uuid4()),
+        "contact_id": contact_id,
+        "company_id": contact.get("company_id"),
+        "event_type": body.event_type,
+        "direction": direction,
+        "channel": body.channel,
+        "body": body.body,
+        "tags": body.tags or [],
+        "ai_analyzed": False,
+        "next_action_status": "pending",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    # Try AI analysis when requested
+    if body.analyze and body.body:
+        try:
+            from backend.app.agents.event_analyzer import EventAnalyzer  # type: ignore
+            analyzer = EventAnalyzer()
+            analysis = analyzer.analyze(
+                event_type=body.event_type,
+                body=body.body,
+                contact=contact,
+            )
+            event_row.update({
+                "sentiment": analysis.get("sentiment"),
+                "sentiment_reason": analysis.get("sentiment_reason"),
+                "signals": analysis.get("signals", []),
+                "next_action": analysis.get("next_action"),
+                "next_action_date": analysis.get("next_action_date"),
+                "suggested_message": analysis.get("suggested_message"),
+                "action_reasoning": analysis.get("action_reasoning"),
+                "ai_analyzed": True,
+            })
+        except ImportError:
+            logger.info("event_analyzer not available — saving event without AI enrichment")
+        except Exception as exc:
+            logger.warning("AI analysis failed — saving event without enrichment: %s", exc)
+
+    try:
+        result = db.client.table("contact_events").insert(event_row).execute()
+        saved = result.data[0] if result.data else event_row
+    except Exception as exc:
+        logger.error("Failed to insert contact event: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to save event: {exc}")
+
+    return {"data": saved}

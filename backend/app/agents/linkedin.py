@@ -94,7 +94,7 @@ def _build_system_prompt(guidelines: dict) -> str:
         "not just their company name.",
         "",
         "BAD connection note: 'Hi Greg, I see you're at CST Industries. Would love to connect.'",
-        "GOOD connection note: 'Greg, noticed CST's bulk storage work for dairy processors. Curious how you're seeing the thermal monitoring requirements evolve.'",
+        "GOOD connection note: 'Greg, I saw CST's bulk storage work for dairy processors. I am curious how you are seeing the thermal monitoring requirements evolve.'",
         "",
         "The connection note must reference ONE specific thing about their work that",
         "shows you actually looked at what they do, not just their company name.",
@@ -102,10 +102,23 @@ def _build_system_prompt(guidelines: dict) -> str:
         "The opening DM must ask a question so specific that only someone who",
         "understands their sub-sector would ask it.",
         "",
+        "## WRITING STYLE RULES (MANDATORY)",
+        "",
+        "- Always use first person explicitly: 'I saw', 'I am curious', 'I have been'. NEVER drop the subject ('Saw...', 'Curious how...').",
+        "- Use 'I am' not 'I'm' in connection notes (more professional first touch). Contractions OK in DMs.",
+        "- No em dashes. Use commas or periods instead.",
+        "- No sentence fragments. Every sentence must have a subject and verb.",
+        "",
+        "## CLOSING RULES (BY STAGE)",
+        "",
+        "- Connection note: NO closing CTA. End with a statement or observation. No 'Would love to connect'. The content IS the close.",
+        "- Opening DM: End with the question itself. The question IS the close. No 'Would love to hear your thoughts' after the question.",
+        "- Follow-up DM: One soft sentence that leaves a door open without pushing. Examples: 'Happy to share the framework if useful.' or 'Let me know if any of that maps to what you are seeing.' NEVER: 'Would love to set up a call' or 'Let me know when you are free.'",
+        "",
         "PERSONALIZATION DEPTH SCALE:",
         "Level 1 (REJECTED): 'Hi [Name], I see you work in manufacturing.'",
         "Level 2 (ACCEPTABLE): 'Hi [Name], I see [Company] makes [product] in [state].'",
-        "Level 3 (REQUIRED): '[Name], saw [Company]'s [specific work]. Curious how you handle [specific challenge that only someone in their sub-sector would face].'",
+        "Level 3 (REQUIRED): '[Name], I saw [Company]'s [specific work]. I am curious how you handle [specific challenge that only someone in their sub-sector would face].'",
         "",
         "To achieve Level 3 on LinkedIn:",
         "- Connection note: name one specific thing about what they actually do (product, customer type, process)",
@@ -176,20 +189,22 @@ EXAMPLE of wrong style (REJECTED):
 "Kyle, saw Douglas Dynamics' fabrication work for snow and ice control. Curious how you're handling seasonal ramp challenges with welding reliability."
 
 1. CONNECTION NOTE (50 words max)
-   - Reference ONE specific company fact — what they MAKE, who they SERVE, a specific PROCESS they run, or a recent event.
-   - No pitch. No product mention.
-   - End with a question or a brief closing statement. Not abrupt.
-   - Complete sentences only. Explicit "I" subject.
+   - Reference ONE specific company fact: what they MAKE, who they SERVE, a specific PROCESS, or a recent event.
+   - No pitch. No product mention. No "Would love to connect."
+   - NO closing CTA. End with a statement or observation. The content IS the close.
+   - Complete sentences only. Explicit "I" subject. "I am" not "I'm".
 
-2. OPENING DM (80 words max — send after connection is accepted)
+2. OPENING DM (80 words max, send after connection is accepted)
    - Ask a genuine question about their operational process or challenge.
    - Do NOT mention Digitillis or any product.
-   - Complete sentences. Can use contractions sparingly here (it is a DM).
-   - Make them want to respond.
+   - End with the question itself. The question IS the close. No "Would love to hear your thoughts" after it.
+   - Complete sentences. Can use contractions sparingly here.
 
-3. FOLLOW-UP DM (100 words max — send 5-7 days after opening DM if no reply)
+3. FOLLOW-UP DM (100 words max, send 5-7 days after opening DM if no reply)
    - You can mention what you are building (1 sentence max).
-   - Include a soft CTA: offer a short call or a quick insight, not a demo.
+   - End with ONE soft sentence that leaves a door open without pushing.
+     GOOD: "Happy to share the framework if useful." or "Let me know if any of that maps to what you are seeing."
+     BAD: "Would love to set up a call." or "Let me know when you are free."
    - Complete sentences. Warm, not pushy.
 
 OUTPUT FORMAT (JSON):

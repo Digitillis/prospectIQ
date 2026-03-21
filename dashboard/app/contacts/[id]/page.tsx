@@ -1,38 +1,43 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
   Building2,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
   ExternalLink,
-  Heart,
   Linkedin,
   Loader2,
   Mail,
-  Phone,
-  Save,
-  Snowflake,
-  ThermometerSun,
-  User,
-  Pencil,
-  X,
+  MapPin,
   MessageSquare,
-  StickyNote,
-  Star,
-  CheckCircle2,
+  Pencil,
+  Phone,
   AlertCircle,
+  Star,
+  Zap,
 } from "lucide-react";
-import { getContact, updateContact, type Contact, type Interaction } from "@/lib/api";
-import { cn, formatDate, formatTimeAgo, STATUS_COLORS } from "@/lib/utils";
+import {
+  getContact,
+  getContactEvents,
+  createContactEvent,
+  updateNextAction,
+  type Contact,
+  type ContactEvent,
+  type LinkedInIntel,
+} from "@/lib/api";
+import { cn, formatTimeAgo, STATUS_COLORS } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type ContactDetail = Contact & {
-  interactions?: Interaction[];
   companies?: {
     id: string;
     name: string;
@@ -40,113 +45,636 @@ type ContactDetail = Contact & {
     status: string;
     pqs_total: number;
     domain?: string;
+    sub_sector?: string;
+    industry?: string;
+    employee_count?: number;
+    revenue_printed?: string;
+    headcount_growth_6m?: number;
+    is_public?: boolean;
+    pain_signals?: string[];
   };
+  research?: {
+    products_services?: string[];
+    recent_news?: string[];
+    pain_points?: string[];
+    known_systems?: string[];
+  } | null;
+  outreach_drafts?: Array<{
+    id: string;
+    channel: string;
+    sequence_name: string;
+    body: string;
+    subject?: string;
+    approval_status: string;
+  }>;
 };
 
 // ---------------------------------------------------------------------------
-// Relationship strength helpers
+// Helper functions
 // ---------------------------------------------------------------------------
 
-function getRelationshipZone(score: number): {
-  label: string;
-  color: string;
-  trackColor: string;
-  icon: React.ReactNode;
-  description: string;
-} {
-  if (score >= 70) {
-    return {
-      label: "Strong",
-      color: "text-emerald-600",
-      trackColor: "bg-emerald-500",
-      icon: <Heart className="w-4 h-4" />,
-      description: "Active relationship — high engagement",
-    };
-  }
-  if (score >= 30) {
-    return {
-      label: "Warm",
-      color: "text-amber-600",
-      trackColor: "bg-amber-400",
-      icon: <ThermometerSun className="w-4 h-4" />,
-      description: "Some engagement — worth nurturing",
-    };
-  }
-  return {
-    label: "Cold",
-    color: "text-blue-500",
-    trackColor: "bg-blue-400",
-    icon: <Snowflake className="w-4 h-4" />,
-    description: "No meaningful engagement yet",
+function formatEventType(type: string): string {
+  const labels: Record<string, string> = {
+    outreach_sent: "Message Sent",
+    response_received: "Response Received",
+    connection_accepted: "Connection Accepted",
+    connection_sent: "Connection Sent",
+    status_change: "Status Changed",
+    note_added: "Note",
+    meeting_scheduled: "Meeting Scheduled",
+    meeting_held: "Meeting Held",
+    phone_call: "Phone Call",
+    email_reply: "Email Reply",
+    email_opened: "Email Opened",
+    link_clicked: "Link Clicked",
+    profile_viewed: "Profile Viewed",
+    system_action: "System",
   };
+  return labels[type] || type.replace(/_/g, " ");
+}
+
+function formatRelativeTime(iso: string): string {
+  const now = new Date();
+  const date = new Date(iso);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// CopyButton
 // ---------------------------------------------------------------------------
 
-function FieldRow({
-  label,
-  value,
-  editing,
-  name,
-  draft,
-  setDraft,
-  type = "text",
-}: {
-  label: string;
-  value?: string;
-  editing: boolean;
-  name: string;
-  draft: Record<string, unknown>;
-  setDraft: (d: Record<string, unknown>) => void;
-  type?: string;
-}) {
+function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</span>
-      {editing ? (
-        <input
-          type={type}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          value={(draft[name] as string) ?? ""}
-          onChange={(e) =>
-            setDraft({ ...draft, [name]: e.target.value })
-          }
-          placeholder={`Enter ${label.toLowerCase()}`}
-        />
+    <button
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-green-500" />
       ) : (
-        <span className={cn("text-sm", value ? "text-gray-800" : "text-gray-400 italic")}>
-          {value || "—"}
-        </span>
+        <Copy className="h-3 w-3" />
+      )}
+      {copied ? "Copied!" : label}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TierBadge
+// ---------------------------------------------------------------------------
+
+function TierBadge({ tier }: { tier?: string }) {
+  if (!tier) return null;
+  const colors: Record<string, string> = {
+    fb_1: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    fb_2: "bg-emerald-50 text-emerald-600 border-emerald-200",
+    mfg_1: "bg-blue-100 text-blue-700 border-blue-200",
+    mfg_2: "bg-blue-50 text-blue-600 border-blue-200",
+    "1": "bg-blue-100 text-blue-700 border-blue-200",
+    "2": "bg-blue-50 text-blue-600 border-blue-200",
+  };
+  const cls = colors[tier] ?? "bg-gray-100 text-gray-600 border-gray-200";
+  return (
+    <span className={`rounded border px-1.5 py-0.5 text-xs font-medium ${cls}`}>
+      Tier {tier}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// IntelPanel — reuses pattern from linkedin/page.tsx
+// ---------------------------------------------------------------------------
+
+function IntelPanel({
+  intel,
+  research,
+}: {
+  intel?: LinkedInIntel;
+  research?: ContactDetail["research"];
+}) {
+  const [open, setOpen] = useState(false);
+
+  const hasContent =
+    intel?.personalization_notes ||
+    (research?.products_services?.length ?? 0) > 0 ||
+    (research?.recent_news?.length ?? 0) > 0 ||
+    (research?.pain_points?.length ?? 0) > 0 ||
+    (intel?.company?.pain_signals?.length ?? 0) > 0 ||
+    (research?.known_systems?.length ?? 0) > 0 ||
+    intel?.company?.industry ||
+    intel?.company?.employee_count ||
+    intel?.company?.revenue_printed;
+
+  if (!hasContent) return null;
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {open ? "Hide Intel" : "View Company Intel"}
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs space-y-3">
+          {intel?.personalization_notes && (
+            <div>
+              <div className="font-semibold text-gray-500 mb-1 uppercase tracking-wide text-[10px]">
+                WHY THIS CONTACT
+              </div>
+              <p className="text-gray-700">{intel.personalization_notes}</p>
+            </div>
+          )}
+
+          {((research?.products_services?.length ?? 0) > 0 ||
+            (research?.recent_news?.length ?? 0) > 0 ||
+            (research?.pain_points?.length ?? 0) > 0 ||
+            (intel?.company?.pain_signals?.length ?? 0) > 0 ||
+            (research?.known_systems?.length ?? 0) > 0) && (
+            <div>
+              <div className="font-semibold text-gray-500 mb-1 uppercase tracking-wide text-[10px]">
+                COMPANY RESEARCH
+              </div>
+              <div className="space-y-1 text-gray-500">
+                {(research?.products_services?.length ?? 0) > 0 && (
+                  <p>Products: {research!.products_services!.join(", ")}</p>
+                )}
+                {(research?.recent_news?.length ?? 0) > 0 && (
+                  <p>Recent: {research!.recent_news!.join("; ")}</p>
+                )}
+                {((research?.pain_points?.length ?? 0) > 0 ||
+                  (intel?.company?.pain_signals?.length ?? 0) > 0) && (
+                  <p>
+                    Pain points:{" "}
+                    {(
+                      research?.pain_points ||
+                      intel?.company?.pain_signals ||
+                      []
+                    ).join(", ")}
+                  </p>
+                )}
+                {(research?.known_systems?.length ?? 0) > 0 && (
+                  <p>Systems: {research!.known_systems!.join(", ")}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(intel?.company?.industry ||
+            intel?.company?.employee_count ||
+            intel?.company?.revenue_printed) && (
+            <div>
+              <div className="font-semibold text-gray-500 mb-1 uppercase tracking-wide text-[10px]">
+                FIRMOGRAPHICS
+              </div>
+              <div className="space-y-0.5 text-gray-500">
+                {intel.company?.industry && <p>Industry: {intel.company.industry}</p>}
+                {intel.company?.employee_count && (
+                  <p>Employees: {intel.company.employee_count.toLocaleString()}</p>
+                )}
+                {intel.company?.revenue_printed && (
+                  <p>Revenue: {intel.company.revenue_printed}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function InteractionItem({ item }: { item: Interaction }) {
-  const iconMap: Record<string, React.ReactNode> = {
-    note:          <StickyNote className="w-3.5 h-3.5 text-amber-500" />,
-    email:         <Mail className="w-3.5 h-3.5 text-blue-500" />,
-    call:          <Phone className="w-3.5 h-3.5 text-green-500" />,
-    status_change: <CheckCircle2 className="w-3.5 h-3.5 text-purple-500" />,
-    meeting:       <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />,
-  };
-  const icon = iconMap[item.type] ?? <AlertCircle className="w-3.5 h-3.5 text-gray-400" />;
+// ---------------------------------------------------------------------------
+// MessageDraftBlock
+// ---------------------------------------------------------------------------
+
+function MessageDraftBlock({
+  label,
+  body,
+}: {
+  label: string;
+  body: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(body);
 
   return (
-    <div className="flex gap-3 py-3 border-b border-gray-50 last:border-0">
-      <div className="mt-0.5 flex-shrink-0 w-6 h-6 rounded-full bg-gray-50 flex items-center justify-center">
-        {icon}
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+          {label}
+        </span>
+        <div className="flex items-center gap-1">
+          <CopyButton text={value} />
+          <button
+            onClick={() => setEditing((e) => !e)}
+            className={cn(
+              "flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-gray-200",
+              editing ? "text-amber-600" : "text-gray-400"
+            )}
+          >
+            <Pencil className="h-3 w-3" />
+            {editing ? "Done" : "Edit"}
+          </button>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        {item.subject && (
-          <p className="text-sm font-medium text-gray-800 truncate">{item.subject}</p>
+      {editing ? (
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          rows={4}
+        />
+      ) : (
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{value}</p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EventCard
+// ---------------------------------------------------------------------------
+
+function EventCard({
+  event,
+  onMarkDone,
+  onSkip,
+}: {
+  event: ContactEvent;
+  onMarkDone: (id: string) => void;
+  onSkip: (id: string) => void;
+}) {
+  const isOutbound = event.direction === "outbound";
+  const isInbound = event.direction === "inbound";
+
+  return (
+    <div className={cn("flex gap-3 mb-4", isOutbound ? "flex-row-reverse" : "")}>
+      {/* Timeline dot + line */}
+      <div className="flex flex-col items-center flex-shrink-0">
+        <div
+          className={cn(
+            "w-3 h-3 rounded-full mt-1 flex-shrink-0",
+            isOutbound
+              ? "bg-blue-500"
+              : isInbound
+              ? "bg-green-500"
+              : "bg-gray-300"
+          )}
+        />
+        <div className="w-px flex-1 bg-gray-100 mt-1" />
+      </div>
+
+      {/* Card */}
+      <div
+        className={cn(
+          "flex-1 rounded-lg p-3 text-sm",
+          isOutbound
+            ? "bg-blue-50 border border-blue-200"
+            : isInbound
+            ? "bg-green-50 border border-green-200"
+            : "bg-gray-50 border border-gray-200"
         )}
-        {item.body && (
-          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.body}</p>
+      >
+        {/* Header row */}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mb-1.5">
+          <span className="font-semibold text-gray-700">
+            {formatEventType(event.event_type)}
+          </span>
+          {event.channel && <span>· {event.channel}</span>}
+          <span>· {formatRelativeTime(event.created_at)}</span>
+          {event.ai_analyzed && (
+            <span title="AI analyzed" className="text-purple-500">
+              <Zap className="w-3 h-3 inline" />
+            </span>
+          )}
+          {event.sentiment && (
+            <span
+              className={cn(
+                "px-1.5 py-0.5 rounded text-xs font-medium",
+                event.sentiment === "positive"
+                  ? "bg-green-100 text-green-700"
+                  : event.sentiment === "negative"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-gray-100 text-gray-600"
+              )}
+            >
+              {event.sentiment}
+            </span>
+          )}
+        </div>
+
+        {/* Body */}
+        {event.body && (
+          <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+            {event.body}
+          </p>
         )}
-        <p className="text-xs text-gray-400 mt-1">{formatTimeAgo(item.created_at)}</p>
+
+        {/* Sentiment reason */}
+        {event.sentiment_reason && (
+          <p className="text-xs text-gray-400 mt-1 italic">{event.sentiment_reason}</p>
+        )}
+
+        {/* Tags */}
+        {(event.tags?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {event.tags!.map((t, i) => (
+              <span
+                key={i}
+                className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Signals */}
+        {(event.signals?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {event.signals!.map((s, i) => (
+              <span
+                key={i}
+                className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Pending next action */}
+        {event.next_action && event.next_action_status === "pending" && (
+          <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="text-xs font-semibold text-amber-800 mb-1 uppercase tracking-wide">
+              Recommended Next Action
+              {event.next_action_date && (
+                <span className="ml-1 font-normal normal-case">
+                  — {event.next_action_date}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-amber-900">{event.next_action}</p>
+
+            {event.suggested_message && (
+              <div className="mt-2 p-2 bg-white rounded border border-amber-100">
+                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {event.suggested_message}
+                </p>
+                <button
+                  className="mt-1 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  onClick={() =>
+                    navigator.clipboard.writeText(event.suggested_message!)
+                  }
+                >
+                  <Copy className="w-3 h-3" /> Copy suggested message
+                </button>
+              </div>
+            )}
+
+            {event.action_reasoning && (
+              <p className="text-xs text-amber-600 mt-1.5 italic">
+                {event.action_reasoning}
+              </p>
+            )}
+
+            <div className="flex gap-2 mt-2.5">
+              <button
+                onClick={() => onMarkDone(event.id)}
+                className="px-2.5 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+              >
+                Mark Done
+              </button>
+              <button
+                onClick={() => onSkip(event.id)}
+                className="px-2.5 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300 transition-colors"
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Completed next action */}
+        {event.next_action && event.next_action_status === "done" && (
+          <div className="mt-2 flex items-center gap-1 text-xs text-green-600">
+            <Check className="w-3 h-3" /> Action completed
+          </div>
+        )}
+
+        {/* Skipped next action */}
+        {event.next_action && event.next_action_status === "skipped" && (
+          <div className="mt-2 text-xs text-gray-400 italic">Action skipped</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AddEventForm
+// ---------------------------------------------------------------------------
+
+const EVENT_TYPES = [
+  { value: "response_received", label: "Response Received" },
+  { value: "connection_accepted", label: "Connection Accepted" },
+  { value: "note_added", label: "Note Added" },
+  { value: "meeting_scheduled", label: "Meeting Scheduled" },
+  { value: "meeting_held", label: "Meeting Held" },
+  { value: "phone_call", label: "Phone Call" },
+  { value: "email_reply", label: "Email Reply" },
+] as const;
+
+const CHANNELS = [
+  { value: "", label: "— none —" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
+  { value: "in_person", label: "In Person" },
+] as const;
+
+function AddEventForm({
+  contactId,
+  onSaved,
+}: {
+  contactId: string;
+  onSaved: (event: ContactEvent) => void;
+}) {
+  const [eventType, setEventType] = useState<string>("response_received");
+  const [channel, setChannel] = useState<string>("linkedin");
+  const [body, setBody] = useState("");
+  const [tags, setTags] = useState("");
+  const [analyze, setAnalyze] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isInbound = ["response_received", "email_reply", "connection_accepted"].includes(
+    eventType
+  );
+
+  const handleSubmit = async () => {
+    setError(null);
+    setSaving(true);
+    try {
+      const res = await createContactEvent(contactId, {
+        event_type: eventType,
+        channel: channel || undefined,
+        body: body.trim() || undefined,
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        analyze: analyze && isInbound,
+      });
+      onSaved(res.data);
+      // Reset form
+      setBody("");
+      setTags("");
+      setAnalyze(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save event");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-gray-100 pt-4 mt-2">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+        Add Event
+      </h3>
+
+      <div className="space-y-2.5">
+        {/* Event type */}
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Type</label>
+          <select
+            value={eventType}
+            onChange={(e) => setEventType(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            {EVENT_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Channel */}
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Channel</label>
+          <select
+            value={channel}
+            onChange={(e) => setChannel(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            {CHANNELS.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Body */}
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">
+            {isInbound ? "Their message" : "Notes"}
+          </label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder={
+              isInbound
+                ? "Paste their reply here…"
+                : "Add notes about this interaction…"
+            }
+            rows={3}
+            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+          />
+        </div>
+
+        {/* Tags */}
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">
+            Tags{" "}
+            <span className="font-normal">(comma-separated)</span>
+          </label>
+          <input
+            type="text"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="interested, timing, objection"
+            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        </div>
+
+        {/* AI analysis checkbox — only for inbound */}
+        {isInbound && (
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={analyze}
+              onChange={(e) => setAnalyze(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+            />
+            <span className="text-xs text-gray-600 flex items-center gap-1">
+              <Zap className="w-3 h-3 text-purple-500" />
+              Run AI analysis
+            </span>
+          </label>
+        )}
+
+        {/* Error */}
+        {error && (
+          <p className="text-xs text-red-500">{error}</p>
+        )}
+
+        {/* Submit */}
+        <button
+          onClick={handleSubmit}
+          disabled={saving}
+          className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {analyze && isInbound ? "Analyzing with AI…" : "Saving…"}
+            </>
+          ) : (
+            "Save Event"
+          )}
+        </button>
       </div>
     </div>
   );
@@ -158,37 +686,23 @@ function InteractionItem({ item }: { item: Interaction }) {
 
 export default function ContactDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [contact, setContact] = useState<ContactDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Editable text fields
-  const [draft, setDraft] = useState<Record<string, unknown>>({});
-  // Relationship strength — tracked separately for the slider UX
-  const [relStrength, setRelStrength] = useState(0);
-  const [relDirty, setRelDirty] = useState(false);
+  const [contact, setContact] = useState<ContactDetail | null>(null);
+  const [events, setEvents] = useState<ContactEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // -----------------------------------------------------------------------
+  // Data fetching
+  // -----------------------------------------------------------------------
 
   const fetchContact = useCallback(async () => {
     try {
       const res = await getContact(id);
-      setContact(res.data);
-      const rs = res.data.relationship_strength ?? 0;
-      setRelStrength(rs);
-      setDraft({
-        full_name:        res.data.full_name ?? "",
-        email:            res.data.email ?? "",
-        phone:            res.data.phone ?? "",
-        title:            res.data.title ?? "",
-        seniority:        res.data.seniority ?? "",
-        department:       res.data.department ?? "",
-        linkedin_url:     res.data.linkedin_url ?? "",
-        persona_type:     res.data.persona_type ?? "",
-        is_decision_maker: res.data.is_decision_maker ?? false,
-        last_interaction_note: res.data.last_interaction_note ?? "",
-      });
+      setContact(res.data as ContactDetail);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load contact");
     } finally {
@@ -196,66 +710,62 @@ export default function ContactDetailPage() {
     }
   }, [id]);
 
+  const fetchEvents = useCallback(async () => {
+    try {
+      const res = await getContactEvents(id);
+      setEvents(res.data);
+    } catch {
+      // Event table may not exist yet — show empty thread
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchContact();
-  }, [fetchContact]);
+    fetchEvents();
 
-  const handleSave = async () => {
-    if (!contact) return;
-    setSaving(true);
-    setSaveSuccess(false);
+    // Auto-refresh events every 30 seconds
+    refreshTimerRef.current = setInterval(fetchEvents, 30_000);
+    return () => {
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+    };
+  }, [fetchContact, fetchEvents]);
+
+  // -----------------------------------------------------------------------
+  // Event handlers
+  // -----------------------------------------------------------------------
+
+  const handleEventSaved = (newEvent: ContactEvent) => {
+    // Optimistic prepend
+    setEvents((prev) => [newEvent, ...prev]);
+  };
+
+  const handleMarkDone = async (eventId: string) => {
     try {
-      const payload: Record<string, unknown> = {};
-      // Only include fields that differ from original
-      const fields = ["full_name", "email", "phone", "title", "seniority",
-                      "department", "linkedin_url", "persona_type", "is_decision_maker",
-                      "last_interaction_note"] as const;
-      for (const f of fields) {
-        const original = contact[f as keyof ContactDetail];
-        if (draft[f] !== undefined && draft[f] !== (original ?? "")) {
-          payload[f] = draft[f];
-        }
-      }
-      if (relDirty) {
-        payload.relationship_strength = relStrength;
-      }
-      if (Object.keys(payload).length > 0) {
-        await updateContact(id, payload);
-      }
-      setEditMode(false);
-      setRelDirty(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-      fetchContact();
+      const res = await updateNextAction(eventId, "done");
+      setEvents((prev) =>
+        prev.map((e) => (e.id === eventId ? res.data : e))
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSaving(false);
+      console.error("Failed to mark action done:", err);
     }
   };
 
-  const handleCancel = () => {
-    if (!contact) return;
-    setEditMode(false);
-    setRelStrength(contact.relationship_strength ?? 0);
-    setRelDirty(false);
-    setDraft({
-      full_name:        contact.full_name ?? "",
-      email:            contact.email ?? "",
-      phone:            contact.phone ?? "",
-      title:            contact.title ?? "",
-      seniority:        contact.seniority ?? "",
-      department:       contact.department ?? "",
-      linkedin_url:     contact.linkedin_url ?? "",
-      persona_type:     contact.persona_type ?? "",
-      is_decision_maker: contact.is_decision_maker ?? false,
-      last_interaction_note: contact.last_interaction_note ?? "",
-    });
+  const handleSkipAction = async (eventId: string) => {
+    try {
+      const res = await updateNextAction(eventId, "skipped");
+      setEvents((prev) =>
+        prev.map((e) => (e.id === eventId ? res.data : e))
+      );
+    } catch (err) {
+      console.error("Failed to skip action:", err);
+    }
   };
 
-  // -------------------------------------------------------------------------
+  // -----------------------------------------------------------------------
   // Render states
-  // -------------------------------------------------------------------------
+  // -----------------------------------------------------------------------
 
   if (loading) {
     return (
@@ -270,70 +780,115 @@ export default function ContactDetailPage() {
       <div className="p-8 text-center">
         <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
         <p className="text-gray-600">{error ?? "Contact not found"}</p>
-        <Link href="/contacts" className="mt-4 inline-flex items-center gap-1 text-blue-600 text-sm hover:underline">
+        <Link
+          href="/contacts"
+          className="mt-4 inline-flex items-center gap-1 text-blue-600 text-sm hover:underline"
+        >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Contacts
         </Link>
       </div>
     );
   }
 
-  const zone = getRelationshipZone(relStrength);
   const company = contact.companies;
   const logoUrl = company?.domain
     ? `https://logo.clearbit.com/${company.domain}`
     : null;
 
-  // -------------------------------------------------------------------------
-  // Main render
-  // -------------------------------------------------------------------------
+  // Filter drafts by channel type for the prepared messages section
+  const drafts = contact.outreach_drafts ?? [];
+  const connectionNote = drafts.find(
+    (d) =>
+      d.channel === "linkedin" &&
+      (d.sequence_name?.toLowerCase().includes("connection") ||
+        d.sequence_name?.toLowerCase().includes("connect"))
+  );
+  const openingDm = drafts.find(
+    (d) =>
+      d.channel === "linkedin" &&
+      (d.sequence_name?.toLowerCase().includes("opening") ||
+        d.sequence_name?.toLowerCase().includes("dm"))
+  );
+  const followupDm = drafts.find(
+    (d) =>
+      d.channel === "linkedin" &&
+      d.sequence_name?.toLowerCase().includes("follow")
+  );
+  const emailDraft = drafts.find((d) => d.channel === "email");
+
+  // Build a minimal LinkedInIntel object from the company data we have
+  const intel: LinkedInIntel | undefined = company
+    ? {
+        company: {
+          industry: company.industry,
+          employee_count: company.employee_count,
+          revenue_printed: company.revenue_printed,
+          headcount_growth_6m: company.headcount_growth_6m,
+          is_public: company.is_public,
+          pain_signals: company.pain_signals,
+        },
+      }
+    : undefined;
+
+  // -----------------------------------------------------------------------
+  // Main render — two-panel layout
+  // -----------------------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         {/* Back nav */}
         <Link
           href="/contacts"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-6 transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-5 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Contacts
         </Link>
 
-        {/* Save success banner */}
-        {saveSuccess && (
-          <div className="mb-4 flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-4 py-2.5 text-sm">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-            Contact saved successfully
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="flex gap-6 items-start">
 
           {/* ================================================================
-              LEFT COLUMN — Contact identity + relationship strength
+              LEFT PANEL — 40% width, sticky
           ================================================================ */}
-          <div className="lg:col-span-1 flex flex-col gap-5">
+          <div
+            className="w-[40%] flex-shrink-0 sticky top-6 max-h-[calc(100vh-5rem)] overflow-y-auto space-y-4"
+            style={{ scrollbarWidth: "thin" }}
+          >
 
-            {/* Identity card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            {/* ── Contact header card ── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               {/* Avatar + name */}
-              <div className="flex items-start gap-4 mb-5">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
-                  <User className="w-7 h-7 text-white" />
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 text-white font-semibold text-lg">
+                  {(contact.full_name ?? "?")[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h1 className="text-xl font-semibold text-gray-900 leading-tight">
+                  <h1 className="text-lg font-semibold text-gray-900 leading-tight">
                     {contact.full_name || "Unknown Contact"}
                   </h1>
                   {contact.title && (
-                    <p className="text-sm text-gray-500 mt-0.5">{contact.title}</p>
+                    <p className="text-sm text-gray-500">{contact.title}</p>
                   )}
-                  {contact.is_decision_maker && (
-                    <span className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-amber-700 bg-amber-50 rounded-full px-2.5 py-0.5">
-                      <Star className="w-3 h-3" /> Decision Maker
-                    </span>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    {contact.is_decision_maker && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                        <Star className="w-3 h-3" /> Decision Maker
+                      </span>
+                    )}
+                    {company && <TierBadge tier={company.tier} />}
+                    {contact.status && (
+                      <span
+                        className={cn(
+                          "text-xs font-medium rounded-full px-2 py-0.5",
+                          STATUS_COLORS[contact.status] ?? "bg-gray-100 text-gray-500"
+                        )}
+                      >
+                        {contact.status}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -341,14 +896,14 @@ export default function ContactDetailPage() {
               {company && (
                 <Link
                   href={`/prospects/${company.id}`}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 hover:bg-blue-50 transition-colors group mb-5"
+                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-gray-50 hover:bg-blue-50 transition-colors group mb-4"
                 >
                   {logoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={logoUrl}
                       alt={company.name}
-                      className="w-8 h-8 rounded object-contain"
+                      className="w-7 h-7 rounded object-contain"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = "none";
                       }}
@@ -360,32 +915,28 @@ export default function ContactDetailPage() {
                     <p className="text-sm font-medium text-gray-800 group-hover:text-blue-700 truncate">
                       {company.name}
                     </p>
-                    {company.tier && (
-                      <p className="text-xs text-gray-400">Tier {company.tier}</p>
+                    {company.sub_sector && (
+                      <p className="text-xs text-gray-400 truncate">{company.sub_sector}</p>
                     )}
                   </div>
-                  <ExternalLink className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-500 flex-shrink-0" />
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs font-semibold text-gray-400">
+                      PQS {company.pqs_total}
+                    </span>
+                    <ExternalLink className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400" />
+                  </div>
                 </Link>
               )}
 
-              {/* Quick contact links */}
-              <div className="flex flex-col gap-2">
+              {/* Contact info */}
+              <div className="space-y-2">
                 {contact.email && (
                   <a
                     href={`mailto:${contact.email}`}
-                    className="flex items-center gap-2.5 text-sm text-gray-600 hover:text-blue-600 transition-colors"
+                    className="flex items-center gap-2.5 text-sm text-gray-600 hover:text-blue-600 transition-colors group"
                   >
-                    <Mail className="w-4 h-4 text-gray-400" />
+                    <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <span className="truncate">{contact.email}</span>
-                  </a>
-                )}
-                {contact.phone && (
-                  <a
-                    href={`tel:${contact.phone}`}
-                    className="flex items-center gap-2.5 text-sm text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    <Phone className="w-4 h-4 text-gray-400" />
-                    {contact.phone}
                   </a>
                 )}
                 {contact.linkedin_url && (
@@ -395,283 +946,147 @@ export default function ContactDetailPage() {
                     rel="noopener noreferrer"
                     className="flex items-center gap-2.5 text-sm text-blue-600 hover:text-blue-800 transition-colors"
                   >
-                    <Linkedin className="w-4 h-4" />
+                    <Linkedin className="w-4 h-4 flex-shrink-0" />
                     LinkedIn Profile
                     <ExternalLink className="w-3 h-3 text-gray-400 ml-auto" />
                   </a>
                 )}
+                {contact.phone && (
+                  <a
+                    href={`tel:${contact.phone}`}
+                    className="flex items-center gap-2.5 text-sm text-gray-600 hover:text-blue-600 transition-colors"
+                  >
+                    <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    {contact.phone}
+                  </a>
+                )}
+                {(contact as ContactDetail & { city?: string; state?: string }).city ||
+                  (contact as ContactDetail & { city?: string; state?: string }).state ? (
+                  <div className="flex items-center gap-2.5 text-sm text-gray-500">
+                    <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    {[
+                      (contact as ContactDetail & { city?: string }).city,
+                      (contact as ContactDetail & { state?: string }).state,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </div>
+                ) : null}
               </div>
+
+              {/* LinkedIn status */}
+              {contact.linkedin_status && contact.linkedin_status !== "not_sent" && (
+                <div className="mt-3 pt-3 border-t border-gray-50">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-400">LinkedIn:</span>
+                    <span className="font-medium text-blue-600 capitalize">
+                      {contact.linkedin_status.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Intel section */}
+              <IntelPanel intel={intel} research={contact.research} />
             </div>
 
-            {/* ============================================================
-                RELATIONSHIP STRENGTH CARD
-            ============================================================ */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-700">Relationship Strength</h2>
-                {!editMode && (
-                  <button
-                    onClick={() => setEditMode(true)}
-                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
-                  >
-                    <Pencil className="w-3 h-3" /> Adjust
-                  </button>
-                )}
-              </div>
-
-              {/* Score display */}
-              <div className={cn("flex items-center gap-2 mb-3", zone.color)}>
-                {zone.icon}
-                <span className="text-3xl font-bold tabular-nums">{relStrength}</span>
-                <span className="text-sm font-medium ml-1">{zone.label}</span>
-              </div>
-              <p className="text-xs text-gray-400 mb-4">{zone.description}</p>
-
-              {/* Three-zone visual bar */}
-              <div className="relative mb-4">
-                {/* Zone labels */}
-                <div className="flex justify-between text-xs text-gray-400 mb-1">
-                  <span>Cold</span>
-                  <span>Warm</span>
-                  <span>Strong</span>
-                </div>
-                {/* Track */}
-                <div className="relative h-2 rounded-full overflow-hidden bg-gray-100">
-                  {/* Zone coloring */}
-                  <div
-                    className="absolute inset-0 flex"
-                    style={{ pointerEvents: "none" }}
-                  >
-                    <div className="h-full bg-blue-200" style={{ width: "30%" }} />
-                    <div className="h-full bg-amber-200" style={{ width: "40%" }} />
-                    <div className="h-full bg-emerald-200" style={{ width: "30%" }} />
-                  </div>
-                  {/* Filled portion */}
-                  <div
-                    className={cn("absolute inset-y-0 left-0 transition-all duration-200", zone.trackColor)}
-                    style={{ width: `${relStrength}%` }}
-                  />
-                </div>
-                {/* Zone boundary ticks */}
-                <div className="flex justify-between text-xs text-gray-300 mt-0.5 px-px">
-                  <span>0</span>
-                  <span className="ml-[22%]">30</span>
-                  <span className="ml-[28%]">70</span>
-                  <span>100</span>
-                </div>
-              </div>
-
-              {/* Slider — always visible, requires edit mode for mouse/touch */}
-              <div className="relative">
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={relStrength}
-                  disabled={!editMode}
-                  onChange={(e) => {
-                    setRelStrength(Number(e.target.value));
-                    setRelDirty(true);
-                  }}
-                  className={cn(
-                    "w-full h-1 rounded-full appearance-none cursor-pointer",
-                    "accent-blue-600",
-                    !editMode && "opacity-40 cursor-not-allowed"
+            {/* ── Prepared messages card ── */}
+            {(connectionNote || openingDm || followupDm || emailDraft) && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                  Prepared Messages
+                </h2>
+                <div className="space-y-3">
+                  {connectionNote && (
+                    <MessageDraftBlock
+                      label="Connection Note"
+                      body={connectionNote.body}
+                    />
                   )}
-                  style={{
-                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${relStrength}%, #e5e7eb ${relStrength}%, #e5e7eb 100%)`,
-                  }}
-                />
+                  {openingDm && (
+                    <MessageDraftBlock
+                      label="Opening DM"
+                      body={openingDm.body}
+                    />
+                  )}
+                  {followupDm && (
+                    <MessageDraftBlock
+                      label="Follow-up DM"
+                      body={followupDm.body}
+                    />
+                  )}
+                  {emailDraft && (
+                    <MessageDraftBlock
+                      label={emailDraft.subject ? `Email: ${emailDraft.subject}` : "Email Draft"}
+                      body={emailDraft.body}
+                    />
+                  )}
+                </div>
               </div>
+            )}
 
-              {/* Zone legend chips */}
-              <div className="flex gap-2 mt-4">
-                {[
-                  { label: "Cold", range: "0–29",  bg: "bg-blue-50",    text: "text-blue-600" },
-                  { label: "Warm", range: "30–69",  bg: "bg-amber-50",   text: "text-amber-600" },
-                  { label: "Strong", range: "70–100", bg: "bg-emerald-50", text: "text-emerald-600" },
-                ].map((z) => (
-                  <div
-                    key={z.label}
-                    className={cn("flex-1 rounded-lg px-2 py-1.5 text-center", z.bg)}
-                  >
-                    <p className={cn("text-xs font-semibold", z.text)}>{z.label}</p>
-                    <p className="text-xs text-gray-400">{z.range}</p>
-                  </div>
-                ))}
-              </div>
+            {/* ── Add Event form card ── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <AddEventForm contactId={id} onSaved={handleEventSaved} />
             </div>
           </div>
 
           {/* ================================================================
-              RIGHT COLUMN — Details + interactions
+              RIGHT PANEL — 60% width, scrollable event thread
           ================================================================ */}
-          <div className="lg:col-span-2 flex flex-col gap-5">
-
-            {/* Details card */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-base font-semibold text-gray-800">Contact Details</h2>
+          <div className="flex-1 min-w-0">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              {/* Thread header */}
+              <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
-                  {editMode ? (
-                    <>
-                      <button
-                        onClick={handleCancel}
-                        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" /> Cancel
-                      </button>
-                      <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="inline-flex items-center gap-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-60"
-                      >
-                        {saving ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Save className="w-3.5 h-3.5" />
-                        )}
-                        Save
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setEditMode(true)}
-                      className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
-                    >
-                      <Pencil className="w-3.5 h-3.5" /> Edit
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <FieldRow label="Full Name"   value={contact.full_name}   name="full_name"   editing={editMode} draft={draft} setDraft={setDraft} />
-                <FieldRow label="Email"        value={contact.email}       name="email"       editing={editMode} draft={draft} setDraft={setDraft} type="email" />
-                <FieldRow label="Phone"        value={contact.phone}       name="phone"       editing={editMode} draft={draft} setDraft={setDraft} type="tel" />
-                <FieldRow label="Title"        value={contact.title}       name="title"       editing={editMode} draft={draft} setDraft={setDraft} />
-                <FieldRow label="Seniority"    value={contact.seniority}   name="seniority"   editing={editMode} draft={draft} setDraft={setDraft} />
-                <FieldRow label="Department"   value={contact.department}  name="department"  editing={editMode} draft={draft} setDraft={setDraft} />
-                <FieldRow label="Persona Type" value={contact.persona_type} name="persona_type" editing={editMode} draft={draft} setDraft={setDraft} />
-                <FieldRow label="LinkedIn URL" value={contact.linkedin_url} name="linkedin_url" editing={editMode} draft={draft} setDraft={setDraft} />
-              </div>
-
-              {/* Decision maker toggle */}
-              <div className="mt-5 pt-5 border-t border-gray-50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">Decision Maker</p>
-                    <p className="text-xs text-gray-400">
-                      This contact has purchasing or approval authority
-                    </p>
-                  </div>
-                  {editMode ? (
-                    <button
-                      onClick={() => setDraft({ ...draft, is_decision_maker: !draft.is_decision_maker })}
-                      className={cn(
-                        "relative inline-flex h-5 w-9 rounded-full transition-colors duration-200 focus:outline-none",
-                        draft.is_decision_maker ? "bg-blue-600" : "bg-gray-200"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "inline-block w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5",
-                          draft.is_decision_maker ? "translate-x-4" : "translate-x-0.5"
-                        )}
-                      />
-                    </button>
-                  ) : (
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-0.5",
-                        contact.is_decision_maker
-                          ? "bg-amber-50 text-amber-700"
-                          : "bg-gray-100 text-gray-500"
-                      )}
-                    >
-                      {contact.is_decision_maker ? (
-                        <><Star className="w-3 h-3" /> Yes</>
-                      ) : "No"}
+                  <MessageSquare className="w-4 h-4 text-gray-400" />
+                  <h2 className="text-base font-semibold text-gray-800">
+                    Event Thread
+                  </h2>
+                  {events.length > 0 && (
+                    <span className="text-xs text-gray-400 font-normal">
+                      {events.length} event{events.length !== 1 ? "s" : ""}
                     </span>
                   )}
                 </div>
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                    Outbound
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
+                    Inbound
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-gray-300 inline-block" />
+                    Internal
+                  </span>
+                </div>
               </div>
 
-              {/* Last interaction note */}
-              <div className="mt-5 pt-5 border-t border-gray-50">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
-                  Last Interaction Note
-                </p>
-                {editMode ? (
-                  <textarea
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white resize-none"
-                    rows={3}
-                    value={(draft.last_interaction_note as string) ?? ""}
-                    onChange={(e) => setDraft({ ...draft, last_interaction_note: e.target.value })}
-                    placeholder="Add a note about the last interaction..."
-                  />
-                ) : (
-                  <p className={cn("text-sm", contact.last_interaction_note ? "text-gray-700" : "text-gray-400 italic")}>
-                    {contact.last_interaction_note || "No note recorded"}
+              {/* Events */}
+              {eventsLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
+                </div>
+              ) : events.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <MessageSquare className="w-10 h-10 text-gray-200 mb-3" />
+                  <p className="text-gray-400 font-medium">No events yet</p>
+                  <p className="text-sm text-gray-300 mt-1">
+                    Use the form on the left to log the first interaction.
                   </p>
-                )}
-              </div>
-
-              {/* Meta */}
-              {contact.created_at && (
-                <div className="mt-4 pt-4 border-t border-gray-50 flex gap-4 text-xs text-gray-400">
-                  <span>Created {formatDate(contact.created_at)}</span>
-                  {contact.updated_at && (
-                    <span>Updated {formatTimeAgo(contact.updated_at)}</span>
-                  )}
-                  {contact.status && (
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 font-medium",
-                        STATUS_COLORS[contact.status] ?? "bg-gray-100 text-gray-500"
-                      )}
-                    >
-                      {contact.status}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* ============================================================
-                INTERACTIONS TIMELINE
-            ============================================================ */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-base font-semibold text-gray-800 mb-1">Interaction History</h2>
-              {company && (
-                <p className="text-xs text-gray-400 mb-4">
-                  Showing company-level interactions for{" "}
-                  <Link
-                    href={`/prospects/${company.id}`}
-                    className="text-blue-500 hover:underline"
-                  >
-                    {company.name}
-                  </Link>
-                </p>
-              )}
-
-              {!contact.interactions || contact.interactions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <MessageSquare className="w-8 h-8 text-gray-200 mb-3" />
-                  <p className="text-sm text-gray-400">No interactions recorded yet</p>
-                  {company && (
-                    <Link
-                      href={`/prospects/${company.id}`}
-                      className="mt-3 text-xs text-blue-500 hover:underline"
-                    >
-                      Go to company page to add a note
-                    </Link>
-                  )}
                 </div>
               ) : (
-                <div className="divide-y divide-gray-50">
-                  {contact.interactions.map((item) => (
-                    <InteractionItem key={item.id} item={item} />
+                <div>
+                  {events.map((event) => (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      onMarkDone={handleMarkDone}
+                      onSkip={handleSkipAction}
+                    />
                   ))}
                 </div>
               )}

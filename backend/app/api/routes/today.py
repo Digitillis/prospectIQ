@@ -497,6 +497,22 @@ async def get_today_data():
         logger.warning(f"Failed to fetch recent interactions: {e}")
         recent_interactions = []
 
+    # --- Pending AI-recommended next actions ---
+    try:
+        today_date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        pending_actions_result = db.client.table("contact_events").select(
+            "id, contact_id, company_id, event_type, channel, body, sentiment, "
+            "next_action, next_action_date, suggested_message, action_reasoning, "
+            "contacts(full_name, title, linkedin_url), "
+            "companies(name, tier, industry)"
+        ).eq("next_action_status", "pending").not_.is_("next_action", "null").lte(
+            "next_action_date", today_date_str
+        ).order("next_action_date").limit(20).execute()
+
+        pending_next_actions = pending_actions_result.data or []
+    except Exception:
+        pending_next_actions = []
+
     # --- Build daily_plan sections ---
     daily_plan = {
         "date": today_str,
@@ -511,11 +527,19 @@ async def get_today_data():
                 "items": hot_rows,
             },
             {
+                "id": "next_actions",
+                "title": "AI-Recommended Actions",
+                "subtitle": f"{len(pending_next_actions)} actions due today",
+                "icon": "brain",
+                "priority": 2,
+                "items": pending_next_actions,
+            },
+            {
                 "id": "linkedin_connect",
                 "title": "Send Connection Requests",
                 "subtitle": f"Target: 10/day — {connections_sent_today} done",
                 "icon": "user-plus",
-                "priority": 2,
+                "priority": 3,
                 "target": 10,
                 "completed": connections_sent_today,
                 "items": linkedin_connect_items,
@@ -525,7 +549,7 @@ async def get_today_data():
                 "title": "Send Opening DMs",
                 "subtitle": "Connections who accepted — start conversations",
                 "icon": "message-circle",
-                "priority": 3,
+                "priority": 4,
                 "items": linkedin_dm_items,
             },
             {
@@ -533,7 +557,7 @@ async def get_today_data():
                 "title": "Review & Approve Emails",
                 "subtitle": f"{pending_count} draft{'s' if pending_count != 1 else ''} waiting",
                 "icon": "mail-check",
-                "priority": 4,
+                "priority": 5,
                 "items": pending_drafts,
             },
             {
@@ -541,7 +565,7 @@ async def get_today_data():
                 "title": "Post Today's Content",
                 "subtitle": "Thought leadership for LinkedIn",
                 "icon": "pen-tool",
-                "priority": 5,
+                "priority": 6,
                 "items": content_items,
             },
             {
@@ -549,7 +573,7 @@ async def get_today_data():
                 "title": "Log Responses",
                 "subtitle": "Record outcomes from recent outreach",
                 "icon": "clipboard-check",
-                "priority": 6,
+                "priority": 7,
                 "items": recent_interactions,
             },
             {
@@ -557,7 +581,7 @@ async def get_today_data():
                 "title": "Grow Pipeline",
                 "subtitle": "Run discovery, research, qualification",
                 "icon": "trending-up",
-                "priority": 7,
+                "priority": 8,
                 "items": [{"summary": pipeline_summary}],
             },
         ],
@@ -592,6 +616,7 @@ async def get_today_data():
             # New structured fields
             "daily_plan": daily_plan,
             "progress_detail": progress,
+            "pending_next_actions": pending_next_actions,
         }
     }
 
@@ -712,6 +737,38 @@ async def log_outcome(req: OutcomeRequest):
     except Exception:
         logger.debug("learning_outcomes table not found, skipping")
 
+    # 6. Create contact_event for the outcome
+    if req.contact_id:
+        try:
+            # Determine event_type and sentiment from outcome
+            if req.outcome in ("interested", "not_now", "meeting_booked"):
+                ce_event_type = "response_received"
+            else:
+                ce_event_type = "status_change"
+
+            if req.outcome in ("interested", "meeting_booked"):
+                ce_sentiment = "positive"
+            elif req.outcome == "not_interested":
+                ce_sentiment = "negative"
+            else:
+                ce_sentiment = "neutral"
+
+            ce_payload: dict = {
+                "contact_id": req.contact_id,
+                "company_id": req.company_id,
+                "event_type": ce_event_type,
+                "channel": req.channel,
+                "direction": "inbound",
+                "body": req.notes,
+                "sentiment": ce_sentiment,
+                "pqs_delta": pqs_delta,
+                "created_by": "user",
+                "created_at": now,
+            }
+            db.client.table("contact_events").insert(ce_payload).execute()
+        except Exception as e:
+            logger.warning(f"Failed to create contact_event for log-outcome: {e}")
+
     return {
         "data": {
             "company_id": req.company_id,
@@ -774,6 +831,38 @@ async def mark_done(req: MarkDoneRequest):
             }).eq("id", req.contact_id).execute()
         except Exception as e:
             logger.warning(f"Failed to update linkedin_status for DM: {e}")
+
+    # For LinkedIn actions — create a contact_event in the thread
+    if req.action_type in ("linkedin_connection", "linkedin_dm") and req.contact_id:
+        try:
+            # Find the most recent draft that was sent
+            draft_rows = (
+                db.client.table("outreach_drafts")
+                .select("body, sequence_name")
+                .eq("contact_id", req.contact_id)
+                .eq("channel", "linkedin")
+                .in_("sequence_name", [req.action_type, "linkedin_connection", "linkedin_connect", "linkedin_dm_opening", "linkedin_dm"])
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+                .data
+            ) or []
+            draft_body = draft_rows[0]["body"] if draft_rows else None
+
+            event_payload: dict = {
+                "contact_id": req.contact_id,
+                "event_type": "outreach_sent",
+                "channel": "linkedin",
+                "direction": "outbound",
+                "body": draft_body,
+                "created_by": "system",
+                "created_at": now,
+            }
+            if req.company_id:
+                event_payload["company_id"] = req.company_id
+            db.client.table("contact_events").insert(event_payload).execute()
+        except Exception as e:
+            logger.warning(f"Failed to create contact_event for mark-done: {e}")
 
     # For LinkedIn actions — try to advance the engagement sequence
     if req.action_type in ("linkedin_connection", "linkedin_dm") and req.contact_id:
