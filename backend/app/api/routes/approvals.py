@@ -29,9 +29,29 @@ class RejectRequest(BaseModel):
 
 @router.get("/")
 async def list_pending_drafts(limit: int = 50):
-    """Get pending outreach drafts with company/contact info."""
+    """Get pending outreach drafts with company/contact info and quality scores."""
     db = get_db()
     drafts = db.get_pending_drafts(limit=limit)
+
+    # Run quality validation on each draft
+    from backend.app.core.draft_quality import validate_draft
+
+    for draft in drafts:
+        company = None
+        research = None
+        company_id = draft.get("company_id")
+        if company_id:
+            company = db.get_company(company_id)
+            research = db.get_research(company_id)
+
+        report = validate_draft(draft, company, research)
+        draft["quality_score"] = report.score
+        draft["quality_passed"] = report.passed
+        draft["quality_issues"] = [
+            {"severity": i.severity, "check": i.check_name, "message": i.message}
+            for i in report.issues
+        ]
+
     return {"data": drafts, "count": len(drafts)}
 
 
