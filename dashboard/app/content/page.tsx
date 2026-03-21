@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Sparkles,
   AlertCircle,
+  Zap,
 } from "lucide-react";
 import {
   getContentCalendar,
@@ -21,7 +22,10 @@ import {
   generateContentBatch,
   getContentDrafts,
   markContentPosted,
+  autoGenerateCalendar,
   type ContentDraft,
+  type AutoCalendarPost,
+  type AutoCalendarResponse,
 } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -606,6 +610,245 @@ function CalendarRow({
   );
 }
 
+// ─── Auto-Calendar Row ────────────────────────────────────────────────────────
+
+const AUTO_PILLAR_COLORS: Record<string, string> = {
+  food_safety: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  predictive_maintenance: "bg-blue-100 text-blue-800 border-blue-300",
+  ops_excellence: "bg-violet-100 text-violet-800 border-violet-300",
+  leadership: "bg-amber-100 text-amber-800 border-amber-300",
+};
+
+function AutoCalendarRow({
+  post,
+  onMarkPosted,
+}: {
+  post: AutoCalendarPost;
+  onMarkPosted: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editedText, setEditedText] = useState(post.body);
+  const [markingPosted, setMarkingPosted] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [currentBody, setCurrentBody] = useState(post.body);
+  const [status, setStatus] = useState(post.status);
+
+  const displayText = editing ? editedText : currentBody;
+  const charCount = displayText.length;
+  const isOver = charCount > CHAR_LIMIT;
+  const isWarning = charCount > CHAR_WARN && !isOver;
+
+  const formattedDate = (() => {
+    try {
+      const d = new Date(post.scheduled_date + "T00:00:00");
+      return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    } catch {
+      return post.scheduled_date;
+    }
+  })();
+
+  const handleCopy = async () => {
+    const text = displayText;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRegenerate = async () => {
+    setRegenerating(true);
+    try {
+      const res = await generateContent({
+        topic: post.topic,
+        pillar: post.pillar,
+        format_type: post.format,
+      });
+      const newDraft = (res as { data: ContentDraft }).data;
+      setCurrentBody(newDraft.post_text);
+      setEditedText(newDraft.post_text);
+    } catch {
+      // silently ignore — user sees no change
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleMarkPosted = async () => {
+    setMarkingPosted(true);
+    try {
+      await onMarkPosted(post.id);
+      setStatus("posted");
+    } finally {
+      setMarkingPosted(false);
+    }
+  };
+
+  const pillarColor =
+    AUTO_PILLAR_COLORS[post.pillar] ?? "bg-gray-100 text-gray-700 border-gray-300";
+
+  return (
+    <div className="border-b border-gray-100 last:border-b-0">
+      {/* Row summary */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {/* Date */}
+        <span className="w-28 shrink-0 text-sm font-medium text-gray-700">{formattedDate}</span>
+
+        {/* Pillar badge */}
+        <span
+          className={`shrink-0 rounded border px-2 py-0.5 text-xs font-medium ${pillarColor}`}
+        >
+          {post.pillar_display}
+        </span>
+
+        {/* Format badge */}
+        <span className="shrink-0 rounded border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-600">
+          {post.format_display}
+        </span>
+
+        {/* Topic */}
+        <span className="flex-1 truncate text-sm text-gray-700">{post.topic}</span>
+
+        {/* Char count */}
+        <span
+          className={`shrink-0 text-xs tabular-nums ${
+            isOver ? "text-red-500 font-semibold" : isWarning ? "text-amber-500" : "text-gray-400"
+          }`}
+        >
+          {charCount}
+        </span>
+
+        {/* Status */}
+        {status === "posted" ? (
+          <span className="shrink-0 flex items-center gap-1 text-xs text-green-600 font-medium">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Posted
+          </span>
+        ) : (
+          <span className="shrink-0 flex items-center gap-1 text-xs text-blue-600 font-medium">
+            <Check className="h-3.5 w-3.5" />
+            Generated
+          </span>
+        )}
+
+        {/* Expand toggle */}
+        {expanded ? (
+          <ChevronUp className="h-4 w-4 shrink-0 text-gray-400" />
+        ) : (
+          <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+        )}
+      </div>
+
+      {/* Expanded post body */}
+      {expanded && (
+        <div className="px-4 pb-4 bg-gray-50/50">
+          {editing ? (
+            <textarea
+              value={editedText}
+              onChange={(e) => setEditedText(e.target.value)}
+              className="w-full min-h-[180px] resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 font-mono leading-relaxed focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+          ) : (
+            <pre className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed font-sans mb-3">
+              {currentBody}
+            </pre>
+          )}
+
+          {/* Footer with char counter and action buttons */}
+          <div className="flex items-center justify-between gap-2 mt-3">
+            <span
+              className={`text-xs font-mono tabular-nums ${
+                isOver
+                  ? "text-red-500 font-semibold"
+                  : isWarning
+                  ? "text-amber-500"
+                  : "text-gray-400"
+              }`}
+            >
+              {charCount.toLocaleString()} / {CHAR_LIMIT.toLocaleString()} chars
+              {isOver && " — over limit"}
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleCopy();
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium bg-gray-200 hover:bg-gray-300 text-gray-700 transition-colors"
+              >
+                {copied ? (
+                  <Check className="h-3.5 w-3.5 text-green-600" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+                {copied ? "Copied!" : "Copy"}
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (editing) setEditedText(currentBody);
+                  setEditing(!editing);
+                }}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  editing
+                    ? "bg-gray-200 hover:bg-gray-300 text-gray-500"
+                    : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                }`}
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+                {editing ? "Cancel" : "Edit"}
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleRegenerate();
+                }}
+                disabled={regenerating}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium bg-gray-200 hover:bg-gray-300 text-gray-700 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} />
+                Regenerate
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleMarkPosted();
+                }}
+                disabled={markingPosted || status === "posted"}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50"
+              >
+                {markingPosted ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                )}
+                {status === "posted" ? "Posted" : "Mark Posted"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Generator Panel ──────────────────────────────────────────────────────────
 
 interface GeneratorPanelProps {
@@ -791,6 +1034,21 @@ export default function ContentPage() {
   const [showCalendarDrafts, setShowCalendarDrafts] = useState(true);
   const [showBatchDrafts, setShowBatchDrafts] = useState(true);
 
+  // ── Auto-calendar state ────────────────────────────────────────────────────
+  const [autoStartDate, setAutoStartDate] = useState(() => {
+    const now = new Date();
+    const day = now.getDay(); // 0 = Sunday
+    const daysUntilMonday = day === 0 ? 1 : day === 1 ? 0 : 8 - day;
+    const nextMonday = new Date(now);
+    nextMonday.setDate(now.getDate() + daysUntilMonday);
+    return nextMonday.toISOString().split("T")[0];
+  });
+  const [autoCommentary, setAutoCommentary] = useState("");
+  const [autoGenerating, setAutoGenerating] = useState(false);
+  const [autoProgress, setAutoProgress] = useState(0);
+  const [autoCalendar, setAutoCalendar] = useState<AutoCalendarResponse | null>(null);
+  const [autoError, setAutoError] = useState<string | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
       const [calRes, draftsRes] = await Promise.all([
@@ -862,6 +1120,44 @@ export default function ContentPage() {
     }
   };
 
+  // ── Auto-calendar handler ─────────────────────────────────────────────────
+
+  const handleAutoGenerate = async () => {
+    setAutoGenerating(true);
+    setAutoError(null);
+    setAutoProgress(0);
+    setAutoCalendar(null);
+
+    // Simulate progress updates (the backend runs sequentially for ~2-3 min)
+    const progressInterval = setInterval(() => {
+      setAutoProgress((prev) => Math.min(prev + 1, 15));
+    }, 8000);
+
+    try {
+      const res = await autoGenerateCalendar({
+        start_date: autoStartDate || undefined,
+        commentary: autoCommentary.trim() || undefined,
+        weeks: 4,
+      });
+      const data = (res as { data: AutoCalendarResponse }).data;
+      setAutoCalendar(data);
+      setAutoProgress(data.posts.length);
+    } catch (e) {
+      setAutoError((e as Error).message);
+    } finally {
+      clearInterval(progressInterval);
+      setAutoGenerating(false);
+    }
+  };
+
+  const handleAutoMarkPosted = async (id: string) => {
+    try {
+      await markContentPosted(id);
+    } catch (e) {
+      setError(`Failed to mark as posted: ${(e as Error).message}`);
+    }
+  };
+
   // ── Generator panel callbacks ─────────────────────────────────────────────
 
   const handleSingleGenerated = (draft: ContentDraft) => {
@@ -913,6 +1209,138 @@ export default function ContentPage() {
       {error && (
         <div className="rounded-lg border border-red-700/50 bg-red-900/20 px-4 py-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {/* ── Auto-Generate Calendar ── */}
+      <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-6">
+        <div className="flex items-center gap-3 mb-3">
+          <Zap className="h-6 w-6 text-blue-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Auto-Generate 4-Week Calendar</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          16 posts across all themes. Balanced rotation: Food Safety, Predictive Maintenance,
+          Operations Excellence, Leadership. Mix of data insights, frameworks, contrarian takes,
+          and benchmarks. Estimated cost: ~$0.80.
+        </p>
+
+        <div className="flex items-end gap-4 flex-wrap">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={autoStartDate}
+              onChange={(e) => setAutoStartDate(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Commentary (optional)
+            </label>
+            <input
+              type="text"
+              value={autoCommentary}
+              onChange={(e) => setAutoCommentary(e.target.value)}
+              placeholder="e.g., Focus on FSMA enforcement trends this month"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <button
+            onClick={() => void handleAutoGenerate()}
+            disabled={autoGenerating}
+            className="rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            {autoGenerating
+              ? `Generating... (${autoProgress}/16)`
+              : "Generate 4-Week Calendar"}
+          </button>
+        </div>
+
+        {/* Auto-calendar error */}
+        {autoError && (
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{autoError}</span>
+          </div>
+        )}
+
+        {/* Generating spinner */}
+        {autoGenerating && (
+          <div className="mt-4 flex items-center gap-2 text-sm text-blue-600">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>
+              Generating {16} posts sequentially — this takes 2-3 minutes. Please keep this
+              tab open.
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Auto-calendar results ── */}
+      {autoCalendar && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h3 className="text-lg font-semibold text-slate-200">
+              Content Calendar:{" "}
+              <span className="text-slate-400 font-normal text-base">
+                {autoCalendar.start_date} to {autoCalendar.end_date}
+              </span>
+            </h3>
+            <div className="flex gap-4 text-sm text-slate-400 flex-wrap">
+              <span>
+                <span className="mr-1">🍎</span>Food Safety:{" "}
+                <span className="text-slate-200 font-medium">
+                  {autoCalendar.coverage["food_safety"] ?? 0}
+                </span>
+              </span>
+              <span>
+                <span className="mr-1">🔧</span>PdM:{" "}
+                <span className="text-slate-200 font-medium">
+                  {autoCalendar.coverage["predictive_maintenance"] ?? 0}
+                </span>
+              </span>
+              <span>
+                <span className="mr-1">⚙️</span>Ops:{" "}
+                <span className="text-slate-200 font-medium">
+                  {autoCalendar.coverage["ops_excellence"] ?? 0}
+                </span>
+              </span>
+              <span>
+                <span className="mr-1">👔</span>Leadership:{" "}
+                <span className="text-slate-200 font-medium">
+                  {autoCalendar.coverage["leadership"] ?? 0}
+                </span>
+              </span>
+              <span className="text-slate-500">
+                Generated in {autoCalendar.generation_time_seconds}s
+              </span>
+            </div>
+          </div>
+
+          {[1, 2, 3, 4].map((weekNum) => {
+            const weekPosts = autoCalendar.posts.filter((p) => p.week_number === weekNum);
+            if (weekPosts.length === 0) return null;
+            return (
+              <div
+                key={weekNum}
+                className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm"
+              >
+                <div className="bg-gray-50 px-4 py-2 font-medium text-sm text-gray-700 border-b border-gray-200">
+                  Week {weekNum}
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {weekPosts.map((post) => (
+                    <AutoCalendarRow
+                      key={post.id || `${weekNum}-${post.scheduled_date}`}
+                      post={post}
+                      onMarkPosted={handleAutoMarkPosted}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

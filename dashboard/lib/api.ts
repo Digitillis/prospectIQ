@@ -636,6 +636,42 @@ export const getContentDrafts = () =>
 export const markContentPosted = (id: string) =>
   fetchAPI(`/api/content/${id}/mark-posted`, { method: "POST" });
 
+export interface AutoCalendarPost {
+  id: string;
+  scheduled_date: string;
+  day_of_week: string;
+  week_number: number;
+  pillar: string;
+  pillar_display: string;
+  format: string;
+  format_display: string;
+  topic: string;
+  body: string;
+  char_count: number;
+  status: string;
+}
+
+export interface AutoCalendarResponse {
+  calendar_id: string;
+  start_date: string;
+  end_date: string;
+  weeks: number;
+  posts: AutoCalendarPost[];
+  coverage: Record<string, number>;
+  estimated_cost: number;
+  generation_time_seconds: number;
+}
+
+export const autoGenerateCalendar = (data: {
+  start_date?: string;
+  commentary?: string;
+  weeks?: number;
+}) =>
+  fetchAPI<{ data: AutoCalendarResponse }>("/api/content/auto-calendar", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
 // LinkedIn task queue
 export const getLinkedInTasks = () =>
   fetchAPI<{ data: LinkedInTask[]; count: number }>("/api/actions/linkedin-tasks");
