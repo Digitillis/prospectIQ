@@ -48,13 +48,14 @@ class QualificationAgent(BaseAgent):
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         else:
-            # Score both freshly-discovered and fully-researched companies.
-            # Discovered companies receive firmographic scoring only (tech/timing
-            # signals default to 0 until research is run).  Researched companies
-            # get full four-dimension scoring.
-            discovered = self.db.get_companies(status="discovered", limit=limit)
+            # Researched companies first — they have full data for 4-dimension scoring.
+            # Discovered companies get firmographic-only scoring (pre-filter).
+            # Researched takes priority so they don't get crowded out by large
+            # discovered batches.
             researched = self.db.get_companies(status="researched", limit=limit)
-            companies = (discovered + researched)[:limit]
+            remaining = limit - len(researched)
+            discovered = self.db.get_companies(status="discovered", limit=remaining) if remaining > 0 else []
+            companies = researched + discovered
 
         if not companies:
             console.print("[yellow]No companies to qualify.[/yellow]")
