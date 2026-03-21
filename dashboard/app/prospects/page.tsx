@@ -17,9 +17,11 @@ import {
   Download,
   Plus,
   X,
+  Bookmark,
+  MessageSquare,
 } from "lucide-react";
 
-import { getCompanies, updateCompany, createCompany, type Company } from "@/lib/api";
+import { getCompanies, updateCompany, createCompany, runAgent, addNote, type Company } from "@/lib/api";
 import {
   cn,
   formatTimeAgo,
@@ -27,6 +29,27 @@ import {
   TIER_LABELS,
   getPQSColor,
 } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Saved views
+// ---------------------------------------------------------------------------
+
+interface SavedView {
+  id: string;
+  name: string;
+  filters: {
+    status: string;
+    tier: string;
+    minPqs: string;
+    search: string;
+  };
+}
+
+const DEFAULT_VIEWS: SavedView[] = [
+  { id: "preset-1", name: "Hot Prospects", filters: { status: "", tier: "", minPqs: "60", search: "" } },
+  { id: "preset-2", name: "F&B Ready", filters: { status: "discovered", tier: "fb1", minPqs: "", search: "" } },
+  { id: "preset-3", name: "Needs Research", filters: { status: "discovered", tier: "", minPqs: "", search: "" } },
+];
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -54,7 +77,13 @@ const STATUS_OPTIONS = [
 
 const TIER_OPTIONS = Object.keys(TIER_LABELS);
 
-const MIDWEST_STATES = ["IL", "IN", "MI", "OH", "WI", "MN", "IA", "MO"];
+const US_STATES = [
+  "AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL",
+  "GA", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA",
+  "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE",
+  "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI",
+  "SC", "SD", "TN", "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY",
+];
 
 type SortKey =
   | "name"
@@ -272,7 +301,7 @@ function AddCompanyModal({
                   className={inputCls}
                 >
                   <option value="">Select state…</option>
-                  {MIDWEST_STATES.map((s) => (
+                  {US_STATES.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -404,11 +433,13 @@ function RowActions({
   company,
   onFlagToggle,
   onDisqualify,
+  onQuickNote,
   loading,
 }: {
   company: Company;
   onFlagToggle: (c: Company) => void;
   onDisqualify: (c: Company) => void;
+  onQuickNote: (c: Company) => void;
   loading: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -462,6 +493,15 @@ function RowActions({
               )}
             />
             {company.priority_flag ? "Remove flag" : "Flag priority"}
+          </button>
+
+          {/* Quick Note */}
+          <button
+            onClick={() => { onQuickNote(company); setOpen(false); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <MessageSquare className="h-4 w-4 text-gray-400" />
+            Quick Note
           </button>
 
           <div className="my-1 border-t border-gray-100" />
@@ -537,9 +577,60 @@ export default function ProspectsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("pqs_total");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // --- Selection & bulk action state ---
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+
   // --- UI state ---
   const [showAddModal, setShowAddModal] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // --- Quick note state ---
+  const [quickNoteCompany, setQuickNoteCompany] = useState<Company | null>(null);
+  const [quickNoteText, setQuickNoteText] = useState("");
+  const [quickNoteSaving, setQuickNoteSaving] = useState(false);
+
+  // --- Saved views ---
+  const [savedViews, setSavedViews] = useState<SavedView[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_VIEWS;
+    const stored = localStorage.getItem("prospectiq-saved-views");
+    return stored ? JSON.parse(stored) : DEFAULT_VIEWS;
+  });
+  const [showSaveView, setShowSaveView] = useState(false);
+  const [viewName, setViewName] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem("prospectiq-saved-views", JSON.stringify(savedViews));
+  }, [savedViews]);
+
+  const saveCurrentView = () => {
+    if (!viewName.trim()) return;
+    const view: SavedView = {
+      id: Date.now().toString(),
+      name: viewName.trim(),
+      filters: { status: statusFilter, tier: tierFilter, minPqs, search },
+    };
+    setSavedViews((prev) => [...prev, view]);
+    setViewName("");
+    setShowSaveView(false);
+  };
+
+  const applyView = (view: SavedView) => {
+    setStatusFilter(view.filters.status);
+    setTierFilter(view.filters.tier);
+    setMinPqs(view.filters.minPqs);
+    setSearch(view.filters.search);
+  };
+
+  const deleteView = (id: string) => {
+    setSavedViews((prev) => prev.filter((v) => v.id !== id));
+  };
+
+  const isViewActive = (view: SavedView) =>
+    view.filters.status === statusFilter &&
+    view.filters.tier === tierFilter &&
+    view.filters.minPqs === minPqs &&
+    view.filters.search === search;
 
   // --- Fetch ---
   const fetchData = useCallback(async () => {
@@ -691,6 +782,90 @@ export default function ProspectsPage() {
     }
   };
 
+  // --- Quick note handlers ---
+  const handleQuickNote = (company: Company) => {
+    setQuickNoteCompany(company);
+    setQuickNoteText("");
+  };
+
+  const handleSaveNote = async () => {
+    if (!quickNoteCompany || !quickNoteText.trim()) return;
+    setQuickNoteSaving(true);
+    try {
+      await addNote(quickNoteCompany.id, quickNoteText.trim());
+      setQuickNoteCompany(null);
+      setQuickNoteText("");
+    } catch {
+      // silent
+    } finally {
+      setQuickNoteSaving(false);
+    }
+  };
+
+  // --- Selection helpers ---
+  const allVisibleSelected =
+    companies.length > 0 && companies.every((c) => selectedIds.has(c.id));
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(companies.map((c) => c.id)));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // --- Bulk action handlers ---
+  const handleBulkResearch = async () => {
+    setBulkLoading(true);
+    try {
+      await runAgent("research", { company_ids: Array.from(selectedIds) });
+      clearSelection();
+      await fetchData();
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkQualify = async () => {
+    setBulkLoading(true);
+    try {
+      await runAgent("qualification", { company_ids: Array.from(selectedIds) });
+      clearSelection();
+      await fetchData();
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDisqualify = async () => {
+    setBulkLoading(true);
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map((id) =>
+          updateCompany(id, { status: "disqualified" })
+        )
+      );
+      clearSelection();
+      await fetchData();
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   // --- Pagination ---
   const hasPrev = offset > 0;
   const hasNext = offset + PAGE_SIZE < totalCount;
@@ -726,6 +901,110 @@ export default function ProspectsPage() {
           </button>
         </div>
       </div>
+
+      {/* ---- Saved Views ---- */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {savedViews.map((view) => (
+          <button
+            key={view.id}
+            onClick={() => applyView(view)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              isViewActive(view)
+                ? "border-digitillis-accent bg-blue-50 text-digitillis-accent"
+                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            )}
+          >
+            <Bookmark className="h-3 w-3" />
+            {view.name}
+            <span
+              role="button"
+              onClick={(e) => { e.stopPropagation(); deleteView(view.id); }}
+              className="ml-1 hover:text-red-500 cursor-pointer"
+            >
+              <X className="h-3 w-3" />
+            </span>
+          </button>
+        ))}
+
+        {showSaveView ? (
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="View name..."
+              value={viewName}
+              onChange={(e) => setViewName(e.target.value)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveCurrentView();
+                if (e.key === "Escape") setShowSaveView(false);
+              }}
+            />
+            <button
+              onClick={saveCurrentView}
+              className="rounded-md bg-digitillis-accent px-2 py-1 text-xs text-white hover:opacity-90"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => { setShowSaveView(false); setViewName(""); }}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowSaveView(true)}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-3 py-1 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700"
+          >
+            <Plus className="h-3 w-3" />
+            Save view
+          </button>
+        )}
+      </div>
+
+      {/* ---- Bulk action bar ---- */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-10 flex items-center gap-3 rounded-lg border border-digitillis-accent bg-blue-50 px-4 py-3">
+          <span className="text-sm font-medium text-gray-700">
+            {selectedIds.size} selected
+          </span>
+          <button
+            onClick={handleBulkResearch}
+            disabled={bulkLoading}
+            className="inline-flex items-center gap-1.5 rounded-md bg-digitillis-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {bulkLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+            Research Selected
+          </button>
+          <button
+            onClick={handleBulkQualify}
+            disabled={bulkLoading}
+            className="inline-flex items-center gap-1.5 rounded-md border border-digitillis-accent bg-white px-3 py-1.5 text-xs font-semibold text-digitillis-accent hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {bulkLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+            Qualify Selected
+          </button>
+          <button
+            onClick={handleBulkDisqualify}
+            disabled={bulkLoading}
+            className="inline-flex items-center gap-1.5 rounded-md border border-digitillis-danger bg-white px-3 py-1.5 text-xs font-semibold text-digitillis-danger hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {bulkLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+            Disqualify Selected
+          </button>
+          <button
+            onClick={clearSelection}
+            disabled={bulkLoading}
+            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-50"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear
+          </button>
+        </div>
+      )}
 
       {/* ---- Filter bar ---- */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
@@ -807,6 +1086,15 @@ export default function ProspectsPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-xs font-medium uppercase tracking-wider text-gray-500">
+                {/* Select-all checkbox */}
+                <th className="w-10 px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 rounded border-gray-300 text-digitillis-accent"
+                  />
+                </th>
                 {(
                   [
                     ["name", "Name"],
@@ -837,14 +1125,41 @@ export default function ProspectsPage() {
                   onClick={() => router.push(`/prospects/${c.id}`)}
                   className={cn(
                     "cursor-pointer transition-colors hover:bg-gray-50",
-                    c.status === "disqualified" && "opacity-50"
+                    c.status === "disqualified" && "opacity-50",
+                    selectedIds.has(c.id) && "bg-blue-50"
                   )}
                 >
+                  {/* Row checkbox */}
+                  <td
+                    className="w-10 px-4 py-3"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelectOne(c.id);
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(c.id)}
+                      onChange={() => toggleSelectOne(c.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-4 w-4 rounded border-gray-300 text-digitillis-accent"
+                    />
+                  </td>
+
                   {/* Name */}
                   <td className="px-4 py-3 font-medium text-gray-900">
                     <div className="flex items-center gap-1.5">
                       {c.priority_flag && (
                         <Flag className="h-3.5 w-3.5 fill-orange-400 text-orange-400" />
+                      )}
+                      {c.domain && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={`https://logo.clearbit.com/${c.domain}`}
+                          alt=""
+                          className="h-5 w-5 shrink-0 rounded"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                        />
                       )}
                       <div>
                         <div className="whitespace-nowrap">{c.name}</div>
@@ -876,10 +1191,35 @@ export default function ProspectsPage() {
 
                   {/* PQS Score */}
                   <td className="whitespace-nowrap px-4 py-3">
-                    <span className={cn("font-semibold", getPQSColor(c.pqs_total))}>
-                      {c.pqs_total}
-                    </span>
-                    <span className="text-gray-400">/100</span>
+                    <div className="group relative inline-block">
+                      <span className={cn("cursor-help font-semibold", getPQSColor(c.pqs_total))}>
+                        {c.pqs_total}
+                      </span>
+                      <span className="text-gray-400">/100</span>
+                      {/* Breakdown tooltip */}
+                      <div className="invisible absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:visible">
+                        <div className="space-y-1.5 text-xs whitespace-nowrap">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-gray-500">Firmographic</span>
+                            <span className="font-semibold text-digitillis-accent">{c.pqs_firmographic}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-gray-500">Technographic</span>
+                            <span className="font-semibold text-purple-600">{c.pqs_technographic}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-gray-500">Timing</span>
+                            <span className="font-semibold text-amber-600">{c.pqs_timing}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-gray-500">Engagement</span>
+                            <span className="font-semibold text-green-600">{c.pqs_engagement}</span>
+                          </div>
+                        </div>
+                        {/* Arrow */}
+                        <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-white" />
+                      </div>
+                    </div>
                   </td>
 
                   {/* Status */}
@@ -915,6 +1255,7 @@ export default function ProspectsPage() {
                       company={c}
                       onFlagToggle={handleFlagToggle}
                       onDisqualify={handleDisqualify}
+                      onQuickNote={handleQuickNote}
                       loading={actionLoading === c.id}
                     />
                   </td>
@@ -959,6 +1300,38 @@ export default function ProspectsPage() {
           onClose={() => setShowAddModal(false)}
           onCreated={fetchData}
         />
+      )}
+
+      {/* ---- Quick Note Modal ---- */}
+      {quickNoteCompany && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+            <h3 className="text-base font-semibold text-gray-900">{quickNoteCompany.name}</h3>
+            <textarea
+              value={quickNoteText}
+              onChange={(e) => setQuickNoteText(e.target.value)}
+              placeholder="Add a note..."
+              rows={3}
+              className="mt-3 w-full rounded-md border border-gray-300 p-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
+              autoFocus
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => { setQuickNoteCompany(null); setQuickNoteText(""); }}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveNote}
+                disabled={quickNoteSaving || !quickNoteText.trim()}
+                className="rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {quickNoteSaving ? "Saving..." : "Save Note"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

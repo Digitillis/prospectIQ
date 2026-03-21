@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, contacts
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,7 @@ app.include_router(analytics.router)
 app.include_router(webhooks.router)
 app.include_router(settings.router)
 app.include_router(actions.router)
+app.include_router(contacts.router)
 
 
 @app.get("/health")

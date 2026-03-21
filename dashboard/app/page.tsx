@@ -11,8 +11,16 @@ import {
   AlertCircle,
   RefreshCw,
   ArrowRight,
+  Ban,
+  Search,
+  Filter,
+  Mail,
+  AlertTriangle,
+  Zap,
+  Bell,
 } from "lucide-react";
 import { getCompanies, getPendingDrafts } from "@/lib/api";
+import { useReminders } from "@/lib/use-reminders";
 import type { Company } from "@/lib/api";
 import {
   cn,
@@ -49,15 +57,17 @@ interface PipelineData {
 export default function PipelinePage() {
   const [pipeline, setPipeline] = useState<PipelineData>({});
   const [approvalCount, setApprovalCount] = useState(0);
+  const [disqualifiedCount, setDisqualifiedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { dueReminders } = useReminders();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       // Fetch companies for each pipeline stage in parallel
-      const [results, approvalsRes] = await Promise.all([
+      const [results, approvalsRes, disqualifiedRes] = await Promise.all([
         Promise.all(
           PIPELINE_COLUMNS.map(async (status) => {
             const json = await getCompanies({ status, limit: "5" });
@@ -69,6 +79,7 @@ export default function PipelinePage() {
           })
         ),
         getPendingDrafts().catch(() => ({ data: [], count: 0 })),
+        getCompanies({ status: "disqualified", limit: "1" }).catch(() => ({ data: [], count: 0 })),
       ]);
 
       const data: PipelineData = {};
@@ -77,6 +88,7 @@ export default function PipelinePage() {
       }
       setPipeline(data);
       setApprovalCount(approvalsRes.count ?? 0);
+      setDisqualifiedCount(disqualifiedRes.count ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
@@ -101,8 +113,46 @@ export default function PipelinePage() {
       ? Math.round((engagedCount / contactedCount) * 100)
       : 0;
 
-  const nudges = [];
+  const discoveredCount = pipeline["discovered"]?.count ?? 0;
+  const researchedCount = pipeline["researched"]?.count ?? 0;
+
+  type Nudge = {
+    id: string;
+    label: string;
+    href: string;
+    color: string;
+    dot: string;
+    icon: React.ComponentType<{ className?: string }>;
+    priority: number;
+  };
+
+  const nudges: Nudge[] = [];
   if (!loading) {
+    // Priority 0: Due follow-up reminders — highest priority
+    if (dueReminders.length > 0)
+      nudges.push({
+        id: "reminders",
+        icon: Bell,
+        label: `${dueReminders.length} follow-up reminder${dueReminders.length !== 1 ? "s" : ""} due`,
+        href: "/prospects",
+        color: "border-orange-200 bg-orange-50 text-orange-800",
+        dot: "bg-orange-500",
+        priority: 0,
+      });
+
+    // Priority 1: Engaged replies — urgent, follow up now
+    if (engagedCount > 0)
+      nudges.push({
+        id: "engaged",
+        label: `${engagedCount} prospect${engagedCount !== 1 ? "s" : ""} replied — follow up now!`,
+        href: "/prospects?status=engaged",
+        color: "border-purple-200 bg-purple-50 text-purple-800",
+        dot: "bg-purple-500",
+        icon: Zap,
+        priority: 1,
+      });
+
+    // Priority 2: Pending approvals — amber warning
     if (approvalCount > 0)
       nudges.push({
         id: "approvals",
@@ -110,33 +160,70 @@ export default function PipelinePage() {
         href: "/approvals",
         color: "border-amber-200 bg-amber-50 text-amber-800",
         dot: "bg-amber-400",
+        icon: AlertCircle,
+        priority: 2,
       });
-    const qualifiedCount2 = pipeline["qualified"]?.count ?? 0;
-    if (qualifiedCount2 > 0)
+
+    // Priority 3: Pipeline bottleneck — red warning
+    if (discoveredCount > 100 && researchedCount < 10)
+      nudges.push({
+        id: "bottleneck",
+        label: `Pipeline bottleneck: ${discoveredCount} discovered but only ${researchedCount} researched. Run Research to move them forward.`,
+        href: "/actions",
+        color: "border-red-200 bg-red-50 text-red-800",
+        dot: "bg-red-500",
+        icon: AlertTriangle,
+        priority: 3,
+      });
+
+    // Priority 4: Qualified prospects ready for outreach
+    if (qualifiedCount > 5)
       nudges.push({
         id: "outreach",
-        label: `${qualifiedCount2} qualified prospect${qualifiedCount2 !== 1 ? "s" : ""} ready for outreach`,
-        href: "/prospects?status=qualified",
+        label: `${qualifiedCount} qualified prospects — generate outreach drafts?`,
+        href: "/actions",
         color: "border-blue-200 bg-blue-50 text-blue-800",
         dot: "bg-digitillis-accent",
+        icon: Mail,
+        priority: 4,
       });
-    const engagedCount2 = pipeline["engaged"]?.count ?? 0;
-    if (engagedCount2 > 0)
+
+    // Priority 5: Researched companies ready for qualification
+    if (researchedCount > 10)
       nudges.push({
-        id: "engaged",
-        label: `${engagedCount2} prospect${engagedCount2 !== 1 ? "s" : ""} replied — follow up now`,
-        href: "/prospects?status=engaged",
-        color: "border-purple-200 bg-purple-50 text-purple-800",
-        dot: "bg-purple-500",
+        id: "qualify",
+        label: `${researchedCount} researched companies ready for qualification scoring.`,
+        href: "/actions",
+        color: "border-green-200 bg-green-50 text-green-800",
+        dot: "bg-green-500",
+        icon: Filter,
+        priority: 5,
+      });
+
+    // Priority 6: Discovered companies waiting for research
+    if (discoveredCount > 20 && !(discoveredCount > 100 && researchedCount < 10))
+      nudges.push({
+        id: "research",
+        label: `You have ${discoveredCount} discovered companies waiting for research. Run Research →`,
+        href: "/actions",
+        color: "border-gray-200 bg-gray-50 text-gray-700",
+        dot: "bg-gray-400",
+        icon: Search,
+        priority: 6,
       });
   }
 
+  // Sort by priority and cap at 3
+  const visibleNudges = nudges
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, 3);
+
   return (
     <div className="space-y-6">
-      {/* Nudges */}
-      {nudges.length > 0 && (
+      {/* Smart Suggestions Banner */}
+      {visibleNudges.length > 0 && (
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {nudges.map((n) => (
+          {visibleNudges.map((n) => (
             <Link
               key={n.id}
               href={n.href}
@@ -145,7 +232,7 @@ export default function PipelinePage() {
                 n.color
               )}
             >
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", n.dot)} />
+              <n.icon className="h-4 w-4 shrink-0" />
               {n.label}
               <ArrowRight className="ml-auto h-3.5 w-3.5 shrink-0" />
             </Link>
@@ -185,7 +272,7 @@ export default function PipelinePage() {
       </div>
 
       {/* Summary metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <MetricCard
           label="Total Prospects"
           value={totalProspects}
@@ -209,6 +296,13 @@ export default function PipelinePage() {
           value={`${responseRate}%`}
           icon={TrendingUp}
           color="bg-purple-50 text-purple-600"
+        />
+        <MetricCard
+          label="Disqualified"
+          value={disqualifiedCount}
+          icon={Ban}
+          color="bg-red-50 text-digitillis-danger"
+          href="/prospects?status=disqualified"
         />
       </div>
 
@@ -252,14 +346,16 @@ function MetricCard({
   value,
   icon: Icon,
   color,
+  href,
 }: {
   label: string;
   value: number | string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
+  href?: string;
 }) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+  const inner = (
+    <>
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-gray-500">{label}</p>
         <div className={cn("rounded-lg p-2", color)}>
@@ -267,7 +363,22 @@ function MetricCard({
         </div>
       </div>
       <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
-    </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block rounded-xl border border-gray-200 bg-white p-5 transition-shadow hover:shadow-md"
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5">{inner}</div>
   );
 }
 
@@ -328,9 +439,20 @@ function CompanyCard({ company }: { company: Company }) {
       className="block rounded-lg border border-gray-100 bg-gray-50 p-3 transition-colors hover:border-gray-200 hover:bg-white"
     >
       <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-gray-900 leading-tight">
-          {company.name}
-        </p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {company.domain && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`https://logo.clearbit.com/${company.domain}`}
+              alt=""
+              className="h-4 w-4 shrink-0 rounded"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          )}
+          <p className="text-sm font-medium text-gray-900 leading-tight truncate">
+            {company.name}
+          </p>
+        </div>
         {company.tier && (
           <span className="ml-1 shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
             {TIER_LABELS[company.tier] ?? company.tier}

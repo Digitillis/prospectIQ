@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from backend.app.core.database import Database
@@ -282,9 +282,80 @@ async def enrich_company(company_id: str):
     }
 
 
+@router.post("/import")
+async def import_companies_csv(file: UploadFile):
+    """Import companies from a CSV file."""
+    import csv
+    import io
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+
+    db = get_db()
+    imported = 0
+    skipped = 0
+    errors = []
+
+    for row in reader:
+        name = row.get("name", "").strip() or row.get("Company Name", "").strip()
+        if not name:
+            skipped += 1
+            continue
+
+        # Check for duplicate by domain
+        domain = row.get("domain", "").strip() or row.get("Domain", "").strip()
+        if domain:
+            existing = db.get_company_by_domain(domain)
+            if existing:
+                skipped += 1
+                continue
+
+        try:
+            employee_raw = row.get("employee_count", "").strip() or row.get("Employee Count", "").strip()
+            db.client.table("companies").insert({
+                "name": name,
+                "domain": domain or None,
+                "website": row.get("website", "").strip() or row.get("Website", "").strip() or None,
+                "industry": row.get("industry", "").strip() or row.get("Industry", "").strip() or None,
+                "state": row.get("state", "").strip() or row.get("State", "").strip() or None,
+                "tier": row.get("tier", "").strip() or row.get("Tier", "").strip() or None,
+                "employee_count": int(employee_raw) if employee_raw.isdigit() else None,
+                "revenue_range": row.get("revenue_range", "").strip() or row.get("Revenue Range", "").strip() or None,
+                "status": "discovered",
+                "pqs_total": 0,
+                "pqs_firmographic": 0,
+                "pqs_technographic": 0,
+                "pqs_timing": 0,
+                "pqs_engagement": 0,
+            }).execute()
+            imported += 1
+        except Exception as e:
+            errors.append(f"{name}: {str(e)[:100]}")
+
+    return {"data": {"imported": imported, "skipped": skipped, "errors": errors}}
+
+
 class OutcomeRequest(BaseModel):
     outcome: str  # "won" | "lost" | "no_response"
     notes: Optional[str] = None
+
+
+@router.patch("/{company_id}/tags")
+async def update_tags(company_id: str, body: dict):
+    """Update custom tags on a company. Body: { "tags": ["trade-show", "referral"] }
+
+    NOTE: Requires a `custom_tags` JSONB column on the companies table in Supabase.
+    Run: ALTER TABLE companies ADD COLUMN IF NOT EXISTS custom_tags JSONB DEFAULT '[]'::jsonb;
+    """
+    db = Database()
+    tags = body.get("tags", [])
+    db.client.table("companies").update({"custom_tags": tags}).eq("id", company_id).execute()
+    return {"data": {"company_id": company_id, "tags": tags}}
 
 
 @router.post("/{company_id}/outcome")

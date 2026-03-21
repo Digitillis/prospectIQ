@@ -50,6 +50,14 @@ export const TIER_LABELS: Record<string, string> = {
   "3": "Plastics & Molding",
   "4": "Electronics",
   "5": "Aerospace",
+  "fb1": "Food Manufacturing",
+  "fb2": "Meat & Poultry",
+  "fb3": "Dairy Products",
+  "fb4": "Fruit & Vegetable",
+  "fb5": "Beverage Manufacturing",
+  "mfg1": "Industrial Machinery",
+  "mfg2": "Metal Fabrication",
+  "mfg3": "Automotive Parts",
 };
 
 export function getPQSColor(score: number): string {

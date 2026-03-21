@@ -10,6 +10,7 @@ import {
   Building2,
   Loader2,
   Inbox,
+  Shuffle,
 } from "lucide-react";
 import { getPendingDrafts, approveDraft, rejectDraft, OutreachDraft } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
@@ -23,6 +24,9 @@ export default function ApprovalsPage() {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [abVariants, setAbVariants] = useState<Record<string, { a: string; b: string; selected: "a" | "b" }>>({});
+  const [abLoading, setAbLoading] = useState<string | null>(null);
 
   const fetchDrafts = useCallback(async () => {
     try {
@@ -48,7 +52,11 @@ export default function ApprovalsPage() {
     setActionLoading(id);
     try {
       await approveDraft(id);
-      setDrafts((prev) => prev.filter((d) => d.id !== id));
+      setDrafts((prev) => {
+        const next = prev.filter((d) => d.id !== id);
+        return next;
+      });
+      setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to approve");
     } finally {
@@ -63,6 +71,7 @@ export default function ApprovalsPage() {
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setEditingId(null);
       setEditBody("");
+      setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to approve");
     } finally {
@@ -78,6 +87,7 @@ export default function ApprovalsPage() {
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setRejectingId(null);
       setRejectReason("");
+      setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reject");
     } finally {
@@ -92,12 +102,88 @@ export default function ApprovalsPage() {
     setRejectReason("");
   };
 
+  const generateVariant = (draft: OutreachDraft) => {
+    setAbLoading(draft.id);
+    setTimeout(() => {
+      const original = draft.subject;
+      let variant = original;
+
+      // Strategy 1: Question format
+      if (!original.endsWith("?")) {
+        if (original.toLowerCase().startsWith("re:") || original.toLowerCase().includes("follow")) {
+          variant = `Quick question about ${draft.companies?.name || "your team"}`;
+        } else {
+          variant = `${original.split(" ").slice(0, 4).join(" ")}?`;
+        }
+      }
+      // Strategy 2: Shorter version
+      else {
+        variant = original.split(" ").slice(0, 5).join(" ");
+      }
+
+      // Strategy 3: Add personalization if variant unchanged
+      if (variant === original && draft.companies?.name) {
+        variant = `${draft.companies.name} — ${original}`;
+      }
+
+      setAbVariants((prev) => ({
+        ...prev,
+        [draft.id]: { a: original, b: variant, selected: "a" },
+      }));
+      setAbLoading(null);
+    }, 300);
+  };
+
   const startRejecting = (id: string) => {
     setRejectingId(id);
     setRejectReason("");
     setEditingId(null);
     setEditBody("");
   };
+
+  // Keyboard shortcut handler
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't capture when editing (textarea or input focused)
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+
+      switch (e.key) {
+        case "j": // Next draft
+          setFocusedIndex((i) => Math.min(i + 1, drafts.length - 1));
+          break;
+        case "k": // Previous draft
+          setFocusedIndex((i) => Math.max(i - 1, 0));
+          break;
+        case "a": // Approve current
+          if (drafts[focusedIndex] && !editingId && !rejectingId) {
+            handleApprove(drafts[focusedIndex].id);
+          }
+          break;
+        case "e": // Edit current
+          if (drafts[focusedIndex] && !editingId && !rejectingId) {
+            startEditing(drafts[focusedIndex]);
+          }
+          break;
+        case "r": // Reject current
+          if (drafts[focusedIndex] && !editingId && !rejectingId) {
+            startRejecting(drafts[focusedIndex].id);
+          }
+          break;
+        case "Escape":
+          if (editingId) { setEditingId(null); setEditBody(""); }
+          if (rejectingId) { setRejectingId(null); setRejectReason(""); }
+          break;
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [drafts, focusedIndex, editingId, rejectingId]);
+
+  // Scroll focused draft into view
+  useEffect(() => {
+    const el = document.getElementById(`draft-${drafts[focusedIndex]?.id}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusedIndex, drafts]);
 
   if (loading) {
     return (
@@ -140,10 +226,16 @@ export default function ApprovalsPage() {
 
       {/* Draft Cards */}
       <div className="space-y-4">
-        {drafts.map((draft) => (
+        {drafts.map((draft, idx) => (
           <div
+            id={`draft-${draft.id}`}
             key={draft.id}
-            className="rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md"
+            className={cn(
+              "rounded-xl border bg-white shadow-sm transition-all",
+              idx === focusedIndex
+                ? "border-digitillis-accent ring-2 ring-digitillis-accent/20"
+                : "border-gray-200 hover:shadow-md"
+            )}
           >
             {/* Company Header */}
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
@@ -158,18 +250,24 @@ export default function ApprovalsPage() {
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                  PQS
+              <div className="flex items-center gap-4">
+                {/* Draft position indicator */}
+                <span className="text-xs text-gray-400">
+                  {idx + 1} of {drafts.length}
                 </span>
-                <span
-                  className={cn(
-                    "text-xl font-bold",
-                    getPQSColor(draft.companies?.pqs_total ?? 0)
-                  )}
-                >
-                  {draft.companies?.pqs_total ?? 0}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                    PQS
+                  </span>
+                  <span
+                    className={cn(
+                      "text-xl font-bold",
+                      getPQSColor(draft.companies?.pqs_total ?? 0)
+                    )}
+                  >
+                    {draft.companies?.pqs_total ?? 0}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -197,9 +295,67 @@ export default function ApprovalsPage() {
 
               {/* Message Preview */}
               <div className="rounded-lg bg-gray-50 p-4">
-                <p className="text-sm font-semibold text-gray-900">
-                  {draft.subject}
-                </p>
+                {/* Subject with A/B test option */}
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-gray-900 flex-1">{draft.subject}</p>
+                  {!abVariants[draft.id] && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); generateVariant(draft); }}
+                      disabled={abLoading === draft.id}
+                      className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {abLoading === draft.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Shuffle className="h-3 w-3" />
+                      )}
+                      A/B Test
+                    </button>
+                  )}
+                </div>
+
+                {/* A/B variant selector */}
+                {abVariants[draft.id] && (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs font-medium text-gray-500">Choose a subject line:</p>
+                    {(["a", "b"] as const).map((variant) => (
+                      <button
+                        key={variant}
+                        onClick={() =>
+                          setAbVariants((prev) => ({
+                            ...prev,
+                            [draft.id]: { ...prev[draft.id], selected: variant },
+                          }))
+                        }
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-lg border p-2.5 text-left text-sm transition-colors",
+                          abVariants[draft.id].selected === variant
+                            ? "border-digitillis-accent bg-blue-50 text-gray-900"
+                            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                            abVariants[draft.id].selected === variant
+                              ? "bg-digitillis-accent text-white"
+                              : "bg-gray-200 text-gray-500"
+                          )}
+                        >
+                          {variant.toUpperCase()}
+                        </span>
+                        <span className="flex-1">{abVariants[draft.id][variant]}</span>
+                        {variant === "a" && (
+                          <span className="text-xs text-gray-400">Original</span>
+                        )}
+                        {variant === "b" && (
+                          <span className="text-xs text-gray-400">Variant</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {editingId === draft.id ? (
                   <textarea
                     value={editBody}
@@ -317,6 +473,34 @@ export default function ApprovalsPage() {
           </div>
         ))}
       </div>
+
+      {/* Keyboard Shortcut Legend */}
+      {drafts.length > 0 && (
+        <div className="flex items-center justify-center gap-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-2 text-xs text-gray-400">
+          <span>
+            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">j</kbd>
+            {" / "}
+            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">k</kbd>
+            {" Navigate"}
+          </span>
+          <span>
+            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">a</kbd>
+            {" Approve"}
+          </span>
+          <span>
+            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">e</kbd>
+            {" Edit"}
+          </span>
+          <span>
+            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">r</kbd>
+            {" Reject"}
+          </span>
+          <span>
+            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">esc</kbd>
+            {" Cancel"}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

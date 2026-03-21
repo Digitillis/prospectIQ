@@ -37,6 +37,19 @@ import {
   DollarSign,
   Users,
   MapPin,
+  FileSearch,
+  Filter,
+  MessageSquare,
+  Ban,
+  CalendarCheck,
+  Clipboard,
+  Printer,
+  Trophy,
+  Target,
+  Bell,
+  X,
+  Tag,
+  type LucideIcon,
 } from "lucide-react";
 
 import {
@@ -45,7 +58,9 @@ import {
   addNote,
   createContact,
   enrichCompany,
+  runAgent,
   recordOutcome,
+  updateTags,
   type CompanyDetail,
   type Contact,
   type Research,
@@ -59,6 +74,7 @@ import {
   TIER_LABELS,
   getPQSColor,
 } from "@/lib/utils";
+import { useReminders } from "@/lib/use-reminders";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -165,6 +181,44 @@ function PQSBreakdownBar({
 }
 
 // ---------------------------------------------------------------------------
+// ActionButton sub-component
+// ---------------------------------------------------------------------------
+
+function ActionButton({
+  label,
+  icon: Icon,
+  onClick,
+  loading,
+  variant = "default",
+}: {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  loading: boolean;
+  variant?: "default" | "danger";
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50",
+        variant === "danger"
+          ? "border-red-200 text-red-600 hover:bg-red-50"
+          : "border-gray-300 text-gray-700 hover:bg-gray-50"
+      )}
+    >
+      {loading ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Icon className="h-4 w-4" />
+      )}
+      {label}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -182,8 +236,37 @@ export default function ProspectDetailPage() {
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [outcomeLoading, setOutcomeLoading] = useState<string | null>(null);
+  const [outcomeModal, setOutcomeModal] = useState<"won" | "lost" | "no_response" | null>(null);
+  const [outcomeNotes, setOutcomeNotes] = useState("");
+  const [outcomeSubmitLoading, setOutcomeSubmitLoading] = useState(false);
+  const [outcomeSuccess, setOutcomeSuccess] = useState<string | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichResult, setEnrichResult] = useState<string | null>(null);
+  const [agentLoading, setAgentLoading] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [disqualifyConfirm, setDisqualifyConfirm] = useState(false);
+
+  // Deal value state — Feature 28
+  const [dealValue, setDealValue] = useState("");
+  const [dealValueSaving, setDealValueSaving] = useState(false);
+  const [dealValueSuccess, setDealValueSuccess] = useState<string | null>(null);
+
+  // Tag state
+  const [showTagInput, setShowTagInput] = useState(false);
+  const [newTag, setNewTag] = useState("");
+  const [tagSaving, setTagSaving] = useState(false);
+
+  // Brief generator state
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefContent, setBriefContent] = useState<string | null>(null);
+
+  // Reminder state
+  const { reminders, addReminder, dismissReminder } = useReminders();
+  const [showReminderForm, setShowReminderForm] = useState(false);
+  const [reminderDays, setReminderDays] = useState(7);
+  const [reminderNote, setReminderNote] = useState("");
+  const [reminderSuccess, setReminderSuccess] = useState<string | null>(null);
+  const companyReminders = reminders.filter((r) => r.companyId === id);
 
   // --- Fetch company ---
   const fetchCompany = useCallback(async () => {
@@ -202,6 +285,13 @@ export default function ProspectDetailPage() {
   useEffect(() => {
     fetchCompany();
   }, [fetchCompany]);
+
+  // Sync deal value from loaded company data
+  useEffect(() => {
+    if (company?.estimated_deal_value != null) {
+      setDealValue(String(company.estimated_deal_value));
+    }
+  }, [company?.estimated_deal_value]);
 
   // --- Handlers ---
   const handleStatusChange = async (newStatus: string) => {
@@ -247,18 +337,34 @@ export default function ProspectDetailPage() {
     }
   };
 
-  const handleOutcome = async (outcome: "won" | "lost" | "no_response") => {
-    if (!company) return;
-    setOutcomeLoading(outcome);
+  const handleOutcome = (outcome: "won" | "lost" | "no_response") => {
+    setOutcomeModal(outcome);
+    setOutcomeNotes("");
+    setOutcomeSuccess(null);
+  };
+
+  const submitOutcome = async () => {
+    if (!outcomeModal || !company) return;
+    setOutcomeSubmitLoading(true);
     try {
-      const res = await recordOutcome(id, outcome);
+      const res = await recordOutcome(id, outcomeModal, outcomeNotes || undefined);
       setCompany((prev) =>
         prev ? { ...prev, status: res.data.new_status } : prev
       );
+      setOutcomeSuccess(
+        outcomeModal === "won"
+          ? "Outcome recorded — marked as Won."
+          : outcomeModal === "lost"
+          ? "Outcome recorded — marked as Lost."
+          : "Outcome recorded — marked as No Response."
+      );
+      setOutcomeModal(null);
+      setOutcomeNotes("");
+      await fetchCompany();
     } catch {
-      // silent
+      // silent for now
     } finally {
-      setOutcomeLoading(null);
+      setOutcomeSubmitLoading(false);
     }
   };
 
@@ -281,6 +387,167 @@ export default function ProspectDetailPage() {
     } finally {
       setEnrichLoading(false);
     }
+  };
+
+  // --- Tag handlers ---
+  const addTag = async () => {
+    if (!company || !newTag.trim()) return;
+    const trimmed = newTag.trim().toLowerCase().replace(/\s+/g, "-");
+    const currentTags: string[] = company.custom_tags ?? [];
+    if (currentTags.includes(trimmed)) {
+      setNewTag("");
+      setShowTagInput(false);
+      return;
+    }
+    const nextTags = [...currentTags, trimmed];
+    setTagSaving(true);
+    try {
+      await updateTags(id, nextTags);
+      setCompany((prev) => prev ? { ...prev, custom_tags: nextTags } : prev);
+    } catch {
+      // silent
+    } finally {
+      setTagSaving(false);
+      setNewTag("");
+      setShowTagInput(false);
+    }
+  };
+
+  const removeTag = async (tag: string) => {
+    if (!company) return;
+    const nextTags = (company.custom_tags ?? []).filter((t) => t !== tag);
+    setTagSaving(true);
+    try {
+      await updateTags(id, nextTags);
+      setCompany((prev) => prev ? { ...prev, custom_tags: nextTags } : prev);
+    } catch {
+      // silent
+    } finally {
+      setTagSaving(false);
+    }
+  };
+
+  // --- Agent action handlers ---
+  const handleRunAgent = async (agentName: string, label: string) => {
+    setAgentLoading(agentName);
+    setActionResult(null);
+    try {
+      await runAgent(agentName, { company_ids: [id] });
+      setActionResult({ type: "success", message: `${label} completed successfully.` });
+      await fetchCompany();
+    } catch {
+      setActionResult({ type: "error", message: `${label} failed. Please try again.` });
+    } finally {
+      setAgentLoading(null);
+    }
+  };
+
+  const handleEnrichAction = async () => {
+    setAgentLoading("enrich");
+    setActionResult(null);
+    try {
+      const res = await enrichCompany(id);
+      const { contacts_enriched, errors } = res.data;
+      if (contacts_enriched > 0) {
+        setActionResult({ type: "success", message: `${contacts_enriched} contact email(s) found via Apollo.` });
+        await fetchCompany();
+      } else if (errors > 0) {
+        setActionResult({ type: "error", message: "Apollo enrichment failed. Check API key." });
+      } else {
+        setActionResult({ type: "success", message: "No new emails found (contacts may already be enriched)." });
+      }
+    } catch {
+      setActionResult({ type: "error", message: "Enrichment failed. Check Apollo API key." });
+    } finally {
+      setAgentLoading(null);
+    }
+  };
+
+  const handleDisqualify = async () => {
+    if (!disqualifyConfirm) {
+      setDisqualifyConfirm(true);
+      return;
+    }
+    setAgentLoading("disqualify");
+    setActionResult(null);
+    setDisqualifyConfirm(false);
+    try {
+      await updateCompany(id, { status: "disqualified" });
+      setActionResult({ type: "success", message: "Company marked as disqualified." });
+      await fetchCompany();
+    } catch {
+      setActionResult({ type: "error", message: "Failed to disqualify company." });
+    } finally {
+      setAgentLoading(null);
+    }
+  };
+
+  // --- Deal value save handler — Feature 28 ---
+  const saveDealValue = async () => {
+    if (!company) return;
+    setDealValueSaving(true);
+    setDealValueSuccess(null);
+    try {
+      await updateCompany(id, { estimated_deal_value: dealValue ? Number(dealValue) : null });
+      setCompany((prev) =>
+        prev ? { ...prev, estimated_deal_value: dealValue ? Number(dealValue) : undefined } : prev
+      );
+      setDealValueSuccess("Deal value saved.");
+      setTimeout(() => setDealValueSuccess(null), 3000);
+    } catch {
+      // silent for now
+    } finally {
+      setDealValueSaving(false);
+    }
+  };
+
+  // --- Brief generator ---
+  const generateBrief = () => {
+    if (!company) return;
+    setBriefLoading(true);
+    setTimeout(() => {
+      const techList = (company.technology_stack || []).map((t) => `<li>${t}</li>`).join("");
+      const painList = (company.pain_signals || []).map((p) => `<li>${p}</li>`).join("");
+      const hookList = (company.personalization_hooks || []).map((h) => `<li>${h}</li>`).join("");
+      const contactList =
+        company.contacts
+          ?.map(
+            (c) =>
+              `<p style="margin:2px 0">• ${c.full_name || "Unknown"} — ${c.title || "No title"}${c.is_decision_maker ? " <strong>(Decision Maker)</strong>" : ""}</p>`
+          )
+          .join("") || "<p>No contacts found</p>";
+
+      const brief = `
+        <h2 style="font-size:1.25rem;font-weight:700;margin-bottom:0.25rem">${company.name} — Sales Brief</h2>
+        <p style="color:#6b7280;font-size:0.85rem;margin-bottom:1rem">Generated ${new Date().toLocaleDateString()}</p>
+        <hr style="border-color:#e5e7eb;margin-bottom:1rem"/>
+        <p><strong>Industry:</strong> ${company.industry || "Manufacturing"}</p>
+        <p><strong>Location:</strong> ${[company.city, company.state].filter(Boolean).join(", ") || "—"}</p>
+        <p><strong>Size:</strong> ${company.employee_count?.toLocaleString() || "?"} employees · ${company.revenue_range || "—"}</p>
+        <h3 style="font-size:1rem;font-weight:600;margin-top:1rem;margin-bottom:0.25rem">Company Overview</h3>
+        <p>${company.research_summary || "No research summary available. Run the Research agent to generate insights."}</p>
+        ${techList ? `<h3 style="font-size:1rem;font-weight:600;margin-top:1rem;margin-bottom:0.25rem">Technology Stack</h3><ul style="list-style:disc;padding-left:1.25rem">${techList}</ul>` : ""}
+        ${painList ? `<h3 style="font-size:1rem;font-weight:600;margin-top:1rem;margin-bottom:0.25rem">Pain Points</h3><ul style="list-style:disc;padding-left:1.25rem">${painList}</ul>` : ""}
+        ${hookList ? `<h3 style="font-size:1rem;font-weight:600;margin-top:1rem;margin-bottom:0.25rem">Personalization Hooks</h3><ul style="list-style:disc;padding-left:1.25rem">${hookList}</ul>` : ""}
+        <h3 style="font-size:1rem;font-weight:600;margin-top:1rem;margin-bottom:0.25rem">Key Contacts</h3>
+        ${contactList}
+        <h3 style="font-size:1rem;font-weight:600;margin-top:1rem;margin-bottom:0.25rem">Prospect Quality Score</h3>
+        <p>PQS Total: <strong>${company.pqs_total}/100</strong></p>
+        <p style="color:#6b7280;font-size:0.85rem">Firmographic ${company.pqs_firmographic}/25 · Technographic ${company.pqs_technographic}/25 · Timing ${company.pqs_timing}/25 · Engagement ${company.pqs_engagement}/25</p>
+      `;
+      setBriefContent(brief);
+      setBriefLoading(false);
+    }, 500);
+  };
+
+  // --- Reminder handler ---
+  const handleSetReminder = () => {
+    if (!company || !reminderNote.trim()) return;
+    addReminder(id, company.name, reminderNote.trim(), reminderDays);
+    setReminderNote("");
+    setShowReminderForm(false);
+    setReminderSuccess("Reminder set successfully.");
+    setTimeout(() => setReminderSuccess(null), 3000);
   };
 
   // --- Loading / Error ---
@@ -324,6 +591,15 @@ export default function ProspectDetailPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <div className="flex items-center gap-3">
+            {company.domain && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`https://logo.clearbit.com/${company.domain}`}
+                alt=""
+                className="h-8 w-8 rounded-lg"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            )}
             <h2 className="text-2xl font-bold text-gray-900">{company.name}</h2>
             <span
               className={cn(
@@ -375,6 +651,48 @@ export default function ProspectDetailPage() {
               timing={company.pqs_timing}
               engagement={company.pqs_engagement}
             />
+          </div>
+
+          {/* Custom Tags */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Tag className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            {(company.custom_tags ?? []).map((tag: string) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700"
+              >
+                {tag}
+                <button
+                  onClick={() => removeTag(tag)}
+                  disabled={tagSaving}
+                  className="hover:text-red-500 disabled:opacity-50"
+                  aria-label={`Remove tag ${tag}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            {showTagInput ? (
+              <input
+                autoFocus
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); addTag(); }
+                  if (e.key === "Escape") { setShowTagInput(false); setNewTag(""); }
+                }}
+                disabled={tagSaving}
+                placeholder="Tag name..."
+                className="rounded-full border border-indigo-300 bg-white px-2.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400 w-24 disabled:opacity-50"
+              />
+            ) : (
+              <button
+                onClick={() => setShowTagInput(true)}
+                className="rounded-full border border-dashed border-gray-300 px-2.5 py-0.5 text-xs text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors"
+              >
+                + Add tag
+              </button>
+            )}
           </div>
         </div>
 
@@ -440,6 +758,65 @@ export default function ProspectDetailPage() {
             <StickyNote className="h-4 w-4 text-gray-400" />
             Add Note
           </button>
+
+          {/* Set Reminder */}
+          <button
+            onClick={() => setShowReminderForm((o) => !o)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors",
+              showReminderForm
+                ? "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            )}
+          >
+            <Bell className="h-4 w-4 text-gray-400" />
+            Set Reminder
+          </button>
+
+          {/* Inline reminder form */}
+          {showReminderForm && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-orange-700">New Reminder</p>
+              <div className="flex items-center gap-2">
+                <select
+                  className="rounded border border-orange-200 bg-white px-2 py-1 text-sm text-gray-700 focus:outline-none"
+                  value={reminderDays}
+                  onChange={(e) => setReminderDays(Number(e.target.value))}
+                >
+                  <option value={1}>Tomorrow</option>
+                  <option value={3}>In 3 days</option>
+                  <option value={7}>In 1 week</option>
+                  <option value={14}>In 2 weeks</option>
+                  <option value={30}>In 1 month</option>
+                </select>
+              </div>
+              <input
+                placeholder="Reminder note..."
+                className="w-full rounded border border-orange-200 bg-white px-2 py-1 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none"
+                value={reminderNote}
+                onChange={(e) => setReminderNote(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSetReminder(); }}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSetReminder}
+                  disabled={!reminderNote.trim()}
+                  className="rounded-md bg-orange-600 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-50"
+                >
+                  Set
+                </button>
+                <button
+                  onClick={() => { setShowReminderForm(false); setReminderNote(""); }}
+                  className="rounded-md border border-orange-200 px-3 py-1 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {reminderSuccess && (
+            <p className="text-xs text-green-600">{reminderSuccess}</p>
+          )}
 
           {/* Enrich Contacts */}
           <button
@@ -540,6 +917,166 @@ export default function ProspectDetailPage() {
         </div>
       )}
 
+      {/* ---- Agent Actions Bar ---- */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Agent Actions
+          </span>
+
+          {company.status === "discovered" && (
+            <ActionButton
+              label="Run Research"
+              icon={FileSearch}
+              onClick={() => handleRunAgent("research", "Research")}
+              loading={agentLoading === "research"}
+            />
+          )}
+
+          {company.status === "researched" && (
+            <ActionButton
+              label="Run Qualification"
+              icon={Filter}
+              onClick={() => handleRunAgent("qualification", "Qualification")}
+              loading={agentLoading === "qualification"}
+            />
+          )}
+
+          {(company.status === "qualified" || company.status === "outreach_pending") && (
+            <ActionButton
+              label="Generate Outreach"
+              icon={MessageSquare}
+              onClick={() => handleRunAgent("outreach", "Outreach generation")}
+              loading={agentLoading === "outreach"}
+            />
+          )}
+
+          <ActionButton
+            label="Enrich Contacts"
+            icon={Users}
+            onClick={handleEnrichAction}
+            loading={agentLoading === "enrich"}
+          />
+
+          {company.status !== "disqualified" && (
+            <ActionButton
+              label={disqualifyConfirm ? "Confirm Disqualify?" : "Disqualify"}
+              icon={Ban}
+              onClick={handleDisqualify}
+              loading={agentLoading === "disqualify"}
+              variant="danger"
+            />
+          )}
+        </div>
+
+        {actionResult && (
+          <div
+            className={cn(
+              "mt-2 rounded-lg border px-4 py-2 text-sm",
+              actionResult.type === "success"
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            )}
+          >
+            {actionResult.message}
+          </div>
+        )}
+      </div>
+
+      {/* ================================================================ */}
+      {/* Outcome Tracking — Feature 20                                   */}
+      {/* ================================================================ */}
+      {["contacted", "engaged", "meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot"].includes(company.status) && (
+        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Target className="h-5 w-5 text-indigo-500" />
+            <h3 className="text-lg font-semibold text-gray-900">Record Outcome</h3>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Close the loop — record what happened with this prospect to improve future scoring.
+          </p>
+
+          {outcomeSuccess && (
+            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+              {outcomeSuccess}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => handleOutcome("won")}
+              className="inline-flex items-center gap-2 rounded-lg border-2 border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
+            >
+              <Trophy className="h-5 w-5" />
+              <div className="text-left">
+                <p className="font-semibold">Won</p>
+                <p className="text-xs text-green-600">Converted to customer</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => handleOutcome("lost")}
+              className="inline-flex items-center gap-2 rounded-lg border-2 border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <XCircle className="h-5 w-5" />
+              <div className="text-left">
+                <p className="font-semibold">Lost</p>
+                <p className="text-xs text-red-600">Chose competitor or declined</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => handleOutcome("no_response")}
+              className="inline-flex items-center gap-2 rounded-lg border-2 border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <Clock className="h-5 w-5" />
+              <div className="text-left">
+                <p className="font-semibold">No Response</p>
+                <p className="text-xs text-gray-500">Never replied or went dark</p>
+              </div>
+            </button>
+          </div>
+
+          {outcomeModal && (
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Recording:{" "}
+                <span className="capitalize font-semibold">
+                  {outcomeModal === "no_response" ? "No Response" : outcomeModal}
+                </span>
+              </p>
+              <textarea
+                value={outcomeNotes}
+                onChange={(e) => setOutcomeNotes(e.target.value)}
+                placeholder="Optional notes — why did we win/lose? What did we learn?"
+                rows={3}
+                className="w-full rounded-md border border-gray-300 p-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={submitOutcome}
+                  disabled={outcomeSubmitLoading}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {outcomeSubmitLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                  {outcomeSubmitLoading ? "Saving..." : "Confirm"}
+                </button>
+                <button
+                  onClick={() => { setOutcomeModal(null); setOutcomeNotes(""); }}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* ---- Tab navigation ---- */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex gap-6">
@@ -567,6 +1104,228 @@ export default function ProspectDetailPage() {
         {activeTab === "Timeline" && <TimelineTab interactions={company.interactions} />}
         {activeTab === "Outreach" && <OutreachTab company={company} />}
       </div>
+
+      {/* ================================================================ */}
+      {/* Company Brief Generator — Feature 11                             */}
+      {/* ================================================================ */}
+      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-indigo-500" />
+            <h3 className="text-lg font-semibold text-gray-900">Sales Brief</h3>
+          </div>
+          <button
+            onClick={generateBrief}
+            disabled={briefLoading}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {briefLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {briefContent ? "Regenerate Brief" : "Generate Brief"}
+          </button>
+        </div>
+
+        {!briefContent && !briefLoading && (
+          <p className="mt-3 text-sm text-gray-400 italic">
+            Generate a one-page sales brief compiled from all available research, contacts, pain signals, and technology data for this prospect.
+          </p>
+        )}
+
+        {briefLoading && (
+          <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+            Compiling brief from prospect data…
+          </div>
+        )}
+
+        {briefContent && (
+          <>
+            <div
+              className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700 leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: briefContent }}
+            />
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  const tmp = document.createElement("div");
+                  tmp.innerHTML = briefContent;
+                  navigator.clipboard.writeText(tmp.textContent || "").catch(() => {});
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Clipboard className="h-3.5 w-3.5" />
+                Copy to Clipboard
+              </button>
+              <button
+                onClick={() => {
+                  const win = window.open("", "_blank");
+                  if (!win) return;
+                  win.document.write(
+                    `<html><head><title>${company.name} — Sales Brief</title><style>body{font-family:system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;color:#111}</style></head><body>${briefContent}</body></html>`
+                  );
+                  win.document.close();
+                  win.print();
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Print
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ================================================================ */}
+      {/* Deal Value — Feature 28                                          */}
+      {/* ================================================================ */}
+      {["qualified","outreach_pending","contacted","engaged","meeting_scheduled","pilot_discussion","pilot_signed","active_pilot","converted"].includes(company.status) && (
+        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <DollarSign className="h-5 w-5 text-green-600" />
+            <h3 className="text-lg font-semibold">Deal Value</h3>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Assign an estimated annual contract value to track pipeline value across your funnel.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                value={dealValue}
+                onChange={(e) => setDealValue(e.target.value)}
+                placeholder="50000"
+                min="0"
+                className="w-40 rounded-lg border border-gray-300 pl-7 pr-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              />
+            </div>
+            <button
+              onClick={saveDealValue}
+              disabled={dealValueSaving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              {dealValueSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <DollarSign className="h-4 w-4" />}
+              {dealValueSaving ? "Saving…" : "Save"}
+            </button>
+            {dealValue && Number(dealValue) > 0 && (
+              <span className="text-sm text-gray-500">
+                = <span className="font-medium text-gray-700">${Number(dealValue).toLocaleString()}</span>/yr estimated
+              </span>
+            )}
+          </div>
+          {dealValueSuccess && (
+            <p className="mt-2 text-sm text-green-600">{dealValueSuccess}</p>
+          )}
+        </section>
+      )}
+
+      {/* ================================================================ */}
+      {/* Meeting Prep — Feature 13 (only shown when meeting is scheduled)  */}
+      {/* ================================================================ */}
+      {company.status === "meeting_scheduled" && (
+        <section className="rounded-xl border border-purple-200 bg-purple-50 p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <CalendarCheck className="h-5 w-5 text-purple-600" />
+            <h3 className="text-lg font-semibold text-gray-900">Meeting Prep</h3>
+            <span className="ml-auto rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+              Meeting Scheduled
+            </span>
+          </div>
+
+          <div className="space-y-5">
+            {/* Talking Points */}
+            {((company.pain_signals && company.pain_signals.length > 0) ||
+              (company.personalization_hooks && company.personalization_hooks.length > 0)) && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700">Talking Points</h4>
+                <ul className="mt-2 space-y-1.5 text-sm text-gray-600">
+                  {company.pain_signals?.map((p, i) => (
+                    <li key={`pain-${i}`} className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                      <span>Address: {p}</span>
+                    </li>
+                  ))}
+                  {company.personalization_hooks?.map((h, i) => (
+                    <li key={`hook-${i}`} className="flex items-start gap-2">
+                      <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-400" />
+                      <span>Reference: {h}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Technology Stack */}
+            {company.technology_stack && company.technology_stack.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700">Their Technology</h4>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {company.technology_stack.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-md bg-white px-2.5 py-0.5 text-xs font-medium text-gray-700 border border-purple-100 shadow-sm"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Decision Makers */}
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700">Decision Makers</h4>
+              {company.contacts?.filter((c) => c.is_decision_maker).length ? (
+                <ul className="mt-2 space-y-2">
+                  {company.contacts
+                    .filter((c) => c.is_decision_maker)
+                    .map((c) => (
+                      <li key={c.id} className="flex items-center gap-2 text-sm text-gray-700">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100">
+                          <User className="h-3.5 w-3.5 text-purple-600" />
+                        </div>
+                        <span>
+                          <span className="font-medium">{c.full_name || "Unknown"}</span>
+                          {c.title && (
+                            <span className="text-gray-500"> — {c.title}</span>
+                          )}
+                          {c.email && (
+                            <a
+                              href={`mailto:${c.email}`}
+                              className="ml-2 text-xs text-indigo-600 hover:underline"
+                            >
+                              {c.email}
+                            </a>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-sm text-gray-400 italic">
+                  No decision makers tagged yet. Mark contacts in the Contacts tab.
+                </p>
+              )}
+            </div>
+
+            {/* PQS recap */}
+            <div className="rounded-lg border border-purple-100 bg-white px-4 py-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Prospect Score</p>
+              <p className="mt-1 text-sm text-gray-700">
+                PQS{" "}
+                <span className="font-bold text-indigo-600">{company.pqs_total}/100</span>
+                <span className="ml-2 text-gray-400">
+                  · F {company.pqs_firmographic} · T {company.pqs_technographic} · Ti {company.pqs_timing} · E {company.pqs_engagement}
+                </span>
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -1363,6 +2122,9 @@ function OutreachTab({ company }: { company: CompanyDetail }) {
   // The API returns interactions; outreach drafts can be inferred from
   // email_sent type interactions. We also show a sequence status summary.
 
+  const { reminders, dismissReminder } = useReminders();
+  const companyReminders = reminders.filter((r) => r.companyId === company.id);
+
   const emailInteractions = company.interactions.filter(
     (ix) =>
       ix.type === "email_sent" ||
@@ -1487,6 +2249,62 @@ function OutreachTab({ company }: { company: CompanyDetail }) {
                   <span className="shrink-0 text-xs text-gray-400">
                     {formatTimeAgo(ix.created_at)}
                   </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ---- Reminders Section ---- */}
+      <div className="rounded-lg border border-gray-200 bg-white p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <Bell className="h-4 w-4 text-orange-500" />
+            Reminders
+          </h3>
+          {companyReminders.length === 0 && (
+            <p className="text-xs text-gray-400">No reminders set for this company.</p>
+          )}
+        </div>
+
+        {companyReminders.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {companyReminders.map((r) => {
+              const isDue = new Date(r.dueDate) <= new Date();
+              return (
+                <div
+                  key={r.id}
+                  className={cn(
+                    "flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5",
+                    isDue
+                      ? "border-orange-200 bg-orange-50"
+                      : "border-gray-200 bg-gray-50"
+                  )}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800">{r.note}</p>
+                    <p
+                      className={cn(
+                        "mt-0.5 text-xs",
+                        isDue ? "font-semibold text-orange-600" : "text-gray-400"
+                      )}
+                    >
+                      {isDue ? "Due: " : ""}
+                      {new Date(r.dueDate).toLocaleDateString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => dismissReminder(r.id)}
+                    className="shrink-0 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                    title="Dismiss reminder"
+                  >
+                    Dismiss
+                  </button>
                 </div>
               );
             })}
