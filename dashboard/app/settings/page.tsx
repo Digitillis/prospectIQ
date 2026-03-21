@@ -36,6 +36,68 @@ import { cn } from "@/lib/utils";
 
 type Tab = "icp" | "scoring" | "sequences";
 
+// ---------------------------------------------------------------------------
+// Industry catalog — all NAICS manufacturing sectors available for selection
+// ---------------------------------------------------------------------------
+const INDUSTRY_CATALOG = [
+  // Food & Beverage
+  { tier: "fb1", naics_prefix: "311", label: "Food Manufacturing (General)", apollo_industry: "food production", category: "Food & Beverage" },
+  { tier: "fb2", naics_prefix: "3116", label: "Meat & Poultry Processing", apollo_industry: "food production", category: "Food & Beverage" },
+  { tier: "fb3", naics_prefix: "3115", label: "Dairy Product Manufacturing", apollo_industry: "dairy", category: "Food & Beverage" },
+  { tier: "fb4", naics_prefix: "3114", label: "Fruit & Vegetable Preserving", apollo_industry: "food production", category: "Food & Beverage" },
+  { tier: "fb5", naics_prefix: "3121", label: "Beverage Manufacturing", apollo_industry: "food & beverages", category: "Food & Beverage" },
+  { tier: "fb6", naics_prefix: "3118", label: "Bakeries & Tortilla Manufacturing", apollo_industry: "food production", category: "Food & Beverage" },
+  { tier: "fb7", naics_prefix: "3119", label: "Other Food Manufacturing (Snacks, Coffee, Spices)", apollo_industry: "food production", category: "Food & Beverage" },
+  { tier: "fb8", naics_prefix: "3113", label: "Sugar & Confectionery", apollo_industry: "food production", category: "Food & Beverage" },
+  { tier: "fb9", naics_prefix: "3117", label: "Seafood Processing", apollo_industry: "food production", category: "Food & Beverage" },
+  { tier: "fb10", naics_prefix: "3111", label: "Animal Food Manufacturing", apollo_industry: "food production", category: "Food & Beverage" },
+  // Discrete Manufacturing
+  { tier: "mfg1", naics_prefix: "333", label: "Industrial Machinery & Heavy Equipment", apollo_industry: "machinery", category: "Discrete Manufacturing" },
+  { tier: "mfg2", naics_prefix: "332", label: "Metal Fabrication & Precision Machining", apollo_industry: "fabricated metal products", category: "Discrete Manufacturing" },
+  { tier: "mfg3", naics_prefix: "336", label: "Automotive Parts & Components", apollo_industry: "automotive", category: "Discrete Manufacturing" },
+  { tier: "mfg4", naics_prefix: "3364", label: "Aerospace Components & Parts", apollo_industry: "aviation & aerospace", category: "Discrete Manufacturing" },
+  { tier: "mfg5", naics_prefix: "335", label: "Electrical Equipment & Components", apollo_industry: "electrical & electronic manufacturing", category: "Discrete Manufacturing" },
+  { tier: "mfg6", naics_prefix: "3372", label: "Office Furniture & Fixtures Manufacturing", apollo_industry: "furniture", category: "Discrete Manufacturing" },
+  { tier: "mfg7", naics_prefix: "339", label: "Medical Devices & Instruments", apollo_industry: "medical devices", category: "Discrete Manufacturing" },
+  { tier: "mfg8", naics_prefix: "3365", label: "Railroad Rolling Stock", apollo_industry: "railroad manufacture", category: "Discrete Manufacturing" },
+  { tier: "mfg9", naics_prefix: "3366", label: "Ship & Boat Building", apollo_industry: "shipbuilding", category: "Discrete Manufacturing" },
+  // Process Manufacturing
+  { tier: "proc1", naics_prefix: "325", label: "Chemical Manufacturing", apollo_industry: "chemicals", category: "Process Manufacturing" },
+  { tier: "proc2", naics_prefix: "3254", label: "Pharmaceutical & Medicine Manufacturing", apollo_industry: "pharmaceuticals", category: "Process Manufacturing" },
+  { tier: "proc3", naics_prefix: "326", label: "Plastics & Rubber Products", apollo_industry: "plastics", category: "Process Manufacturing" },
+  { tier: "proc4", naics_prefix: "327", label: "Glass, Cement & Concrete Products", apollo_industry: "glass, ceramics & concrete", category: "Process Manufacturing" },
+  { tier: "proc5", naics_prefix: "324", label: "Petroleum & Coal Products", apollo_industry: "oil & energy", category: "Process Manufacturing" },
+  { tier: "proc6", naics_prefix: "322", label: "Paper & Pulp Manufacturing", apollo_industry: "paper & forest products", category: "Process Manufacturing" },
+  { tier: "proc7", naics_prefix: "3251", label: "Basic Chemical Manufacturing", apollo_industry: "chemicals", category: "Process Manufacturing" },
+  { tier: "proc8", naics_prefix: "3256", label: "Soap, Cleaning & Cosmetics Manufacturing", apollo_industry: "cosmetics", category: "Process Manufacturing" },
+  { tier: "proc9", naics_prefix: "3255", label: "Paint, Coating & Adhesive Manufacturing", apollo_industry: "chemicals", category: "Process Manufacturing" },
+  // Electronics & Semiconductor
+  { tier: "elec1", naics_prefix: "334", label: "Computer & Electronic Product Manufacturing", apollo_industry: "computer hardware", category: "Electronics" },
+  { tier: "elec2", naics_prefix: "3344", label: "Semiconductor & Electronic Component Manufacturing", apollo_industry: "semiconductors", category: "Electronics" },
+  { tier: "elec3", naics_prefix: "3341", label: "Computer & Peripheral Equipment", apollo_industry: "computer hardware", category: "Electronics" },
+  { tier: "elec4", naics_prefix: "3342", label: "Communications Equipment", apollo_industry: "telecommunications", category: "Electronics" },
+  // Metals & Mining
+  { tier: "metal1", naics_prefix: "331", label: "Primary Metal Manufacturing (Steel, Aluminum)", apollo_industry: "mining & metals", category: "Metals & Mining" },
+  { tier: "metal2", naics_prefix: "3315", label: "Foundries (Iron, Steel, Nonferrous)", apollo_industry: "mining & metals", category: "Metals & Mining" },
+  { tier: "metal3", naics_prefix: "3312", label: "Steel Product Manufacturing", apollo_industry: "mining & metals", category: "Metals & Mining" },
+  // Textiles & Apparel
+  { tier: "text1", naics_prefix: "313", label: "Textile Mills", apollo_industry: "textiles", category: "Textiles & Apparel" },
+  { tier: "text2", naics_prefix: "314", label: "Textile Product Mills", apollo_industry: "textiles", category: "Textiles & Apparel" },
+  { tier: "text3", naics_prefix: "315", label: "Apparel Manufacturing", apollo_industry: "apparel & fashion", category: "Textiles & Apparel" },
+  { tier: "text4", naics_prefix: "316", label: "Leather & Allied Product Manufacturing", apollo_industry: "luxury goods & jewelry", category: "Textiles & Apparel" },
+  // Wood & Building Materials
+  { tier: "wood1", naics_prefix: "321", label: "Wood Product Manufacturing", apollo_industry: "building materials", category: "Building Materials" },
+  { tier: "wood2", naics_prefix: "3371", label: "Household & Institutional Furniture", apollo_industry: "furniture", category: "Building Materials" },
+  // Printing & Packaging
+  { tier: "print1", naics_prefix: "323", label: "Printing & Related Support Activities", apollo_industry: "printing", category: "Printing & Packaging" },
+  { tier: "pkg1", naics_prefix: "3222", label: "Converted Paper & Packaging Products", apollo_industry: "packaging & containers", category: "Printing & Packaging" },
+  // Water & Wastewater
+  { tier: "water1", naics_prefix: "2213", label: "Water & Wastewater Treatment", apollo_industry: "utilities", category: "Water & Utilities" },
+  // Oil & Gas
+  { tier: "og1", naics_prefix: "211", label: "Oil & Gas Extraction", apollo_industry: "oil & energy", category: "Oil & Gas" },
+  { tier: "og2", naics_prefix: "213", label: "Support Activities for Mining & Oil/Gas", apollo_industry: "oil & energy", category: "Oil & Gas" },
+] as const;
+
 // Deep clone helper
 function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
@@ -356,7 +418,22 @@ function ICPTab({
   const removeIndustry = (idx: number) =>
     onChange({ ...icp, industries: icp.industries.filter((_, i) => i !== idx) });
 
-  const addIndustry = () =>
+  const [showIndustryPicker, setShowIndustryPicker] = useState(false);
+  const [industrySearch, setIndustrySearch] = useState("");
+
+  const addIndustryFromCatalog = (entry: typeof INDUSTRY_CATALOG[number]) => {
+    // Skip if already added
+    if (icp.industries.some((i) => i.tier === entry.tier)) return;
+    onChange({
+      ...icp,
+      industries: [
+        ...icp.industries,
+        { tier: entry.tier, label: entry.label, apollo_industry: entry.apollo_industry },
+      ],
+    });
+  };
+
+  const addCustomIndustry = () =>
     onChange({
       ...icp,
       industries: [
@@ -364,6 +441,14 @@ function ICPTab({
         { tier: `custom_${Date.now()}`, label: "New Industry", apollo_industry: "" },
       ],
     });
+
+  const filteredCatalog = INDUSTRY_CATALOG.filter(
+    (entry) =>
+      !icp.industries.some((i) => i.tier === entry.tier) &&
+      (entry.label.toLowerCase().includes(industrySearch.toLowerCase()) ||
+        entry.category.toLowerCase().includes(industrySearch.toLowerCase()) ||
+        entry.apollo_industry.toLowerCase().includes(industrySearch.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6">
@@ -507,13 +592,61 @@ function ICPTab({
             </tbody>
           </table>
           {editMode && (
-            <button
-              onClick={addIndustry}
-              className="mt-2 flex items-center gap-1 text-xs text-digitillis-accent hover:underline"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add industry
-            </button>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowIndustryPicker(!showIndustryPicker)}
+                  className="flex items-center gap-1.5 rounded-lg border border-digitillis-accent/30 bg-digitillis-accent/5 px-3 py-2 text-xs font-medium text-digitillis-accent hover:bg-digitillis-accent/10"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add from catalog ({INDUSTRY_CATALOG.length} industries)
+                </button>
+                <button
+                  onClick={addCustomIndustry}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline"
+                >
+                  <Plus className="h-3 w-3" />
+                  Custom
+                </button>
+              </div>
+              {showIndustryPicker && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <input
+                    type="text"
+                    value={industrySearch}
+                    onChange={(e) => setIndustrySearch(e.target.value)}
+                    placeholder="Search industries… (e.g., pharma, plastics, aerospace)"
+                    className="mb-3 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent/30"
+                  />
+                  <div className="max-h-72 overflow-y-auto space-y-1">
+                    {filteredCatalog.length === 0 ? (
+                      <p className="py-4 text-center text-xs text-gray-400">
+                        No matching industries (or all already added)
+                      </p>
+                    ) : (
+                      filteredCatalog.map((entry) => (
+                        <button
+                          key={entry.tier}
+                          onClick={() => addIndustryFromCatalog(entry)}
+                          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-white hover:shadow-sm transition-all"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <span className="font-medium text-gray-800">{entry.label}</span>
+                            <span className="ml-2 text-xs text-gray-400">{entry.category}</span>
+                          </div>
+                          <div className="ml-3 flex items-center gap-2 shrink-0">
+                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-mono text-gray-500">
+                              NAICS {entry.naics_prefix}
+                            </span>
+                            <Plus className="h-3.5 w-3.5 text-digitillis-accent" />
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </Section>
