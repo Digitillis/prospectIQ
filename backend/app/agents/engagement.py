@@ -111,6 +111,16 @@ class EngagementAgent(BaseAgent):
                     result.skipped += 1
                     continue
 
+                # Suppression check before sending
+                from backend.app.core.suppression import is_suppressed
+                suppressed, reason = is_suppressed(
+                    self.db, draft["company_id"], draft.get("contact_id")
+                )
+                if suppressed:
+                    console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping send.[/dim]")
+                    result.skipped += 1
+                    continue
+
                 try:
                     # Add lead to Instantly campaign
                     lead = {
@@ -618,6 +628,18 @@ class EngagementAgent(BaseAgent):
 
         elif event_type == "reply_received":
             db.update_company(company_id, {"status": "engaged"})
+            # Notify Slack about the hot reply
+            try:
+                from backend.app.utils.notifications import notify_slack
+                company = db.get_company(company_id)
+                company_name = company.get("name", "Unknown company") if company else "Unknown company"
+                notify_slack(
+                    f"*Hot reply received!* {company_name} ({email}) replied to your outreach. "
+                    f"Check the ProspectIQ dashboard to respond.",
+                    emoji=":fire:",
+                )
+            except Exception:
+                pass
 
         return {
             "status": "processed",
