@@ -132,6 +132,15 @@ export const rejectDraft = (id: string, reason: string) =>
     body: JSON.stringify({ rejection_reason: reason }),
   });
 
+export const testSendDraft = (id: string, testEmail: string) =>
+  fetchAPI<{ data: { draft_id: string; sent_to: string }; message: string }>(
+    `/api/approvals/${id}/test-send`,
+    {
+      method: "POST",
+      body: JSON.stringify({ test_email: testEmail }),
+    }
+  );
+
 // Pipeline
 export const runAgent = (agent: string, body: Record<string, unknown> = {}) =>
   fetchAPI(`/api/pipeline/run/${agent}`, {

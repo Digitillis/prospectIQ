@@ -20,7 +20,7 @@ import {
   Inbox,
   Shuffle,
 } from "lucide-react";
-import { getPendingDrafts, approveDraft, rejectDraft, OutreachDraft } from "@/lib/api";
+import { getPendingDrafts, approveDraft, rejectDraft, testSendDraft, OutreachDraft } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 
 export default function ApprovalsPage() {
@@ -35,6 +35,23 @@ export default function ApprovalsPage() {
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [abVariants, setAbVariants] = useState<Record<string, { a: string; b: string; selected: "a" | "b" }>>({});
   const [abLoading, setAbLoading] = useState<string | null>(null);
+  const [testSendingId, setTestSendingId] = useState<string | null>(null);
+  const [testSendResult, setTestSendResult] = useState<{ id: string; message: string } | null>(null);
+  const TEST_EMAIL = "avi@digitillis.com";
+
+  const handleTestSend = async (id: string) => {
+    setTestSendingId(id);
+    setTestSendResult(null);
+    try {
+      const res = await testSendDraft(id, TEST_EMAIL);
+      setTestSendResult({ id, message: res.message });
+      setTimeout(() => setTestSendResult(null), 5000);
+    } catch (err) {
+      setTestSendResult({ id, message: err instanceof Error ? err.message : "Failed to send test" });
+    } finally {
+      setTestSendingId(null);
+    }
+  };
 
   const fetchDrafts = useCallback(async () => {
     try {
@@ -474,7 +491,28 @@ export default function ApprovalsPage() {
                       <XCircle className="h-4 w-4" />
                       Reject
                     </button>
+                    <button
+                      onClick={() => handleTestSend(draft.id)}
+                      disabled={testSendingId === draft.id}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {testSendingId === draft.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4" />
+                      )}
+                      Send Test to Me
+                    </button>
                   </>
+                )}
+                {testSendResult?.id === draft.id && (
+                  <span className={cn(
+                    "text-xs font-medium",
+                    testSendResult.message.startsWith("Test email sent")
+                      ? "text-green-600" : "text-red-500"
+                  )}>
+                    {testSendResult.message}
+                  </span>
                 )}
               </div>
             </div>
