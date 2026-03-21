@@ -101,7 +101,7 @@ class ResearchAgent(BaseAgent):
         settings = get_settings()
         scoring_config = get_scoring_config()
 
-        min_score = min_firmographic_score or scoring_config.get("min_firmographic_for_research", 10)
+        min_score = min_firmographic_score if min_firmographic_score is not None else scoring_config.get("min_firmographic_for_research", 0)
         batch_limit = limit or settings.batch_size
 
         # Merge tier / tiers into a single list
