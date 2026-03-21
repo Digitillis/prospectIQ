@@ -137,16 +137,31 @@ class DiscoveryAgent(BaseAgent):
                 contact_filters = icp["contact_filters"]
                 company_filters = icp["company_filters"]
 
+                # Build revenue filter from ICP config
+                revenue_config = company_filters.get("revenue", {})
+                revenue_filter = None
+                if revenue_config.get("min") or revenue_config.get("max"):
+                    revenue_filter = {}
+                    if revenue_config.get("min"):
+                        revenue_filter["min"] = revenue_config["min"]
+                    if revenue_config.get("max"):
+                        revenue_filter["max"] = revenue_config["max"]
+
+                # Use "United States" as location instead of individual states
+                # — individual states create an OR filter that's too broad
+                org_locations = company_filters["geography"].get("countries", ["United States"])
+
                 people = apollo.search_people_paginated(
                     max_pages=pages,
                     person_titles=contact_filters["titles"]["include"],
                     person_not_titles=contact_filters["titles"]["exclude"],
                     person_seniorities=contact_filters["seniority"],
-                    organization_locations=company_filters["geography"]["primary_states"],
+                    organization_locations=org_locations,
                     organization_num_employees_ranges=(
                         company_filters["employee_count"].get("apollo_ranges")
                         or [f"{company_filters['employee_count']['min']},{company_filters['employee_count']['max']}"]
                     ),
+                    revenue_range=revenue_filter,
                     q_organization_keyword_tags=[industry_config.get("apollo_industry", label)],
                 )
 
