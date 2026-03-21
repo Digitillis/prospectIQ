@@ -477,7 +477,9 @@ export default function ActionsPage() {
     discovery: 0,
     research: 0.05,
     qualification: 0,
+    enrichment: 0.01,
     outreach: 0.02,
+    reengagement: 0,
     full: 0,
   };
 
@@ -496,7 +498,9 @@ export default function ActionsPage() {
         discovery: "",
         research: "discovered",
         qualification: "researched",
+        enrichment: "qualified",
         outreach: "qualified",
+        reengagement: "contacted",
       };
       const requiredStatus = statusMap[agent as Exclude<AgentName, "full">];
       if (requiredStatus) params.status = requiredStatus;
