@@ -489,20 +489,37 @@ export default function ActionsPage() {
     setCountLoading((prev) => ({ ...prev, [agent]: true }));
     try {
       const filters = agentFilters[agent] as Record<string, unknown>;
+
+      // Discovery searches Apollo for NEW prospects — estimate is based on
+      // filter settings, not existing DB records
+      if (agent === "discovery") {
+        const pages = (filters.max_pages as number) || 3;
+        const tiersSelected = (filters.tiers as string[]).length || 8;
+        const estimate = pages * 100 * tiersSelected; // ~100 results per page per tier
+        setEstimatedCounts((prev) => ({ ...prev, discovery: estimate }));
+        return;
+      }
+
+      // Re-engagement looks for completed sequences past cooldown — different query
+      if (agent === "reengagement") {
+        const res = await getCompanies({ status: "contacted", limit: "1", offset: "0" });
+        setEstimatedCounts((prev) => ({ ...prev, reengagement: res.count ?? 0 }));
+        return;
+      }
+
+      // All other agents query existing DB records by required status
       const params: Record<string, string> = { limit: "1", offset: "0" };
 
       if ((filters.tiers as string[]).length > 0)
         params.tier = (filters.tiers as string[])[0];
 
-      const statusMap: Record<Exclude<AgentName, "full">, string> = {
-        discovery: "",
+      const statusMap: Record<string, string> = {
         research: "discovered",
         qualification: "researched",
         enrichment: "qualified",
         outreach: "qualified",
-        reengagement: "contacted",
       };
-      const requiredStatus = statusMap[agent as Exclude<AgentName, "full">];
+      const requiredStatus = statusMap[agent];
       if (requiredStatus) params.status = requiredStatus;
 
       const res = await getCompanies(params);
@@ -967,7 +984,13 @@ export default function ActionsPage() {
                     </span>
                   ) : count !== null ? (
                     <span>
-                      ~{count} companies will be processed
+                      {agent.name === "discovery" ? (
+                        <>Will search Apollo for ~{count} contacts across {(agentFilters.discovery.tiers.length || 8)} tier(s)</>
+                      ) : agent.name === "reengagement" ? (
+                        <>~{count} contacted companies eligible for re-engagement check</>
+                      ) : (
+                        <>~{count} companies ready to process</>
+                      )}
                       {costPerCompany > 0 && count > 0 && (
                         <span className="ml-1 font-medium text-gray-700">
                           · Est. cost: ${(count * costPerCompany).toFixed(2)}
