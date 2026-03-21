@@ -206,6 +206,7 @@ def _build_user_prompt(
     pillar: str,
     format_type: str,
     guidelines: dict[str, Any],
+    commentary: str | None = None,
 ) -> str:
     """Build the per-generation user prompt."""
     fmt_spec = _FORMAT_SPECS.get(format_type, _FORMAT_SPECS["data_insight"])
@@ -230,6 +231,19 @@ def _build_user_prompt(
         "",
         "TOPIC CONTEXT:",
         topic_brief,
+    ]
+
+    if commentary and commentary.strip():
+        parts += [
+            "",
+            "ADDITIONAL CONTEXT FROM THE AUTHOR:",
+            commentary.strip(),
+            "",
+            "Use this to guide the angle, focus, or tone of the post. The commentary",
+            "represents the author's current thinking and priorities.",
+        ]
+
+    parts += [
         "",
         "REMINDER: No hashtags. No product mentions. No company names. "
         "End with a question. Under 1300 characters for the final post.",
@@ -249,6 +263,7 @@ class ContentAgent(BaseAgent):
         pillar: str | None = None,
         format_type: str | None = None,
         limit: int = 4,
+        commentary: str | None = None,
         **kwargs,
     ) -> AgentResult:
         """Generate LinkedIn post drafts.
@@ -257,6 +272,13 @@ class ContentAgent(BaseAgent):
         - topic provided: generate a post for that specific topic.
         - pillar + format_type: pick the next matching topic from the calendar.
         - nothing provided: generate the next `limit` posts from the calendar.
+
+        Args:
+            topic: Specific topic to generate a post about.
+            pillar: Content pillar (food_safety, predictive_maintenance, ops_excellence, leadership).
+            format_type: Post format (data_insight, framework, contrarian, benchmark).
+            limit: Number of posts to generate when no topic specified.
+            commentary: Optional author guidance injected into every Claude prompt.
 
         Returns:
             AgentResult with generated drafts in result.details.
@@ -313,6 +335,7 @@ class ContentAgent(BaseAgent):
                     pillar=job_pillar,
                     format_type=job_format,
                     guidelines=guidelines,
+                    commentary=commentary,
                 )
 
                 console.print(f"  [dim]Generating: {job_topic[:60]}...[/dim]")

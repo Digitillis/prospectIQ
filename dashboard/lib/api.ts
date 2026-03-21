@@ -609,11 +609,26 @@ export const generateContent = (data: {
   topic?: string;
   pillar?: string;
   format_type?: string;
+  commentary?: string;
 }) =>
   fetchAPI<{ data: ContentDraft }>("/api/content/generate", {
     method: "POST",
     body: JSON.stringify(data),
   });
+
+export const generateContentBatch = (data: {
+  pillar?: string;
+  format_type?: string;
+  time_horizon?: string;
+  commentary?: string;
+}) =>
+  fetchAPI<{ data: ContentDraft[]; count: number; requested: number; errors: string[] }>(
+    "/api/content/generate-batch",
+    {
+      method: "POST",
+      body: JSON.stringify({ ...data, batch: true }),
+    }
+  );
 
 export const getContentDrafts = () =>
   fetchAPI<{ data: ContentDraft[]; count: number }>("/api/content/drafts");
