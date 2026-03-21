@@ -25,8 +25,6 @@ import {
   Mail,
   ExternalLink,
   Reply,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import {
   getPendingDrafts,
@@ -371,16 +369,6 @@ export default function ActionsPage() {
     outreach: { tiers: [], limit: 20, sequence_name: "initial_outreach", step: 1 },
     reengagement: { tiers: [], limit: 50, cooldown_days: 90 },
     full: {},
-  });
-
-  const [filtersOpen, setFiltersOpen] = useState<Record<AgentName, boolean>>({
-    discovery: true,
-    research: true,
-    qualification: true,
-    outreach: true,
-    enrichment: true,
-    reengagement: true,
-    full: false,
   });
 
   // Feature 3: real-time progress messages while an agent runs
@@ -904,12 +892,11 @@ export default function ActionsPage() {
 
         <p className="text-xs text-gray-400">Or run individual stages:</p>
 
-        {/* Individual agent cards */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Individual agent cards — 3-column, 2-row grid */}
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {AGENTS.map((agent) => {
             const status = agentStatus[agent.name];
             const Icon = agent.icon;
-            const isOpen = filtersOpen[agent.name];
             const filters = agentFilters[agent.name] as Record<string, unknown>;
             const count = estimatedCounts[agent.name];
             const costPerCompany = AGENT_COST_PER_COMPANY[agent.name];
@@ -919,159 +906,145 @@ export default function ActionsPage() {
             return (
               <div
                 key={agent.name}
-                className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+                className="flex flex-col rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden"
               >
-                {/* Header */}
-                <div className="flex items-center gap-2">
-                  <Icon className="h-5 w-5 text-digitillis-accent" />
-                  <h4 className="font-medium text-gray-900">{agent.label}</h4>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">{agent.description}</p>
-
-                {/* Filters toggle */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const willOpen = !filtersOpen[agent.name];
-                    setFiltersOpen((prev) => ({
-                      ...prev,
-                      [agent.name]: willOpen,
-                    }));
-                    // Auto-fetch estimate when panel opens
-                    if (willOpen && count === null) {
-                      estimateBatchSize(agent.name);
-                    }
-                  }}
-                  className="mt-2 flex items-center gap-0.5 text-[11px] font-medium text-digitillis-accent hover:opacity-75"
-                >
-                  {isOpen ? (
-                    <>
-                      Filters <ChevronUp className="h-3 w-3" />
-                    </>
-                  ) : (
-                    <>
-                      Filters <ChevronDown className="h-3 w-3" />
-                    </>
-                  )}
-                </button>
-
-                {/* Collapsible filter panel */}
-                {isOpen && (
-                  <FilterPanel
-                    agentName={agent.name}
-                    filters={filters}
-                    onChange={(key, value) => {
-                      updateFilter(
-                        agent.name as Exclude<AgentName, "full">,
-                        key,
-                        value
-                      );
-                      // Invalidate count when filters change
-                      setEstimatedCounts((prev) => ({
-                        ...prev,
-                        [agent.name]: null,
-                      }));
-                    }}
-                  />
-                )}
-
-                {/* Feature 7: cost estimator */}
-                <div className="mt-3 rounded-md border border-gray-100 bg-gray-50 px-2.5 py-2 text-[11px] text-gray-500">
-                  {isCountLoading ? (
-                    <span className="flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Estimating...
-                    </span>
-                  ) : count !== null ? (
-                    <span>
-                      {agent.name === "discovery" ? (
-                        <>Will search Apollo for ~{count} contacts across {(agentFilters.discovery.tiers.length || 8)} tier(s)</>
-                      ) : agent.name === "reengagement" ? (
-                        <>~{count} contacted companies eligible for re-engagement check</>
-                      ) : (
-                        <>~{count} companies ready to process</>
-                      )}
-                      {costPerCompany > 0 && count > 0 && (
-                        <span className="ml-1 font-medium text-gray-700">
-                          · Est. cost: ${(count * costPerCompany).toFixed(2)}
-                        </span>
-                      )}
-                      {costPerCompany === 0 && (
-                        <span className="ml-1 text-green-600">· Free</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => estimateBatchSize(agent.name)}
-                        className="ml-2 underline hover:text-digitillis-accent"
-                      >
-                        Refresh
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => estimateBatchSize(agent.name)}
-                      className="underline hover:text-digitillis-accent"
-                    >
-                      Estimate batch size
-                    </button>
-                  )}
-                </div>
-
-                {/* Run button */}
-                <button
-                  onClick={() => handleRunAgent(agent.name)}
-                  disabled={status.loading}
-                  className={cn(
-                    "mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
-                    status.loading
-                      ? "cursor-not-allowed bg-gray-100 text-gray-400"
-                      : "bg-digitillis-accent text-white hover:opacity-90"
-                  )}
-                >
-                  {status.loading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Running...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4" />
-                      Run
-                    </>
-                  )}
-                </button>
-
-                {/* Feature 3: progress message while loading */}
-                {status.loading && progressMsg && (
-                  <p className="mt-2 text-xs text-gray-500 animate-pulse">
-                    {progressMsg}
-                  </p>
-                )}
-
-                {/* Result feedback */}
-                {status.result && (
-                  <div
-                    className={cn(
-                      "mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
-                      status.result === "success"
-                        ? "bg-green-50 text-digitillis-success"
-                        : "bg-red-50 text-digitillis-danger"
-                    )}
-                  >
-                    {status.result === "success" ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    ) : (
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className="truncate">{status.message}</span>
+                {/* Header — fixed height */}
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-5 w-5 text-digitillis-accent" />
+                    <h4 className="text-base font-semibold text-gray-900">{agent.label}</h4>
                   </div>
-                )}
+                  <p className="mt-1 text-sm text-gray-500">{agent.description}</p>
+                </div>
 
-                {/* Run details breakdown */}
-                {status.result === "success" && status.details && (
-                  <RunDetails details={status.details} />
-                )}
+                {/* Body — flex-col so Run button pins to bottom */}
+                <div className="flex flex-1 flex-col px-5 py-4">
+                  {/* Filter panel — fixed minimum height so all cards in the same row align */}
+                  <div className="min-h-[220px]">
+                    <FilterPanel
+                      agentName={agent.name}
+                      filters={filters}
+                      onChange={(key, value) => {
+                        updateFilter(
+                          agent.name as Exclude<AgentName, "full">,
+                          key,
+                          value
+                        );
+                        // Invalidate count when filters change
+                        setEstimatedCounts((prev) => ({
+                          ...prev,
+                          [agent.name]: null,
+                        }));
+                      }}
+                    />
+                  </div>
+
+                  {/* Estimate + Run button — pinned to bottom via mt-auto */}
+                  <div className="mt-auto pt-4 space-y-3">
+                    {/* Feature 7: cost estimator */}
+                    <div className="rounded-md border border-gray-100 bg-gray-50 px-2.5 py-2 text-[11px] text-gray-500">
+                      {isCountLoading ? (
+                        <span className="flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Estimating...
+                        </span>
+                      ) : count !== null ? (
+                        <span>
+                          {agent.name === "discovery" ? (
+                            <>Will search Apollo for ~{count} contacts across {(agentFilters.discovery.tiers.length || 8)} tier(s)</>
+                          ) : agent.name === "reengagement" ? (
+                            <>~{count} contacted companies eligible for re-engagement check</>
+                          ) : (
+                            <>~{count} companies ready to process</>
+                          )}
+                          {costPerCompany > 0 && count > 0 && (
+                            <span className="ml-1 font-medium text-gray-700">
+                              · Est. cost: ${(count * costPerCompany).toFixed(2)}
+                            </span>
+                          )}
+                          {costPerCompany === 0 && (
+                            <span className="ml-1 text-green-600">· Free</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => estimateBatchSize(agent.name)}
+                            className="ml-2 underline hover:text-digitillis-accent"
+                          >
+                            Refresh
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => estimateBatchSize(agent.name)}
+                          className="underline hover:text-digitillis-accent"
+                        >
+                          Estimate batch size
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Run button */}
+                    <button
+                      onClick={() => handleRunAgent(agent.name)}
+                      disabled={status.loading}
+                      className={cn(
+                        "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
+                        status.loading
+                          ? "cursor-not-allowed bg-gray-100 text-gray-400"
+                          : "bg-digitillis-accent text-white hover:opacity-90"
+                      )}
+                    >
+                      {status.loading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4" />
+                          Run
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Results area — outside the fixed-height body, shown after run */}
+                {(status.loading && progressMsg) || status.result ? (
+                  <div className="px-5 py-3 border-t border-gray-100 space-y-2">
+                    {/* Feature 3: progress message while loading */}
+                    {status.loading && progressMsg && (
+                      <p className="text-xs text-gray-500 animate-pulse">
+                        {progressMsg}
+                      </p>
+                    )}
+
+                    {/* Result feedback */}
+                    {status.result && (
+                      <div
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
+                          status.result === "success"
+                            ? "bg-green-50 text-digitillis-success"
+                            : "bg-red-50 text-digitillis-danger"
+                        )}
+                      >
+                        {status.result === "success" ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                        <span className="truncate">{status.message}</span>
+                      </div>
+                    )}
+
+                    {/* Run details breakdown */}
+                    {status.result === "success" && status.details && (
+                      <RunDetails details={status.details} />
+                    )}
+                  </div>
+                ) : null}
               </div>
             );
           })}
