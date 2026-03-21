@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Learning Insights — AI-generated recommendations from outreach performance analysis
+ *
+ * Expected actions:
+ * Review Claude's scoring adjustment suggestions, apply recommended changes, track what improved
+ */
+
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {

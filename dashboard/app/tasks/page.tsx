@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Task Manager — Manual to-do items and reminders for prospect follow-up
+ *
+ * Expected actions:
+ * Create tasks linked to prospects, set due dates, mark complete, track overdue items
+ */
+
+
 import { useState } from "react";
 import Link from "next/link";
 import {

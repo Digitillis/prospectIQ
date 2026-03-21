@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Pipeline Overview — Bird's-eye view of the entire prospecting pipeline
+ *
+ * Expected actions:
+ * Monitor pipeline health, click into any stage to drill down, trigger discovery/research/qualification runs
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {

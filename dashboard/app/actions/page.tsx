@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Daily Actions — Today's follow-ups, pending approvals, and hot prospects requiring attention
+ *
+ * Expected actions:
+ * Process due follow-ups, review LinkedIn manual touches, prioritize hot signals, send approved drafts
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import {
   Send,

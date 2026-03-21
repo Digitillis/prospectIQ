@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Campaign Analytics — Email campaign performance from Instantly.ai
+ *
+ * Expected actions:
+ * Compare open/reply/bounce rates across campaigns, identify best-performing messaging
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Loader2, Megaphone } from "lucide-react";

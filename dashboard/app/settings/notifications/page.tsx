@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Notification Settings — Configure Slack alerts and email notifications
+ *
+ * Expected actions:
+ * Set up Slack webhook, choose which events trigger notifications, configure digest frequency
+ */
+
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {

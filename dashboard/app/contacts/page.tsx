@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Contact Directory — All decision-maker contacts across companies
+ *
+ * Expected actions:
+ * Search contacts, filter by persona/seniority, click to view contact detail and interaction history
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {

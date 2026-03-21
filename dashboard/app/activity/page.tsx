@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Activity Feed — Chronological log of all prospect interactions and system events
+ *
+ * Expected actions:
+ * Review recent emails sent/opened/replied, filter by company, track engagement patterns
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Building2, Mail, Zap, Loader2, RefreshCw, Clock } from "lucide-react";

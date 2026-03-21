@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Do-Not-Contact List — Domains and emails that must never receive outreach
+ *
+ * Expected actions:
+ * Add domains/emails to block list, import bulk DNC lists, review suppression reasons
+ */
+
+
 // Do-Not-Contact list manager
 // Uses localStorage to store blocked domains and emails
 // The outreach agent should check this before generating drafts

@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Prospect List — All companies in the pipeline with filtering and sorting
+ *
+ * Expected actions:
+ * Filter by status/tier/PQS, click a prospect to see full profile, bulk select for batch operations
+ */
+
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {

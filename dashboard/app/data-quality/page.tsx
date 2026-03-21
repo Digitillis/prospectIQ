@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Data Quality Monitor — Identify missing fields, stale records, and data gaps
+ *
+ * Expected actions:
+ * Review companies with missing research, contacts without emails, stale records needing refresh
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Loader2, ShieldCheck, UserPlus, AlertTriangle } from "lucide-react";

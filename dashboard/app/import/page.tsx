@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * CSV Import — Bulk import companies and contacts from spreadsheets
+ *
+ * Expected actions:
+ * Upload CSV, map columns to fields, preview import, confirm and execute
+ */
+
+
 import { useState, useCallback, useRef, DragEvent, ChangeEvent } from "react";
 import Link from "next/link";
 import {

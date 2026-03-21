@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Automation Rules — Configure triggers that run pipeline steps automatically
+ *
+ * Expected actions:
+ * Create rules (e.g., auto-research when PQS > 10), enable/disable automations, set schedules
+ */
+
+
 import { useState } from "react";
 import { Zap, Trash2, Plus, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";

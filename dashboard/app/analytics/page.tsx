@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Analytics Dashboard — Pipeline funnel metrics, PQS distribution, and API costs
+ *
+ * Expected actions:
+ * Monitor conversion rates at each stage, identify bottlenecks, track cost per qualified prospect
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {

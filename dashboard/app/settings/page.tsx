@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * ICP & Scoring Settings — Configure target market filters and PQS scoring rules
+ *
+ * Expected actions:
+ * Edit ICP criteria, adjust PQS dimension weights, change qualification thresholds
+ */
+
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Target,

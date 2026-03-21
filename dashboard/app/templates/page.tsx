@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Email Templates — Reusable outreach templates with personalization variables
+ *
+ * Expected actions:
+ * Create/edit templates, preview with sample data, assign templates to sequence steps
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import {
   Mail,

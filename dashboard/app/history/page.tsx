@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Pipeline Run History — Log of all agent executions with results and costs
+ *
+ * Expected actions:
+ * Review past discovery/research/qualification runs, check error rates, monitor API spend
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import {
   History,

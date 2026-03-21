@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Outreach Approval Queue — Review AI-generated drafts before sending
+ *
+ * Expected actions:
+ * Read each draft, approve/edit/reject, check quality score, ensure personalization is genuine
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import {
   CheckCircle2,

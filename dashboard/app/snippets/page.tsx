@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Message Snippets — Quick-insert text blocks for common outreach patterns
+ *
+ * Expected actions:
+ * Create snippets for value props, CTAs, sign-offs, insert into drafts during approval review
+ */
+
+
 import { useState, useEffect } from "react";
 import {
   TextQuote,

@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Sequence Analytics — Performance of multi-step outreach sequences
+ *
+ * Expected actions:
+ * See which sequence step gets the most engagement, optimize timing and messaging per step
+ */
+
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {

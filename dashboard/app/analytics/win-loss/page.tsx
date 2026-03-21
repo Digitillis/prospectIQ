@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Win/Loss Analysis — Compare converted vs lost prospects to find patterns
+ *
+ * Expected actions:
+ * Identify what qualified prospects have in common vs those that dropped off, refine ICP
+ */
+
+
 // Win/Loss Analysis — Feature 30
 // Fetches companies with terminal statuses (converted, not_interested, bounced)
 // and shows side-by-side comparison: avg PQS, tier distribution, pipeline time

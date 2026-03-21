@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Enrichment Manager — Track Apollo credit usage and contact enrichment status
+ *
+ * Expected actions:
+ * Trigger enrichment for qualified companies, monitor credit consumption, review enrichment results
+ */
+
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
