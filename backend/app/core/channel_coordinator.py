@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 LINKEDIN_TO_EMAIL_COOLDOWN_DAYS = 7
 DM_COMPLETE_TO_EMAIL_COOLDOWN_DAYS = 14
+COMPANY_LOCK_DAYS = 14
+ACTIVITY_COOLDOWN_HOURS = 48
 
 
 def get_active_channel(db: Database, contact_id: str) -> tuple[str, str | None]:
@@ -147,3 +149,135 @@ def can_use_channel(
         return (True, None)
 
     return (False, f"channel_blocked:{reason}")
+
+
+def assign_channel(
+    db: Database,
+    contact_id: str,
+    company: dict = None,
+    contact: dict = None,
+) -> tuple[str, str]:
+    """Auto-assign the optimal outreach channel based on Apollo signals.
+
+    Decision tree:
+    1. No LinkedIn URL → email only
+    2. No email (has_email=False) → LinkedIn only
+    3. Both available:
+       a. Seniority VP/C-suite + employee_count > 200 → LinkedIn
+       b. Seniority Director/Manager + employee_count < 150 → email
+       c. headcount_growth_6m > 0.05 → LinkedIn (growing = active LI users)
+       d. headcount_growth_6m < -0.05 → email (shrinking = too busy for LI)
+       e. Default → LinkedIn (warmer channel)
+    """
+    if contact is None:
+        contact_result = db.client.table("contacts").select("*").eq("id", contact_id).execute()
+        if not contact_result.data:
+            return ("email", "contact_not_found_defaulting_to_email")
+        contact = contact_result.data[0]
+
+    has_linkedin = bool(contact.get("linkedin_url"))
+    has_email = contact.get("has_email", bool(contact.get("email")))
+
+    if not has_linkedin:
+        return ("email", "no_linkedin_url")
+    if not has_email:
+        return ("linkedin", "no_email_available")
+
+    # Both channels available — use Apollo signals to decide
+    if company is None:
+        company_id = contact.get("company_id")
+        if company_id:
+            company = db.get_company(company_id)
+
+    employee_count = (company.get("employee_count") or 0) if company else 0
+    headcount_growth = (company.get("headcount_growth_6m") or 0.0) if company else 0.0
+    seniority = (contact.get("seniority") or "").lower()
+
+    if seniority in ("vp", "c_suite", "c-suite", "owner", "founder", "partner") and employee_count > 200:
+        return ("linkedin", "vp_csuite_large_company")
+    if seniority in ("director", "manager") and employee_count < 150:
+        return ("email", "director_manager_small_company")
+    if headcount_growth > 0.05:
+        return ("linkedin", "growing_company")
+    if headcount_growth < -0.05:
+        return ("email", "shrinking_company")
+
+    return ("linkedin", "default_linkedin_warmer_channel")
+
+
+def is_company_locked(
+    db: Database,
+    company_id: str,
+    exclude_contact_id: str = None,
+) -> tuple[bool, str | None]:
+    """Check if any contact at this company was contacted in the last 14 days.
+
+    Prevents multi-contact collision (two VPs getting outreach the same week).
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=COMPANY_LOCK_DAYS)).isoformat()
+
+    try:
+        interactions = (
+            db.client.table("interactions")
+            .select("contact_id, type, created_at")
+            .eq("company_id", company_id)
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(5)
+            .execute()
+            .data
+        )
+    except Exception:
+        return (False, None)  # Graceful degradation
+
+    for interaction in interactions:
+        if exclude_contact_id and interaction.get("contact_id") == exclude_contact_id:
+            continue
+        created_at_raw = interaction.get("created_at", "")
+        try:
+            created_at = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+            days_ago = (now - created_at).days
+        except (ValueError, AttributeError):
+            days_ago = 0
+        return (True, f"another contact reached {days_ago}d ago — retry in {COMPANY_LOCK_DAYS - days_ago}d")
+
+    return (False, None)
+
+
+def has_recent_activity(
+    db: Database,
+    contact_id: str,
+    hours: int = ACTIVITY_COOLDOWN_HOURS,
+) -> tuple[bool, str | None]:
+    """Check if this contact had any interaction in the last N hours.
+
+    Prevents rapid-fire touches. If found, delay next touch by 3 days.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=hours)).isoformat()
+
+    try:
+        interactions = (
+            db.client.table("interactions")
+            .select("type, created_at")
+            .eq("contact_id", contact_id)
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+    except Exception:
+        return (False, None)
+
+    if not interactions:
+        return (False, None)
+
+    last = interactions[0]
+    try:
+        created_at = datetime.fromisoformat(last["created_at"].replace("Z", "+00:00"))
+        hours_ago = int((now - created_at).total_seconds() / 3600)
+        return (True, f"{last['type']} {hours_ago}h ago — next touch in 3 days")
+    except (ValueError, AttributeError, KeyError):
+        return (True, "recent activity detected")

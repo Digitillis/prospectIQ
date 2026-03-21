@@ -381,8 +381,8 @@ class TestScoringFirmographic:
             "is_private": False,
         }
         score = self.agent._score_firmographic(company, self.config)
-        # manufacturing_or_food signal awards 5 pts for any tier
-        assert score >= 5
+        # manufacturing_or_food(5) + independent bonus(3, no parent) = 8 minimum
+        assert score >= 8
 
     def test_sweet_spot_revenue_scores(self):
         company = {
@@ -408,22 +408,24 @@ class TestScoringFirmographic:
             "is_private": False,
         }
         score = self.agent._score_firmographic(company, self.config)
-        # Only us_based (3 pts) fires because state=None satisfies `not state`
-        assert score == 3, (
-            f"Expected 3 pts (us_based state_match on None state), got {score}"
+        # us_based(3) + independent bonus(3, no parent_company_name) = 6
+        assert score == 6, (
+            f"Expected 6 pts (us_based + independent bonus), got {score}"
         )
 
     def test_private_company_gets_bonus(self):
+        # Use a minimal company so we don't hit the 25pt cap
         base = {
             "tier": "fb1",
-            "estimated_revenue": 75_000_000,
+            "estimated_revenue": None,
             "employee_count": 200,
-            "state": "OH",
-            "is_private": False,
+            "state": None,
+            "is_public": True,  # Public company
         }
         public_score = self.agent._score_firmographic(base, self.config)
-        private = dict(base, is_private=True)
+        private = dict(base, is_public=False)
         private_score = self.agent._score_firmographic(private, self.config)
+        # Private gets +4 bonus over public
         assert private_score > public_score
 
     def test_score_capped_at_max_points(self):

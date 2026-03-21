@@ -44,6 +44,20 @@ class MarkDoneRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_hour_greeting() -> str:
+    hour = datetime.now(timezone.utc).hour
+    if hour < 12:
+        return "Good morning"
+    elif hour < 17:
+        return "Good afternoon"
+    return "Good evening"
+
+
+# ---------------------------------------------------------------------------
 # GET /api/today
 # ---------------------------------------------------------------------------
 
@@ -55,8 +69,10 @@ async def get_today_data():
     now = datetime.now(timezone.utc)
     yesterday = (now - timedelta(hours=24)).isoformat()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    today_str = now.strftime("%A, %B %-d, %Y")
+    greeting = f"{_get_hour_greeting()}, Avanish"
 
-    # --- Hot signals: engaged companies + recent multi-opens ---
+    # --- Hot signals: engaged companies ---
     try:
         hot_rows = (
             db.client.table("companies")
@@ -110,6 +126,8 @@ async def get_today_data():
         logger.warning(f"Failed to fetch pending drafts: {e}")
         pending_drafts = []
 
+    pending_count = len(pending_drafts)
+
     # --- LinkedIn queue: tasks due now ---
     try:
         linkedin_rows = (
@@ -131,6 +149,147 @@ async def get_today_data():
     except Exception as e:
         logger.warning(f"Failed to fetch linkedin queue: {e}")
         linkedin_rows = []
+
+    # --- LinkedIn connection items (contacts ready for connection request) ---
+    linkedin_connect_items: list[dict] = []
+    try:
+        # Contacts with LinkedIn URL and not yet sent
+        connect_contacts = (
+            db.client.table("contacts")
+            .select(
+                "id, full_name, title, linkedin_url, linkedin_status, company_id, "
+                "companies(id, name, tier, pqs_total, status, domain)"
+            )
+            .not_.is_("linkedin_url", "null")
+            .in_("linkedin_status", ["not_sent", "null"])
+            .limit(20)
+            .execute()
+            .data
+        ) or []
+
+        # Filter to only qualified/outreach_pending companies
+        for contact in connect_contacts:
+            company = contact.get("companies") or {}
+            if company.get("status") in ("qualified", "outreach_pending", "researched"):
+                # Try to find pre-generated connection draft
+                draft_body = None
+                draft_id = None
+                try:
+                    drafts = (
+                        db.client.table("outreach_drafts")
+                        .select("id, body, personalization_notes")
+                        .eq("contact_id", contact["id"])
+                        .eq("channel", "linkedin")
+                        .in_("sequence_name", ["linkedin_connection", "linkedin_connect"])
+                        .order("created_at", desc=True)
+                        .limit(1)
+                        .execute()
+                        .data
+                    ) or []
+                    if drafts:
+                        draft_body = drafts[0].get("body")
+                        draft_id = drafts[0].get("id")
+                except Exception:
+                    pass
+
+                linkedin_connect_items.append({
+                    "contact_id": contact["id"],
+                    "company_id": contact["company_id"],
+                    "full_name": contact.get("full_name"),
+                    "title": contact.get("title"),
+                    "linkedin_url": contact.get("linkedin_url"),
+                    "linkedin_status": contact.get("linkedin_status"),
+                    "company_name": company.get("name"),
+                    "company_tier": company.get("tier"),
+                    "company_domain": company.get("domain"),
+                    "pqs_total": company.get("pqs_total", 0),
+                    "draft_id": draft_id,
+                    "message_text": draft_body,
+                })
+        # Sort by PQS descending
+        linkedin_connect_items.sort(key=lambda x: x.get("pqs_total", 0), reverse=True)
+        linkedin_connect_items = linkedin_connect_items[:15]
+    except Exception as e:
+        logger.warning(f"Failed to fetch linkedin connect items: {e}")
+
+    # --- LinkedIn DM items (contacts who accepted connection, ready for DM) ---
+    linkedin_dm_items: list[dict] = []
+    try:
+        accepted_contacts = (
+            db.client.table("contacts")
+            .select(
+                "id, full_name, title, linkedin_url, linkedin_status, company_id, "
+                "companies(id, name, tier, pqs_total, status, domain)"
+            )
+            .eq("linkedin_status", "accepted")
+            .limit(15)
+            .execute()
+            .data
+        ) or []
+
+        for contact in accepted_contacts:
+            company = contact.get("companies") or {}
+            draft_body = None
+            draft_id = None
+            try:
+                drafts = (
+                    db.client.table("outreach_drafts")
+                    .select("id, body, personalization_notes")
+                    .eq("contact_id", contact["id"])
+                    .eq("channel", "linkedin")
+                    .in_("sequence_name", ["linkedin_dm_opening", "linkedin_dm"])
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                    .data
+                ) or []
+                if drafts:
+                    draft_body = drafts[0].get("body")
+                    draft_id = drafts[0].get("id")
+            except Exception:
+                pass
+
+            linkedin_dm_items.append({
+                "contact_id": contact["id"],
+                "company_id": contact["company_id"],
+                "full_name": contact.get("full_name"),
+                "title": contact.get("title"),
+                "linkedin_url": contact.get("linkedin_url"),
+                "linkedin_status": contact.get("linkedin_status"),
+                "company_name": company.get("name"),
+                "company_tier": company.get("tier"),
+                "company_domain": company.get("domain"),
+                "pqs_total": company.get("pqs_total", 0),
+                "draft_id": draft_id,
+                "message_text": draft_body,
+            })
+    except Exception as e:
+        logger.warning(f"Failed to fetch linkedin dm items: {e}")
+
+    # --- Content: today's thought leadership draft ---
+    content_items: list[dict] = []
+    try:
+        content_drafts = (
+            db.client.table("outreach_drafts")
+            .select("id, subject, body, channel, sequence_name, approval_status, created_at")
+            .eq("channel", "other")
+            .in_("sequence_name", ["thought_leadership", "content"])
+            .in_("approval_status", ["pending", "approved"])
+            .order("created_at", desc=True)
+            .limit(3)
+            .execute()
+            .data
+        ) or []
+        for d in content_drafts:
+            content_items.append({
+                "draft_id": d.get("id"),
+                "topic": d.get("subject", "LinkedIn Post"),
+                "post_text": d.get("body", ""),
+                "approval_status": d.get("approval_status"),
+                "created_at": d.get("created_at"),
+            })
+    except Exception as e:
+        logger.warning(f"Failed to fetch content drafts: {e}")
 
     # --- Pipeline summary ---
     pipeline_summary: dict[str, int] = {}
@@ -163,6 +322,65 @@ async def get_today_data():
     except Exception:
         done_count = 0
 
+    # --- Per-type counts today ---
+    connections_sent_today = 0
+    linkedin_dms_today = 0
+    emails_approved_today = 0
+    outcomes_logged_today = 0
+
+    try:
+        conn_result = (
+            db.client.table("interactions")
+            .select("id", count="exact")
+            .gte("created_at", today_start)
+            .eq("type", "note")
+            .eq("source", "daily_cockpit")
+            .execute()
+        )
+        # We use metadata filtering approximation — count all daily_cockpit actions
+        # and break down using the full done_count as proxy
+        connections_sent_today = 0  # will be filled from metadata if needed
+    except Exception:
+        pass
+
+    try:
+        # Count interactions with action_type=linkedin_connection in metadata
+        # Supabase doesn't support metadata filtering easily, so we fetch recent ones
+        recent_cockpit = (
+            db.client.table("interactions")
+            .select("metadata")
+            .gte("created_at", today_start)
+            .eq("source", "daily_cockpit")
+            .limit(100)
+            .execute()
+            .data
+        ) or []
+        for row in recent_cockpit:
+            meta = row.get("metadata") or {}
+            action_type = meta.get("action_type", "")
+            if action_type == "linkedin_connection":
+                connections_sent_today += 1
+            elif action_type == "linkedin_dm":
+                linkedin_dms_today += 1
+            elif action_type in ("email_approved", "approval"):
+                emails_approved_today += 1
+            elif action_type in ("outcome_logged", "log_outcome"):
+                outcomes_logged_today += 1
+    except Exception as e:
+        logger.warning(f"Failed to count daily breakdowns: {e}")
+
+    # Count learning_outcomes as logged outcomes today
+    try:
+        lo_result = (
+            db.client.table("learning_outcomes")
+            .select("id", count="exact")
+            .gte("recorded_at", today_start)
+            .execute()
+        )
+        outcomes_logged_today = max(outcomes_logged_today, lo_result.count or 0)
+    except Exception:
+        pass
+
     # --- Recent interactions needing outcome logging (last 24h) ---
     try:
         recent_interactions = (
@@ -184,17 +402,101 @@ async def get_today_data():
         logger.warning(f"Failed to fetch recent interactions: {e}")
         recent_interactions = []
 
+    # --- Build daily_plan sections ---
+    daily_plan = {
+        "date": today_str,
+        "greeting": greeting,
+        "sections": [
+            {
+                "id": "urgent",
+                "title": "Respond Now",
+                "subtitle": "Hot signals and replies that need immediate attention",
+                "icon": "flame",
+                "priority": 1,
+                "items": hot_rows,
+            },
+            {
+                "id": "linkedin_connect",
+                "title": "Send Connection Requests",
+                "subtitle": f"Target: 10/day — {connections_sent_today} done",
+                "icon": "user-plus",
+                "priority": 2,
+                "target": 10,
+                "completed": connections_sent_today,
+                "items": linkedin_connect_items,
+            },
+            {
+                "id": "linkedin_dm",
+                "title": "Send Opening DMs",
+                "subtitle": "Connections who accepted — start conversations",
+                "icon": "message-circle",
+                "priority": 3,
+                "items": linkedin_dm_items,
+            },
+            {
+                "id": "approve_emails",
+                "title": "Review & Approve Emails",
+                "subtitle": f"{pending_count} draft{'s' if pending_count != 1 else ''} waiting",
+                "icon": "mail-check",
+                "priority": 4,
+                "items": pending_drafts,
+            },
+            {
+                "id": "content",
+                "title": "Post Today's Content",
+                "subtitle": "Thought leadership for LinkedIn",
+                "icon": "pen-tool",
+                "priority": 5,
+                "items": content_items,
+            },
+            {
+                "id": "log_outcomes",
+                "title": "Log Responses",
+                "subtitle": "Record outcomes from recent outreach",
+                "icon": "clipboard-check",
+                "priority": 6,
+                "items": recent_interactions,
+            },
+            {
+                "id": "pipeline",
+                "title": "Grow Pipeline",
+                "subtitle": "Run discovery, research, qualification",
+                "icon": "trending-up",
+                "priority": 7,
+                "items": [{"summary": pipeline_summary}],
+            },
+        ],
+    }
+
+    total_done_today = done_count
+
+    progress = {
+        "target": 20,
+        "completed": total_done_today,
+        "breakdown": {
+            "linkedin_connections": {"done": connections_sent_today, "target": 10},
+            "linkedin_dms": {"done": linkedin_dms_today, "target": 5},
+            "emails_approved": {"done": emails_approved_today, "target": 3},
+            "outcomes_logged": {"done": outcomes_logged_today, "target": 2},
+            "content_posted": {"done": 0, "target": 1},
+        },
+    }
+
     return {
         "data": {
+            # Legacy fields (kept for backward compat)
             "hot_signals": hot_rows,
             "pending_approvals": pending_drafts,
             "linkedin_queue": linkedin_rows,
             "pipeline_summary": pipeline_summary,
             "recent_interactions": recent_interactions,
             "progress": {
-                "completed": done_count,
+                "completed": total_done_today,
                 "target": 20,
             },
+            # New structured fields
+            "daily_plan": daily_plan,
+            "progress_detail": progress,
         }
     }
 
@@ -234,6 +536,7 @@ async def log_outcome(req: OutcomeRequest):
         "source": "daily_cockpit",
         "metadata": {
             "outcome": req.outcome,
+            "action_type": "outcome_logged",
             "notes": req.notes,
             "logged_at": now,
         },
@@ -295,10 +598,8 @@ async def log_outcome(req: OutcomeRequest):
             }
             if req.contact_id:
                 suppress_data["contact_id"] = req.contact_id
-            # Try inserting to suppression list table if it exists
             db.client.table("suppression_list").insert(suppress_data).execute()
         except Exception:
-            # Table may not exist yet — log and continue
             logger.debug("suppression_list table not found, skipping")
 
     # 5. Insert learning outcome record
@@ -314,7 +615,6 @@ async def log_outcome(req: OutcomeRequest):
             learning_data["contact_id"] = req.contact_id
         db.client.table("learning_outcomes").insert(learning_data).execute()
     except Exception:
-        # Table may not exist — non-fatal
         logger.debug("learning_outcomes table not found, skipping")
 
     return {
@@ -360,10 +660,29 @@ async def mark_done(req: MarkDoneRequest):
         logger.error(f"Failed to log mark-done interaction: {e}")
         raise HTTPException(status_code=500, detail="Failed to log action")
 
+    # For LinkedIn connection — update contact linkedin_status
+    if req.action_type == "linkedin_connection" and req.contact_id:
+        try:
+            db.client.table("contacts").update({
+                "linkedin_status": "connection_sent",
+                "updated_at": now,
+            }).eq("id", req.contact_id).execute()
+        except Exception as e:
+            logger.warning(f"Failed to update linkedin_status: {e}")
+
+    # For LinkedIn DM — update contact linkedin_status
+    if req.action_type == "linkedin_dm" and req.contact_id:
+        try:
+            db.client.table("contacts").update({
+                "linkedin_status": "dm_sent",
+                "updated_at": now,
+            }).eq("id", req.contact_id).execute()
+        except Exception as e:
+            logger.warning(f"Failed to update linkedin_status for DM: {e}")
+
     # For LinkedIn actions — try to advance the engagement sequence
     if req.action_type in ("linkedin_connection", "linkedin_dm") and req.contact_id:
         try:
-            # Find active sequence for this contact
             seqs = (
                 db.client.table("engagement_sequences")
                 .select("id, current_step, total_steps, sequence_name")

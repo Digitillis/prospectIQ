@@ -87,6 +87,11 @@ class Database:
         )
         return result.data[0] if result.data else None
 
+    def get_company_by_name(self, name: str) -> dict | None:
+        """Get a company by name (case-insensitive, for subsidiary dedup)."""
+        result = self.client.table("companies").select("id, name").ilike("name", name).limit(1).execute()
+        return result.data[0] if result.data else None
+
     def insert_company(self, data: dict) -> dict:
         """Insert a new company record."""
         result = self.client.table("companies").insert(data).execute()

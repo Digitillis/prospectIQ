@@ -87,6 +87,30 @@ def _build_system_prompt(guidelines: dict) -> str:
         "",
         "DIGITILLIS FACTS (use sparingly, max 1 per message):",
         *[f"- {fact}" for fact in facts],
+        "",
+        "## LINKEDIN MESSAGE QUALITY",
+        "",
+        "Every message must demonstrate that you understand their SPECIFIC world,",
+        "not just their company name.",
+        "",
+        "BAD connection note: 'Hi Greg, I see you're at CST Industries. Would love to connect.'",
+        "GOOD connection note: 'Greg, noticed CST's bulk storage work for dairy processors. Curious how you're seeing the thermal monitoring requirements evolve.'",
+        "",
+        "The connection note must reference ONE specific thing about their work that",
+        "shows you actually looked at what they do, not just their company name.",
+        "",
+        "The opening DM must ask a question so specific that only someone who",
+        "understands their sub-sector would ask it.",
+        "",
+        "PERSONALIZATION DEPTH SCALE:",
+        "Level 1 (REJECTED): 'Hi [Name], I see you work in manufacturing.'",
+        "Level 2 (ACCEPTABLE): 'Hi [Name], I see [Company] makes [product] in [state].'",
+        "Level 3 (REQUIRED): '[Name], saw [Company]'s [specific work]. Curious how you handle [specific challenge that only someone in their sub-sector would face].'",
+        "",
+        "To achieve Level 3 on LinkedIn:",
+        "- Connection note: name one specific thing about what they actually do (product, customer type, process)",
+        "- Opening DM: ask about a challenge so specific it signals real domain knowledge",
+        "- Follow-up DM: connect their challenge to what you're building with one sentence max",
     ]
 
     return "\n".join(parts)
@@ -224,6 +248,15 @@ class LinkedInAgent(BaseAgent):
                     result.add_detail(company_name, "suppressed", reason or "")
                     continue
 
+                # Company-level send lock — prevent multi-contact collision
+                from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
+                locked, lock_reason = is_company_locked(self.db, company_id)
+                if locked:
+                    console.print(f"  [dim]{company_name}: company locked — {lock_reason}[/dim]")
+                    result.skipped += 1
+                    result.add_detail(company_name, "company_locked", lock_reason or "")
+                    continue
+
                 # Get contacts with a LinkedIn URL
                 all_contacts = self.db.get_contacts_for_company(company_id)
                 contacts = [c for c in all_contacts if c.get("linkedin_url")]
@@ -262,6 +295,13 @@ class LinkedInAgent(BaseAgent):
                         console.print(
                             f"  [dim]{company_name}: {contact_name} suppressed ({contact_reason})[/dim]"
                         )
+                        result.skipped += 1
+                        continue
+
+                    # 48-hour activity cooldown — prevent rapid-fire touches
+                    recent, activity_desc = has_recent_activity(self.db, contact_id)
+                    if recent:
+                        console.print(f"  [dim]{company_name}: {contact_name}: 48h cooldown — {activity_desc}[/dim]")
                         result.skipped += 1
                         continue
 

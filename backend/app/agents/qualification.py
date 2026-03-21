@@ -239,6 +239,15 @@ class QualificationAgent(BaseAgent):
                 if search_text and self._has_keyword_match(search_text, keywords):
                     score += sig["points"]
 
+        # Private company bonus (faster buying decisions, VP can sign without committee)
+        is_public = company.get("is_public", False)
+        if is_public is False and (company.get("employee_count") or 0) > 0:
+            score += 4
+
+        # Independent company bonus (no parent = autonomous buyer)
+        if not company.get("parent_company_name"):
+            score += 3
+
         return min(score, max_pts)
 
     def _score_technographic(self, company: dict, research: dict | None, config: dict) -> int:
@@ -285,6 +294,13 @@ class QualificationAgent(BaseAgent):
                 keywords = signal_config.get("keywords", [])
                 if self._has_keyword_match(search_text, keywords):
                     score += signal_config["points"]
+
+        # Headcount growth signal (from Apollo)
+        growth_6m = company.get("headcount_growth_6m") or 0
+        if abs(growth_6m) > 0.10:
+            score += 5  # Rapid growth OR rapid contraction = budget pressure
+        elif abs(growth_6m) > 0.05:
+            score += 3  # Moderate change
 
         return min(score, max_pts)
 

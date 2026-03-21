@@ -95,6 +95,13 @@ class EnrichmentAgent(BaseAgent):
                         result.add_detail(company_name, "skipped", "No contacts")
                         continue
 
+                    # Pre-filter: skip contacts Apollo already told us have no email
+                    pre_count = len(contacts)
+                    contacts = [c for c in contacts if c.get("has_email", True)]  # Default True for backward compat
+                    skipped_no_email = pre_count - len(contacts)
+                    if skipped_no_email > 0:
+                        console.print(f"  [dim]{company_name}: Skipped {skipped_no_email} contacts (Apollo reports no email)[/dim]")
+
                     # Find the best contact to enrich (highest persona priority, no email yet)
                     contact = self._select_contact_to_enrich(contacts)
 

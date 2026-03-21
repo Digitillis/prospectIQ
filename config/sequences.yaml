@@ -1,122 +1,280 @@
 # ProspectIQ — Engagement Sequence Definitions
-# Multi-stage, multi-channel outreach sequences
+# Single-channel sequences only. Channels are NEVER blended in a single sequence.
+# Each sequence is one channel end-to-end.
 
-version: "1.0"
+version: "2.0"
 
 sequences:
   # =========================================================
-  # PRIMARY: Initial Outreach for Qualified Prospects
+  # SEQUENCE 1: LinkedIn Relationship Builder
+  # Primary for VP/C-suite contacts with a LinkedIn URL.
+  # 5 steps, LinkedIn-only.
   # =========================================================
-  initial_outreach:
-    name: "Initial Outreach — Manufacturing Intelligence"
-    description: "First-touch sequence for qualified manufacturing prospects"
-    total_steps: 5
+  linkedin_relationship:
+    name: "LinkedIn Relationship Builder"
+    description: "5-step LinkedIn-only sequence. Each step builds on the previous."
+    channel: linkedin
+    timing_jitter_days: 2  # +-2 days randomization to feel natural
     steps:
       - step: 1
-        channel: email
+        name: recognition
+        type: linkedin_connection
         delay_days: 0
-        template: "initial_value_prop"
         instructions:
-          subject_approach: "Reference a specific pain point or trigger event from research"
-          body_approach: >
-            Lead with their specific manufacturing challenge (from personalization hooks).
-            Briefly introduce how Digitillis addresses it with autonomous AI agents.
-            End with a low-friction CTA (e.g., 'Would it be worth a 15-minute conversation?').
-          tone: "Peer-to-peer, consultative. Not salesy."
-          max_words: 150
+          description: >
+            Connection note that demonstrates you know who they are and what their
+            company does. Reference ONE specific fact (sub-sector, recent expansion,
+            specific product line). Zero pitch. Max 50 words.
+          tone: "Peer introducing themselves. Not a vendor."
+          max_words: 50
           anti_patterns:
-            - "No 'I hope this email finds you well'"
-            - "No urgency manipulation ('limited spots', 'act now')"
-            - "No name-dropping without context"
-            - "No feature lists — lead with their problem"
+            - "No product mention"
+            - "No 'I'd love to connect'"
+            - "No generic opener -- must reference one specific company fact"
 
       - step: 2
-        channel: linkedin
-        delay_days: 2
-        template: "linkedin_connection"
+        name: curiosity
+        type: linkedin_dm
+        delay_days: 3
+        wait_for: connection_accepted
         instructions:
-          approach: >
-            Connection request with a brief, personalized note referencing
-            their role and a relevant manufacturing challenge.
-          max_words: 50
-          note: "Manual execution — AI drafts, founder sends via LinkedIn"
+          description: >
+            Ask a genuine question about their specific operational challenge.
+            The question itself should demonstrate domain expertise. For F&B:
+            ask about CCP documentation, audit prep, or traceability gaps.
+            For Mfg: ask about their maintenance approach, unplanned downtime
+            patterns, or how they prioritize work orders. No product mention.
+          tone: "Curious peer. Like asking a colleague at a conference."
+          max_words: 80
+          anti_patterns:
+            - "No product or Digitillis mention"
+            - "No leading questions designed only to surface a pain point"
+            - "Must be a question only someone with domain knowledge would ask"
 
       - step: 3
-        channel: email
-        delay_days: 5
-        template: "follow_up_insight"
+        name: value_share
+        type: linkedin_dm
+        delay_days: 7
         instructions:
-          subject_approach: "Share a relevant industry insight or data point"
-          body_approach: >
-            Provide genuine value — a relevant statistic, industry trend, or
-            insight about their sub-sector. No selling. Build credibility.
-            Light reference to Digitillis only if natural.
-          tone: "Thought leader sharing useful information"
-          max_words: 120
+          description: >
+            Share a specific insight, data point, or framework relevant to their
+            situation. This should be genuinely useful -- something they'd screenshot
+            or forward to a colleague. Reference an industry report, benchmark,
+            or regulatory update. Still no product pitch.
+          tone: "Thought leader sharing something useful. Like a mini-article."
+          max_words: 100
+          anti_patterns:
+            - "No direct product pitch"
+            - "Insight must be specific to their sub-sector, not generic 'manufacturing'"
+            - "Must be standalone value even if they never respond"
 
       - step: 4
-        channel: email
-        delay_days: 7
-        template: "case_relevance"
+        name: relevance
+        type: linkedin_dm
+        delay_days: 10
         instructions:
-          subject_approach: "Reference a similar company's challenge and outcome"
-          body_approach: >
-            Describe how a similar manufacturing challenge was addressed
-            (use training data results: 18-day RUL prediction, 87% confidence,
-            25-40% maintenance cost reduction). Don't fabricate case studies —
-            reference the platform's validated capabilities.
-          tone: "Evidence-based, specific"
-          max_words: 130
+          description: >
+            Connect the dots between their challenge (from step 2 response or
+            your research) and how companies in their sub-sector are solving it.
+            Can mention 'what I'm working on' in passing but frame it as context,
+            not a pitch. The focus stays on THEIR problem.
+          tone: "Advisor, not seller. Like a consultant who happens to be building something."
+          max_words: 120
+          anti_patterns:
+            - "Focus must stay on their problem, not Digitillis features"
+            - "Product mention is context only, not a sales pitch"
+            - "Do not lead with Digitillis"
 
       - step: 5
-        channel: email
-        delay_days: 10
-        template: "soft_close"
+        name: soft_ask
+        type: linkedin_dm
+        delay_days: 14
         instructions:
-          subject_approach: "Direct but respectful ask"
-          body_approach: >
-            Offer something specific and valuable: a free manufacturing
-            readiness assessment, a custom ROI estimate for their operation,
-            or a 15-minute demo. Make it easy to say yes or no.
-          tone: "Direct, respectful of their time"
+          description: >
+            Direct but respectful ask. Offer something specific and valuable:
+            a free readiness assessment, a custom ROI estimate based on their
+            equipment profile, or a 15-minute walkthrough of how similar plants
+            handle this. Make it easy to say yes or no.
+          tone: "Direct, respectful. Easy to say yes or no."
           max_words: 100
+          anti_patterns:
+            - "No urgency language"
+            - "No guilt or 'just following up'"
+            - "Offer must be specific and low-friction"
 
   # =========================================================
-  # WARM FOLLOW-UP: For prospects who opened but didn't reply
+  # SEQUENCE 2: Email Value-First
+  # For contacts without LinkedIn, or after LinkedIn fails.
+  # 4 steps, email-only.
+  # =========================================================
+  email_value_first:
+    name: "Email Value-First Sequence"
+    description: "4-step email-only sequence. Lead with value, not pitch."
+    channel: email
+    timing_jitter_days: 1
+    steps:
+      - step: 1
+        name: value_insight
+        type: initial_value_prop
+        delay_days: 0
+        instructions:
+          subject_approach: "Reference their sub-sector or a specific operational context, not just their company name"
+          description: >
+            Lead with a specific, actionable insight about their sub-sector.
+            Not 'I noticed your company...' but rather share a data point or
+            trend that affects their specific operation. Then briefly connect
+            it to what you're building. End with a low-friction question, not
+            a meeting request.
+          tone: "Expert sharing something useful. The email should be worth reading even if they never respond."
+          max_words: 150
+          anti_patterns:
+            - "Do not open with 'I noticed your company...'"
+            - "No meeting request in step 1 -- end with a question"
+            - "Insight must be sub-sector specific, not generic"
+            - "No feature lists"
+
+      - step: 2
+        name: case_relevance
+        type: follow_up_insight
+        delay_days: 5
+        instructions:
+          subject_approach: "Reference a specific outcome or equipment type relevant to their operation"
+          description: >
+            Describe how a similar company in their sub-sector addressed the
+            challenge you mentioned in email 1. Use real training data results
+            (18-day RUL prediction, 87% confidence, 25-40% maintenance cost
+            reduction). Do not fabricate case studies. Be specific about the
+            type of equipment and the outcome.
+          tone: "Evidence-based. Specific. Not a generic case study."
+          max_words: 130
+          anti_patterns:
+            - "No fabricated case studies -- use real platform capabilities as examples"
+            - "Equipment type and outcome must be specific, not generic"
+
+      - step: 3
+        name: framework_share
+        type: follow_up_insight
+        delay_days: 8
+        instructions:
+          subject_approach: "Frame around a practical framework or question they can use immediately"
+          description: >
+            Share a simple framework or assessment they can use immediately.
+            For F&B: '3 questions to assess your FSMA audit readiness.'
+            For Mfg: 'The maintenance maturity spectrum -- where does your
+            plant fall?' This demonstrates expertise and provides standalone value.
+          tone: "Consultant sharing a tool. The framework should be genuinely useful."
+          max_words: 120
+          anti_patterns:
+            - "Framework must be actionable on its own, not a hook to get a call"
+            - "No urgency or scarcity language"
+
+      - step: 4
+        name: direct_ask
+        type: soft_close
+        delay_days: 12
+        instructions:
+          subject_approach: "Direct and specific -- what you're offering, not a vague 'following up'"
+          description: >
+            Direct, respectful close. Acknowledge they're busy. Offer something
+            specific: a free readiness assessment, a custom ROI estimate, or a
+            15-minute demo tailored to their equipment type. Make it binary --
+            easy to say yes or no. No guilt. No 'just following up.'
+          tone: "Direct, respectful of their time. Binary ask."
+          max_words: 100
+          anti_patterns:
+            - "No 'just following up' or 'circling back'"
+            - "No guilt or manufactured urgency"
+            - "Ask must be a single binary offer"
+
+  # =========================================================
+  # SEQUENCE 3: LinkedIn-to-Email Fallback
+  # Triggered after 14 days of LinkedIn silence.
+  # Fresh angle -- do NOT reference LinkedIn.
+  # 3 steps, email-only.
+  # =========================================================
+  linkedin_to_email_fallback:
+    name: "LinkedIn to Email Fallback"
+    description: "Triggered after 14 days of LinkedIn silence. Different angle than LinkedIn."
+    channel: email
+    trigger: linkedin_silent_14_days
+    timing_jitter_days: 2
+    steps:
+      - step: 1
+        name: fresh_angle
+        type: initial_value_prop
+        delay_days: 0
+        instructions:
+          subject_approach: "Reference a different angle than what was used on LinkedIn -- if LinkedIn was compliance, email about cost; if LinkedIn was maintenance, email about quality"
+          description: >
+            Do NOT reference LinkedIn. Start completely fresh with a different
+            angle than whatever was used on LinkedIn. If LinkedIn was about
+            compliance, email about cost reduction. If LinkedIn was about
+            maintenance, email about quality. New angle, new value prop.
+          tone: "Fresh introduction. As if LinkedIn never happened."
+          max_words: 140
+          anti_patterns:
+            - "Do not reference LinkedIn or prior contact"
+            - "Must use a genuinely different angle than whatever LinkedIn sequence used"
+            - "No 'I tried reaching out on LinkedIn'"
+
+      - step: 2
+        name: evidence
+        type: follow_up_insight
+        delay_days: 5
+        instructions:
+          subject_approach: "Reference specific data or outcome relevant to the new angle"
+          description: >
+            Follow up with evidence supporting the new angle. Specific data,
+            specific outcomes, specific equipment types.
+          tone: "Evidence-based follow-up."
+          max_words: 120
+          anti_patterns:
+            - "Evidence must match the new angle, not drift back to the LinkedIn angle"
+            - "Specific equipment type and outcome required -- no vague claims"
+
+      - step: 3
+        name: final_ask
+        type: soft_close
+        delay_days: 10
+        instructions:
+          subject_approach: "Specific offer -- state exactly what you're proposing"
+          description: >
+            Final touch. Direct ask with a specific offer. If no response,
+            the prospect goes to re-engagement queue (90-day cooldown).
+          tone: "Last touch. Respectful. No desperation."
+          max_words: 100
+          anti_patterns:
+            - "No guilt or desperation"
+            - "No 'last chance' or urgency language"
+            - "If they don't respond, that's a valid answer"
+
+  # =========================================================
+  # WARM FOLLOW-UP: For prospects who engaged but didn't reply
+  # Email-only.
   # =========================================================
   warm_follow_up:
     name: "Warm Follow-up — Post Engagement"
-    description: "For prospects who showed engagement signals (opens/clicks) but didn't reply"
-    total_steps: 3
+    description: "For prospects who showed engagement signals (opens/clicks) but didn't reply."
+    channel: email
+    total_steps: 2
     steps:
       - step: 1
         channel: email
         delay_days: 0
         template: "engagement_acknowledgment"
         instructions:
-          body_approach: >
-            Don't mention that you know they opened (feels creepy).
-            Instead, add new value — a fresh insight, a relevant
+          description: >
+            Do not mention that you know they opened (feels creepy).
+            Instead, add new value -- a fresh insight, a relevant
             development in their industry, or a more specific use case.
           max_words: 120
 
       - step: 2
-        channel: linkedin
-        delay_days: 3
-        template: "linkedin_message"
-        instructions:
-          approach: >
-            If connected: Direct message with a specific value offer.
-            If not connected: Connection request (if not already sent).
-          max_words: 80
-          note: "Manual execution"
-
-      - step: 3
         channel: email
         delay_days: 7
         template: "final_value_offer"
         instructions:
-          body_approach: >
+          description: >
             Clear, specific offer: 'We're running 6-8 week pilot programs
             with select manufacturers. No commitment beyond the pilot.
             Would this be worth exploring?' Make it easy to decline gracefully.
@@ -124,10 +282,12 @@ sequences:
 
   # =========================================================
   # REPLY HANDLING: Positive reply next steps
+  # Email-only.
   # =========================================================
   reply_positive:
     name: "Positive Reply — Next Steps"
-    description: "When a prospect expresses interest"
+    description: "When a prospect expresses interest."
+    channel: email
     total_steps: 2
     steps:
       - step: 1
@@ -135,7 +295,7 @@ sequences:
         delay_days: 0
         template: "meeting_booking"
         instructions:
-          body_approach: >
+          description: >
             Acknowledge their interest warmly. Propose 2-3 specific meeting
             times in the next week. Keep it brief.
           max_words: 80
@@ -145,19 +305,20 @@ sequences:
         delay_days: 3
         template: "meeting_reminder"
         instructions:
-          body_approach: >
+          description: >
             Gentle follow-up if no response to meeting proposal.
             Offer alternative times or async demo option.
           max_words: 60
+
 
 # =========================================================
 # GLOBAL OUTREACH PRINCIPLES (included in every prompt)
 # =========================================================
 global_principles:
   voice:
-    - "Write as Avi — a technical founder who understands manufacturing, not a salesperson"
+    - "Write as Avi -- a technical founder who understands manufacturing, not a salesperson"
     - "Direct, confident, conversational. Short sentences. No corporate jargon."
-    - "Show genuine curiosity about their operation — ask smart questions"
+    - "Show genuine curiosity about their operation -- ask smart questions"
     - "Use their industry language naturally (OEE, MTBF, RUL, CCP, HACCP, FSMA)"
     - "Be specific, not generic. Reference their actual situation from research."
     - "One email = one idea. Don't cram multiple points into one message."
@@ -166,7 +327,7 @@ global_principles:
     - "Never create false urgency or scarcity"
     - "Never make claims without evidence or numbers"
     - "Never use manipulative sales language"
-    - "Never send walls of text — respect their time (under 150 words)"
+    - "Never send walls of text -- respect their time (under 150 words)"
     - "Never attach files in initial outreach"
     - "Never use feature lists or bullet points of capabilities"
     - "Never use words: leverage, synergy, cutting-edge, game-changing, revolutionary"

@@ -461,13 +461,73 @@ export interface TodayInteraction {
   contacts?: { id: string; full_name?: string; title?: string } | null;
 }
 
+export interface LinkedInActionItem {
+  contact_id: string;
+  company_id: string;
+  full_name?: string;
+  title?: string;
+  linkedin_url?: string;
+  linkedin_status?: string;
+  company_name?: string;
+  company_tier?: string;
+  company_domain?: string;
+  pqs_total: number;
+  draft_id?: string;
+  message_text?: string;
+}
+
+export interface ContentItem {
+  draft_id?: string;
+  topic: string;
+  post_text: string;
+  approval_status?: string;
+  created_at?: string;
+}
+
+export interface DailyPlanSection {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: string;
+  priority: number;
+  target?: number;
+  completed?: number;
+  // items is typed loosely here since each section has different item shapes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  items: any[];
+}
+
+export interface DailyPlan {
+  date: string;
+  greeting: string;
+  sections: DailyPlanSection[];
+}
+
+export interface ProgressBreakdown {
+  linkedin_connections: { done: number; target: number };
+  linkedin_dms: { done: number; target: number };
+  emails_approved: { done: number; target: number };
+  outcomes_logged: { done: number; target: number };
+  content_posted: { done: number; target: number };
+}
+
+export interface ProgressDetail {
+  target: number;
+  completed: number;
+  breakdown: ProgressBreakdown;
+}
+
 export interface TodayData {
+  // Legacy fields
   hot_signals: TodayHotSignal[];
   pending_approvals: OutreachDraft[];
   linkedin_queue: LinkedInTask[];
   pipeline_summary: Record<string, number>;
   recent_interactions: TodayInteraction[];
   progress: { completed: number; target: number };
+  // New structured fields
+  daily_plan?: DailyPlan;
+  progress_detail?: ProgressDetail;
 }
 
 export const getTodayData = () =>

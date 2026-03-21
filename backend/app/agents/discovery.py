@@ -186,6 +186,15 @@ class DiscoveryAgent(BaseAgent):
                             result.skipped += 1
                             continue
 
+                        # Subsidiary filter — skip if parent company already in pipeline
+                        parent_name = company_data.get("parent_company_name")
+                        if parent_name:
+                            existing_parent = self.db.get_company_by_name(parent_name)
+                            if existing_parent:
+                                console.print(f"  [dim]Skipping {company_data['name']} — subsidiary of {parent_name} (already in pipeline)[/dim]")
+                                result.skipped += 1
+                                continue
+
                         # --- Company deduplication and insertion ---
                         company_id = None
                         org_apollo_id = company_data.get("apollo_id")

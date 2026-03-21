@@ -312,6 +312,19 @@ class ApolloClient:
             "linkedin_url": org.get("linkedin_url"),
             "twitter_url": org.get("twitter_url"),
             "phone": org.get("phone"),
+            # Extended Apollo fields
+            "sic_codes": org.get("sic_codes", []),
+            "naics_codes": org.get("naics_codes", []),
+            "headcount_growth_6m": org.get("organization_headcount_six_month_growth"),
+            "headcount_growth_12m": org.get("organization_headcount_twelve_month_growth"),
+            "headcount_growth_24m": org.get("organization_headcount_twenty_four_month_growth"),
+            "parent_company_id": (org.get("owned_by_organization") or {}).get("id"),
+            "parent_company_name": (org.get("owned_by_organization") or {}).get("name"),
+            "is_public": bool(org.get("publicly_traded_symbol")),
+            "stock_symbol": org.get("publicly_traded_symbol"),
+            "logo_url": org.get("logo_url"),
+            "sanitized_phone": org.get("sanitized_phone"),
+            "revenue_printed": org.get("organization_revenue_printed"),
         }
 
     @staticmethod
@@ -334,6 +347,10 @@ class ApolloClient:
             "city": person.get("city"),
             "state": person.get("state"),
             "country": person.get("country"),
+            # Extended Apollo fields
+            "has_email": person.get("has_email", False),
+            "has_direct_phone": person.get("has_direct_phone", False),
+            "last_refreshed_at": person.get("last_refreshed_at"),
         }
 
     def close(self):

@@ -91,6 +91,32 @@ def _build_system_prompt() -> str:
         "DIGITILLIS FACTS (use selectively, not as a list):",
         *[f"- {fact}" for fact in facts],
         "",
+        "## PERSONALIZATION DEPTH",
+        "",
+        "You MUST achieve Level 3 personalization. Here's the scale:",
+        "",
+        "Level 1 (REJECTED): 'I noticed {company} is in manufacturing.'",
+        "Level 2 (ACCEPTABLE): 'I noticed {company} makes {product} and has {N} employees in {state}.'",
+        "Level 3 (REQUIRED): 'I've been thinking about how {specific_equipment_type} OEMs like {company} handle {specific_operational_challenge} -- especially given {recent_context}.'",
+        "",
+        "To achieve Level 3:",
+        "- Reference their SPECIFIC sub-sector challenge, not just their industry",
+        "- Use the research intelligence to identify what operational problem they likely face",
+        "- Frame the challenge in terms that show you understand their world",
+        "- If research found pain_points, weave one into the opening naturally",
+        "- If research found technology_stack, reference how their current systems create gaps",
+        "",
+        "## WHAT MAKES THIS EMAIL WORTH READING",
+        "",
+        "The recipient gets 50+ cold emails per week. Yours must pass the 'screenshot test':",
+        "Would they screenshot this email and forward it to a colleague? If not, rewrite.",
+        "",
+        "Ways to pass the screenshot test:",
+        "- Share a specific, surprising data point they didn't know",
+        "- Name a regulatory change that affects their specific operation",
+        "- Reference a benchmark from their sub-sector (not generic 'manufacturing')",
+        "- Ask a question so specific it proves you understand their daily work",
+        "",
         "SIGNATURE (use exactly this, on every email):",
         signature,
     ]
@@ -236,6 +262,14 @@ class OutreachAgent(BaseAgent):
                     result.add_detail(company_name, "suppressed", reason or "")
                     continue
 
+                # Company-level send lock — prevent multi-contact collision
+                from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
+                locked, lock_reason = is_company_locked(self.db, company_id)
+                if locked:
+                    console.print(f"  [dim]{company_name}: company locked — {lock_reason}[/dim]")
+                    result.skipped += 1
+                    continue
+
                 # Select contacts — multi-thread if enabled
                 contacts = self.db.get_contacts_for_company(company_id)
 
@@ -284,6 +318,12 @@ class OutreachAgent(BaseAgent):
                             f"  [dim]{company_name}: {contact.get('full_name', '?')} — email blocked ({channel_reason})[/dim]"
                         )
                         # Don't skip the company, just skip this contact
+                        continue
+
+                    # 48-hour activity cooldown — prevent rapid-fire touches
+                    recent, activity_desc = has_recent_activity(self.db, contact["id"])
+                    if recent:
+                        console.print(f"  [dim]{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}[/dim]")
                         continue
 
                     # Build value messaging for this tier
