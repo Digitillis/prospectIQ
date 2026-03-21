@@ -373,15 +373,15 @@ pre_research_thresholds:
 # Post-research thresholds (full 4-dimension, max 100 pts)
 thresholds:
   unqualified:
-    max_score: 19
+    max_score: 9
     action: "disqualify"
     new_status: "disqualified"
   research_needed:
-    max_score: 29
+    max_score: 14
     action: "flag_for_review"
     new_status: null  # stays at current status
   qualified:
-    max_score: 49
+    max_score: 39
     action: "qualify"
     new_status: "qualified"
   high_priority:
