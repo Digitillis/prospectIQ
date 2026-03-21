@@ -40,7 +40,7 @@ import {
 } from "@/lib/api";
 import { cn, TIER_LABELS } from "@/lib/utils";
 
-type AgentName = "discovery" | "research" | "qualification" | "outreach" | "full";
+type AgentName = "discovery" | "research" | "qualification" | "enrichment" | "outreach" | "reengagement" | "full";
 
 interface AgentStatus {
   loading: boolean;
@@ -63,7 +63,9 @@ interface AgentFilters {
   discovery: { tiers: string[]; limit: number; max_pages: number; campaign: string };
   research: { tiers: string[]; limit: number; min_score: number; status: string };
   qualification: { tiers: string[]; limit: number };
+  enrichment: { tiers: string[]; limit: number; include_phone: boolean };
   outreach: { tiers: string[]; limit: number; sequence_name: string; step: number };
+  reengagement: { tiers: string[]; limit: number; cooldown_days: number };
   full: Record<string, unknown>;
 }
 
@@ -94,10 +96,22 @@ const AGENTS: {
     icon: Filter,
   },
   {
+    name: "enrichment",
+    label: "Run Enrichment",
+    description: "Get emails & phones for qualified contacts (uses Apollo credits)",
+    icon: Zap,
+  },
+  {
     name: "outreach",
     label: "Run Outreach",
     description: "Generate personalized outreach drafts",
     icon: Mail,
+  },
+  {
+    name: "reengagement",
+    label: "Run Re-engagement",
+    description: "Re-queue stale prospects after cooldown period",
+    icon: Reply,
   },
 ];
 
@@ -234,6 +248,38 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
         </>
       )}
 
+      {/* Enrichment-specific */}
+      {agentName === "enrichment" && (
+        <div className="flex items-center gap-2">
+          <label className="w-16 shrink-0 font-medium text-gray-600">Phone</label>
+          <label className="flex items-center gap-1.5 text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={f.include_phone as boolean}
+              onChange={(e) => onChange("include_phone", e.target.checked)}
+              className="rounded border-gray-300 text-digitillis-accent focus:ring-digitillis-accent"
+            />
+            <span>Include phone numbers (async via webhook)</span>
+          </label>
+        </div>
+      )}
+
+      {/* Re-engagement-specific */}
+      {agentName === "reengagement" && (
+        <div className="flex items-center gap-2">
+          <label className="w-16 shrink-0 font-medium text-gray-600">Cooldown</label>
+          <input
+            type="number"
+            min={30}
+            max={365}
+            value={f.cooldown_days as number}
+            onChange={(e) => onChange("cooldown_days", parseInt(e.target.value) || 90)}
+            className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-digitillis-accent focus:outline-none"
+          />
+          <span className="text-gray-400">days</span>
+        </div>
+      )}
+
       {/* Outreach-specific */}
       {agentName === "outreach" && (
         <>
@@ -312,22 +358,28 @@ export default function ActionsPage() {
     discovery: { loading: false, result: null, message: null, details: null },
     research: { loading: false, result: null, message: null, details: null },
     qualification: { loading: false, result: null, message: null, details: null },
+    enrichment: { loading: false, result: null, message: null, details: null },
     outreach: { loading: false, result: null, message: null, details: null },
+    reengagement: { loading: false, result: null, message: null, details: null },
   });
 
   const [agentFilters, setAgentFilters] = useState<AgentFilters>({
     discovery: { tiers: [], limit: 50, max_pages: 3, campaign: "" },
-    research: { tiers: [], limit: 50, min_score: 0, status: "" },
+    research: { tiers: [], limit: 10, min_score: 0, status: "" },
     qualification: { tiers: [], limit: 100 },
+    enrichment: { tiers: [], limit: 25, include_phone: false },
     outreach: { tiers: [], limit: 20, sequence_name: "initial_outreach", step: 1 },
+    reengagement: { tiers: [], limit: 50, cooldown_days: 90 },
     full: {},
   });
 
   const [filtersOpen, setFiltersOpen] = useState<Record<AgentName, boolean>>({
-    discovery: false,
-    research: false,
-    qualification: false,
-    outreach: false,
+    discovery: true,
+    research: true,
+    qualification: true,
+    outreach: true,
+    enrichment: true,
+    reengagement: true,
     full: false,
   });
 
@@ -336,7 +388,9 @@ export default function ActionsPage() {
     discovery: "",
     research: "",
     qualification: "",
+    enrichment: "",
     outreach: "",
+    reengagement: "",
     full: "",
   });
 
@@ -347,7 +401,9 @@ export default function ActionsPage() {
     discovery: null,
     research: null,
     qualification: null,
+    enrichment: null,
     outreach: null,
+    reengagement: null,
     full: null,
   });
 
@@ -355,7 +411,9 @@ export default function ActionsPage() {
     discovery: false,
     research: false,
     qualification: false,
+    enrichment: false,
     outreach: false,
+    reengagement: false,
     full: false,
   });
 
