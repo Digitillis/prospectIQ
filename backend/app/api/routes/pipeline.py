@@ -16,6 +16,7 @@ from backend.app.agents.enrichment import EnrichmentAgent
 from backend.app.agents.outreach import OutreachAgent
 from backend.app.agents.engagement import EngagementAgent
 from backend.app.agents.reengagement import ReengagementAgent
+from backend.app.agents.linkedin import LinkedInAgent
 from backend.app.orchestrator.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
@@ -67,6 +68,12 @@ class FullPipelineRequest(BaseModel):
 class ReengagementRequest(BaseModel):
     limit: int = 50
     cooldown_days: int = 90
+
+
+class LinkedInRequest(BaseModel):
+    company_ids: Optional[list[str]] = None
+    limit: int = 20
+    regenerate: bool = False
 
 
 class EngagementRequest(BaseModel):
@@ -168,6 +175,34 @@ async def run_outreach(body: OutreachRequest):
                 f"*{result.processed} new outreach draft(s) ready for approval.* "
                 f"Open the ProspectIQ Approvals page to review and send.",
                 emoji=":pencil:",
+            )
+        except Exception:
+            pass
+
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/linkedin")
+async def run_linkedin(body: LinkedInRequest):
+    """Generate LinkedIn messages (connection note, opening DM, follow-up DM) for qualified contacts.
+
+    All drafts are auto-approved since LinkedIn messages are copy-pasted manually.
+    Only processes contacts that have a linkedin_url on their contact record.
+    """
+    agent = LinkedInAgent()
+    result = agent.execute(
+        company_ids=body.company_ids,
+        limit=body.limit,
+        regenerate=body.regenerate,
+    )
+
+    if result.processed > 0:
+        try:
+            from backend.app.utils.notifications import notify_slack
+            notify_slack(
+                f"*{result.processed} LinkedIn message set(s) generated.* "
+                f"Open the ProspectIQ LinkedIn page to review and copy.",
+                emoji=":linkedin:",
             )
         except Exception:
             pass

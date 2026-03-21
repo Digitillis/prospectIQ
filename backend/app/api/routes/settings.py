@@ -11,6 +11,8 @@ from backend.app.core.config import (
     get_scoring_config,
     get_sequences_config,
     get_outreach_guidelines,
+    get_content_guidelines,
+    get_linkedin_messages_guidelines,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -391,3 +393,163 @@ async def patch_settings(payload: SettingsPatch):
         raise HTTPException(status_code=500, detail=str(exc))
 
     return {"data": data, "message": "Settings saved successfully"}
+
+
+# ---------------------------------------------------------------------------
+# Content Guidelines CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/content-guidelines")
+async def get_content_guidelines_route():
+    """Get the current LinkedIn thought leadership content guidelines."""
+    try:
+        data = get_content_guidelines()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="content_guidelines.yaml not found")
+    return {"data": data}
+
+
+class ContentGuidelinesPatch(BaseModel):
+    voice_and_tone: Optional[str] = None
+    quality_standards: Optional[list[str]] = None
+    banned_phrases: Optional[list[str]] = None
+    never_include: Optional[list[str]] = None
+    must_include: Optional[list[str]] = None
+    author_name: Optional[str] = None
+    author_title: Optional[str] = None
+    author_linkedin_url: Optional[str] = None
+
+
+@router.patch("/content-guidelines")
+async def patch_content_guidelines(payload: ContentGuidelinesPatch):
+    """Update content guidelines. Changes take effect on the next content generation run.
+
+    Only provided fields are updated. Others are left unchanged.
+    The content agent reads this file fresh on every run (no cache).
+    """
+    import yaml
+
+    guidelines_path = CONFIG_DIR / "content_guidelines.yaml"
+    try:
+        with open(guidelines_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="content_guidelines.yaml not found")
+
+    # Update top-level text fields
+    for field in ["voice_and_tone"]:
+        value = getattr(payload, field, None)
+        if value is not None:
+            data[field] = value
+
+    # Update list fields
+    for field in ["quality_standards", "banned_phrases", "never_include", "must_include"]:
+        value = getattr(payload, field, None)
+        if value is not None:
+            data[field] = value
+
+    # Update author fields
+    author = data.setdefault("author", {})
+    if payload.author_name is not None:
+        author["name"] = payload.author_name
+        author["short_name"] = payload.author_name.split()[0]
+    if payload.author_title is not None:
+        author["title"] = payload.author_title
+    if payload.author_linkedin_url is not None:
+        author["linkedin_url"] = payload.author_linkedin_url
+
+    # Bump version
+    ver = data.get("version", "1.0")
+    try:
+        major, minor = ver.split(".")
+        data["version"] = f"{major}.{int(minor) + 1}"
+    except (ValueError, AttributeError):
+        data["version"] = "1.1"
+
+    # Write back
+    with open(guidelines_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    return {"data": data, "message": "Content guidelines updated. Changes apply to the next content generation run."}
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn Messages Guidelines CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/linkedin-guidelines")
+async def get_linkedin_guidelines_route():
+    """Get the current LinkedIn DM and connection note guidelines."""
+    try:
+        data = get_linkedin_messages_guidelines()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="linkedin_messages_guidelines.yaml not found")
+    return {"data": data}
+
+
+class LinkedInGuidelinesPatch(BaseModel):
+    connection_note_rules: Optional[str] = None
+    opening_dm_rules: Optional[str] = None
+    followup_dm_rules: Optional[str] = None
+    tone: Optional[str] = None
+    fb_question_templates: Optional[list[str]] = None
+    mfg_question_templates: Optional[list[str]] = None
+    banned_phrases: Optional[list[str]] = None
+    never_include: Optional[list[str]] = None
+    sender_name: Optional[str] = None
+    sender_title: Optional[str] = None
+    sender_linkedin_url: Optional[str] = None
+
+
+@router.patch("/linkedin-guidelines")
+async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch):
+    """Update LinkedIn messages guidelines. Changes take effect on the next LinkedIn DM run.
+
+    Only provided fields are updated. Others are left unchanged.
+    The LinkedIn agent reads this file fresh on every run (no cache).
+    """
+    import yaml
+
+    guidelines_path = CONFIG_DIR / "linkedin_messages_guidelines.yaml"
+    try:
+        with open(guidelines_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="linkedin_messages_guidelines.yaml not found")
+
+    # Update top-level text fields
+    for field in ["connection_note_rules", "opening_dm_rules", "followup_dm_rules", "tone"]:
+        value = getattr(payload, field, None)
+        if value is not None:
+            data[field] = value
+
+    # Update list fields
+    for field in ["fb_question_templates", "mfg_question_templates",
+                   "banned_phrases", "never_include"]:
+        value = getattr(payload, field, None)
+        if value is not None:
+            data[field] = value
+
+    # Update sender fields
+    sender = data.setdefault("sender", {})
+    if payload.sender_name is not None:
+        sender["name"] = payload.sender_name
+        sender["short_name"] = payload.sender_name.split()[0]
+    if payload.sender_title is not None:
+        sender["title"] = payload.sender_title
+    if payload.sender_linkedin_url is not None:
+        sender["linkedin_url"] = payload.sender_linkedin_url
+
+    # Bump version
+    ver = data.get("version", "1.0")
+    try:
+        major, minor = ver.split(".")
+        data["version"] = f"{major}.{int(minor) + 1}"
+    except (ValueError, AttributeError):
+        data["version"] = "1.1"
+
+    # Write back
+    with open(guidelines_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    return {"data": data, "message": "LinkedIn messages guidelines updated. Changes apply to the next LinkedIn DM run."}

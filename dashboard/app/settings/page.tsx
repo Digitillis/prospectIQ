@@ -31,10 +31,24 @@ import {
   Save,
   RotateCcw,
 } from "lucide-react";
-import { getAppSettings, saveSettings, getOutreachGuidelines, saveOutreachGuidelines, AppSettings, Sequence, OutreachGuidelines } from "@/lib/api";
+import {
+  getAppSettings,
+  saveSettings,
+  getOutreachGuidelines,
+  saveOutreachGuidelines,
+  getContentGuidelines,
+  saveContentGuidelines,
+  getLinkedinGuidelines,
+  saveLinkedinGuidelines,
+  AppSettings,
+  Sequence,
+  OutreachGuidelines,
+  ContentGuidelines,
+  LinkedInGuidelines,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Tab = "icp" | "scoring" | "sequences" | "outreach";
+type Tab = "icp" | "scoring" | "outreach" | "content" | "linkedin_msg" | "sequences";
 
 // ---------------------------------------------------------------------------
 // Industry catalog — all NAICS manufacturing sectors available for selection
@@ -203,6 +217,8 @@ export default function SettingsPage() {
     { id: "icp", label: "Ideal Customer Profile", icon: Target },
     { id: "scoring", label: "PQS Scoring", icon: BarChart3 },
     { id: "outreach", label: "Outreach Guidelines", icon: MessageSquare },
+    { id: "content", label: "Content Guidelines", icon: Pencil },
+    { id: "linkedin_msg", label: "LinkedIn Messages", icon: Linkedin },
     { id: "sequences", label: "Sequences", icon: Mail },
   ];
 
@@ -218,7 +234,7 @@ export default function SettingsPage() {
               : "Current pipeline configuration. Click Edit to modify ICP criteria, scoring, and discovery settings."}
           </p>
         </div>
-        {!loading && !error && settings && activeTab !== "sequences" && (
+        {!loading && !error && settings && activeTab !== "sequences" && activeTab !== "content" && activeTab !== "linkedin_msg" && activeTab !== "outreach" && (
           <div className="flex items-center gap-2 shrink-0">
             {editMode ? (
               <>
@@ -348,6 +364,12 @@ export default function SettingsPage() {
           )}
           {activeTab === "outreach" && (
             <OutreachGuidelinesTab />
+          )}
+          {activeTab === "content" && (
+            <ContentGuidelinesTab />
+          )}
+          {activeTab === "linkedin_msg" && (
+            <LinkedInMessagesTab />
           )}
           {activeTab === "sequences" && (
             <SequencesTab sequences={draft.sequences ?? {}} />
@@ -840,7 +862,7 @@ function OutreachGuidelinesTab() {
             {[["Name", "name"], ["Title", "title"], ["Email", "email"], ["Phone", "phone"]].map(([label, field]) => (
               <div key={field} className="flex items-center justify-between gap-4 text-sm">
                 <span className="text-gray-500 w-20">{label}</span>
-                <input type="text" value={(draft.sender as Record<string, string>)[field] || ""} onChange={(e) => updateSender(field, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none" />
+                <input type="text" value={(draft.sender as unknown as Record<string, string>)[field] || ""} onChange={(e) => updateSender(field, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none" />
               </div>
             ))}
             <div>
@@ -912,6 +934,450 @@ function OutreachGuidelinesTab() {
             ))}
             {editMode && (
               <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-digitillis-accent hover:underline"><Plus className="h-3 w-3" />Add</button>
+            )}
+          </div>
+        </Section>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Content Guidelines Tab (self-contained — has its own fetch/save lifecycle)
+// ---------------------------------------------------------------------------
+
+function ContentGuidelinesTab() {
+  const [guidelines, setGuidelines] = useState<ContentGuidelines | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState<ContentGuidelines | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await getContentGuidelines();
+        setGuidelines(res.data);
+        setDraft(JSON.parse(JSON.stringify(res.data)));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load content guidelines");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const payload: Record<string, unknown> = {
+        voice_and_tone: draft.voice_and_tone,
+        quality_standards: draft.quality_standards,
+        banned_phrases: draft.banned_phrases,
+        never_include: draft.never_include,
+        must_include: draft.must_include,
+        author_name: draft.author.name,
+        author_title: draft.author.title,
+        author_linkedin_url: draft.author.linkedin_url,
+      };
+      const res = await saveContentGuidelines(payload);
+      setGuidelines(res.data);
+      setDraft(JSON.parse(JSON.stringify(res.data)));
+      setEditMode(false);
+      setSaveMsg("Content guidelines saved. Changes apply to the next content generation run.");
+      setTimeout(() => setSaveMsg(null), 5000);
+    } catch (e) {
+      setSaveMsg(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-digitillis-accent" /></div>;
+  if (error) return <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>;
+  if (!draft) return null;
+
+  const updateField = (field: string, value: unknown) => {
+    setDraft((prev) => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const updateAuthor = (field: string, value: string) => {
+    setDraft((prev) => prev ? { ...prev, author: { ...prev.author, [field]: value } } : prev);
+  };
+
+  const updateList = (field: string, idx: number, value: string) => {
+    const list = [...((draft as unknown as Record<string, unknown>)[field] as string[])];
+    list[idx] = value;
+    updateField(field, list);
+  };
+
+  const removeFromList = (field: string, idx: number) => {
+    const list = [...((draft as unknown as Record<string, unknown>)[field] as string[])];
+    list.splice(idx, 1);
+    updateField(field, list);
+  };
+
+  const addToList = (field: string) => {
+    const list = [...((draft as unknown as Record<string, unknown>)[field] as string[]), ""];
+    updateField(field, list);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Edit/Save */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-gray-500">
+            {editMode
+              ? "Edit your content guidelines below. Changes apply to the next post generation."
+              : `Version ${draft.version}. Governs LinkedIn thought leadership post generation.`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {editMode ? (
+            <>
+              <button
+                onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                <RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setEditMode(true)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="mr-1 inline h-3.5 w-3.5" />Edit
+            </button>
+          )}
+        </div>
+      </div>
+      {saveMsg && (
+        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-600")}>
+          {saveMsg}
+        </div>
+      )}
+
+      {/* Author Info */}
+      <Section icon={Users} title="Author Identity">
+        {editMode ? (
+          <div className="space-y-3">
+            {([["Name", "name"], ["Title", "title"], ["LinkedIn URL", "linkedin_url"]] as [string, string][]).map(([label, field]) => (
+              <div key={field} className="flex items-center justify-between gap-4 text-sm">
+                <span className="text-gray-500 w-24">{label}</span>
+                <input
+                  type="text"
+                  value={(draft.author as unknown as Record<string, string>)[field] || ""}
+                  onChange={(e) => updateAuthor(field, e.target.value)}
+                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1 text-sm">
+            <KV label="Name" value={draft.author.name} />
+            <KV label="Title" value={draft.author.title} />
+            <KV label="LinkedIn" value={draft.author.linkedin_url} />
+          </div>
+        )}
+      </Section>
+
+      {/* Voice & Tone */}
+      <Section icon={Target} title="Voice & Tone">
+        {editMode ? (
+          <textarea
+            value={draft.voice_and_tone}
+            onChange={(e) => updateField("voice_and_tone", e.target.value)}
+            rows={12}
+            className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none"
+            placeholder="Describe how LinkedIn posts should sound..."
+          />
+        ) : (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.voice_and_tone}</p>
+        )}
+      </Section>
+
+      {/* Content Pillars (read-only summary) */}
+      <Section icon={BarChart3} title="Content Pillars">
+        <div className="space-y-3">
+          {(draft.content_pillars ?? []).map((pillar) => (
+            <div key={pillar.name} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+              <p className="text-sm font-semibold text-gray-800">{pillar.display_name}</p>
+              <p className="mt-0.5 text-xs text-gray-500">{pillar.target_reader}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-gray-400">
+          Edit pillar details directly in <code className="font-mono">config/content_guidelines.yaml</code>.
+        </p>
+      </Section>
+
+      {/* Quality Standards / Must Include / Never Include / Banned Phrases */}
+      {[
+        { field: "quality_standards", title: "Quality Standards (non-negotiable)", icon: Target },
+        { field: "must_include", title: "Must Include (in every post)", icon: Sliders },
+        { field: "never_include", title: "Never Include", icon: Sliders },
+        { field: "banned_phrases", title: "Banned Phrases", icon: Sliders },
+      ].map(({ field, title, icon }) => (
+        <Section key={field} icon={icon} title={title}>
+          <div className="space-y-1">
+            {((draft as unknown as Record<string, unknown>)[field] as string[]).map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                {editMode ? (
+                  <>
+                    <input
+                      type="text"
+                      value={item}
+                      onChange={(e) => updateList(field, idx, e.target.value)}
+                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none"
+                    />
+                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-red-500">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-700">• {item}</span>
+                )}
+              </div>
+            ))}
+            {editMode && (
+              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-digitillis-accent hover:underline">
+                <Plus className="h-3 w-3" />Add
+              </button>
+            )}
+          </div>
+        </Section>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LinkedIn Messages Tab (self-contained — has its own fetch/save lifecycle)
+// ---------------------------------------------------------------------------
+
+function LinkedInMessagesTab() {
+  const [guidelines, setGuidelines] = useState<LinkedInGuidelines | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState<LinkedInGuidelines | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await getLinkedinGuidelines();
+        setGuidelines(res.data);
+        setDraft(JSON.parse(JSON.stringify(res.data)));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load LinkedIn message guidelines");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const payload: Record<string, unknown> = {
+        connection_note_rules: draft.connection_note_rules,
+        opening_dm_rules: draft.opening_dm_rules,
+        followup_dm_rules: draft.followup_dm_rules,
+        tone: draft.tone,
+        fb_question_templates: draft.fb_question_templates,
+        mfg_question_templates: draft.mfg_question_templates,
+        banned_phrases: draft.banned_phrases,
+        never_include: draft.never_include,
+        sender_name: draft.sender.name,
+        sender_title: draft.sender.title,
+        sender_linkedin_url: draft.sender.linkedin_url,
+      };
+      const res = await saveLinkedinGuidelines(payload);
+      setGuidelines(res.data);
+      setDraft(JSON.parse(JSON.stringify(res.data)));
+      setEditMode(false);
+      setSaveMsg("LinkedIn guidelines saved. Changes apply to the next LinkedIn DM run.");
+      setTimeout(() => setSaveMsg(null), 5000);
+    } catch (e) {
+      setSaveMsg(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-digitillis-accent" /></div>;
+  if (error) return <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>;
+  if (!draft) return null;
+
+  const updateField = (field: keyof LinkedInGuidelines, value: unknown) => {
+    setDraft((prev) => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const updateSender = (field: string, value: string) => {
+    setDraft((prev) => prev ? { ...prev, sender: { ...prev.sender, [field]: value } } : prev);
+  };
+
+  const updateListItem = (field: keyof LinkedInGuidelines, idx: number, value: string) => {
+    const list = [...(draft[field] as string[])];
+    list[idx] = value;
+    updateField(field, list);
+  };
+
+  const removeListItem = (field: keyof LinkedInGuidelines, idx: number) => {
+    const list = [...(draft[field] as string[])];
+    list.splice(idx, 1);
+    updateField(field, list);
+  };
+
+  const addListItem = (field: keyof LinkedInGuidelines) => {
+    const list = [...(draft[field] as string[]), ""];
+    updateField(field, list);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Edit/Save */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-gray-500">
+            {editMode
+              ? "Edit your LinkedIn DM guidelines below. Changes apply to the next LinkedIn outreach run."
+              : `Version ${draft.version}. Governs connection notes and LinkedIn DM generation.`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {editMode ? (
+            <>
+              <button
+                onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                <RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setEditMode(true)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="mr-1 inline h-3.5 w-3.5" />Edit
+            </button>
+          )}
+        </div>
+      </div>
+      {saveMsg && (
+        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-600")}>
+          {saveMsg}
+        </div>
+      )}
+
+      {/* Sender Identity */}
+      <Section icon={Linkedin} title="Sender Identity">
+        {editMode ? (
+          <div className="space-y-3">
+            {([["Name", "name"], ["Title", "title"], ["LinkedIn URL", "linkedin_url"]] as [string, string][]).map(([label, field]) => (
+              <div key={field} className="flex items-center justify-between gap-4 text-sm">
+                <span className="text-gray-500 w-24">{label}</span>
+                <input
+                  type="text"
+                  value={(draft.sender as unknown as Record<string, string>)[field] || ""}
+                  onChange={(e) => updateSender(field, e.target.value)}
+                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1 text-sm">
+            <KV label="Name" value={draft.sender.name} />
+            <KV label="Title" value={draft.sender.title} />
+            <KV label="LinkedIn" value={draft.sender.linkedin_url} />
+          </div>
+        )}
+      </Section>
+
+      {/* DM Rules — textarea sections */}
+      {([
+        { field: "connection_note_rules" as const, title: "Connection Note Rules", rows: 8 },
+        { field: "opening_dm_rules" as const, title: "Opening DM Rules", rows: 10 },
+        { field: "followup_dm_rules" as const, title: "Follow-Up DM Rules", rows: 10 },
+        { field: "tone" as const, title: "Tone Guidelines", rows: 6 },
+      ]).map(({ field, title, rows }) => (
+        <Section key={field} icon={MessageSquare} title={title}>
+          {editMode ? (
+            <textarea
+              value={draft[field] as string}
+              onChange={(e) => updateField(field, e.target.value)}
+              rows={rows}
+              className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none"
+            />
+          ) : (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft[field] as string}</p>
+          )}
+        </Section>
+      ))}
+
+      {/* Question Templates — list sections */}
+      {([
+        { field: "fb_question_templates" as const, title: "F&B Question Templates", icon: Target },
+        { field: "mfg_question_templates" as const, title: "Manufacturing Question Templates", icon: Target },
+        { field: "banned_phrases" as const, title: "Banned Phrases", icon: Sliders },
+        { field: "never_include" as const, title: "Never Include", icon: Sliders },
+      ]).map(({ field, title, icon }) => (
+        <Section key={field} icon={icon} title={title}>
+          <div className="space-y-1">
+            {(draft[field] as string[]).map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                {editMode ? (
+                  <>
+                    <input
+                      type="text"
+                      value={item}
+                      onChange={(e) => updateListItem(field, idx, e.target.value)}
+                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none"
+                    />
+                    <button onClick={() => removeListItem(field, idx)} className="text-gray-300 hover:text-red-500">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-700">• {item}</span>
+                )}
+              </div>
+            ))}
+            {editMode && (
+              <button onClick={() => addListItem(field)} className="mt-1 flex items-center gap-1 text-xs text-digitillis-accent hover:underline">
+                <Plus className="h-3 w-3" />Add
+              </button>
             )}
           </div>
         </Section>

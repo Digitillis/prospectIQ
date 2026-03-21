@@ -77,6 +77,179 @@ async def create_company(body: dict):
     return {"data": {**company, "contact": contact}}
 
 
+@router.get("/linkedin-messages")
+async def get_linkedin_messages(
+    status: Optional[str] = None,
+    tier: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Return contacts that have LinkedIn drafts, joined with company and draft data.
+
+    Each item in the response contains:
+      - contact fields (id, full_name, title, linkedin_url, linkedin_status, ...)
+      - company fields (id, name, tier, pqs_total, sub_sector, ...)
+      - drafts: list of the 3 LinkedIn drafts keyed by sequence_name
+    """
+    db = get_db()
+
+    # Fetch all LinkedIn drafts (channel=linkedin, approved)
+    drafts_query = (
+        db.client.table("outreach_drafts")
+        .select(
+            "id, company_id, contact_id, sequence_name, sequence_step, body, "
+            "personalization_notes, approval_status, created_at"
+        )
+        .eq("channel", "linkedin")
+        .eq("approval_status", "approved")
+        .order("created_at", desc=True)
+        .limit(limit * 5)  # over-fetch then de-dup by contact
+    )
+    all_drafts = drafts_query.execute().data
+
+    if not all_drafts:
+        return {"data": [], "count": 0}
+
+    # Group drafts by (company_id, contact_id)
+    from collections import defaultdict
+
+    draft_map: dict[tuple, list[dict]] = defaultdict(list)
+    for draft in all_drafts:
+        key = (draft["company_id"], draft["contact_id"])
+        draft_map[key].append(draft)
+
+    # Unique company/contact id pairs (respect limit)
+    seen_contacts: set[str] = set()
+    pairs: list[tuple[str, str]] = []
+    for (company_id, contact_id), _ in draft_map.items():
+        if contact_id not in seen_contacts:
+            seen_contacts.add(contact_id)
+            pairs.append((company_id, contact_id))
+        if len(pairs) >= limit:
+            break
+
+    if not pairs:
+        return {"data": [], "count": 0}
+
+    # Bulk fetch companies
+    company_ids = list({cid for cid, _ in pairs})
+    companies_result = (
+        db.client.table("companies")
+        .select("id, name, tier, sub_sector, industry, pqs_total, city, state, domain")
+        .in_("id", company_ids)
+        .execute()
+    )
+    company_by_id = {c["id"]: c for c in companies_result.data}
+
+    # Bulk fetch contacts
+    contact_ids = [cid for _, cid in pairs]
+    contacts_result = (
+        db.client.table("contacts")
+        .select(
+            "id, company_id, full_name, first_name, last_name, title, persona_type, "
+            "is_decision_maker, linkedin_url, linkedin_status, status, created_at"
+        )
+        .in_("id", contact_ids)
+        .execute()
+    )
+    contact_by_id = {c["id"]: c for c in contacts_result.data}
+
+    # Apply filters
+    results = []
+    for company_id, contact_id in pairs:
+        company = company_by_id.get(company_id, {})
+        contact = contact_by_id.get(contact_id, {})
+
+        # Tier filter
+        if tier and company.get("tier", "") != tier:
+            continue
+
+        # Status filter (linkedin_status on the contact)
+        if status and status != "all":
+            contact_linkedin_status = contact.get("linkedin_status", "not_sent")
+            if contact_linkedin_status != status:
+                continue
+
+        # Build drafts dict keyed by sequence_name
+        drafts_for_contact = {
+            d["sequence_name"]: {
+                "id": d["id"],
+                "body": d["body"],
+                "personalization_notes": d.get("personalization_notes", ""),
+                "created_at": d["created_at"],
+            }
+            for d in draft_map[(company_id, contact_id)]
+        }
+
+        results.append({
+            "contact": contact,
+            "company": company,
+            "drafts": drafts_for_contact,
+        })
+
+    return {"data": results, "count": len(results)}
+
+
+@router.post("/{contact_id}/linkedin-status")
+async def update_linkedin_status(contact_id: str, body: dict):
+    """Update the LinkedIn outreach status for a contact.
+
+    Stores the status on the contact record and logs an interaction.
+
+    Valid statuses: not_sent, connection_sent, accepted, dm_sent, responded, meeting_booked
+    """
+    valid_statuses = {
+        "not_sent", "connection_sent", "accepted",
+        "dm_sent", "responded", "meeting_booked",
+    }
+    new_status = body.get("status", "")
+    if new_status not in valid_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status must be one of: {', '.join(sorted(valid_statuses))}",
+        )
+
+    db = get_db()
+
+    # Verify contact exists
+    contact_result = (
+        db.client.table("contacts")
+        .select("id, company_id, full_name")
+        .eq("id", contact_id)
+        .execute()
+    )
+    if not contact_result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    contact = contact_result.data[0]
+    company_id = contact.get("company_id")
+
+    # Update the contact linkedin_status
+    # NOTE: requires `linkedin_status` TEXT column on the contacts table.
+    # Run: ALTER TABLE contacts ADD COLUMN IF NOT EXISTS linkedin_status TEXT DEFAULT 'not_sent';
+    db.client.table("contacts").update(
+        {"linkedin_status": new_status}
+    ).eq("id", contact_id).execute()
+
+    # Log an interaction so activity feed reflects the LinkedIn touch
+    notes = body.get("notes", "")
+    interaction_body = f"LinkedIn status updated to: {new_status}"
+    if notes:
+        interaction_body += f"\nNotes: {notes}"
+
+    if company_id:
+        db.insert_interaction({
+            "company_id": company_id,
+            "contact_id": contact_id,
+            "type": "linkedin",
+            "channel": "linkedin",
+            "subject": f"LinkedIn: {new_status.replace('_', ' ').title()}",
+            "body": interaction_body,
+            "source": "manual",
+        })
+
+    return {"data": {"contact_id": contact_id, "linkedin_status": new_status}}
+
+
 @router.get("/")
 async def list_companies(
     status: Optional[str] = None,

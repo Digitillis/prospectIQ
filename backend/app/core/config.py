@@ -128,6 +128,24 @@ def get_outreach_guidelines() -> dict:
     return load_yaml_config("outreach_guidelines.yaml")
 
 
+def get_content_guidelines() -> dict:
+    """Load LinkedIn thought leadership content guidelines.
+
+    NOT cached — reads fresh every time so dashboard edits take effect
+    immediately without restarting the backend.
+    """
+    return load_yaml_config("content_guidelines.yaml")
+
+
+def get_linkedin_messages_guidelines() -> dict:
+    """Load LinkedIn DM / connection note guidelines.
+
+    NOT cached — reads fresh every time so dashboard edits take effect
+    immediately without restarting the backend.
+    """
+    return load_yaml_config("linkedin_messages_guidelines.yaml")
+
+
 @lru_cache()
 def get_manufacturing_ontology() -> dict:
     """Load manufacturing ontology configuration."""

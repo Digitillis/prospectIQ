@@ -1,0 +1,389 @@
+"""Content Agent — LinkedIn thought leadership post generation.
+
+Uses Claude to generate McKinsey-grade LinkedIn posts for the founder.
+Zero product pitching. Data-driven. Pure credibility building.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+from rich.console import Console
+
+from backend.app.agents.base import BaseAgent, AgentResult
+from backend.app.core.config import get_settings, load_yaml_config
+
+console = Console()
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Content calendar — 4-week rotating schedule
+# ---------------------------------------------------------------------------
+
+CONTENT_CALENDAR: list[dict[str, Any]] = [
+    # Week 1
+    {"week": 1, "day": "Monday",   "format": "data_insight", "pillar": "food_safety",            "topic": "FDA 483 observation patterns — what actually triggers citations"},
+    {"week": 1, "day": "Tuesday",  "format": "framework",    "pillar": "predictive_maintenance",  "topic": "Maintenance Maturity Matrix — where does your plant fall?"},
+    {"week": 1, "day": "Thursday", "format": "contrarian",   "pillar": "predictive_maintenance",  "topic": "PdM fails because of work orders, not algorithms"},
+    {"week": 1, "day": "Friday",   "format": "data_insight", "pillar": "food_safety",            "topic": "FSMA compliance costs by sub-sector (meat vs. dairy vs. bakery)"},
+    # Week 2
+    {"week": 2, "day": "Monday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "OEE benchmarks: what 'good' looks like by industry"},
+    {"week": 2, "day": "Tuesday",  "format": "framework",    "pillar": "food_safety",            "topic": "Food Safety Automation Maturity Model (4 levels)"},
+    {"week": 2, "day": "Thursday", "format": "contrarian",   "pillar": "ops_excellence",         "topic": "Industry 4.0 is a vendor narrative, not a strategy"},
+    {"week": 2, "day": "Friday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "The real cost of one unplanned stop (calculation template)"},
+    # Week 3
+    {"week": 3, "day": "Monday",   "format": "framework",    "pillar": "predictive_maintenance",  "topic": "Sensor ROI Framework — which measurements predict failure"},
+    {"week": 3, "day": "Tuesday",  "format": "data_insight", "pillar": "food_safety",            "topic": "Recall costs by category — why prevention beats response"},
+    {"week": 3, "day": "Thursday", "format": "contrarian",   "pillar": "food_safety",            "topic": "Your HACCP plan is a compliance artifact, not a safety tool"},
+    {"week": 3, "day": "Friday",   "format": "data_insight", "pillar": "leadership",             "topic": "Digital transformation spend vs. ROI at mid-market manufacturers"},
+    # Week 4
+    {"week": 4, "day": "Monday",   "format": "benchmark",    "pillar": "food_safety",            "topic": "We analyzed 200+ FDA warning letters — here's what we found"},
+    {"week": 4, "day": "Tuesday",  "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "The retiring expert problem — quantifying tribal knowledge loss"},
+    {"week": 4, "day": "Thursday", "format": "contrarian",   "pillar": "ops_excellence",         "topic": "Start with your work order process, not your sensor strategy"},
+    {"week": 4, "day": "Friday",   "format": "framework",    "pillar": "leadership",             "topic": "The 90-Day Technology Pilot Evaluation Framework"},
+]
+
+# Default guidelines used if content_guidelines.yaml doesn't exist
+_DEFAULT_GUIDELINES: dict[str, Any] = {
+    "author": {
+        "name": "Avanish Mehrotra",
+        "background": "Manufacturing operations and food safety expert, founder building in this space",
+    },
+    "voice_and_tone": (
+        "Write as a McKinsey partner sharing insight with industry peers. "
+        "Authoritative but never condescending. Data-first. Occasionally contrarian. "
+        "Never promotional. Never mention any product, company, or AI platform."
+    ),
+    "quality_standards": [
+        "Lead with a specific data point, statistic, or bold claim",
+        "Every number must be realistic and sourceable",
+        "Provide genuine value the reader can use today",
+        "End with a question that invites comments",
+        "Mobile-first: short paragraphs, blank lines between thoughts",
+        "Under 1300 characters (LinkedIn truncates beyond this)",
+    ],
+    "banned_phrases": [
+        "I'm excited to share",
+        "game-changer",
+        "revolutionary",
+        "leverage",
+        "synergy",
+        "paradigm shift",
+        "deep dive",
+        "touch base",
+        "at the end of the day",
+        "moreover",
+        "furthermore",
+        "in conclusion",
+        "it's worth noting",
+        "I'm thrilled",
+        "incredibly",
+    ],
+    "never_include": [
+        "Any mention of Digitillis or any AI/software product",
+        "Hashtags (they reduce LinkedIn organic reach in 2026)",
+        "Em dashes or en dashes — use commas, periods, or 'and' instead",
+        "Stock phrases that sound AI-generated",
+        "Generic advice without specific numbers",
+        "Calls to action to visit a website or book a demo",
+    ],
+}
+
+# Format-specific character limits and instructions
+_FORMAT_SPECS: dict[str, dict[str, Any]] = {
+    "data_insight": {
+        "char_limit": 1200,
+        "instructions": (
+            "Structure: Hook stat (one line) → blank line → Context (2-3 lines) → blank line → "
+            "'So what?' insight (2-3 bullet points or short paras) → blank line → Question. "
+            "800-1300 characters. The hook must be a specific number, percentage, or dollar figure."
+        ),
+    },
+    "framework": {
+        "char_limit": 1400,
+        "instructions": (
+            "Structure: Name the framework or model (first line, give it a memorable title) → blank line → "
+            "Describe 3-4 quadrants, levels, or categories with brief explanations → blank line → "
+            "Where most companies sit → blank line → 'Where do you fall?' question. "
+            "1000-1500 characters. Use simple ASCII art for a matrix if it fits cleanly."
+        ),
+    },
+    "contrarian": {
+        "char_limit": 900,
+        "instructions": (
+            "Structure: State the conventional wisdom in one line (label it 'The common belief:' or 'Unpopular opinion:') → "
+            "blank line → Why it's wrong (specific evidence, 2-3 points) → blank line → "
+            "The better frame → blank line → 'Agree or disagree?' or similar. "
+            "600-1000 characters. Short, punchy. No hedging."
+        ),
+    },
+    "benchmark": {
+        "char_limit": 1400,
+        "instructions": (
+            "Structure: 'We analyzed X...' opener → blank line → 3-5 numbered key findings → "
+            "blank line → The surprising/counterintuitive finding → blank line → "
+            "Implications for mid-market manufacturers → blank line → Question. "
+            "1200-1500 characters. Lead finding must be surprising or counterintuitive."
+        ),
+    },
+}
+
+_PILLAR_CONTEXT: dict[str, str] = {
+    "food_safety": (
+        "Target reader: VP Quality, VP Food Safety, Director QA at food manufacturers. "
+        "Data sources to reference: FDA warning letter database, FSIS enforcement reports, "
+        "SQF audit statistics, GFSI benchmarking data, 21 CFR Part 117 (FSMA)."
+    ),
+    "predictive_maintenance": (
+        "Target reader: VP Operations, Maintenance Director, Reliability Manager at discrete manufacturers. "
+        "Data sources to reference: Plant Engineering surveys, Reliable Plant benchmarks, "
+        "ARC Advisory Group reports, SMRP data, industry MTBF/MTTR databases."
+    ),
+    "ops_excellence": (
+        "Target reader: Both food safety and discrete manufacturing ops leaders. "
+        "Data sources to reference: Industry 4.0 adoption surveys, Gartner manufacturing studies, "
+        "McKinsey manufacturing digitization reports, ISA standards data."
+    ),
+    "leadership": (
+        "Target reader: COO, Plant Manager, C-suite at mid-market manufacturers ($50M-$500M revenue). "
+        "Data sources to reference: CFO surveys on technology ROI, board reporting benchmarks, "
+        "talent management studies for manufacturing, capital allocation frameworks."
+    ),
+}
+
+
+def _load_content_guidelines() -> dict[str, Any]:
+    """Load content_guidelines.yaml or fall back to hardcoded defaults."""
+    try:
+        return load_yaml_config("content_guidelines.yaml")
+    except FileNotFoundError:
+        logger.debug("content_guidelines.yaml not found — using built-in defaults")
+        return _DEFAULT_GUIDELINES
+
+
+def _build_system_prompt(guidelines: dict[str, Any]) -> str:
+    """Build the Claude system prompt from guidelines."""
+    author = guidelines.get("author", _DEFAULT_GUIDELINES["author"])
+    voice = guidelines.get("voice_and_tone", _DEFAULT_GUIDELINES["voice_and_tone"])
+    quality = guidelines.get("quality_standards", _DEFAULT_GUIDELINES["quality_standards"])
+    banned = guidelines.get("banned_phrases", _DEFAULT_GUIDELINES["banned_phrases"])
+    never = guidelines.get("never_include", _DEFAULT_GUIDELINES["never_include"])
+
+    parts = [
+        f"You are writing LinkedIn thought leadership posts for {author.get('name', 'Avanish Mehrotra')}.",
+        f"Background: {author.get('background', 'Manufacturing operations expert')}",
+        "",
+        "VOICE AND TONE:",
+        voice,
+        "",
+        "QUALITY STANDARDS (every post must meet all of these):",
+        *[f"- {q}" for q in quality],
+        "",
+        "BANNED PHRASES (never use any of these):",
+        *[f"- \"{bp}\"" for bp in banned[:15]],
+        "",
+        "NEVER INCLUDE:",
+        *[f"- {n}" for n in never],
+        "",
+        "CRITICAL FORMATTING:",
+        "- NEVER use em dashes (—) or en dashes (–). Use commas, periods, colons, or rewrite the sentence.",
+        "- Use contractions naturally (it's, they're, you've).",
+        "- Vary sentence length. Short sentences hit hard.",
+        "- Write in natural spoken English. If it reads like a press release, rewrite it.",
+        "- Line breaks between every distinct thought. LinkedIn is read on phones.",
+        "",
+        "OUTPUT: Return ONLY the post text. No preamble, no explanation, no markdown formatting.",
+        "Do not wrap the post in quotes or code blocks. Just the raw post text.",
+    ]
+
+    return "\n".join(parts)
+
+
+def _build_user_prompt(
+    topic: str,
+    pillar: str,
+    format_type: str,
+    guidelines: dict[str, Any],
+) -> str:
+    """Build the per-generation user prompt."""
+    fmt_spec = _FORMAT_SPECS.get(format_type, _FORMAT_SPECS["data_insight"])
+    pillar_ctx = _PILLAR_CONTEXT.get(pillar, _PILLAR_CONTEXT["ops_excellence"])
+
+    # Pull any topic-specific context from guidelines if present
+    topic_briefs: dict[str, str] = guidelines.get("topic_briefs", {})
+    topic_brief = topic_briefs.get(topic, "Use the best publicly available data for this topic.")
+
+    parts = [
+        f"Write a LinkedIn thought leadership post about: {topic}",
+        "",
+        f"FORMAT: {format_type.upper().replace('_', ' ')}",
+        f"PILLAR: {pillar.replace('_', ' ').title()}",
+        "",
+        "FORMAT INSTRUCTIONS:",
+        fmt_spec["instructions"],
+        f"Maximum {fmt_spec['char_limit']} characters.",
+        "",
+        "PILLAR CONTEXT (reader profile and data sources):",
+        pillar_ctx,
+        "",
+        "TOPIC CONTEXT:",
+        topic_brief,
+        "",
+        "REMINDER: No hashtags. No product mentions. No company names. "
+        "End with a question. Under 1300 characters for the final post.",
+    ]
+
+    return "\n".join(parts)
+
+
+class ContentAgent(BaseAgent):
+    """Generate LinkedIn thought leadership post drafts using Claude."""
+
+    agent_name = "content"
+
+    def run(
+        self,
+        topic: str | None = None,
+        pillar: str | None = None,
+        format_type: str | None = None,
+        limit: int = 4,
+        **kwargs,
+    ) -> AgentResult:
+        """Generate LinkedIn post drafts.
+
+        Modes:
+        - topic provided: generate a post for that specific topic.
+        - pillar + format_type: pick the next matching topic from the calendar.
+        - nothing provided: generate the next `limit` posts from the calendar.
+
+        Returns:
+            AgentResult with generated drafts in result.details.
+        """
+        result = AgentResult()
+        settings = get_settings()
+
+        if not settings.anthropic_api_key:
+            console.print("[red]ANTHROPIC_API_KEY not set. Cannot generate content.[/red]")
+            result.success = False
+            return result
+
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        guidelines = _load_content_guidelines()
+        system_prompt = _build_system_prompt(guidelines)
+
+        # Determine what to generate
+        jobs: list[dict[str, str]] = []
+
+        if topic:
+            # Single explicit topic
+            resolved_pillar = pillar or "ops_excellence"
+            resolved_format = format_type or "data_insight"
+            jobs.append({"topic": topic, "pillar": resolved_pillar, "format": resolved_format})
+        elif pillar and format_type:
+            # Find next calendar entry matching pillar + format
+            match = next(
+                (e for e in CONTENT_CALENDAR if e["pillar"] == pillar and e["format"] == format_type),
+                None,
+            )
+            if match:
+                jobs.append({"topic": match["topic"], "pillar": pillar, "format": format_type})
+            else:
+                console.print(f"[yellow]No calendar entry for pillar={pillar}, format={format_type}[/yellow]")
+                result.success = False
+                return result
+        else:
+            # Generate next N posts from calendar
+            for entry in CONTENT_CALENDAR[:limit]:
+                jobs.append({"topic": entry["topic"], "pillar": entry["pillar"], "format": entry["format"]})
+
+        console.print(f"[cyan]Generating {len(jobs)} content draft(s)...[/cyan]")
+
+        for job in jobs:
+            job_topic = job["topic"]
+            job_pillar = job["pillar"]
+            job_format = job["format"]
+
+            try:
+                user_prompt = _build_user_prompt(
+                    topic=job_topic,
+                    pillar=job_pillar,
+                    format_type=job_format,
+                    guidelines=guidelines,
+                )
+
+                console.print(f"  [dim]Generating: {job_topic[:60]}...[/dim]")
+
+                response = client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=800,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+
+                # Track cost
+                usage = response.usage
+                self.track_cost(
+                    provider="anthropic",
+                    model="claude-sonnet-4-20250514",
+                    endpoint="/messages",
+                    company_id=None,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                )
+
+                post_text = response.content[0].text.strip()
+                char_count = len(post_text)
+
+                # Store draft in outreach_drafts table
+                # Using channel="other", sequence_name="thought_leadership" since
+                # there is no "content" channel in the DB enum.
+                draft_data = {
+                    "channel": "other",
+                    "sequence_name": "thought_leadership",
+                    "sequence_step": 1,
+                    "subject": job_topic,
+                    "body": post_text,
+                    "personalization_notes": f"format:{job_format}|pillar:{job_pillar}",
+                    "approval_status": "pending",
+                    # content drafts have no company/contact association
+                    "company_id": None,
+                    "contact_id": None,
+                }
+
+                stored: dict[str, Any] = {}
+                try:
+                    stored = self.db.insert_outreach_draft(draft_data)
+                except Exception as db_err:
+                    logger.warning(f"Could not store draft in DB: {db_err}")
+
+                draft_id = stored.get("id", "")
+
+                console.print(
+                    f"  [green]Draft generated ({char_count} chars): {job_topic[:50]}[/green]"
+                )
+
+                result.processed += 1
+                result.add_detail(
+                    job_topic,
+                    "draft_created",
+                    f"id={draft_id} chars={char_count} format={job_format} pillar={job_pillar}",
+                )
+
+                # Attach generated text to details for API layer to surface
+                result.details[-1]["post_text"] = post_text
+                result.details[-1]["char_count"] = char_count
+                result.details[-1]["format"] = job_format
+                result.details[-1]["pillar"] = job_pillar
+                result.details[-1]["draft_id"] = draft_id
+                result.details[-1]["generated_at"] = datetime.now(timezone.utc).isoformat()
+
+            except Exception as e:
+                logger.error(f"Error generating content for '{job_topic}': {e}", exc_info=True)
+                result.errors += 1
+                result.add_detail(job_topic, "error", str(e)[:200])
+
+        return result

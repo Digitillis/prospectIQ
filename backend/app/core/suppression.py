@@ -125,6 +125,10 @@ def is_suppressed(
         if pending.data:
             return True, "duplicate_draft_pending"
 
+    # 6. Cross-channel coordination — check if the requested channel is blocked
+    # This is checked by the outreach and linkedin agents before generating drafts
+    # (not here, because suppression.py doesn't know which channel is being requested)
+
     return False, None
 
 

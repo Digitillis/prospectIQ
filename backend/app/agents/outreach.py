@@ -276,6 +276,16 @@ class OutreachAgent(BaseAgent):
 
                 # Generate drafts for each valid contact
                 for contact in valid_contacts:
+                    # Cross-channel check — block email if LinkedIn is active
+                    from backend.app.core.channel_coordinator import can_use_channel
+                    channel_ok, channel_reason = can_use_channel(self.db, contact["id"], "email")
+                    if not channel_ok:
+                        console.print(
+                            f"  [dim]{company_name}: {contact.get('full_name', '?')} — email blocked ({channel_reason})[/dim]"
+                        )
+                        # Don't skip the company, just skip this contact
+                        continue
+
                     # Build value messaging for this tier
                     tier = company.get("tier", "2")
                     value_msg = ontology.get("value_messaging", {}).get(tier, {})

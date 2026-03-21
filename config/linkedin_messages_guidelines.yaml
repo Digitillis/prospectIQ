@@ -1,0 +1,144 @@
+# ProspectIQ — LinkedIn Messages Guidelines
+# Governs connection notes and LinkedIn DMs (NOT thought leadership posts)
+# Edit these from the dashboard at /settings → LinkedIn Messages tab
+# The LinkedIn outreach agent injects these into every DM generation prompt
+# Last updated: 2026-03-21
+
+version: "1.0"
+
+# Who is sending the messages
+sender:
+  name: "Avanish Mehrotra"
+  short_name: "Avanish"
+  title: "Founder & CEO"
+  company: "Digitillis"
+  linkedin_url: "https://www.linkedin.com/in/avanishmehrotra"
+
+# Connection note rules — the 300-character note sent with a connection request
+connection_note_rules: |
+  Max 50 words. This is NOT a pitch — it's a reason to connect.
+
+  Reference one specific fact about their company or role.
+  Sound like a peer reaching out, not a salesperson.
+  No product mentions. No Digitillis. No "I'd love to connect."
+
+  The goal is: get accepted. Nothing more.
+
+  Structure: [specific reference to them] + [brief genuine reason to connect]
+  Example: "Saw you're running QA at [Company]. Working on a project
+  on FSMA compliance patterns — your perspective would be valuable."
+
+# Opening DM rules — the first message after connection is accepted
+opening_dm_rules: |
+  Max 80 words. One genuine question. No product mention whatsoever.
+
+  The opening DM earns a response by showing you understand their world.
+  Ask about their actual operation — not a leading question designed to
+  surface a pain point. Real curiosity, not scripted discovery.
+
+  Start with a brief connection to why you're asking (referencing your
+  content or their company). Ask one focused question.
+  End after the question — no PS, no secondary ask.
+
+  Structure: [brief context for why you're asking] + [one focused question]
+
+# Follow-up DM rules — 2nd or 3rd message after they've responded
+followup_dm_rules: |
+  Max 100 words. Can mention what you're building in context of their answer.
+  One soft CTA — offer a conversation, not a demo.
+
+  Only mention Digitillis if they've engaged with content or asked about
+  your work. Never lead with it. The product mention should feel natural,
+  not forced: "That's actually what we're building at Digitillis — [short
+  description]. Would a 15-min call be useful?"
+
+  Soft CTA options (pick one):
+  - "Would a 15-min call be useful?"
+  - "Happy to share what we're seeing — would a quick call make sense?"
+  - "Could be worth a conversation if you're thinking about this."
+
+# Question templates for F&B contacts
+fb_question_templates:
+  - "How are you currently handling CCP monitoring documentation — still paper-based or have you moved to digital?"
+  - "FSMA audit prep is taking more ops time every year for most F&B plants I talk to. What's your biggest bottleneck right now?"
+  - "Are you running paper logs or electronic records for your HACCP CCPs? Trying to understand what the mid-market standard looks like."
+  - "When you had your last FDA inspection, where did the most prep time go — documentation, training, or something else?"
+
+# Question templates for manufacturing contacts
+mfg_question_templates:
+  - "Curious how your team handles unplanned downtime right now — do you have a formal RCA process or is it more tribal knowledge?"
+  - "Are you on a preventive maintenance schedule or have you moved any equipment to condition-based monitoring?"
+  - "What does your CMMS utilization look like in practice? I ask a lot of maintenance directors this and the answers are always interesting."
+  - "When a machine goes down unexpectedly, how long does it typically take to identify root cause? Trying to build a benchmark."
+
+# Tone guidelines
+tone: |
+  Peer-to-peer. Never salesperson to prospect.
+  Casual but not sloppy. Short sentences. Contractions are fine.
+  Sound like a smart person who works in the industry, not someone
+  running a sequence.
+
+  Read it aloud. If it sounds like a LinkedIn DM template, rewrite it.
+  If you'd be embarrassed to receive it yourself, rewrite it.
+
+# Banned phrases — DM validator checks for these
+banned_phrases:
+  - "I hope this finds you well"
+  - "I hope this message finds you well"
+  - "just wanted to reach out"
+  - "just reaching out"
+  - "touching base"
+  - "I wanted to introduce"
+  - "I'm reaching out because"
+  - "my name is"
+  - "I came across your profile"
+  - "I noticed your profile"
+  - "I'd love to connect"
+  - "I'd love to learn more"
+  - "I'd love to schedule"
+  - "would love to"
+  - "I'm excited"
+  - "excited to"
+  - "game-changer"
+  - "game changing"
+  - "innovative"
+  - "cutting-edge"
+  - "revolutionary"
+  - "synergy"
+  - "leverage"
+  - "thought leader"
+  - "thought leadership"
+  - "disrupting"
+  - "best-in-class"
+  - "leading provider"
+  - "limited time"
+  - "act now"
+  - "exclusive"
+  - "quick question"
+  - "as per my last message"
+  - "circling back"
+  - "bumping this up"
+  - "following up on my follow-up"
+  - "I wanted to follow up"
+  - "just following up"
+  - "checking in"
+  - "per our conversation"
+  - "as discussed"
+  - "as mentioned"
+  - "I'm thrilled"
+  - "moreover"
+  - "furthermore"
+  - "needless to say"
+  - "it goes without saying"
+
+# What to never include in LinkedIn DMs
+never_include:
+  - "Product pitches in connection notes or opening DMs"
+  - "Multiple asks in a single message"
+  - "Attachment links or PDF links"
+  - "Urgency language"
+  - "Competitor mentions"
+  - "Fundraising or company stage information"
+  - "Request for a demo in first contact"
+  - "Automated-sounding openers"
+  - "Em dashes or en dashes"
