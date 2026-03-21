@@ -152,8 +152,15 @@ VERTICAL-SPECIFIC CONTEXT:
 
 Generate exactly 3 messages. Follow these rules strictly:
 
+HARD REJECTION RULES — if your output contains ANY of these, regenerate:
+- "I noticed you work at [company]" — NEVER state the obvious. They know where they work.
+- "Would love to connect" without a specific reason — empty phrase.
+- "share some ideas" — vague. What ideas? About what specifically?
+- Any message that could apply to 100 different companies without changing a word.
+- Any message that only references the company NAME without referencing what they DO.
+
 1. CONNECTION NOTE (50 words max)
-   - Reference ONE specific company fact (recent news, product, award, growth signal, etc.)
+   - Reference ONE specific company fact — what they MAKE, who they SERVE, a specific PROCESS they run, or a recent event. NOT just their company name or industry.
    - No pitch. No product mention. Just a genuine reason to connect.
    - End with a soft open question or leave it as a statement.
 
@@ -462,11 +469,48 @@ class LinkedInAgent(BaseAgent):
         vertical: str,
         vertical_context: str,
     ) -> str:
-        """Build the Claude prompt with all research context."""
-        research_summary = company.get("research_summary", "No research available")
-        hooks = company.get("personalization_hooks", [])
-        pain_signals = company.get("pain_signals", [])
-        mfg_profile = company.get("manufacturing_profile", {})
+        """Build the Claude prompt with all research context.
+
+        Merges data from both the company record AND the research table
+        to maximize personalization depth.
+        """
+        # Pull from company record first
+        research_summary = company.get("research_summary", "")
+        hooks = list(company.get("personalization_hooks", []) or [])
+        pain_signals = list(company.get("pain_signals", []) or [])
+        mfg_profile = dict(company.get("manufacturing_profile", {}) or {})
+
+        # Merge in research intelligence (often richer than company record)
+        if research:
+            ri = research.get("research_intelligence", {}) or {}
+            if not research_summary:
+                research_summary = research.get("summary", "") or ri.get("summary", "")
+            # Merge pain points from research
+            research_pains = ri.get("pain_points", []) or research.get("pain_points", []) or []
+            for p in research_pains:
+                if p and p not in pain_signals:
+                    pain_signals.append(p)
+            # Merge personalization hooks
+            research_hooks = ri.get("personalization_hooks", []) or []
+            for h in research_hooks:
+                if h and h not in hooks:
+                    hooks.append(h)
+            # Merge known systems into profile
+            known_systems = ri.get("known_systems", []) or research.get("known_systems", []) or []
+            if known_systems:
+                mfg_profile["known_systems"] = known_systems
+            # Merge products/services
+            products = ri.get("products_services", []) or []
+            if products:
+                mfg_profile["products_services"] = products
+            # Recent news
+            recent_news = ri.get("recent_news", []) or []
+            if recent_news:
+                mfg_profile["recent_news"] = recent_news[:3]
+            # Confidence level
+            confidence = research.get("confidence_level", "")
+            if confidence:
+                mfg_profile["research_confidence"] = confidence
 
         vertical_label = "Food & Beverage" if vertical == "food_beverage" else "Manufacturing"
 
@@ -480,12 +524,12 @@ class LinkedInAgent(BaseAgent):
             contact_name=contact.get("full_name") or contact.get("first_name", "Unknown"),
             contact_title=contact.get("title", "Unknown"),
             vertical=vertical_label,
-            research_summary=research_summary,
+            research_summary=research_summary or "No research available — use company industry and contact title to infer specific challenges",
             personalization_hooks=(
-                "\n".join(f"- {h}" for h in hooks) if hooks else "None available"
+                "\n".join(f"- {h}" for h in hooks) if hooks else "None available — infer from company sub-sector and contact role"
             ),
             pain_signals=(
-                "\n".join(f"- {p}" for p in pain_signals) if pain_signals else "Not identified"
+                "\n".join(f"- {p}" for p in pain_signals) if pain_signals else "Not identified — infer from industry and company size"
             ),
             manufacturing_profile=(
                 json.dumps(mfg_profile, indent=2) if mfg_profile else "Not profiled"
