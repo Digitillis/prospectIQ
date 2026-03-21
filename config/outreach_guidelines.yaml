@@ -40,6 +40,19 @@ voice_and_tone: |
   The email should sound like it was written by a real person, not generated
   by AI. Read it aloud in your head. If it sounds robotic, rewrite it.
 
+  ANTI-AI DETECTION RULES (critical):
+  - NEVER use em dashes (—). Use commas, periods, or parentheses instead.
+  - NEVER use en dashes (–). Use hyphens (-) for compound words only.
+  - NEVER start sentences with "I'm excited to", "I'm thrilled to", or "I'd love to".
+  - NEVER use "moreover", "furthermore", "additionally", "in conclusion".
+  - NEVER use parallel structure across 3+ sentences (AI loves patterns).
+  - NEVER use "it's worth noting", "interestingly", "notably".
+  - Vary paragraph lengths. AI writes uniform 2-3 sentence paragraphs.
+  - Include a deliberate imperfection: a casual aside, a parenthetical thought,
+    or an incomplete thought followed by a new direction.
+  - Write like you'd text a colleague you respect but aren't close friends with.
+  - If a sentence sounds like it could appear in a LinkedIn post, delete it.
+
 # Email structure — every email must follow this order
 email_structure: |
   1. Opening: One line referencing something specific about THEIR company (not about Digitillis)
@@ -101,6 +114,15 @@ banned_phrases:
   - "at the end of the day"
   - "moreover"
   - "furthermore"
+  - "additionally"
+  - "in conclusion"
+  - "it's worth noting"
+  - "interestingly"
+  - "notably"
+  - "I'm excited"
+  - "I'm thrilled"
+  - "delighted to"
+  - "passionate about"
 
 # Banned characters — quality validator checks for these
 banned_characters:
