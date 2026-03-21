@@ -153,26 +153,44 @@ VERTICAL-SPECIFIC CONTEXT:
 Generate exactly 3 messages. Follow these rules strictly:
 
 HARD REJECTION RULES — if your output contains ANY of these, regenerate:
-- "I noticed you work at [company]" — NEVER state the obvious. They know where they work.
-- "Would love to connect" without a specific reason — empty phrase.
-- "share some ideas" — vague. What ideas? About what specifically?
-- Any message that could apply to 100 different companies without changing a word.
-- Any message that only references the company NAME without referencing what they DO.
+- "I noticed you work at [company]" — NEVER state the obvious.
+- "Would love to connect" without a specific reason.
+- "share some ideas" — vague.
+- Any message that could apply to 100 different companies unchanged.
+- Any message that only references the company NAME without what they DO.
+- Sentence fragments like "Saw your company..." or "Curious about..." — always use complete sentences with explicit subject ("I saw...", "I am curious...").
+- Em dashes (—) or en dashes (–) anywhere.
+
+WRITING STYLE (Avanish's voice):
+- Write in complete sentences. Never start with a fragment.
+- Use explicit first person: "I saw", "I am curious", "I have been following" — not "Saw", "Curious about", "Been following".
+- Do NOT use contractions in connection notes (first impression). "I am" not "I'm". "I have" not "I've". DMs can use contractions sparingly.
+- Start with the name on its own, followed by a comma. Then the message body.
+- End connection notes with a brief closing thought or question. Not abrupt.
+- Keep the tone warm but professional. Like a peer introducing themselves at an industry conference.
+
+EXAMPLE of correct style:
+"Kyle, I saw Douglas Dynamics' fabrication work for snow and ice control attachments. I am curious how you handle the seasonal production ramp challenges with welding equipment reliability."
+
+EXAMPLE of wrong style (REJECTED):
+"Kyle, saw Douglas Dynamics' fabrication work for snow and ice control. Curious how you're handling seasonal ramp challenges with welding reliability."
 
 1. CONNECTION NOTE (50 words max)
-   - Reference ONE specific company fact — what they MAKE, who they SERVE, a specific PROCESS they run, or a recent event. NOT just their company name or industry.
-   - No pitch. No product mention. Just a genuine reason to connect.
-   - End with a soft open question or leave it as a statement.
+   - Reference ONE specific company fact — what they MAKE, who they SERVE, a specific PROCESS they run, or a recent event.
+   - No pitch. No product mention.
+   - End with a question or a brief closing statement. Not abrupt.
+   - Complete sentences only. Explicit "I" subject.
 
 2. OPENING DM (80 words max — send after connection is accepted)
    - Ask a genuine question about their operational process or challenge.
    - Do NOT mention Digitillis or any product.
-   - Aim for curiosity, not sales. Make them want to respond.
+   - Complete sentences. Can use contractions sparingly here (it is a DM).
+   - Make them want to respond.
 
 3. FOLLOW-UP DM (100 words max — send 5-7 days after opening DM if no reply)
-   - You can mention what you're building (1 sentence max).
+   - You can mention what you are building (1 sentence max).
    - Include a soft CTA: offer a short call or a quick insight, not a demo.
-   - Still human. Not a pitch.
+   - Complete sentences. Warm, not pushy.
 
 OUTPUT FORMAT (JSON):
 {{
