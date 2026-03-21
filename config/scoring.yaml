@@ -396,5 +396,6 @@ thresholds:
     priority_flag: true
 
 # Minimum firmographic score to proceed to research (pre-filter)
-# 5 = F&B companies with just food_production signal should get researched
-min_firmographic_for_research: 5
+# Set to 0: People API search doesn't return revenue/employee data,
+# so discovered companies start at PQS=0. Research fills in the gaps.
+min_firmographic_for_research: 0
