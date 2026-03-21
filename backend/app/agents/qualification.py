@@ -80,31 +80,44 @@ class QualificationAgent(BaseAgent):
                 pqs.total = pqs.firmographic + pqs.technographic + pqs.timing + pqs.engagement
 
                 # For discovered companies (no research yet) only apply the
-                # firmographic pre-filter: disqualify obvious non-fits, leave
-                # good fits in `discovered` state so research can run on them.
-                # Full PQS classification is deferred until after research.
+                # firmographic pre-filter using pre_research_thresholds.
+                # Full PQS classification uses post_research thresholds.
                 if is_discovered:
-                    min_firmographic = config.get("min_firmographic_for_research", 10)
-                    if pqs.firmographic < min_firmographic:
+                    pre_thresholds = config.get("pre_research_thresholds", {})
+                    disqualify_max = pre_thresholds.get("disqualify", {}).get("max_score", 4)
+
+                    if pqs.firmographic <= disqualify_max:
                         pqs.classification = "unqualified"
                         new_status = "disqualified"
                         priority = False
                         pqs.notes = (
                             f"Failed firmographic pre-filter (score {pqs.firmographic} "
-                            f"< {min_firmographic}). Total PQS: {pqs.total}/100."
+                            f"<= {disqualify_max}). Total PQS: {pqs.total}/100."
                         )
                     else:
                         pqs.classification = "research_needed"
-                        new_status = None  # keep as discovered, needs research
+                        new_status = None  # keep as discovered, eligible for research
                         priority = False
                         pqs.notes = (
                             f"Firmographic pre-filter passed (score {pqs.firmographic}). "
                             f"Pending full scoring after research. Total PQS: {pqs.total}/100."
                         )
                 else:
-                    # Full classification for researched companies
-                    pqs.classification, new_status, priority = self._classify(pqs.total, config)
-                    pqs.notes = self._generate_notes(pqs, company, research)
+                    # Research quality gate — reject low-confidence research
+                    confidence = (research or {}).get("confidence_level", "low")
+                    if confidence == "low" and pqs.technographic == 0 and pqs.timing == 0:
+                        # Research returned nothing useful — don't waste outreach
+                        pqs.classification = "research_needed"
+                        new_status = None  # keep as researched, flag for re-research
+                        priority = False
+                        pqs.notes = (
+                            f"Low-confidence research with zero tech/timing signals. "
+                            f"Re-research recommended before outreach. PQS: {pqs.total}/100."
+                        )
+                    else:
+                        # Full classification for researched companies
+                        pqs.classification, new_status, priority = self._classify(pqs.total, config)
+                        pqs.notes = self._generate_notes(pqs, company, research)
 
                 # Update database
                 update_data = {
@@ -149,6 +162,27 @@ class QualificationAgent(BaseAgent):
                 logger.error(f"Error qualifying {company_name}: {e}", exc_info=True)
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
+
+        # Count classification outcomes for the Slack summary
+        qualified_count = sum(
+            1 for d in result.details
+            if d.get("status") in ("qualified", "high_priority", "hot_prospect")
+        )
+        disqualified_count = sum(
+            1 for d in result.details
+            if d.get("status") == "unqualified"
+        )
+
+        try:
+            from backend.app.utils.notifications import notify_slack
+            notify_slack(
+                f"*Qualification complete:* {result.processed} companies scored — "
+                f"{qualified_count} qualified, {disqualified_count} disqualified, "
+                f"{result.errors} errors.",
+                emoji=":white_check_mark:",
+            )
+        except Exception:
+            pass
 
         return result
 

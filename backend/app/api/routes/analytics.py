@@ -54,3 +54,393 @@ async def get_performance(limit: int = Query(default=100, ge=1, le=1000)):
     db = get_db()
     outcomes = db.get_learning_outcomes(limit=limit)
     return {"data": outcomes, "count": len(outcomes)}
+
+
+@router.get("/duplicates")
+async def get_potential_duplicates():
+    """Find companies with duplicate domains or very similar names."""
+    db = Database()
+    # Get all companies with domains
+    result = db.client.table("companies").select(
+        "id, name, domain, tier, status, pqs_total"
+    ).not_.is_("domain", "null").order("domain").execute()
+
+    companies = result.data
+    duplicates = []
+
+    # Group by domain
+    domain_groups: dict = {}
+    for c in companies:
+        domain = (c.get("domain") or "").lower().strip()
+        if not domain:
+            continue
+        if domain not in domain_groups:
+            domain_groups[domain] = []
+        domain_groups[domain].append(c)
+
+    for domain, group in domain_groups.items():
+        if len(group) > 1:
+            duplicates.append({
+                "type": "domain",
+                "key": domain,
+                "companies": group,
+            })
+
+    return {"data": duplicates, "total_duplicate_groups": len(duplicates)}
+
+
+@router.get("/sequence-performance")
+async def get_sequence_performance():
+    """Get outreach performance broken down by sequence and step."""
+    db = Database()
+
+    result = db.client.table("outreach_drafts").select(
+        "sequence_name, sequence_step, approval_status, channel"
+    ).execute()
+
+    sequences: dict = {}
+    for draft in result.data:
+        seq = draft.get("sequence_name") or "unknown"
+        step = draft.get("sequence_step") or 0
+        key = f"{seq}__step_{step}"
+
+        if key not in sequences:
+            sequences[key] = {
+                "sequence_name": seq,
+                "step": step,
+                "channel": draft.get("channel") or "email",
+                "total_drafts": 0,
+                "approved": 0,
+                "rejected": 0,
+                "pending": 0,
+            }
+
+        sequences[key]["total_drafts"] += 1
+        approval_status = draft.get("approval_status") or "pending"
+        if approval_status == "approved":
+            sequences[key]["approved"] += 1
+        elif approval_status == "rejected":
+            sequences[key]["rejected"] += 1
+        else:
+            sequences[key]["pending"] += 1
+
+    sorted_data = sorted(sequences.values(), key=lambda s: (s["sequence_name"], s["step"]))
+    return {"data": sorted_data}
+
+
+@router.get("/competitive-risks")
+async def get_competitive_risks():
+    """Find researched companies that already use AI/ML competitors."""
+    db = Database()
+    # Get research_intelligence entries with existing_solutions
+    result = db.client.table("research_intelligence").select(
+        "company_id, existing_solutions, companies(id, name, tier, status, pqs_total)"
+    ).not_.is_("existing_solutions", "null").execute()
+
+    risks = []
+    for r in result.data:
+        solutions = r.get("existing_solutions") or []
+        if solutions and len(solutions) > 0 and solutions != ["None found"]:
+            risks.append({
+                "company_id": r.get("company_id"),
+                "company": r.get("companies"),
+                "existing_solutions": solutions,
+            })
+
+    return {"data": risks, "total": len(risks)}
+
+
+@router.get("/activity-feed")
+async def get_activity_feed(limit: int = 50):
+    """Get a unified activity feed from recent system events."""
+    db = Database()
+
+    activities = []
+
+    # Recent status changes (companies updated recently)
+    companies = db.client.table("companies").select(
+        "id, name, status, tier, updated_at"
+    ).order("updated_at", desc=True).limit(limit).execute()
+
+    for c in companies.data:
+        activities.append({
+            "type": "status_change",
+            "entity": "company",
+            "entity_id": c["id"],
+            "title": c["name"],
+            "description": f"Status: {c['status']}",
+            "tier": c.get("tier"),
+            "timestamp": c["updated_at"],
+        })
+
+    # Recent outreach drafts
+    drafts = db.client.table("outreach_drafts").select(
+        "id, company_id, approval_status, sequence_name, sequence_step, created_at, companies(name, tier)"
+    ).order("created_at", desc=True).limit(limit).execute()
+
+    for d in drafts.data:
+        activities.append({
+            "type": "outreach",
+            "entity": "draft",
+            "entity_id": d.get("company_id"),
+            "title": d.get("companies", {}).get("name", "Unknown"),
+            "description": f"{d['approval_status']} — {d['sequence_name']} step {d['sequence_step']}",
+            "tier": d.get("companies", {}).get("tier"),
+            "timestamp": d["created_at"],
+        })
+
+    # Recent API costs (agent runs)
+    costs = db.client.table("api_costs").select(
+        "batch_id, provider, model, cost, created_at"
+    ).order("created_at", desc=True).limit(20).execute()
+
+    seen_batches = set()
+    for c in costs.data:
+        bid = c.get("batch_id", "")
+        if bid in seen_batches:
+            continue
+        seen_batches.add(bid)
+        agent = bid.split("_")[0] if "_" in bid else "unknown"
+        activities.append({
+            "type": "agent_run",
+            "entity": "agent",
+            "entity_id": None,
+            "title": f"{agent.title()} agent",
+            "description": f"via {c.get('provider', '?')} · ${c.get('cost', 0):.4f}",
+            "tier": None,
+            "timestamp": c["created_at"],
+        })
+
+    # Sort all by timestamp descending
+    activities.sort(key=lambda a: a.get("timestamp", ""), reverse=True)
+
+    return {"data": activities[:limit]}
+
+
+@router.get("/data-quality")
+async def get_data_quality():
+    """Analyze data completeness across companies."""
+    db = Database()
+
+    # Get all companies
+    result = db.client.table("companies").select(
+        "id, name, domain, tier, status, state, email, employee_count, revenue_range, industry"
+    ).execute()
+
+    companies = result.data
+    total = len(companies)
+
+    # Count missing fields
+    missing = {
+        "domain": sum(1 for c in companies if not c.get("domain")),
+        "tier": sum(1 for c in companies if not c.get("tier")),
+        "state": sum(1 for c in companies if not c.get("state")),
+        "industry": sum(1 for c in companies if not c.get("industry")),
+        "employee_count": sum(1 for c in companies if not c.get("employee_count")),
+        "revenue_range": sum(1 for c in companies if not c.get("revenue_range")),
+    }
+
+    # Get contact counts per company
+    contacts = db.client.table("contacts").select("company_id").execute()
+    companies_with_contacts = set(c["company_id"] for c in contacts.data)
+    no_contacts = sum(1 for c in companies if c["id"] not in companies_with_contacts)
+    missing["contacts"] = no_contacts
+
+    # Companies with no email on any contact
+    contacts_with_email = db.client.table("contacts").select("company_id, email").not_.is_("email", "null").execute()
+    companies_with_email = set(c["company_id"] for c in contacts_with_email.data)
+    no_email = sum(1 for c in companies if c["id"] not in companies_with_email)
+    missing["contact_email"] = no_email
+
+    # Completeness score per company
+    fields = ["domain", "tier", "state", "industry", "employee_count", "revenue_range"]
+    incomplete_companies = []
+    for c in companies:
+        missing_fields = [f for f in fields if not c.get(f)]
+        has_contact = c["id"] in companies_with_contacts
+        has_email = c["id"] in companies_with_email
+        if not has_contact:
+            missing_fields.append("contacts")
+        if not has_email:
+            missing_fields.append("contact_email")
+        if missing_fields:
+            incomplete_companies.append({
+                "id": c["id"],
+                "name": c["name"],
+                "status": c.get("status"),
+                "tier": c.get("tier"),
+                "missing_fields": missing_fields,
+                "completeness": round((1 - len(missing_fields) / 8) * 100),
+            })
+
+    incomplete_companies.sort(key=lambda c: c["completeness"])
+
+    return {
+        "data": {
+            "total_companies": total,
+            "field_coverage": {k: {"missing": v, "coverage": round((1 - v/max(total, 1)) * 100)} for k, v in missing.items()},
+            "incomplete_companies": incomplete_companies[:50],
+            "overall_completeness": round((1 - sum(missing.values()) / (total * 8)) * 100) if total else 0,
+        }
+    }
+
+
+@router.get("/campaign-performance")
+async def get_campaign_performance():
+    """Analyze discovery campaign effectiveness."""
+    db = Database()
+    result = db.client.table("companies").select(
+        "campaign_name, status, pqs_total, tier"
+    ).not_.is_("campaign_name", "null").execute()
+
+    campaigns: dict = {}
+    for c in result.data:
+        name = c.get("campaign_name", "unknown")
+        if name not in campaigns:
+            campaigns[name] = {"name": name, "total": 0, "statuses": {}, "avg_pqs": 0, "pqs_sum": 0, "tiers": {}}
+        campaigns[name]["total"] += 1
+        status = c.get("status", "unknown")
+        campaigns[name]["statuses"][status] = campaigns[name]["statuses"].get(status, 0) + 1
+        campaigns[name]["pqs_sum"] += c.get("pqs_total", 0) or 0
+        tier = c.get("tier") or "none"
+        campaigns[name]["tiers"][tier] = campaigns[name]["tiers"].get(tier, 0) + 1
+
+    for camp in campaigns.values():
+        camp["avg_pqs"] = round(camp["pqs_sum"] / max(camp["total"], 1), 1)
+        del camp["pqs_sum"]
+        # Compute advancement rate: qualified + outreach_pending + contacted + engaged + meeting + pilot stages
+        advanced = sum(camp["statuses"].get(s, 0) for s in [
+            "qualified", "outreach_pending", "contacted", "engaged",
+            "meeting_scheduled", "pilot_discussion", "pilot_signed", "converted"
+        ])
+        camp["advancement_rate"] = round(advanced / max(camp["total"], 1) * 100, 1)
+
+    return {"data": sorted(campaigns.values(), key=lambda c: c["advancement_rate"], reverse=True)}
+
+
+@router.get("/agent-runs")
+async def get_agent_runs():
+    """Get agent run history grouped by batch_id from api_costs."""
+    db = get_db()
+    result = (
+        db.client.table("api_costs")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(500)
+        .execute()
+    )
+
+    # Group cost entries by batch_id
+    runs: dict[str, dict] = {}
+    for entry in result.data:
+        bid = entry.get("batch_id") or "unknown"
+
+        # Derive agent name from batch_id prefix or endpoint
+        endpoint = entry.get("endpoint") or ""
+        provider = entry.get("provider") or "unknown"
+        if bid.startswith("discovery_"):
+            agent = "discovery"
+        elif bid.startswith("research_"):
+            agent = "research"
+        elif bid.startswith("qualification_"):
+            agent = "qualification"
+        elif bid.startswith("outreach_"):
+            agent = "outreach"
+        elif bid.startswith("engagement_"):
+            agent = "engagement"
+        elif "discovery" in endpoint.lower():
+            agent = "discovery"
+        elif "research" in endpoint.lower():
+            agent = "research"
+        elif "qualification" in endpoint.lower():
+            agent = "qualification"
+        elif "outreach" in endpoint.lower():
+            agent = "outreach"
+        else:
+            agent = provider
+
+        if bid not in runs:
+            runs[bid] = {
+                "batch_id": bid,
+                "agent": agent,
+                "started_at": entry.get("created_at"),
+                "total_cost": 0.0,
+                "total_calls": 0,
+                "companies_processed": set(),
+                "providers": set(),
+            }
+
+        runs[bid]["total_cost"] += float(entry.get("estimated_cost_usd") or 0)
+        runs[bid]["total_calls"] += 1
+        if entry.get("company_id"):
+            runs[bid]["companies_processed"].add(entry["company_id"])
+        if entry.get("provider"):
+            runs[bid]["providers"].add(entry["provider"])
+
+        # Keep the earliest timestamp as started_at
+        entry_ts = entry.get("created_at")
+        if entry_ts and entry_ts < (runs[bid]["started_at"] or ""):
+            runs[bid]["started_at"] = entry_ts
+
+    # Convert sets to serialisable values and sort most-recent first
+    serialised = []
+    for run in runs.values():
+        serialised.append(
+            {
+                "batch_id": run["batch_id"],
+                "agent": run["agent"],
+                "started_at": run["started_at"],
+                "total_cost": round(run["total_cost"], 6),
+                "total_calls": run["total_calls"],
+                "companies_processed": len(run["companies_processed"]),
+                "providers": sorted(run["providers"]),
+            }
+        )
+
+    serialised.sort(key=lambda r: r.get("started_at") or "", reverse=True)
+
+    total_cost = round(sum(r["total_cost"] for r in serialised), 6)
+    return {
+        "data": serialised,
+        "totals": {
+            "runs": len(serialised),
+            "cost_usd": total_cost,
+        },
+    }
+
+
+@router.get("/pipeline-velocity")
+async def get_pipeline_velocity():
+    """Compute average days companies spend in each pipeline stage."""
+    db = Database()
+    result = db.client.table("companies").select(
+        "status, created_at, updated_at"
+    ).execute()
+
+    stage_durations: dict = {}
+    for c in result.data:
+        status = c.get("status", "unknown")
+        created = c.get("created_at")
+        updated = c.get("updated_at")
+        if created and updated:
+            from datetime import datetime
+            try:
+                created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                updated_dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                days = (updated_dt - created_dt).total_seconds() / 86400
+                if status not in stage_durations:
+                    stage_durations[status] = []
+                stage_durations[status].append(days)
+            except (ValueError, TypeError):
+                pass
+
+    velocity = {}
+    for status, durations in stage_durations.items():
+        velocity[status] = {
+            "avg_days": round(sum(durations) / len(durations), 1),
+            "min_days": round(min(durations), 1),
+            "max_days": round(max(durations), 1),
+            "count": len(durations),
+        }
+
+    return {"data": velocity}

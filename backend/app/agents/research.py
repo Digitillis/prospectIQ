@@ -80,6 +80,8 @@ class ResearchAgent(BaseAgent):
         company_ids: list[str] | None = None,
         batch_id: str | None = None,
         min_firmographic_score: int | None = None,
+        tier: str | None = None,
+        tiers: list[str] | None = None,
         limit: int | None = None,
     ) -> AgentResult:
         """Run research on discovered companies.
@@ -88,6 +90,8 @@ class ResearchAgent(BaseAgent):
             company_ids: Specific company IDs to research (highest priority).
             batch_id: Research all companies tagged with this batch ID (from select_batch).
             min_firmographic_score: Minimum firmographic PQS to research (default from config).
+            tier: Single tier to filter by (e.g. "fb1", "1a").
+            tiers: Multiple tiers to filter by (e.g. ["fb1", "fb2"]).
             limit: Max companies to research in this batch.
 
         Returns:
@@ -100,12 +104,27 @@ class ResearchAgent(BaseAgent):
         min_score = min_firmographic_score or scoring_config.get("min_firmographic_for_research", 10)
         batch_limit = limit or settings.batch_size
 
+        # Merge tier / tiers into a single list
+        tier_list = list(tiers) if tiers else []
+        if tier and tier not in tier_list:
+            tier_list.append(tier)
+
         # Get companies to research — explicit IDs > batch_id > default query
         if company_ids:
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         elif batch_id:
             companies = self.db.get_companies(batch_id=batch_id, status="discovered", limit=batch_limit)
+        elif tier_list:
+            # Fetch per tier and merge (respecting overall limit)
+            companies = []
+            for t in tier_list:
+                remaining = batch_limit - len(companies)
+                if remaining <= 0:
+                    break
+                companies.extend(
+                    self.db.get_companies(status="discovered", tier=t, min_pqs=min_score, limit=remaining)
+                )
         else:
             companies = self.db.get_companies(status="discovered", min_pqs=min_score, limit=batch_limit)
 
@@ -218,6 +237,17 @@ class ResearchAgent(BaseAgent):
 
         finally:
             perplexity.close()
+
+        try:
+            from backend.app.utils.notifications import notify_slack
+            notify_slack(
+                f"*Research complete:* {result.processed} companies researched, "
+                f"{result.skipped} skipped, {result.errors} errors. "
+                f"Cost: ${result.total_cost_usd:.4f}",
+                emoji=":mag:",
+            )
+        except Exception:
+            pass
 
         return result
 

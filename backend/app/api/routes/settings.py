@@ -1,56 +1,303 @@
 """Settings routes — expose YAML configuration to the dashboard."""
 
-from fastapi import APIRouter, HTTPException
+from typing import Any, Dict, Optional
 
-from backend.app.core.config import get_icp_config, get_scoring_config, get_sequences_config
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from backend.app.core.config import (
+    CONFIG_DIR,
+    get_icp_config,
+    get_scoring_config,
+    get_sequences_config,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _build_settings_response() -> dict:
+    icp = get_icp_config()
+    scoring = get_scoring_config()
+    sequences_cfg = get_sequences_config()
+    return {
+        "icp": {
+            "target_market": icp.get("target_market", {}),
+            "revenue": icp.get("company_filters", {}).get("revenue", {}),
+            "employee_count": icp.get("company_filters", {}).get("employee_count", {}),
+            "geography": icp.get("company_filters", {}).get("geography", {}),
+            "industries": icp.get("company_filters", {}).get("industries", []),
+            "contact_titles_include": (
+                icp.get("contact_filters", {}).get("titles", {}).get("include", [])
+            ),
+            "seniority": icp.get("contact_filters", {}).get("seniority", []),
+            "discovery": icp.get("discovery", {}),
+        },
+        "scoring": {
+            "dimensions": {
+                name: {
+                    "max_points": dim.get("max_points"),
+                    "signals": {
+                        sig_name: {
+                            "points": sig.get("points"),
+                            "description": sig.get("description", ""),
+                            "evaluation": sig.get("evaluation", ""),
+                        }
+                        for sig_name, sig in dim.get("signals", {}).items()
+                    },
+                }
+                for name, dim in scoring.get("dimensions", {}).items()
+            },
+            "thresholds": scoring.get("thresholds", {}),
+            "min_firmographic_for_research": scoring.get(
+                "min_firmographic_for_research", 10
+            ),
+        },
+        "sequences": sequences_cfg.get("sequences", {}),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models for PATCH request
+# ---------------------------------------------------------------------------
+
+class ICPRevenuePatch(BaseModel):
+    min: Optional[int] = None
+    max: Optional[int] = None
+
+
+class ICPEmployeeCountPatch(BaseModel):
+    min: Optional[int] = None
+    max: Optional[int] = None
+
+
+class ICPGeographyPatch(BaseModel):
+    primary_states: Optional[list[str]] = None
+    countries: Optional[list[str]] = None
+
+
+class ICPIndustryItem(BaseModel):
+    tier: str
+    label: str
+    apollo_industry: str
+
+
+class ICPDiscoveryPatch(BaseModel):
+    max_results_per_run: Optional[int] = None
+    pages_per_tier: Optional[int] = None
+
+
+class ICPPatch(BaseModel):
+    revenue: Optional[ICPRevenuePatch] = None
+    employee_count: Optional[ICPEmployeeCountPatch] = None
+    geography: Optional[ICPGeographyPatch] = None
+    industries: Optional[list[ICPIndustryItem]] = None
+    contact_titles_include: Optional[list[str]] = None
+    discovery: Optional[ICPDiscoveryPatch] = None
+
+
+class ScoringSignalPatch(BaseModel):
+    points: Optional[int] = None
+
+
+class ScoringDimensionPatch(BaseModel):
+    signals: Optional[Dict[str, ScoringSignalPatch]] = None
+
+
+class ScoringThresholdPatch(BaseModel):
+    max_score: Optional[int] = None
+
+
+class ScoringPatch(BaseModel):
+    min_firmographic_for_research: Optional[int] = None
+    dimensions: Optional[Dict[str, ScoringDimensionPatch]] = None
+    thresholds: Optional[Dict[str, ScoringThresholdPatch]] = None
+
+
+class SettingsPatch(BaseModel):
+    icp: Optional[ICPPatch] = None
+    scoring: Optional[ScoringPatch] = None
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@router.post("/test-slack")
+async def test_slack():
+    """Send a test Slack notification to verify webhook configuration."""
+    from backend.app.utils.notifications import notify_slack
+    sent = notify_slack(
+        "ProspectIQ test notification — your Slack integration is working!",
+        emoji=":white_check_mark:",
+    )
+    if not sent:
+        raise HTTPException(
+            status_code=400,
+            detail="Slack notification failed. Check that SLACK_WEBHOOK_URL is configured.",
+        )
+    return {"data": {"status": "sent"}}
 
 
 @router.get("")
 async def get_settings():
     """Return current ICP, scoring, and sequences configuration."""
     try:
-        icp = get_icp_config()
-        scoring = get_scoring_config()
+        data = _build_settings_response()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"data": data}
+
+
+@router.get("/templates")
+async def get_templates():
+    """Get all email/outreach templates from sequences config."""
+    try:
         sequences_cfg = get_sequences_config()
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    return {
-        "data": {
-            "icp": {
-                "target_market": icp.get("target_market", {}),
-                "revenue": icp.get("company_filters", {}).get("revenue", {}),
-                "employee_count": icp.get("company_filters", {}).get("employee_count", {}),
-                "geography": icp.get("company_filters", {}).get("geography", {}),
-                "industries": icp.get("company_filters", {}).get("industries", []),
-                "contact_titles_include": (
-                    icp.get("contact_filters", {}).get("titles", {}).get("include", [])
-                ),
-                "seniority": icp.get("contact_filters", {}).get("seniority", []),
-                "discovery": icp.get("discovery", {}),
-            },
-            "scoring": {
-                "dimensions": {
-                    name: {
-                        "max_points": dim.get("max_points"),
-                        "signals": {
-                            sig_name: {
-                                "points": sig.get("points"),
-                                "description": sig.get("description", ""),
-                                "evaluation": sig.get("evaluation", ""),
-                            }
-                            for sig_name, sig in dim.get("signals", {}).items()
-                        },
-                    }
-                    for name, dim in scoring.get("dimensions", {}).items()
-                },
-                "thresholds": scoring.get("thresholds", {}),
-                "min_firmographic_for_research": scoring.get(
-                    "min_firmographic_for_research", 10
-                ),
-            },
-            "sequences": sequences_cfg.get("sequences", {}),
-        }
-    }
+    sequences = sequences_cfg.get("sequences", {})
+    templates = []
+    for seq_name, seq in sequences.items():
+        for step in seq.get("steps", []):
+            templates.append({
+                "id": f"{seq_name}_step_{step['step']}",
+                "sequence_name": seq_name,
+                "sequence_display_name": seq.get("name", seq_name),
+                "sequence_description": seq.get("description", ""),
+                "step": step["step"],
+                "channel": step.get("channel", "email"),
+                "delay_days": step.get("delay_days", 0),
+                "template_name": step.get("template", ""),
+                "instructions": step.get("instructions", {}),
+            })
+
+    return {"data": templates}
+
+
+@router.patch("")
+async def patch_settings(payload: SettingsPatch):
+    """Partially update ICP and/or scoring configuration and persist to YAML."""
+    import yaml  # local import to keep top-level clean
+
+    errors: list[str] = []
+
+    # --- ICP updates ---
+    if payload.icp is not None:
+        icp_path = CONFIG_DIR / "icp.yaml"
+        try:
+            with open(icp_path, "r") as f:
+                icp_raw: Dict[str, Any] = yaml.safe_load(f)
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="icp.yaml not found")
+
+        icp_patch = payload.icp
+        cf = icp_raw.setdefault("company_filters", {})
+
+        if icp_patch.revenue is not None:
+            rev = cf.setdefault("revenue", {})
+            if icp_patch.revenue.min is not None:
+                rev["min"] = icp_patch.revenue.min
+            if icp_patch.revenue.max is not None:
+                rev["max"] = icp_patch.revenue.max
+
+        if icp_patch.employee_count is not None:
+            ec = cf.setdefault("employee_count", {})
+            if icp_patch.employee_count.min is not None:
+                ec["min"] = icp_patch.employee_count.min
+            if icp_patch.employee_count.max is not None:
+                ec["max"] = icp_patch.employee_count.max
+
+        if icp_patch.geography is not None:
+            geo = cf.setdefault("geography", {})
+            if icp_patch.geography.primary_states is not None:
+                geo["primary_states"] = icp_patch.geography.primary_states
+            if icp_patch.geography.countries is not None:
+                geo["countries"] = icp_patch.geography.countries
+
+        if icp_patch.industries is not None:
+            # Rebuild full industry list preserving NAICS prefixes from original
+            original_inds = {ind.get("tier"): ind for ind in cf.get("industries", [])}
+            new_inds = []
+            for item in icp_patch.industries:
+                orig = original_inds.get(item.tier, {})
+                entry = dict(orig)  # keep naics_prefix etc.
+                entry["tier"] = item.tier
+                entry["label"] = item.label
+                entry["apollo_industry"] = item.apollo_industry
+                new_inds.append(entry)
+            cf["industries"] = new_inds
+
+        if icp_patch.contact_titles_include is not None:
+            ct = icp_raw.setdefault("contact_filters", {}).setdefault("titles", {})
+            ct["include"] = icp_patch.contact_titles_include
+
+        if icp_patch.discovery is not None:
+            disc = icp_raw.setdefault("discovery", {})
+            if icp_patch.discovery.max_results_per_run is not None:
+                disc["max_results_per_run"] = icp_patch.discovery.max_results_per_run
+            if icp_patch.discovery.pages_per_tier is not None:
+                disc["pages_per_tier"] = icp_patch.discovery.pages_per_tier
+
+        try:
+            with open(icp_path, "w") as f:
+                yaml.dump(icp_raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        except Exception as exc:
+            errors.append(f"Failed to write icp.yaml: {exc}")
+
+        # Bust lru_cache so next read picks up changes
+        get_icp_config.cache_clear()
+
+    # --- Scoring updates ---
+    if payload.scoring is not None:
+        scoring_path = CONFIG_DIR / "scoring.yaml"
+        try:
+            with open(scoring_path, "r") as f:
+                scoring_raw: Dict[str, Any] = yaml.safe_load(f)
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="scoring.yaml not found")
+
+        sc_patch = payload.scoring
+
+        if sc_patch.min_firmographic_for_research is not None:
+            scoring_raw["min_firmographic_for_research"] = sc_patch.min_firmographic_for_research
+
+        if sc_patch.dimensions is not None:
+            for dim_name, dim_patch in sc_patch.dimensions.items():
+                if dim_name not in scoring_raw.get("dimensions", {}):
+                    continue
+                if dim_patch.signals:
+                    for sig_name, sig_patch in dim_patch.signals.items():
+                        sig = scoring_raw["dimensions"][dim_name].get("signals", {}).get(sig_name)
+                        if sig and sig_patch.points is not None:
+                            sig["points"] = sig_patch.points
+
+        if sc_patch.thresholds is not None:
+            for thr_name, thr_patch in sc_patch.thresholds.items():
+                if thr_name not in scoring_raw.get("thresholds", {}):
+                    continue
+                if thr_patch.max_score is not None:
+                    scoring_raw["thresholds"][thr_name]["max_score"] = thr_patch.max_score
+
+        try:
+            with open(scoring_path, "w") as f:
+                yaml.dump(scoring_raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        except Exception as exc:
+            errors.append(f"Failed to write scoring.yaml: {exc}")
+
+        get_scoring_config.cache_clear()
+
+    if errors:
+        raise HTTPException(status_code=500, detail="; ".join(errors))
+
+    # Return fresh settings after update
+    try:
+        data = _build_settings_response()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {"data": data, "message": "Settings saved successfully"}

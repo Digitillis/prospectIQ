@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   BarChart3,
+  Copy,
   DollarSign,
   Loader2,
   ArrowRight,
@@ -11,11 +13,25 @@ import {
   FileOutput,
   MailOpen,
   MessageSquareReply,
+  ShieldAlert,
   ThumbsUp,
   CalendarCheck,
   TrendingUp,
+  Trophy,
+  XCircle,
+  Clock,
 } from "lucide-react";
-import { getPipelineOverview, getCosts, StatusCount } from "@/lib/api";
+import {
+  getPipelineOverview,
+  getCosts,
+  getDuplicates,
+  getCompetitiveRisks,
+  getPipelineVelocity,
+  StatusCount,
+  DuplicateGroup,
+  CompetitiveRisk,
+  type PipelineVelocityStage,
+} from "@/lib/api";
 import { cn, formatDate } from "@/lib/utils";
 
 interface CostEntry {
@@ -47,8 +63,14 @@ const FUNNEL_STAGES = [
 export default function AnalyticsPage() {
   const [pipeline, setPipeline] = useState<StatusCount[]>([]);
   const [costs, setCosts] = useState<CostData | null>(null);
+  const [duplicates, setDuplicates] = useState<DuplicateGroup[]>([]);
+  const [risks, setRisks] = useState<CompetitiveRisk[]>([]);
+  const [velocity, setVelocity] = useState<Record<string, PipelineVelocityStage>>({});
   const [loadingPipeline, setLoadingPipeline] = useState(true);
   const [loadingCosts, setLoadingCosts] = useState(true);
+  const [loadingDuplicates, setLoadingDuplicates] = useState(true);
+  const [loadingRisks, setLoadingRisks] = useState(true);
+  const [loadingVelocity, setLoadingVelocity] = useState(true);
 
   const fetchPipeline = useCallback(async () => {
     try {
@@ -72,10 +94,46 @@ export default function AnalyticsPage() {
     }
   }, []);
 
+  const fetchDuplicates = useCallback(async () => {
+    try {
+      const res = await getDuplicates();
+      setDuplicates(res.data);
+    } catch {
+      // Leave empty
+    } finally {
+      setLoadingDuplicates(false);
+    }
+  }, []);
+
+  const fetchRisks = useCallback(async () => {
+    try {
+      const res = await getCompetitiveRisks();
+      setRisks(res.data);
+    } catch {
+      // Leave empty
+    } finally {
+      setLoadingRisks(false);
+    }
+  }, []);
+
+  const fetchVelocity = useCallback(async () => {
+    try {
+      const res = await getPipelineVelocity();
+      setVelocity(res.data);
+    } catch {
+      // Leave empty
+    } finally {
+      setLoadingVelocity(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchPipeline();
     fetchCosts();
-  }, [fetchPipeline, fetchCosts]);
+    fetchDuplicates();
+    fetchRisks();
+    fetchVelocity();
+  }, [fetchPipeline, fetchCosts, fetchDuplicates, fetchRisks, fetchVelocity]);
 
   // Build funnel data from pipeline status counts
   const funnelData = FUNNEL_STAGES.map((stage) => {
@@ -83,6 +141,21 @@ export default function AnalyticsPage() {
     return { ...stage, count: match?.count ?? 0 };
   });
   const maxCount = Math.max(...funnelData.map((s) => s.count), 1);
+
+  // Compute performance metrics from pipeline data
+  const contacted = pipeline.find((p) => p.status === "contacted")?.count ?? 0;
+  const engaged = pipeline.find((p) => p.status === "engaged")?.count ?? 0;
+  const meetings = pipeline.find((p) => p.status === "meeting_scheduled")?.count ?? 0;
+  const pilots = pipeline.find((p) => p.status === "pilot_discussion")?.count ?? 0;
+  const pilotSigned = pipeline.find((p) => p.status === "pilot_signed")?.count ?? 0;
+  const disqualified = pipeline.find((p) => p.status === "disqualified")?.count ?? 0;
+  const totalProspects = pipeline.reduce((sum, p) => sum + (p.count ?? 0), 0);
+  const converted = meetings + pilots + pilotSigned;
+
+  const replyRate = contacted > 0 ? `${Math.round((engaged / contacted) * 100)}%` : "0%";
+  const positiveRate = engaged > 0 ? `${Math.round((meetings / engaged) * 100)}%` : "0%";
+  const meetingsBooked = meetings + pilots;
+  const conversionRate = totalProspects > 0 ? `${Math.round((converted / totalProspects) * 100)}%` : "0%";
 
   const costEntries: CostEntry[] = costs?.data ?? [];
 
@@ -276,7 +349,139 @@ export default function AnalyticsPage() {
         )}
       </section>
 
-      {/* Section 3: Performance Metrics */}
+      {/* Section 3: Duplicate Detection */}
+      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-6">
+          <Copy className="h-5 w-5 text-amber-600" />
+          <h3 className="text-lg font-semibold text-gray-900">Potential Duplicates</h3>
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+            {duplicates.length} groups
+          </span>
+        </div>
+
+        {loadingDuplicates ? (
+          <div className="flex h-24 items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          </div>
+        ) : duplicates.length === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-4">
+            No duplicate domains detected.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {duplicates.map((group) => (
+              <div
+                key={group.key}
+                className="rounded-lg border border-amber-100 bg-amber-50 p-4"
+              >
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  Domain: <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">{group.key}</code>
+                  {" "}— {group.companies.length} companies
+                </p>
+                <div className="space-y-1">
+                  {group.companies.map((c) => (
+                    <div key={c.id} className="flex items-center gap-3 text-sm">
+                      <Link
+                        href={`/prospects/${c.id}`}
+                        className="font-medium text-digitillis-accent hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                      <span className="text-gray-400">tier: {c.tier || "—"}</span>
+                      <span className="text-gray-400">status: {c.status}</span>
+                      <span className="text-gray-400">PQS: {c.pqs_total}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Section 4: Competitive Intelligence */}
+      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <ShieldAlert className="h-5 w-5 text-red-500" />
+          <h3 className="text-lg font-semibold text-gray-900">Competitive Intelligence</h3>
+          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+            {risks.length} companies
+          </span>
+        </div>
+        <p className="text-sm text-gray-500 mb-6">
+          These companies already use AI/ML platforms — adjust your pitch to displace or complement existing solutions.
+        </p>
+
+        {loadingRisks ? (
+          <div className="flex h-24 items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          </div>
+        ) : risks.length === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-4">
+            No competitive risks found in researched companies.
+          </p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {risks.map((risk) => (
+              <div
+                key={risk.company_id}
+                className="flex items-center justify-between py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={`/prospects/${risk.company_id}`}
+                    className="text-sm font-medium text-digitillis-accent hover:underline"
+                  >
+                    {risk.company?.name ?? risk.company_id}
+                  </Link>
+                  {risk.company?.tier && (
+                    <span className="text-xs text-gray-400">
+                      Tier {risk.company.tier}
+                    </span>
+                  )}
+                  {risk.company?.pqs_total !== undefined && (
+                    <span className="text-xs text-gray-400">
+                      PQS {risk.company.pqs_total}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {risk.existing_solutions.map((s) => (
+                    <span
+                      key={s}
+                      className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Section 4b: Pipeline Value Summary */}
+      {!loadingPipeline && (
+        <section className="rounded-xl border border-green-200 bg-green-50 p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <DollarSign className="h-5 w-5 text-green-600" />
+            <h3 className="text-lg font-semibold text-gray-900">Pipeline Value</h3>
+            <Link
+              href="/analytics/win-loss"
+              className="ml-auto flex items-center gap-1 text-sm font-medium text-green-700 hover:underline"
+            >
+              Win/Loss Analysis
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <p className="text-sm text-gray-500">
+            To track total pipeline value, assign deal values to companies on their detail pages. Use the Win/Loss Analysis to see patterns in outcomes.
+          </p>
+        </section>
+      )}
+
+      {/* Section 5: Performance Metrics */}
       <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-6">
           <BarChart3 className="h-5 w-5 text-purple-600" />
@@ -285,35 +490,55 @@ export default function AnalyticsPage() {
           </h3>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[
             {
               label: "Open Rate",
               value: "--",
+              subtext: "Tracking via Instantly",
               icon: MailOpen,
               color: "text-digitillis-accent",
               bg: "bg-blue-50",
             },
             {
               label: "Reply Rate",
-              value: "--",
+              value: replyRate,
+              subtext: `${engaged} engaged / ${contacted} contacted`,
               icon: MessageSquareReply,
               color: "text-digitillis-success",
               bg: "bg-green-50",
             },
             {
               label: "Positive Reply Rate",
-              value: "--",
+              value: positiveRate,
+              subtext: `${meetings} meetings / ${engaged} engaged`,
               icon: ThumbsUp,
               color: "text-purple-600",
               bg: "bg-purple-50",
             },
             {
               label: "Meetings Booked",
-              value: "--",
+              value: String(meetingsBooked),
+              subtext: `${meetings} scheduled + ${pilots} in pilot`,
               icon: CalendarCheck,
               color: "text-digitillis-warning",
               bg: "bg-amber-50",
+            },
+            {
+              label: "Disqualified",
+              value: String(disqualified),
+              subtext: "Removed from pipeline",
+              icon: BarChart3,
+              color: "text-red-500",
+              bg: "bg-red-50",
+            },
+            {
+              label: "Conversion Rate",
+              value: conversionRate,
+              subtext: `${converted} converted / ${totalProspects} total`,
+              icon: TrendingUp,
+              color: "text-indigo-600",
+              bg: "bg-indigo-50",
             },
           ].map((metric) => {
             const Icon = metric.icon;
@@ -334,14 +559,66 @@ export default function AnalyticsPage() {
                   {metric.value}
                 </p>
                 <p className="mt-0.5 text-sm text-gray-500">{metric.label}</p>
+                {metric.subtext && (
+                  <p className="mt-1 text-xs text-gray-400">{metric.subtext}</p>
+                )}
               </div>
             );
           })}
         </div>
 
         <p className="mt-4 text-center text-xs text-gray-400">
-          Data will populate as outreach progresses
+          Reply and meeting rates computed from pipeline data. Open rate requires Instantly integration.
         </p>
+      </section>
+
+      {/* Pipeline Velocity */}
+      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <Clock className="h-5 w-5 text-indigo-500" />
+          <h3 className="text-lg font-semibold text-gray-900">Pipeline Velocity</h3>
+        </div>
+        <p className="text-sm text-gray-500 mb-6">Average days companies spend in each stage</p>
+
+        {loadingVelocity ? (
+          <div className="flex h-32 items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          </div>
+        ) : Object.keys(velocity).length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-8">No velocity data yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {Object.entries(velocity)
+              .sort((a, b) => b[1].avg_days - a[1].avg_days)
+              .map(([status, stats]) => {
+                const maxAvg = Math.max(...Object.values(velocity).map((v) => v.avg_days), 1);
+                const barWidth = Math.max((stats.avg_days / maxAvg) * 100, 4);
+                return (
+                  <div key={status} className="flex items-center gap-4">
+                    <div className="w-36 shrink-0 text-right">
+                      <span className="text-sm font-medium text-gray-700 capitalize">
+                        {status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <div className="relative flex-1 h-8 rounded-lg bg-gray-100">
+                      <div
+                        className="h-full rounded-lg bg-indigo-400 transition-all duration-500"
+                        style={{ width: `${barWidth}%` }}
+                      />
+                      <div className="absolute inset-0 flex items-center px-3">
+                        <span className="text-xs font-semibold text-white mix-blend-difference">
+                          {stats.avg_days}d avg
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-32 shrink-0 text-xs text-gray-400">
+                      {stats.min_days}–{stats.max_days}d range · {stats.count} co.
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
       </section>
     </div>
   );

@@ -70,7 +70,35 @@ def main():
         console.print(table)
     console.print()
 
-    # 3. High-priority companies needing attention
+    # 3. Run buying signal detection
+    console.print("[cyan]Scanning for buying signals...[/cyan]")
+    try:
+        from backend.app.core.buying_signals import BuyingSignalDetector
+        detector = BuyingSignalDetector()
+        signal_result = detector.execute()
+        if signal_result.processed > 0:
+            console.print(f"  [bold red]Detected {signal_result.processed} buying signal(s)![/bold red]")
+        else:
+            console.print("  No new buying signals detected.")
+    except Exception as e:
+        console.print(f"  [yellow]Signal detection skipped: {e}[/yellow]")
+    console.print()
+
+    # 4. Check for re-engagement candidates
+    console.print("[cyan]Checking re-engagement candidates...[/cyan]")
+    try:
+        from backend.app.agents.reengagement import ReengagementAgent
+        reeng = ReengagementAgent()
+        reeng_result = reeng.execute(limit=10)
+        if reeng_result.processed > 0:
+            console.print(f"  [green]{reeng_result.processed} prospect(s) re-queued for warm follow-up.[/green]")
+        else:
+            console.print("  No prospects ready for re-engagement.")
+    except Exception as e:
+        console.print(f"  [yellow]Re-engagement check skipped: {e}[/yellow]")
+    console.print()
+
+    # 5. High-priority companies needing attention
     hot_companies = db.get_companies(status="qualified", min_pqs=61, limit=10)
     engaged = db.get_companies(status="engaged", limit=10)
     console.print(f"[cyan]High-Priority Qualified: {len(hot_companies)}[/cyan]")

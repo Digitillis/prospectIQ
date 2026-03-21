@@ -4,6 +4,7 @@ import { Inter } from "next/font/google";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { Sidebar } from "./sidebar";
+import { SearchModal } from "./search-modal";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
+          <SearchModal />
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* Top bar */}
             <header className="flex h-14 items-center justify-between border-b border-white/10 bg-digitillis-dark px-6">

@@ -31,26 +31,63 @@ def classify_persona(title: str | None) -> tuple[str | None, bool]:
 
     title_lower = title.lower()
 
+    # Order matters: more specific rules first (F&B food safety before generic ops)
     persona_rules = [
+        # F&B — Food Safety & Quality personas (primary FSMA buyer)
+        (["vp food safety", "vice president food safety", "vp of food safety",
+          "vp quality and food safety", "vp food safety & quality",
+          "vp food safety and quality", "vice president quality and food safety",
+          "vp quality assurance and food safety"], "vp_quality_food_safety", True),
+        (["director food safety", "director of food safety",
+          "director food safety & quality", "director food safety and quality",
+          "director of food safety and quality", "director of food safety & quality",
+          "sr director of food safety", "senior director of food safety",
+          "corporate director of food safety",
+          "director quality and food safety", "director of quality and food safety"],
+         "director_quality_food_safety", True),
+        # F&B — Quality-only personas (secondary FSMA buyer)
+        (["vp quality", "vice president quality", "vp of quality",
+          "vp quality assurance", "vice president quality assurance"],
+         "vp_quality_food_safety", True),
+        (["director of quality", "director quality", "director quality assurance",
+          "director of quality assurance", "quality and food safety director",
+          "food safety and quality assurance director"],
+         "director_quality_food_safety", True),
+        # F&B — Regulatory
+        (["vp regulatory", "director regulatory", "director of regulatory"],
+         "director_quality_food_safety", True),
+        # Maintenance / Reliability (discrete mfg buyer)
+        (["director of maintenance", "vp maintenance", "director maintenance",
+          "maintenance manager", "reliability manager", "director of reliability",
+          "director reliability"], "maintenance_leader", True),
+        # General operations
         (["chief operating", "coo"], "coo", True),
         (["chief information", "cio"], "cio", True),
         (["chief technology", "cto"], "cio", True),
         (["vp operations", "vice president operations", "vp of operations"], "vp_ops", True),
         (["vp manufacturing", "vice president manufacturing", "vp of manufacturing"], "vp_ops", True),
-        (["vp engineering", "vice president engineering"], "vp_ops", True),
+        (["vp engineering", "vice president engineering", "vp of engineering"], "vp_ops", True),
         (["vp supply chain", "vice president supply chain"], "vp_supply_chain", True),
         (["plant manager", "factory manager", "general manager"], "plant_manager", True),
         (["digital transformation", "industry 4.0", "smart factory", "innovation"], "digital_transformation", True),
-        (["director of operations", "director operations"], "director_ops", True),
+        (["director of operations", "director operations", "director of operation"], "director_ops", True),
         (["director of manufacturing", "director manufacturing"], "director_ops", True),
         (["director of engineering", "director engineering"], "director_ops", True),
         (["director supply chain"], "vp_supply_chain", False),
     ]
 
+    import re
+
     for keywords, persona, is_dm in persona_rules:
         for kw in keywords:
-            if kw in title_lower:
-                return persona, is_dm
+            # For short keywords (<=3 chars like "coo"), use word-boundary matching
+            # to avoid false positives (e.g., "cto" inside "director")
+            if len(kw) <= 4:
+                if re.search(r'\b' + re.escape(kw) + r'\b', title_lower):
+                    return persona, is_dm
+            else:
+                if kw in title_lower:
+                    return persona, is_dm
 
     return None, False
 

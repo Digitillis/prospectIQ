@@ -52,6 +52,41 @@ export const createCompany = (data: {
     body: JSON.stringify(data),
   });
 
+// Contacts — cross-company listing and detail
+export const getAllContacts = (params?: Record<string, string>) => {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return fetchAPI<{
+    data: (Contact & {
+      companies?: { id: string; name: string; tier?: string; status: string; pqs_total: number; domain?: string };
+    })[];
+    count: number;
+  }>(`/api/contacts${qs}`);
+};
+
+export const getContact = (id: string) =>
+  fetchAPI<{
+    data: Contact & {
+      interactions?: Interaction[];
+      companies?: { id: string; name: string; tier?: string; status: string; pqs_total: number; domain?: string };
+    };
+  }>(`/api/contacts/${id}`);
+
+export const updateContact = (id: string, data: Record<string, unknown>) =>
+  fetchAPI<{ data: Contact }>(`/api/contacts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+
+export const getRelationshipSummary = () =>
+  fetchAPI<{
+    data: {
+      strong: { count: number; contacts: ContactWithCompany[] };
+      warm:   { count: number; contacts: ContactWithCompany[] };
+      cold:   { count: number; contacts: ContactWithCompany[] };
+      total_tracked: number;
+    };
+  }>("/api/contacts/relationship-summary");
+
 // Contacts
 export const createContact = (
   companyId: string,
@@ -108,6 +143,31 @@ export const runAgent = (agent: string, body: Record<string, unknown> = {}) =>
 export const getAppSettings = () =>
   fetchAPI<{ data: AppSettings }>("/api/settings");
 
+export const saveSettings = (data: Record<string, unknown>) =>
+  fetchAPI<{ data: AppSettings; message: string }>("/api/settings", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+
+export const testSlack = () =>
+  fetchAPI<{ data: { status: string } }>("/api/settings/test-slack", { method: "POST" });
+
+// Templates
+export interface EmailTemplate {
+  id: string;
+  sequence_name: string;
+  sequence_display_name: string;
+  sequence_description: string;
+  step: number;
+  channel: string;
+  delay_days: number;
+  template_name: string;
+  instructions: Record<string, unknown>;
+}
+
+export const getTemplates = () =>
+  fetchAPI<{ data: EmailTemplate[] }>("/api/settings/templates");
+
 // Analytics
 export const getPipelineOverview = () =>
   fetchAPI<{ data: StatusCount[] }>("/api/analytics/pipeline");
@@ -117,11 +177,105 @@ export const getCosts = (batchId?: string) => {
   return fetchAPI(`/api/analytics/costs${qs}`);
 };
 
+export const getDuplicates = () =>
+  fetchAPI<{ data: DuplicateGroup[]; total_duplicate_groups: number }>("/api/analytics/duplicates");
+
+export const getCompetitiveRisks = () =>
+  fetchAPI<{ data: CompetitiveRisk[]; total: number }>("/api/analytics/competitive-risks");
+
+export const getSequencePerformance = () =>
+  fetchAPI<{ data: SequencePerformance[] }>("/api/analytics/sequence-performance");
+
+export const getAgentRuns = () =>
+  fetchAPI<{ data: AgentRun[]; totals: { runs: number; cost_usd: number } }>(
+    "/api/analytics/agent-runs"
+  );
+
+export interface Activity {
+  type: string;
+  entity: string;
+  entity_id: string | null;
+  title: string;
+  description: string;
+  tier: string | null;
+  timestamp: string;
+}
+
+export const getActivityFeed = (limit = 50) =>
+  fetchAPI<{ data: Activity[] }>(`/api/analytics/activity-feed?limit=${limit}`);
+
+export interface DataQuality {
+  total_companies: number;
+  field_coverage: Record<string, { missing: number; coverage: number }>;
+  incomplete_companies: {
+    id: string;
+    name: string;
+    status: string;
+    tier: string | null;
+    missing_fields: string[];
+    completeness: number;
+  }[];
+  overall_completeness: number;
+}
+
+export const getDataQuality = () =>
+  fetchAPI<{ data: DataQuality }>("/api/analytics/data-quality");
+
+export interface CampaignPerformance {
+  name: string;
+  total: number;
+  statuses: Record<string, number>;
+  avg_pqs: number;
+  tiers: Record<string, number>;
+  advancement_rate: number;
+}
+
+export const getCampaignPerformance = () =>
+  fetchAPI<{ data: CampaignPerformance[] }>("/api/analytics/campaign-performance");
+
+export interface PipelineVelocityStage {
+  avg_days: number;
+  min_days: number;
+  max_days: number;
+  count: number;
+}
+
+export const getPipelineVelocity = () =>
+  fetchAPI<{ data: Record<string, PipelineVelocityStage> }>("/api/analytics/pipeline-velocity");
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export const importCompaniesCSV = async (file: File): Promise<{ data: ImportResult }> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://prospectiq-production-4848.up.railway.app";
+  const res = await fetch(`${API_BASE}/api/companies/import`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(`API error ${res.status}: ${error}`);
+  }
+  return res.json();
+};
+
 // Enrichment (Apollo — consumes credits)
 export const enrichCompany = (companyId: string) =>
   fetchAPI<{
     data: { contacts_enriched: number; contacts_skipped: number; errors: number };
   }>(`/api/companies/${companyId}/enrich`, { method: "POST" });
+
+// Custom tags
+export const updateTags = (companyId: string, tags: string[]) =>
+  fetchAPI(`/api/companies/${companyId}/tags`, {
+    method: "PATCH",
+    body: JSON.stringify({ tags }),
+  });
 
 // Outcome tagging
 export const recordOutcome = (
@@ -179,6 +333,8 @@ export interface Company {
   pqs_engagement: number;
   status: string;
   priority_flag?: boolean;
+  custom_tags?: string[];
+  estimated_deal_value?: number;
   updated_at: string;
   created_at?: string;
 }
@@ -211,6 +367,21 @@ export interface Contact {
   is_decision_maker: boolean;
   linkedin_url?: string;
   status?: string;
+  relationship_strength?: number; // 0-100
+  last_interaction_note?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ContactWithCompany extends Contact {
+  companies?: {
+    id: string;
+    name: string;
+    tier?: string;
+    status: string;
+    pqs_total: number;
+    domain?: string;
+  };
 }
 
 export interface Research {
@@ -283,6 +454,38 @@ export interface Sequence {
   description: string;
   total_steps: number;
   steps: SequenceStep[];
+}
+
+export interface DuplicateGroup {
+  type: string;
+  key: string;
+  companies: Company[];
+}
+
+export interface CompetitiveRisk {
+  company_id: string;
+  company: { id: string; name: string; tier?: string; status: string; pqs_total: number } | null;
+  existing_solutions: string[];
+}
+
+export interface AgentRun {
+  batch_id: string;
+  agent: string;
+  started_at: string;
+  total_cost: number;
+  total_calls: number;
+  companies_processed: number;
+  providers: string[];
+}
+
+export interface SequencePerformance {
+  sequence_name: string;
+  step: number;
+  channel: string;
+  total_drafts: number;
+  approved: number;
+  rejected: number;
+  pending: number;
 }
 
 export interface AppSettings {
