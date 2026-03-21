@@ -192,6 +192,53 @@ async def get_today_data():
                 except Exception:
                     pass
 
+                # Build intel block for this contact
+                intel_data: dict = {
+                    "personalization_notes": "",
+                    "company": {
+                        "industry": company.get("industry"),
+                        "employee_count": company.get("employee_count"),
+                        "revenue_printed": company.get("revenue_printed"),
+                        "headcount_growth_6m": company.get("headcount_growth_6m"),
+                        "is_public": company.get("is_public"),
+                        "parent_company_name": company.get("parent_company_name"),
+                        "pain_signals": company.get("pain_signals", []),
+                        "personalization_hooks": company.get("personalization_hooks", []),
+                        "research_summary": company.get("research_summary"),
+                    },
+                    "research": None,
+                    "contact": {
+                        "title": contact.get("title"),
+                        "seniority": contact.get("seniority"),
+                        "city": contact.get("city"),
+                        "state": contact.get("state"),
+                    },
+                }
+                if drafts and drafts[0].get("personalization_notes"):
+                    intel_data["personalization_notes"] = drafts[0]["personalization_notes"]
+                # Fetch research
+                try:
+                    research_rows = (
+                        db.client.table("research")
+                        .select("*")
+                        .eq("company_id", contact["company_id"])
+                        .order("created_at", desc=True)
+                        .limit(1)
+                        .execute()
+                        .data
+                    ) or []
+                    if research_rows:
+                        ri = research_rows[0].get("research_intelligence") or {}
+                        intel_data["research"] = {
+                            "products_services": ri.get("products_services", []),
+                            "recent_news": ri.get("recent_news", []),
+                            "pain_points": ri.get("pain_points", []) or research_rows[0].get("pain_points", []),
+                            "known_systems": ri.get("known_systems", []) or research_rows[0].get("known_systems", []),
+                            "confidence": research_rows[0].get("confidence_level"),
+                        }
+                except Exception:
+                    pass
+
                 linkedin_connect_items.append({
                     "contact_id": contact["id"],
                     "company_id": contact["company_id"],
@@ -205,6 +252,7 @@ async def get_today_data():
                     "pqs_total": company.get("pqs_total", 0),
                     "draft_id": draft_id,
                     "message_text": draft_body,
+                    "intel": intel_data,
                 })
         # Sort by PQS descending
         linkedin_connect_items.sort(key=lambda x: x.get("pqs_total", 0), reverse=True)
@@ -249,6 +297,52 @@ async def get_today_data():
             except Exception:
                 pass
 
+            # Build intel block for DM contact
+            dm_intel_data: dict = {
+                "personalization_notes": "",
+                "company": {
+                    "industry": company.get("industry"),
+                    "employee_count": company.get("employee_count"),
+                    "revenue_printed": company.get("revenue_printed"),
+                    "headcount_growth_6m": company.get("headcount_growth_6m"),
+                    "is_public": company.get("is_public"),
+                    "parent_company_name": company.get("parent_company_name"),
+                    "pain_signals": company.get("pain_signals", []),
+                    "personalization_hooks": company.get("personalization_hooks", []),
+                    "research_summary": company.get("research_summary"),
+                },
+                "research": None,
+                "contact": {
+                    "title": contact.get("title"),
+                    "seniority": contact.get("seniority"),
+                    "city": contact.get("city"),
+                    "state": contact.get("state"),
+                },
+            }
+            if drafts and drafts[0].get("personalization_notes"):
+                dm_intel_data["personalization_notes"] = drafts[0]["personalization_notes"]
+            try:
+                dm_research_rows = (
+                    db.client.table("research")
+                    .select("*")
+                    .eq("company_id", contact["company_id"])
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                    .data
+                ) or []
+                if dm_research_rows:
+                    dm_ri = dm_research_rows[0].get("research_intelligence") or {}
+                    dm_intel_data["research"] = {
+                        "products_services": dm_ri.get("products_services", []),
+                        "recent_news": dm_ri.get("recent_news", []),
+                        "pain_points": dm_ri.get("pain_points", []) or dm_research_rows[0].get("pain_points", []),
+                        "known_systems": dm_ri.get("known_systems", []) or dm_research_rows[0].get("known_systems", []),
+                        "confidence": dm_research_rows[0].get("confidence_level"),
+                    }
+            except Exception:
+                pass
+
             linkedin_dm_items.append({
                 "contact_id": contact["id"],
                 "company_id": contact["company_id"],
@@ -262,6 +356,7 @@ async def get_today_data():
                 "pqs_total": company.get("pqs_total", 0),
                 "draft_id": draft_id,
                 "message_text": draft_body,
+                "intel": dm_intel_data,
             })
     except Exception as e:
         logger.warning(f"Failed to fetch linkedin dm items: {e}")

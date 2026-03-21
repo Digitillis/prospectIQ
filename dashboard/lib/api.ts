@@ -461,6 +461,34 @@ export interface TodayInteraction {
   contacts?: { id: string; full_name?: string; title?: string } | null;
 }
 
+export interface LinkedInIntel {
+  personalization_notes?: string;
+  company?: {
+    industry?: string;
+    employee_count?: number;
+    revenue_printed?: string;
+    headcount_growth_6m?: number;
+    is_public?: boolean;
+    parent_company_name?: string;
+    pain_signals?: string[];
+    personalization_hooks?: string[];
+    research_summary?: string;
+  };
+  research?: {
+    products_services?: string[];
+    recent_news?: string[];
+    pain_points?: string[];
+    known_systems?: string[];
+    confidence?: string;
+  } | null;
+  contact?: {
+    title?: string;
+    seniority?: string;
+    city?: string;
+    state?: string;
+  };
+}
+
 export interface LinkedInActionItem {
   contact_id: string;
   company_id: string;
@@ -474,6 +502,7 @@ export interface LinkedInActionItem {
   pqs_total: number;
   draft_id?: string;
   message_text?: string;
+  intel?: LinkedInIntel;
 }
 
 export interface ContentItem {
@@ -897,6 +926,7 @@ export interface LinkedInContact {
     linkedin_dm_opening?: LinkedInDraft;
     linkedin_dm_followup?: LinkedInDraft;
   };
+  intel?: LinkedInIntel;
 }
 
 export interface AppSettings {

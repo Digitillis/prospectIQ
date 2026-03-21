@@ -134,11 +134,33 @@ async def get_linkedin_messages(
     company_ids = list({cid for cid, _ in pairs})
     companies_result = (
         db.client.table("companies")
-        .select("id, name, tier, sub_sector, industry, pqs_total, city, state, domain")
+        .select(
+            "id, name, tier, sub_sector, industry, pqs_total, city, state, domain, "
+            "employee_count, revenue_printed, headcount_growth_6m, is_public, "
+            "parent_company_name, pain_signals, personalization_hooks, research_summary"
+        )
         .in_("id", company_ids)
         .execute()
     )
     company_by_id = {c["id"]: c for c in companies_result.data}
+
+    # Bulk fetch research (latest per company)
+    research_by_company: dict[str, dict] = {}
+    try:
+        for cid in company_ids:
+            research_rows = (
+                db.client.table("research")
+                .select("*")
+                .eq("company_id", cid)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+                .data
+            ) or []
+            if research_rows:
+                research_by_company[cid] = research_rows[0]
+    except Exception:
+        pass
 
     # Bulk fetch contacts
     contact_ids = [cid for _, cid in pairs]
@@ -180,10 +202,48 @@ async def get_linkedin_messages(
             for d in draft_map[(company_id, contact_id)]
         }
 
+        # Derive personalization_notes from first available draft
+        first_draft = next(iter(draft_map[(company_id, contact_id)]), {})
+        personalization_notes = first_draft.get("personalization_notes", "") or ""
+
+        # Build intel block
+        intel: dict = {
+            "personalization_notes": personalization_notes,
+            "company": {
+                "industry": company.get("industry"),
+                "employee_count": company.get("employee_count"),
+                "revenue_printed": company.get("revenue_printed"),
+                "headcount_growth_6m": company.get("headcount_growth_6m"),
+                "is_public": company.get("is_public"),
+                "parent_company_name": company.get("parent_company_name"),
+                "pain_signals": company.get("pain_signals", []),
+                "personalization_hooks": company.get("personalization_hooks", []),
+                "research_summary": company.get("research_summary"),
+            },
+            "research": None,
+            "contact": {
+                "title": contact.get("title"),
+                "seniority": contact.get("seniority"),
+                "city": contact.get("city"),
+                "state": contact.get("state"),
+            },
+        }
+        research_row = research_by_company.get(company_id)
+        if research_row:
+            ri = research_row.get("research_intelligence") or {}
+            intel["research"] = {
+                "products_services": ri.get("products_services", []),
+                "recent_news": ri.get("recent_news", []),
+                "pain_points": ri.get("pain_points", []) or research_row.get("pain_points", []),
+                "known_systems": ri.get("known_systems", []) or research_row.get("known_systems", []),
+                "confidence": research_row.get("confidence_level"),
+            }
+
         results.append({
             "contact": contact,
             "company": company,
             "drafts": drafts_for_contact,
+            "intel": intel,
         })
 
     return {"data": results, "count": len(results)}

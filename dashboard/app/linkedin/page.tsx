@@ -9,9 +9,11 @@ import {
   Pencil,
   Loader2,
   RefreshCw,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { runAgent, getLinkedInMessages, updateLinkedInStatus } from "@/lib/api";
-import type { LinkedInContact } from "@/lib/api";
+import type { LinkedInContact, LinkedInIntel } from "@/lib/api";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -158,11 +160,166 @@ function MessageBlock({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Intel panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
+  const [open, setOpen] = useState(false);
+
+  if (!intel) return null;
+
+  const hasAnyContent =
+    intel.personalization_notes ||
+    intel.research?.products_services?.length ||
+    intel.research?.recent_news?.length ||
+    intel.research?.pain_points?.length ||
+    (intel.company?.pain_signals?.length ?? 0) > 0 ||
+    intel.research?.known_systems?.length ||
+    intel.contact?.title ||
+    intel.contact?.seniority ||
+    intel.contact?.city ||
+    intel.contact?.state ||
+    intel.company?.industry ||
+    intel.company?.employee_count ||
+    intel.company?.revenue_printed;
+
+  if (!hasAnyContent) return null;
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3" />
+        ) : (
+          <ChevronRight className="h-3 w-3" />
+        )}
+        {open ? "Hide Intel" : "View Intel"}
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-lg bg-white/5 border border-white/10 p-3 text-xs space-y-3">
+          {/* WHY THIS MESSAGE */}
+          {intel.personalization_notes && (
+            <div>
+              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
+                WHY THIS MESSAGE
+              </div>
+              <p className="text-slate-300">{intel.personalization_notes}</p>
+            </div>
+          )}
+
+          {/* COMPANY RESEARCH */}
+          {(intel.research?.products_services?.length ||
+            intel.research?.recent_news?.length ||
+            intel.research?.pain_points?.length ||
+            (intel.company?.pain_signals?.length ?? 0) > 0 ||
+            intel.research?.known_systems?.length) ? (
+            <div>
+              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
+                COMPANY RESEARCH
+              </div>
+              <div className="space-y-1 text-slate-400">
+                {(intel.research?.products_services?.length ?? 0) > 0 && (
+                  <p>Products: {intel.research!.products_services!.join(", ")}</p>
+                )}
+                {(intel.research?.recent_news?.length ?? 0) > 0 && (
+                  <p>Recent: {intel.research!.recent_news!.join("; ")}</p>
+                )}
+                {((intel.research?.pain_points?.length ?? 0) > 0 ||
+                  (intel.company?.pain_signals?.length ?? 0) > 0) && (
+                  <p>
+                    Pain points:{" "}
+                    {(
+                      intel.research?.pain_points ||
+                      intel.company?.pain_signals ||
+                      []
+                    ).join(", ")}
+                  </p>
+                )}
+                {(intel.research?.known_systems?.length ?? 0) > 0 && (
+                  <p>Systems: {intel.research!.known_systems!.join(", ")}</p>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {/* CONTACT */}
+          {(intel.contact?.title ||
+            intel.contact?.seniority ||
+            intel.contact?.city ||
+            intel.contact?.state) && (
+            <div>
+              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
+                CONTACT
+              </div>
+              <div className="space-y-0.5 text-slate-400">
+                {intel.contact?.title && <p>Title: {intel.contact.title}</p>}
+                {intel.contact?.seniority && (
+                  <p>Seniority: {intel.contact.seniority}</p>
+                )}
+                {(intel.contact?.city || intel.contact?.state) && (
+                  <p>
+                    Location:{" "}
+                    {[intel.contact.city, intel.contact.state]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* COMPANY */}
+          {(intel.company?.industry ||
+            intel.company?.employee_count ||
+            intel.company?.revenue_printed ||
+            intel.company?.headcount_growth_6m != null) && (
+            <div>
+              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
+                COMPANY
+              </div>
+              <div className="space-y-0.5 text-slate-400">
+                {intel.company?.industry && (
+                  <p>Industry: {intel.company.industry}</p>
+                )}
+                {intel.company?.employee_count && (
+                  <p>
+                    Employees:{" "}
+                    {intel.company.employee_count.toLocaleString()}
+                  </p>
+                )}
+                {intel.company?.revenue_printed && (
+                  <p>Revenue: {intel.company.revenue_printed}</p>
+                )}
+                {intel.company?.headcount_growth_6m != null && (
+                  <p>
+                    Headcount growth (6mo):{" "}
+                    {(intel.company.headcount_growth_6m * 100).toFixed(0)}%
+                  </p>
+                )}
+                <p>{intel.company?.is_public ? "Public" : "Private"}</p>
+                <p>
+                  Parent:{" "}
+                  {intel.company?.parent_company_name || "Independent"}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Contact card
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ContactCard({ item }: { item: LinkedInContact }) {
-  const { contact, company, drafts } = item;
+  const { contact, company, drafts, intel } = item;
   const [status, setStatus] = useState<LinkedInStatus>(
     (contact.linkedin_status as LinkedInStatus) || "not_sent"
   );
@@ -249,6 +406,9 @@ function ContactCard({ item }: { item: LinkedInContact }) {
           <MessageBlock label="Follow-up DM" text={followupDm.body} />
         )}
       </div>
+
+      {/* Intel panel */}
+      <IntelPanel intel={intel} />
 
       {/* Status + Notes */}
       <div className="mt-4 border-t border-white/10 pt-4">
