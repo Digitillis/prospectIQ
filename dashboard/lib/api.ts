@@ -634,6 +634,14 @@ export interface ContentCalendarEntry {
   topic: string;
 }
 
+export interface ContentIntel {
+  report: string | null;
+  credibility_score: number | null;
+  publish_ready: boolean | null;
+  verification_rounds: number | null;
+  error: string | null;
+}
+
 export interface ContentDraft {
   id: string;
   topic: string;
@@ -643,6 +651,9 @@ export interface ContentDraft {
   char_count: number;
   generated_at: string;
   approval_status: string;
+  credibility_score?: number | null;
+  publish_ready?: boolean | null;
+  intel?: ContentIntel | null;
 }
 
 export const getContentCalendar = () =>

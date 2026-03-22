@@ -120,6 +120,7 @@ async def get_content_calendar():
 
 def _detail_to_draft(detail: dict) -> dict:
     """Convert an agent result detail dict into a ContentDraft-shaped response dict."""
+    intel = detail.get("intel")
     return {
         "id": detail.get("draft_id", ""),
         "topic": detail.get("company", ""),
@@ -129,6 +130,15 @@ def _detail_to_draft(detail: dict) -> dict:
         "char_count": detail.get("char_count", 0),
         "generated_at": detail.get("generated_at", datetime.now(timezone.utc).isoformat()),
         "approval_status": "pending",
+        "credibility_score": detail.get("credibility_score"),
+        "publish_ready": detail.get("publish_ready"),
+        "intel": {
+            "report": intel.get("intel_report", "") if intel and not intel.get("error") else None,
+            "credibility_score": intel.get("credibility_score", 0) if intel else None,
+            "publish_ready": intel.get("publish_ready", False) if intel else None,
+            "verification_rounds": intel.get("verification_rounds", 0) if intel else None,
+            "error": intel.get("error") if intel and intel.get("error") else None,
+        } if intel else None,
     }
 
 

@@ -367,6 +367,45 @@ function BatchDraftCard({
           </button>
         </div>
       </div>
+
+      {/* Intel / Verification Panel */}
+      {draft.intel && draft.intel.report && (
+        <ContentIntelPanel intel={draft.intel} credibility={draft.credibility_score} publishReady={draft.publish_ready} />
+      )}
+    </div>
+  );
+}
+
+function ContentIntelPanel({ intel, credibility, publishReady }: { intel: any; credibility?: number | null; publishReady?: boolean | null }) {
+  const [open, setOpen] = useState(false);
+  if (!intel || !intel.report) return null;
+
+  const score = credibility ?? intel.credibility_score ?? 0;
+  const ready = publishReady ?? intel.publish_ready ?? false;
+  const scoreColor = score >= 8 ? "text-green-400" : score >= 6 ? "text-yellow-400" : "text-red-400";
+  const readyBadge = ready
+    ? "bg-green-900/50 text-green-300 border-green-700"
+    : "bg-yellow-900/50 text-yellow-300 border-yellow-700";
+
+  return (
+    <div className="border-t border-slate-700 px-4 py-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200 transition-colors w-full"
+      >
+        <span className={`font-semibold ${scoreColor}`}>Credibility: {score}/10</span>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium border ${readyBadge}`}>
+          {ready ? "PUBLISH READY" : "REVIEW NEEDED"}
+        </span>
+        <span className="text-slate-500 text-[10px]">3-round verification</span>
+        <span className="ml-auto">{open ? "Hide" : "View"} Intel</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-lg bg-slate-900 border border-slate-700 p-3 text-xs text-slate-300 whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+          {intel.report}
+        </div>
+      )}
     </div>
   );
 }

@@ -404,6 +404,119 @@ class ContentAgent(BaseAgent):
                 result.details[-1]["draft_id"] = draft_id
                 result.details[-1]["generated_at"] = datetime.now(timezone.utc).isoformat()
 
+                # ── INTEL EXTRACTION + 3-ROUND VERIFICATION ──
+                # Second Claude call: extract sources, references, and verify claims
+                try:
+                    intel_prompt = (
+                        "You are a fact-checking editor for a thought leadership publication.\n\n"
+                        f"LINKEDIN POST TO VERIFY:\n{post_text}\n\n"
+                        "TASK: Analyze this post and return a structured assessment.\n\n"
+                        "ROUND 1 — SOURCE EXTRACTION:\n"
+                        "List every factual claim, statistic, or data point in the post.\n"
+                        "For each one, provide the most likely credible source (report name, organization, year).\n"
+                        "If a claim cannot be sourced, flag it as UNVERIFIABLE.\n\n"
+                        "ROUND 2 — AUTHENTICITY CHECK:\n"
+                        "For each claim, assess: Is this number realistic? Could it be verified by a reader?\n"
+                        "Flag any claim that sounds fabricated, exaggerated, or too precise to be real.\n"
+                        "Check for common AI hallucination patterns (overly round numbers, fake study citations).\n\n"
+                        "ROUND 3 — CREDIBILITY ASSESSMENT:\n"
+                        "Overall credibility score (1-10, where 10 = every claim is verifiable).\n"
+                        "Would a McKinsey partner publish this without edits? Yes/No and why.\n"
+                        "List any thought leaders, companies, or organizations referenced or relevant.\n\n"
+                        "OUTPUT FORMAT:\n"
+                        "SOURCES:\n"
+                        "- [claim]: [source] (VERIFIED / PLAUSIBLE / UNVERIFIABLE)\n"
+                        "...\n\n"
+                        "FLAGGED CLAIMS:\n"
+                        "- [any claims that seem fabricated or need verification]\n\n"
+                        "CREDIBILITY SCORE: X/10\n"
+                        "PUBLISH READY: Yes/No\n"
+                        "REASON: [brief explanation]\n\n"
+                        "REFERENCED ENTITIES:\n"
+                        "- Organizations: [list]\n"
+                        "- Reports/Studies: [list]\n"
+                        "- Thought Leaders: [list if any]\n"
+                        "- Regulations/Standards: [list if any]\n\n"
+                        "SUGGESTED IMPROVEMENTS:\n"
+                        "- [any specific edits to make claims more verifiable]"
+                    )
+
+                    intel_response = client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=1200,
+                        system="You are a rigorous fact-checking editor. Flag anything that cannot be independently verified. No leniency.",
+                        messages=[{"role": "user", "content": intel_prompt}],
+                    )
+
+                    intel_text = intel_response.content[0].text.strip()
+
+                    # Track cost for verification call
+                    self.track_cost(
+                        provider="anthropic",
+                        model="claude-sonnet-4-20250514",
+                        endpoint="/messages",
+                        company_id=None,
+                        input_tokens=intel_response.usage.input_tokens,
+                        output_tokens=intel_response.usage.output_tokens,
+                    )
+
+                    # Parse credibility score
+                    credibility_score = 0
+                    publish_ready = False
+                    for line in intel_text.split("\n"):
+                        line_stripped = line.strip()
+                        if line_stripped.startswith("CREDIBILITY SCORE:"):
+                            try:
+                                score_part = line_stripped.split(":")[1].strip().split("/")[0].strip()
+                                credibility_score = int(score_part)
+                            except (ValueError, IndexError):
+                                pass
+                        if line_stripped.startswith("PUBLISH READY:"):
+                            publish_ready = "yes" in line_stripped.lower()
+
+                    # Store intel alongside the draft
+                    intel_data = {
+                        "intel_report": intel_text,
+                        "credibility_score": credibility_score,
+                        "publish_ready": publish_ready,
+                        "verification_rounds": 3,
+                    }
+
+                    # Update the draft's personalization_notes to include intel
+                    updated_notes = (
+                        f"format:{job_format}|pillar:{job_pillar}"
+                        f"|credibility:{credibility_score}/10"
+                        f"|publish_ready:{publish_ready}"
+                    )
+                    if draft_id:
+                        try:
+                            self.db.update_outreach_draft(draft_id, {
+                                "personalization_notes": updated_notes,
+                            })
+                        except Exception:
+                            pass
+
+                    result.details[-1]["intel"] = intel_data
+                    result.details[-1]["credibility_score"] = credibility_score
+                    result.details[-1]["publish_ready"] = publish_ready
+
+                    # Log verification result
+                    status_icon = "[green]PASS[/green]" if publish_ready else "[yellow]REVIEW[/yellow]"
+                    console.print(
+                        f"  Verification: {status_icon} — Credibility {credibility_score}/10"
+                    )
+
+                    # If credibility is below 6, flag it prominently
+                    if credibility_score < 6:
+                        console.print(
+                            f"  [red]WARNING: Low credibility score ({credibility_score}/10). "
+                            f"Review intel report before posting.[/red]"
+                        )
+
+                except Exception as intel_err:
+                    logger.warning(f"Intel verification failed for '{job_topic}': {intel_err}")
+                    result.details[-1]["intel"] = {"error": str(intel_err)}
+
             except Exception as e:
                 logger.error(f"Error generating content for '{job_topic}': {e}", exc_info=True)
                 result.errors += 1
