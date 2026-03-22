@@ -15,6 +15,10 @@ import {
   Sparkles,
   AlertCircle,
   Zap,
+  Archive,
+  ExternalLink,
+  BarChart2,
+  X,
 } from "lucide-react";
 import {
   getContentCalendar,
@@ -23,9 +27,15 @@ import {
   getContentDrafts,
   markContentPosted,
   autoGenerateCalendar,
+  getContentArchive,
+  archiveContent,
+  updateEngagement,
+  getContentAnalytics,
   type ContentDraft,
   type AutoCalendarPost,
   type AutoCalendarResponse,
+  type ContentArchiveEntry,
+  type ContentAnalytics,
 } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -213,13 +223,15 @@ function BatchDraftCard({
   draft: ContentDraft;
   index: number;
   onRegenerate: (topic: string, pillar: string, format: string) => void;
-  onMarkPosted: (id: string) => void;
+  onMarkPosted: (id: string, linkedinUrl?: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState(draft.post_text);
   const [copied, setCopied] = useState(false);
   const [markingPosted, setMarkingPosted] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [showUrlPrompt, setShowUrlPrompt] = useState(false);
+  const [linkedinUrl, setLinkedinUrl] = useState("");
 
   const currentText = editing ? editedText : draft.post_text;
   const charCount = currentText.length;
@@ -347,14 +359,7 @@ function BatchDraftCard({
           </button>
 
           <button
-            onClick={async () => {
-              setMarkingPosted(true);
-              try {
-                await onMarkPosted(draft.id);
-              } finally {
-                setMarkingPosted(false);
-              }
-            }}
+            onClick={() => setShowUrlPrompt(true)}
             disabled={markingPosted}
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium bg-green-700 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
           >
@@ -367,6 +372,42 @@ function BatchDraftCard({
           </button>
         </div>
       </div>
+
+      {/* LinkedIn URL prompt */}
+      {showUrlPrompt && (
+        <div className="border-t border-slate-700/40 px-4 py-3 bg-slate-900/40">
+          <p className="text-xs text-slate-400 mb-2">LinkedIn post URL (optional):</p>
+          <div className="flex items-center gap-2">
+            <input
+              type="url"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+              placeholder="https://www.linkedin.com/posts/..."
+              className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              onClick={async () => {
+                setMarkingPosted(true);
+                setShowUrlPrompt(false);
+                try {
+                  await onMarkPosted(draft.id, linkedinUrl || undefined);
+                } finally {
+                  setMarkingPosted(false);
+                }
+              }}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium bg-green-700 hover:bg-green-600 text-white transition-colors"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => setShowUrlPrompt(false)}
+              className="rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Intel / Verification Panel */}
       {draft.intel && draft.intel.report && (
@@ -419,13 +460,15 @@ function DraftCard({
 }: {
   draft: ContentDraft;
   onRegenerate: (topic: string, pillar: string, format: string) => void;
-  onMarkPosted: (id: string) => void;
+  onMarkPosted: (id: string, linkedinUrl?: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState(draft.post_text);
   const [copied, setCopied] = useState(false);
   const [markingPosted, setMarkingPosted] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [showUrlPrompt, setShowUrlPrompt] = useState(false);
+  const [linkedinUrl, setLinkedinUrl] = useState("");
 
   const currentText = editing ? editedText : draft.post_text;
   const charCount = currentText.length;
@@ -447,10 +490,10 @@ function DraftCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleMarkPosted = async () => {
+  const handleMarkPosted = async (url?: string) => {
     setMarkingPosted(true);
     try {
-      await onMarkPosted(draft.id);
+      await onMarkPosted(draft.id, url);
     } finally {
       setMarkingPosted(false);
     }
@@ -561,7 +604,7 @@ function DraftCard({
           </button>
 
           <button
-            onClick={handleMarkPosted}
+            onClick={() => setShowUrlPrompt(true)}
             disabled={markingPosted}
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium bg-green-700 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
           >
@@ -574,6 +617,37 @@ function DraftCard({
           </button>
         </div>
       </div>
+
+      {/* LinkedIn URL prompt */}
+      {showUrlPrompt && (
+        <div className="border-t border-slate-700/40 px-4 py-3 bg-slate-900/40">
+          <p className="text-xs text-slate-400 mb-2">LinkedIn post URL (optional):</p>
+          <div className="flex items-center gap-2">
+            <input
+              type="url"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+              placeholder="https://www.linkedin.com/posts/..."
+              className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+            />
+            <button
+              onClick={async () => {
+                setShowUrlPrompt(false);
+                await handleMarkPosted(linkedinUrl || undefined);
+              }}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium bg-green-700 hover:bg-green-600 text-white transition-colors"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => setShowUrlPrompt(false)}
+              className="rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -888,6 +962,287 @@ function AutoCalendarRow({
   );
 }
 
+// ─── Engagement Form ──────────────────────────────────────────────────────────
+
+function EngagementForm({
+  entry,
+  onSaved,
+}: {
+  entry: ContentArchiveEntry;
+  onSaved: (updated: ContentArchiveEntry) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [impressions, setImpressions] = useState(String(entry.impressions ?? ""));
+  const [likes, setLikes] = useState(String(entry.likes ?? ""));
+  const [comments, setComments] = useState(String(entry.comments ?? ""));
+  const [shares, setShares] = useState(String(entry.shares ?? ""));
+  const [linkedinUrl, setLinkedinUrl] = useState(entry.linkedin_post_url ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await updateEngagement(entry.id, {
+        impressions: impressions ? parseInt(impressions) : undefined,
+        likes: likes ? parseInt(likes) : undefined,
+        comments: comments ? parseInt(comments) : undefined,
+        shares: shares ? parseInt(shares) : undefined,
+        linkedin_post_url: linkedinUrl || undefined,
+      });
+      const updated = (res as { data: ContentArchiveEntry }).data;
+      onSaved({ ...entry, ...updated });
+      setOpen(false);
+    } catch {
+      // silently ignore
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1"
+      >
+        <BarChart2 className="h-3 w-3" />
+        {open ? "Hide" : "Update metrics"}
+      </button>
+      {open && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            { label: "Impressions", value: impressions, set: setImpressions },
+            { label: "Likes", value: likes, set: setLikes },
+            { label: "Comments", value: comments, set: setComments },
+            { label: "Shares", value: shares, set: setShares },
+          ].map(({ label, value, set }) => (
+            <div key={label} className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-500 uppercase">{label}</label>
+              <input
+                type="number"
+                min="0"
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-slate-200 w-full focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          ))}
+          <div className="col-span-2 sm:col-span-4 flex flex-col gap-1">
+            <label className="text-[10px] text-slate-500 uppercase">LinkedIn URL</label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={linkedinUrl}
+                onChange={(e) => setLinkedinUrl(e.target.value)}
+                placeholder="https://www.linkedin.com/posts/..."
+                className="flex-1 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded px-3 py-1 text-xs font-medium bg-blue-700 hover:bg-blue-600 text-white transition-colors disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Archive Section ──────────────────────────────────────────────────────────
+
+function ArchiveSection() {
+  const [archive, setArchive] = useState<ContentArchiveEntry[]>([]);
+  const [analytics, setAnalytics] = useState<ContentAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showArchive, setShowArchive] = useState(true);
+
+  const fetchArchive = useCallback(async () => {
+    try {
+      const [archRes, analyticsRes] = await Promise.all([
+        getContentArchive({ limit: 100 }),
+        getContentAnalytics(),
+      ]);
+      setArchive((archRes as { data: ContentArchiveEntry[] }).data || []);
+      setAnalytics((analyticsRes as { data: ContentAnalytics }).data);
+    } catch {
+      // silently degrade
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchArchive();
+  }, [fetchArchive]);
+
+  const handleEngagementSaved = (updated: ContentArchiveEntry) => {
+    setArchive((prev) =>
+      prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e))
+    );
+  };
+
+  const bestPillar = analytics
+    ? Object.entries(analytics.by_pillar).sort((a, b) => b[1].avg_rate - a[1].avg_rate)[0]
+    : null;
+  const bestFormat = analytics
+    ? Object.entries(analytics.by_format).sort((a, b) => b[1].avg_rate - a[1].avg_rate)[0]
+    : null;
+
+  return (
+    <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={() => setShowArchive((v) => !v)}
+        className="flex items-center justify-between w-full px-4 py-3 border-b border-slate-700/40 hover:bg-slate-800/60 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Archive className="h-4 w-4 text-slate-400" />
+          <span className="text-sm font-medium text-slate-200">
+            Content Archive ({analytics?.total_posts ?? archive.length} posted)
+          </span>
+        </div>
+        {showArchive ? (
+          <ChevronUp className="h-4 w-4 text-slate-400" />
+        ) : (
+          <ChevronDown className="h-4 w-4 text-slate-400" />
+        )}
+      </button>
+
+      {showArchive && (
+        <>
+          {/* Analytics summary */}
+          {analytics && analytics.total_posts > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 py-3 border-b border-slate-700/30 bg-slate-900/30">
+              <div>
+                <p className="text-[10px] uppercase text-slate-500 mb-0.5">Total Posts</p>
+                <p className="text-lg font-semibold text-white">{analytics.total_posts}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase text-slate-500 mb-0.5">Avg Credibility</p>
+                <p className="text-lg font-semibold text-white">{analytics.avg_credibility}/10</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase text-slate-500 mb-0.5">Best Pillar</p>
+                <p className="text-sm font-medium text-blue-300">
+                  {bestPillar
+                    ? `${PILLAR_LABELS[bestPillar[0]] ?? bestPillar[0]} (${(bestPillar[1].avg_rate * 100).toFixed(1)}%)`
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase text-slate-500 mb-0.5">Best Format</p>
+                <p className="text-sm font-medium text-violet-300">
+                  {bestFormat
+                    ? `${FORMAT_LABELS[bestFormat[0]] ?? bestFormat[0]} (${(bestFormat[1].avg_rate * 100).toFixed(1)}%)`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            </div>
+          ) : archive.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-slate-500">
+              No archived posts yet. Use "Mark Posted" on a draft to archive it.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-700/40">
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Date</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Topic</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Pillar</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Format</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-medium text-slate-500 uppercase tracking-wide">Score</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-medium text-slate-500 uppercase tracking-wide">👍</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-medium text-slate-500 uppercase tracking-wide">💬</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-medium text-slate-500 uppercase tracking-wide">🔄</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-medium text-slate-500 uppercase tracking-wide">Rate</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Link / Metrics</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archive.map((entry) => (
+                    <tr key={entry.id} className="border-b border-slate-700/30 hover:bg-slate-800/30 transition-colors align-top">
+                      <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
+                        {entry.posted_at
+                          ? new Date(entry.posted_at).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "2-digit",
+                            })
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-slate-200 max-w-[200px]">
+                        <span className="line-clamp-2">{entry.topic}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {entry.pillar && (
+                          <span
+                            className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                              PILLAR_COLORS[entry.pillar] ?? "bg-slate-800 text-slate-300"
+                            }`}
+                          >
+                            {PILLAR_LABELS[entry.pillar] ?? entry.pillar}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {entry.format && (
+                          <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-300">
+                            {FORMAT_LABELS[entry.format] ?? entry.format}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-300 tabular-nums">
+                        {entry.credibility_score != null ? `${entry.credibility_score}/10` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-300 tabular-nums">{entry.likes ?? 0}</td>
+                      <td className="px-3 py-2 text-right text-slate-300 tabular-nums">{entry.comments ?? 0}</td>
+                      <td className="px-3 py-2 text-right text-slate-300 tabular-nums">{entry.shares ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {entry.engagement_rate != null ? (
+                          <span className="text-blue-300">{(entry.engagement_rate * 100).toFixed(1)}%</span>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col gap-1">
+                          {entry.linkedin_post_url && (
+                            <a
+                              href={entry.linkedin_post_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              View
+                            </a>
+                          )}
+                          <EngagementForm entry={entry} onSaved={handleEngagementSaved} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Generator Panel ──────────────────────────────────────────────────────────
 
 interface GeneratorPanelProps {
@@ -1145,7 +1500,7 @@ export default function ContentPage() {
     }
   };
 
-  const handleMarkPosted = async (id: string) => {
+  const handleMarkPosted = async (id: string, linkedinUrl?: string) => {
     try {
       await markContentPosted(id);
       setDrafts((prev) =>
@@ -1154,6 +1509,13 @@ export default function ContentPage() {
       setBatchDrafts((prev) =>
         prev.map((d) => (d.id === id ? { ...d, approval_status: "approved" } : d))
       );
+      // Archive the post — fire-and-forget, non-blocking
+      archiveContent(id, {
+        linkedin_post_url: linkedinUrl || undefined,
+        posted_at: new Date().toISOString(),
+      }).catch(() => {
+        // Silently degrade if archive table doesn't exist yet
+      });
     } catch (e) {
       setError(`Failed to mark as posted: ${(e as Error).message}`);
     }
@@ -1192,6 +1554,7 @@ export default function ContentPage() {
   const handleAutoMarkPosted = async (id: string) => {
     try {
       await markContentPosted(id);
+      archiveContent(id, { posted_at: new Date().toISOString() }).catch(() => {});
     } catch (e) {
       setError(`Failed to mark as posted: ${(e as Error).message}`);
     }
@@ -1572,6 +1935,9 @@ export default function ContentPage() {
           </p>
         </div>
       )}
+
+      {/* ── Content Archive ── */}
+      <ArchiveSection />
     </div>
   );
 }

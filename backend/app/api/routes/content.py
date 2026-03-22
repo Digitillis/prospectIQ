@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.app.agents.content import CONTENT_CALENDAR, ContentAgent
@@ -571,3 +572,299 @@ async def mark_content_posted(draft_id: str):
         raise HTTPException(status_code=404, detail="Draft not found")
 
     return {"message": "Marked as posted", "data": _parse_draft(updated)}
+
+
+# ---------------------------------------------------------------------------
+# Content Archive
+# ---------------------------------------------------------------------------
+
+class ArchiveRequest(BaseModel):
+    linkedin_post_url: Optional[str] = None
+    posted_at: Optional[str] = None  # ISO date/datetime, defaults to now
+
+
+class EngagementUpdate(BaseModel):
+    impressions: Optional[int] = None
+    likes: Optional[int] = None
+    comments: Optional[int] = None
+    shares: Optional[int] = None
+    linkedin_post_url: Optional[str] = None
+
+
+def _topic_hash(topic: str) -> str:
+    """SHA-256 of the lowercased, stripped topic string."""
+    return hashlib.sha256(topic.lower().strip().encode()).hexdigest()
+
+
+@router.get("/archive")
+async def get_content_archive(
+    pillar: Optional[str] = Query(default=None),
+    format: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    """List all archived (posted) content, ordered by posted_at DESC."""
+    db = Database()
+    try:
+        query = (
+            db.client.table("content_archive")
+            .select("*")
+            .order("posted_at", desc=True)
+        )
+        if pillar:
+            query = query.eq("pillar", pillar)
+        if format:
+            query = query.eq("format", format)
+        query = query.range(offset, offset + limit - 1)
+        result = query.execute()
+        return {"data": result.data or []}
+    except Exception as e:
+        logger.error(f"Error fetching content archive: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch archive: {str(e)}")
+
+
+@router.post("/{draft_id}/archive")
+async def archive_content(draft_id: str, req: ArchiveRequest):
+    """Archive a posted draft into content_archive and mark it as approved."""
+    db = Database()
+
+    # Fetch the source draft
+    try:
+        drafts_res = (
+            db.client.table("outreach_drafts")
+            .select("*")
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+    if not drafts_res.data:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    draft_row = drafts_res.data[0]
+
+    # Parse pillar/format from personalization_notes
+    notes = draft_row.get("personalization_notes", "") or ""
+    pillar = ""
+    fmt = ""
+    for part in notes.split("|"):
+        if part.startswith("format:"):
+            fmt = part[len("format:"):]
+        elif part.startswith("pillar:"):
+            pillar = part[len("pillar:"):]
+
+    # Resolve posted_at
+    if req.posted_at:
+        try:
+            posted_dt = datetime.fromisoformat(req.posted_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="posted_at must be ISO format")
+    else:
+        posted_dt = datetime.now(timezone.utc)
+
+    post_text = draft_row.get("body", "") or ""
+    topic = draft_row.get("subject", "") or ""
+
+    # Build archive row
+    archive_row: dict[str, Any] = {
+        "topic": topic,
+        "pillar": pillar or None,
+        "format": fmt or None,
+        "post_text": post_text,
+        "char_count": len(post_text),
+        "posted_at": posted_dt.isoformat(),
+        "linkedin_post_url": req.linkedin_post_url,
+        "draft_id": draft_id,
+        "topic_hash": _topic_hash(topic),
+        "last_posted_topic_at": posted_dt.isoformat(),
+    }
+
+    # Try to pull credibility / intel from notes
+    credibility_score = None
+    publish_ready = None
+    for part in notes.split("|"):
+        if part.startswith("credibility:"):
+            try:
+                credibility_score = int(part[len("credibility:"):].split("/")[0])
+            except (ValueError, IndexError):
+                pass
+        elif part.startswith("publish_ready:"):
+            val = part[len("publish_ready:"):]
+            publish_ready = val.lower() == "true"
+
+    if credibility_score is not None:
+        archive_row["credibility_score"] = credibility_score
+    if publish_ready is not None:
+        archive_row["publish_ready"] = publish_ready
+
+    try:
+        insert_res = db.client.table("content_archive").insert(archive_row).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to archive: {str(e)}")
+
+    if not insert_res.data:
+        raise HTTPException(status_code=500, detail="Archive insert returned no data")
+
+    # Mark the source draft as approved
+    try:
+        db.update_outreach_draft(draft_id, {"approval_status": "approved"})
+    except Exception as e:
+        logger.warning(f"Could not mark draft {draft_id} as approved: {e}")
+
+    return {"data": insert_res.data[0]}
+
+
+@router.patch("/archive/{archive_id}/engagement")
+async def update_engagement(archive_id: str, req: EngagementUpdate):
+    """Update engagement metrics for an archived post and auto-compute engagement_rate."""
+    db = Database()
+
+    # Fetch existing row to merge
+    try:
+        existing_res = (
+            db.client.table("content_archive")
+            .select("impressions, likes, comments, shares")
+            .eq("id", archive_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+    if not existing_res.data:
+        raise HTTPException(status_code=404, detail="Archive entry not found")
+
+    row = existing_res.data[0]
+
+    # Merge with request values
+    impressions = req.impressions if req.impressions is not None else (row.get("impressions") or 0)
+    likes = req.likes if req.likes is not None else (row.get("likes") or 0)
+    comments = req.comments if req.comments is not None else (row.get("comments") or 0)
+    shares = req.shares if req.shares is not None else (row.get("shares") or 0)
+
+    engagement_rate: Optional[float] = None
+    if impressions and impressions > 0:
+        engagement_rate = (likes + comments + shares) / impressions
+
+    update_data: dict[str, Any] = {
+        "impressions": impressions,
+        "likes": likes,
+        "comments": comments,
+        "shares": shares,
+        "engagement_updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if engagement_rate is not None:
+        update_data["engagement_rate"] = engagement_rate
+    if req.linkedin_post_url is not None:
+        update_data["linkedin_post_url"] = req.linkedin_post_url
+
+    try:
+        update_res = (
+            db.client.table("content_archive")
+            .update(update_data)
+            .eq("id", archive_id)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update engagement: {str(e)}")
+
+    data = update_res.data[0] if update_res.data else {"id": archive_id, **update_data}
+    return {"data": data}
+
+
+@router.get("/archive/analytics")
+async def get_archive_analytics():
+    """Return engagement analytics across all archived posts."""
+    db = Database()
+    try:
+        result = db.client.table("content_archive").select("*").execute()
+        rows = result.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch analytics: {str(e)}")
+
+    total_posts = len(rows)
+    credibility_scores = [r["credibility_score"] for r in rows if r.get("credibility_score") is not None]
+    avg_credibility = round(sum(credibility_scores) / len(credibility_scores), 1) if credibility_scores else 0.0
+
+    # Aggregate by pillar
+    by_pillar: dict[str, dict[str, Any]] = {}
+    by_format: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        rate = row.get("engagement_rate")
+        pillar = row.get("pillar") or "unknown"
+        fmt = row.get("format") or "unknown"
+
+        if rate is not None:
+            for key, bucket in [(pillar, by_pillar), (fmt, by_format)]:
+                if key not in bucket:
+                    bucket[key] = {"sum": 0.0, "count": 0}
+                bucket[key]["sum"] += rate
+                bucket[key]["count"] += 1
+
+    by_pillar_out = {
+        k: {"avg_rate": round(v["sum"] / v["count"], 4), "count": v["count"]}
+        for k, v in by_pillar.items()
+    }
+    by_format_out = {
+        k: {"avg_rate": round(v["sum"] / v["count"], 4), "count": v["count"]}
+        for k, v in by_format.items()
+    }
+
+    # Top 5 by engagement_rate
+    sorted_rows = sorted(
+        [r for r in rows if r.get("engagement_rate") is not None],
+        key=lambda r: r["engagement_rate"],
+        reverse=True,
+    )
+    top_posts = sorted_rows[:5]
+
+    return {
+        "data": {
+            "by_pillar": by_pillar_out,
+            "by_format": by_format_out,
+            "top_posts": top_posts,
+            "total_posts": total_posts,
+            "avg_credibility": avg_credibility,
+        }
+    }
+
+
+@router.get("/archive/dedup-check")
+async def check_dedup(topic: str = Query(..., description="Topic to check for duplicate posts")):
+    """Check whether a topic was recently posted (within 60 days)."""
+    db = Database()
+    th = _topic_hash(topic)
+
+    try:
+        result = (
+            db.client.table("content_archive")
+            .select("id, posted_at, topic")
+            .eq("topic_hash", th)
+            .order("posted_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+    if not result.data:
+        return {"data": {"duplicate": False, "last_posted": None, "days_since": None}}
+
+    row = result.data[0]
+    last_posted = row["posted_at"]
+    try:
+        posted_dt = datetime.fromisoformat(last_posted.replace("Z", "+00:00"))
+        days_since = (datetime.now(timezone.utc) - posted_dt).days
+    except Exception:
+        days_since = None
+
+    return {
+        "data": {
+            "duplicate": True,
+            "last_posted": last_posted,
+            "days_since": days_since,
+        }
+    }

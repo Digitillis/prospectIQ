@@ -726,6 +726,88 @@ export const autoGenerateCalendar = (data: {
     body: JSON.stringify(data),
   });
 
+// Content Archive
+export interface ContentArchiveEntry {
+  id: string;
+  topic: string;
+  pillar?: string | null;
+  format?: string | null;
+  post_text: string;
+  char_count?: number | null;
+  credibility_score?: number | null;
+  publish_ready?: boolean | null;
+  intel_report?: string | null;
+  posted_at?: string | null;
+  linkedin_post_url?: string | null;
+  impressions?: number | null;
+  likes?: number | null;
+  comments?: number | null;
+  shares?: number | null;
+  engagement_rate?: number | null;
+  engagement_updated_at?: string | null;
+  draft_id?: string | null;
+  calendar_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContentAnalytics {
+  total_posts: number;
+  avg_credibility: number;
+  total_impressions: number;
+  total_likes: number;
+  total_comments: number;
+  total_shares: number;
+  avg_engagement_rate: number;
+  by_pillar: Record<string, { count: number; avg_rate: number }>;
+  by_format: Record<string, { count: number; avg_rate: number }>;
+}
+
+export const getContentArchive = (params?: { limit?: number; offset?: number; pillar?: string }) => {
+  const qs = params
+    ? "?" + new URLSearchParams(
+        Object.fromEntries(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        )
+      ).toString()
+    : "";
+  return fetchAPI<{ data: ContentArchiveEntry[]; count: number }>(`/api/content/archive${qs}`);
+};
+
+export const archiveContent = (
+  draftId: string,
+  data: { linkedin_post_url?: string; posted_at?: string }
+) =>
+  fetchAPI<{ data: ContentArchiveEntry }>(`/api/content/${draftId}/archive`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const updateEngagement = (
+  archiveId: string,
+  data: {
+    impressions?: number;
+    likes?: number;
+    comments?: number;
+    shares?: number;
+    linkedin_post_url?: string;
+  }
+) =>
+  fetchAPI<{ data: ContentArchiveEntry }>(`/api/content/archive/${archiveId}/engagement`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+
+export const getContentAnalytics = () =>
+  fetchAPI<{ data: ContentAnalytics }>("/api/content/archive/analytics");
+
+export const checkContentDedup = (topic: string) =>
+  fetchAPI<{ duplicate: boolean; days_since?: number; last_posted?: string }>(
+    `/api/content/archive/dedup-check?topic=${encodeURIComponent(topic)}`
+  );
+
 // LinkedIn task queue
 export const getLinkedInTasks = () =>
   fetchAPI<{ data: LinkedInTask[]; count: number }>("/api/actions/linkedin-tasks");

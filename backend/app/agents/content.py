@@ -329,6 +329,33 @@ class ContentAgent(BaseAgent):
             job_pillar = job["pillar"]
             job_format = job["format"]
 
+            # Dedup check — skip if this topic was posted in the last 60 days
+            import hashlib
+            topic_hash = hashlib.sha256(job_topic.lower().strip().encode()).hexdigest()
+            try:
+                existing = self.db.client.table("content_archive").select(
+                    "id, posted_at, topic"
+                ).eq("topic_hash", topic_hash).order(
+                    "posted_at", desc=True
+                ).limit(1).execute().data
+
+                if existing:
+                    from datetime import datetime, timezone, timedelta
+                    posted_at = datetime.fromisoformat(
+                        existing[0]["posted_at"].replace("Z", "+00:00")
+                    )
+                    days_since = (datetime.now(timezone.utc) - posted_at).days
+                    if days_since < 60:
+                        console.print(
+                            f"  [yellow]Skipping '{job_topic[:50]}' — posted {days_since}d ago. "
+                            f"Re-post allowed after 60 days.[/yellow]"
+                        )
+                        result.skipped += 1
+                        result.add_detail(job_topic, "dedup_skipped", f"Posted {days_since}d ago")
+                        continue
+            except Exception:
+                pass  # If archive table doesn't exist yet, skip dedup
+
             try:
                 user_prompt = _build_user_prompt(
                     topic=job_topic,
