@@ -157,8 +157,10 @@ async def get_today_data():
         connect_contacts = (
             db.client.table("contacts")
             .select(
-                "id, full_name, title, linkedin_url, linkedin_status, company_id, "
-                "companies(id, name, tier, pqs_total, status, domain)"
+                "id, full_name, title, linkedin_url, linkedin_status, company_id, seniority, city, state, "
+                "companies(id, name, tier, pqs_total, status, domain, industry, employee_count, "
+                "revenue_printed, headcount_growth_6m, is_public, parent_company_name, "
+                "pain_signals, personalization_hooks, research_summary)"
             )
             .not_.is_("linkedin_url", "null")
             .in_("linkedin_status", ["not_sent", "null"])
@@ -210,8 +212,8 @@ async def get_today_data():
                     "contact": {
                         "title": contact.get("title"),
                         "seniority": contact.get("seniority"),
-                        "city": contact.get("city"),
-                        "state": contact.get("state"),
+                        "city": contact.get("city") or company.get("city"),
+                        "state": contact.get("state") or company.get("state"),
                     },
                 }
                 if drafts and drafts[0].get("personalization_notes"):
@@ -219,7 +221,7 @@ async def get_today_data():
                 # Fetch research
                 try:
                     research_rows = (
-                        db.client.table("research")
+                        db.client.table("research_intelligence")
                         .select("*")
                         .eq("company_id", contact["company_id"])
                         .order("created_at", desc=True)
@@ -228,13 +230,26 @@ async def get_today_data():
                         .data
                     ) or []
                     if research_rows:
-                        ri = research_rows[0].get("research_intelligence") or {}
+                        row = research_rows[0]
+                        # claude_analysis is a JSONB column with structured research
+                        ca = row.get("claude_analysis") or {}
+                        if isinstance(ca, str):
+                            try:
+                                import json as _json
+                                ca = _json.loads(ca)
+                            except Exception:
+                                ca = {}
                         intel_data["research"] = {
-                            "products_services": ri.get("products_services", []),
-                            "recent_news": ri.get("recent_news", []),
-                            "pain_points": ri.get("pain_points", []) or research_rows[0].get("pain_points", []),
-                            "known_systems": ri.get("known_systems", []) or research_rows[0].get("known_systems", []),
-                            "confidence": research_rows[0].get("confidence_level"),
+                            "company_description": ca.get("company_description") or row.get("company_description") or "",
+                            "manufacturing_type": ca.get("manufacturing_type") or row.get("manufacturing_type") or "",
+                            "equipment_types": ca.get("equipment_types") or row.get("equipment_types") or [],
+                            "maintenance_approach": ca.get("maintenance_approach") or row.get("maintenance_approach") or "",
+                            "iot_maturity": ca.get("iot_maturity") or row.get("iot_maturity") or "",
+                            "pain_points": ca.get("pain_points") or row.get("pain_points") or [],
+                            "opportunities": ca.get("opportunities") or row.get("opportunities") or [],
+                            "known_systems": ca.get("known_systems") or row.get("known_systems") or [],
+                            "existing_solutions": ca.get("existing_solutions") or row.get("existing_solutions") or [],
+                            "confidence": row.get("confidence_level"),
                         }
                 except Exception:
                     pass
@@ -266,8 +281,10 @@ async def get_today_data():
         accepted_contacts = (
             db.client.table("contacts")
             .select(
-                "id, full_name, title, linkedin_url, linkedin_status, company_id, "
-                "companies(id, name, tier, pqs_total, status, domain)"
+                "id, full_name, title, linkedin_url, linkedin_status, company_id, seniority, city, state, "
+                "companies(id, name, tier, pqs_total, status, domain, industry, employee_count, "
+                "revenue_printed, headcount_growth_6m, is_public, parent_company_name, "
+                "pain_signals, personalization_hooks, research_summary)"
             )
             .eq("linkedin_status", "accepted")
             .limit(15)
@@ -323,7 +340,7 @@ async def get_today_data():
                 dm_intel_data["personalization_notes"] = drafts[0]["personalization_notes"]
             try:
                 dm_research_rows = (
-                    db.client.table("research")
+                    db.client.table("research_intelligence")
                     .select("*")
                     .eq("company_id", contact["company_id"])
                     .order("created_at", desc=True)

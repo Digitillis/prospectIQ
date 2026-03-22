@@ -199,20 +199,25 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             </div>
           )}
 
-          {/* COMPANY RESEARCH */}
-          {(intel.research?.products_services?.length ||
-            intel.research?.recent_news?.length ||
-            intel.research?.pain_points?.length ||
-            (intel.company?.pain_signals?.length ?? 0) > 0 ||
-            intel.research?.known_systems?.length) ? (
+          {/* KEY FINDINGS — structured research data */}
+          {(intel.research || intel.company?.pain_signals?.length || intel.company?.personalization_hooks?.length) ? (
             <div>
               <div className="font-semibold text-gray-700 mb-1">KEY FINDINGS</div>
               <div className="space-y-1.5 text-gray-600">
-                {(intel.research?.products_services?.length ?? 0) > 0 && (
-                  <div><span className="font-medium text-gray-700">Products/Services:</span> {intel.research!.products_services!.join(", ")}</div>
+                {intel.research?.company_description && (
+                  <div><span className="font-medium text-gray-700">Description:</span> {intel.research.company_description}</div>
                 )}
-                {(intel.research?.recent_news?.length ?? 0) > 0 && (
-                  <div><span className="font-medium text-gray-700">Recent News:</span>{intel.research!.recent_news!.map((n: string, i: number) => <span key={i} className="block ml-3">• {n}</span>)}</div>
+                {intel.research?.manufacturing_type && (
+                  <div><span className="font-medium text-gray-700">Manufacturing Type:</span> {intel.research.manufacturing_type}</div>
+                )}
+                {(intel.research?.equipment_types?.length ?? 0) > 0 && (
+                  <div><span className="font-medium text-gray-700">Equipment:</span> {intel.research!.equipment_types!.join(", ")}</div>
+                )}
+                {intel.research?.maintenance_approach && (
+                  <div><span className="font-medium text-gray-700">Maintenance Approach:</span> {intel.research.maintenance_approach}</div>
+                )}
+                {intel.research?.iot_maturity && (
+                  <div><span className="font-medium text-gray-700">IoT/Digital Maturity:</span> {intel.research.iot_maturity}</div>
                 )}
                 {((intel.research?.pain_points?.length ?? 0) > 0 ||
                   (intel.company?.pain_signals?.length ?? 0) > 0) && (
@@ -222,11 +227,20 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
                       []
                     ).map((p: string, i: number) => <span key={i} className="block ml-3">• {p}</span>)}</div>
                 )}
+                {(intel.research?.opportunities?.length ?? 0) > 0 && (
+                  <div><span className="font-medium text-gray-700">Opportunities:</span>{intel.research!.opportunities!.map((o: string, i: number) => <span key={i} className="block ml-3">• {o}</span>)}</div>
+                )}
                 {(intel.research?.known_systems?.length ?? 0) > 0 && (
                   <div><span className="font-medium text-gray-700">Known Systems/Tech:</span> {intel.research!.known_systems!.join(", ")}</div>
                 )}
+                {(intel.research?.existing_solutions?.length ?? 0) > 0 && (
+                  <div><span className="font-medium text-gray-700">Existing Solutions:</span> {intel.research!.existing_solutions!.join(", ")}</div>
+                )}
                 {(intel.company?.personalization_hooks?.length ?? 0) > 0 && (
                   <div><span className="font-medium text-gray-700">Outreach Hooks:</span>{(intel.company!.personalization_hooks as string[]).map((h: string, i: number) => <span key={i} className="block ml-3">• {h}</span>)}</div>
+                )}
+                {intel.research?.confidence && (
+                  <div><span className="font-medium text-gray-700">Research Confidence:</span> {intel.research.confidence}</div>
                 )}
               </div>
             </div>
