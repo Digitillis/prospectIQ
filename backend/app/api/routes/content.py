@@ -301,36 +301,37 @@ async def get_content_drafts():
 # ---------------------------------------------------------------------------
 
 # 4-week rotation matrix: [pillar, format] per slot (Mon/Tue/Thu/Fri)
-# Design: never same pillar two days in a row; every pillar 4x/month;
-#         every format 4x/month.
+# Design: Manufacturing-heavy rotation. PdM gets 6/16 posts, Ops Excellence 4,
+#         Food Safety 4, Leadership 2. Never same pillar two days in a row.
+#         Mix of all 4 formats across the month.
 _ROTATION_MATRIX: list[list[tuple[str, str]]] = [
-    # Week 1: Mon, Tue, Thu, Fri
-    [
-        ("food_safety", "data_insight"),
-        ("predictive_maintenance", "framework"),
-        ("ops_excellence", "contrarian"),
-        ("leadership", "data_insight"),
-    ],
-    # Week 2
+    # Week 1: Mon, Tue, Thu, Fri — PdM x2, F&B x1, Ops x1
     [
         ("predictive_maintenance", "data_insight"),
         ("food_safety", "framework"),
-        ("leadership", "contrarian"),
+        ("predictive_maintenance", "contrarian"),
         ("ops_excellence", "data_insight"),
     ],
-    # Week 3
+    # Week 2 — PdM x1, F&B x1, Ops x1, Leadership x1
+    [
+        ("food_safety", "data_insight"),
+        ("predictive_maintenance", "framework"),
+        ("leadership", "data_insight"),
+        ("ops_excellence", "contrarian"),
+    ],
+    # Week 3 — PdM x2, F&B x1, Ops x1
     [
         ("ops_excellence", "framework"),
-        ("leadership", "data_insight"),
-        ("food_safety", "contrarian"),
         ("predictive_maintenance", "data_insight"),
+        ("food_safety", "contrarian"),
+        ("predictive_maintenance", "benchmark"),
     ],
-    # Week 4
+    # Week 4 — PdM x1, F&B x1, Ops x1, Leadership x1
     [
-        ("leadership", "framework"),
+        ("predictive_maintenance", "data_insight"),
         ("ops_excellence", "data_insight"),
-        ("predictive_maintenance", "contrarian"),
         ("food_safety", "benchmark"),
+        ("leadership", "framework"),
     ],
 ]
 

@@ -23,25 +23,25 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 CONTENT_CALENDAR: list[dict[str, Any]] = [
-    # Week 1
-    {"week": 1, "day": "Monday",   "format": "data_insight", "pillar": "food_safety",            "topic": "FDA 483 observation patterns — what actually triggers citations"},
-    {"week": 1, "day": "Tuesday",  "format": "framework",    "pillar": "predictive_maintenance",  "topic": "Maintenance Maturity Matrix — where does your plant fall?"},
+    # Week 1 — PdM x2, F&B x1, Ops x1
+    {"week": 1, "day": "Monday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "The real cost of one unplanned stop (calculation template)"},
+    {"week": 1, "day": "Tuesday",  "format": "framework",    "pillar": "food_safety",            "topic": "Food Safety Automation Maturity Model (4 levels)"},
     {"week": 1, "day": "Thursday", "format": "contrarian",   "pillar": "predictive_maintenance",  "topic": "PdM fails because of work orders, not algorithms"},
-    {"week": 1, "day": "Friday",   "format": "data_insight", "pillar": "food_safety",            "topic": "FSMA compliance costs by sub-sector (meat vs. dairy vs. bakery)"},
-    # Week 2
-    {"week": 2, "day": "Monday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "OEE benchmarks: what 'good' looks like by industry"},
-    {"week": 2, "day": "Tuesday",  "format": "framework",    "pillar": "food_safety",            "topic": "Food Safety Automation Maturity Model (4 levels)"},
-    {"week": 2, "day": "Thursday", "format": "contrarian",   "pillar": "ops_excellence",         "topic": "Industry 4.0 is a vendor narrative, not a strategy"},
-    {"week": 2, "day": "Friday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "The real cost of one unplanned stop (calculation template)"},
-    # Week 3
-    {"week": 3, "day": "Monday",   "format": "framework",    "pillar": "predictive_maintenance",  "topic": "Sensor ROI Framework — which measurements predict failure"},
-    {"week": 3, "day": "Tuesday",  "format": "data_insight", "pillar": "food_safety",            "topic": "Recall costs by category — why prevention beats response"},
+    {"week": 1, "day": "Friday",   "format": "data_insight", "pillar": "ops_excellence",         "topic": "The data infrastructure gap: sensors installed, insights missing"},
+    # Week 2 — F&B x1, PdM x1, Leadership x1, Ops x1
+    {"week": 2, "day": "Monday",   "format": "data_insight", "pillar": "food_safety",            "topic": "FDA 483 observation patterns: what actually triggers citations"},
+    {"week": 2, "day": "Tuesday",  "format": "framework",    "pillar": "predictive_maintenance",  "topic": "Maintenance Maturity Matrix: where does your plant fall?"},
+    {"week": 2, "day": "Thursday", "format": "data_insight", "pillar": "leadership",             "topic": "The retiring expert problem: quantifying tribal knowledge loss"},
+    {"week": 2, "day": "Friday",   "format": "contrarian",   "pillar": "ops_excellence",         "topic": "Industry 4.0 is a vendor narrative, not a strategy"},
+    # Week 3 — PdM x2, F&B x1, Ops x1
+    {"week": 3, "day": "Monday",   "format": "framework",    "pillar": "ops_excellence",         "topic": "Sensor ROI Framework: which measurements actually predict failure"},
+    {"week": 3, "day": "Tuesday",  "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "OEE benchmarks: what good looks like by manufacturing sub-sector"},
     {"week": 3, "day": "Thursday", "format": "contrarian",   "pillar": "food_safety",            "topic": "Your HACCP plan is a compliance artifact, not a safety tool"},
-    {"week": 3, "day": "Friday",   "format": "data_insight", "pillar": "leadership",             "topic": "Digital transformation spend vs. ROI at mid-market manufacturers"},
-    # Week 4
-    {"week": 4, "day": "Monday",   "format": "benchmark",    "pillar": "food_safety",            "topic": "We analyzed 200+ FDA warning letters — here's what we found"},
-    {"week": 4, "day": "Tuesday",  "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "The retiring expert problem — quantifying tribal knowledge loss"},
-    {"week": 4, "day": "Thursday", "format": "contrarian",   "pillar": "ops_excellence",         "topic": "Start with your work order process, not your sensor strategy"},
+    {"week": 3, "day": "Friday",   "format": "benchmark",    "pillar": "predictive_maintenance",  "topic": "We analyzed maintenance spend at 50 mid-market manufacturers"},
+    # Week 4 — PdM x1, F&B x1, Ops x1, Leadership x1
+    {"week": 4, "day": "Monday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "Bearing failure signatures: what vibration data actually tells you"},
+    {"week": 4, "day": "Tuesday",  "format": "data_insight", "pillar": "ops_excellence",         "topic": "Start with your work order process, not your sensor strategy"},
+    {"week": 4, "day": "Thursday", "format": "benchmark",    "pillar": "food_safety",            "topic": "We analyzed 200+ FDA warning letters: here is what we found"},
     {"week": 4, "day": "Friday",   "format": "framework",    "pillar": "leadership",             "topic": "The 90-Day Technology Pilot Evaluation Framework"},
 ]
 
