@@ -480,6 +480,14 @@ export interface LinkedInIntel {
     pain_points?: string[];
     known_systems?: string[];
     confidence?: string;
+    company_description?: string;
+    manufacturing_type?: string;
+    equipment_types?: string[];
+    maintenance_approach?: string;
+    iot_maturity?: string;
+    opportunities?: string[];
+    existing_solutions?: string[];
+    funding_status?: string;
   } | null;
   contact?: {
     title?: string;
@@ -560,6 +568,9 @@ export interface TodayData {
   // AI-recommended next actions
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pending_next_actions?: any[];
+  // Connections sent but not yet accepted/ignored
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pending_acceptances?: any[];
 }
 
 export const getTodayData = () =>

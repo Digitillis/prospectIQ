@@ -403,6 +403,36 @@ async def get_today_data():
     except Exception as e:
         logger.warning(f"Failed to fetch content drafts: {e}")
 
+    # --- Pending acceptances (connections sent, waiting for accept/ignore) ---
+    pending_acceptances: list[dict] = []
+    try:
+        pa_result = (
+            db.client.table("contacts")
+            .select(
+                "id, full_name, title, linkedin_url, company_id, "
+                "companies(name, tier, pqs_total)"
+            )
+            .eq("linkedin_status", "connection_sent")
+            .limit(30)
+            .execute()
+        )
+        for c in (pa_result.data or []):
+            company = c.get("companies") or {}
+            if isinstance(company, list):
+                company = company[0] if company else {}
+            pending_acceptances.append({
+                "contact_id": c["id"],
+                "company_id": c.get("company_id"),
+                "full_name": c.get("full_name"),
+                "title": c.get("title"),
+                "linkedin_url": c.get("linkedin_url"),
+                "company_name": company.get("name"),
+                "company_tier": company.get("tier"),
+                "pqs_total": company.get("pqs_total", 0),
+            })
+    except Exception as e:
+        logger.warning(f"Failed to fetch pending acceptances: {e}")
+
     # --- Pipeline summary ---
     pipeline_summary: dict[str, int] = {}
     pipeline_statuses = [
@@ -634,6 +664,7 @@ async def get_today_data():
             "daily_plan": daily_plan,
             "progress_detail": progress,
             "pending_next_actions": pending_next_actions,
+            "pending_acceptances": pending_acceptances,
         }
     }
 
@@ -914,6 +945,50 @@ async def mark_done(req: MarkDoneRequest):
                     }).eq("id", seq["id"]).execute()
         except Exception as e:
             logger.warning(f"Failed to advance engagement sequence: {e}")
+
+    # Handle connection_accepted — update status + auto-generate DM
+    if req.action_type == "connection_accepted" and req.contact_id:
+        try:
+            db.client.table("contacts").update({
+                "linkedin_status": "connection_accepted",
+                "updated_at": now,
+            }).eq("id", req.contact_id).execute()
+
+            # Log the acceptance as an interaction
+            db.insert_interaction({
+                "company_id": req.company_id,
+                "contact_id": req.contact_id,
+                "type": "linkedin_connection",
+                "channel": "linkedin",
+                "subject": "Connection accepted",
+                "source": "user",
+                "metadata": {"status": "accepted"},
+            })
+
+            # Auto-generate DM for this contact (will appear in 2 days)
+            try:
+                from backend.app.agents.linkedin import LinkedInAgent
+                agent = LinkedInAgent()
+                agent.execute(
+                    company_ids=[req.company_id] if req.company_id else None,
+                    limit=1,
+                    mode="dm_only",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to auto-generate DM on acceptance: {e}")
+
+        except Exception as e:
+            logger.warning(f"Failed to process connection_accepted: {e}")
+
+    # Handle connection_ignored — mark and switch to email channel
+    if req.action_type == "connection_ignored" and req.contact_id:
+        try:
+            db.client.table("contacts").update({
+                "linkedin_status": "connection_ignored",
+                "updated_at": now,
+            }).eq("id", req.contact_id).execute()
+        except Exception as e:
+            logger.warning(f"Failed to process connection_ignored: {e}")
 
     return {
         "data": {"action_type": req.action_type, "marked_done_at": now},

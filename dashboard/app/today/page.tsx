@@ -1783,11 +1783,84 @@ export default function TodayCockpitPage() {
       {/* ------------------------------------------------------------------ */}
       {/* SECTION 3: SEND OPENING DMs                                         */}
       {/* ------------------------------------------------------------------ */}
+      {/* SECTION: MARK ACCEPTANCES                                          */}
+      {/* ------------------------------------------------------------------ */}
+      {(data?.pending_acceptances?.length ?? 0) > 0 && (
+        <SectionWrapper
+          id="mark_acceptances"
+          icon="user-check"
+          title="Mark Acceptances"
+          subtitle="Check LinkedIn — did any of these prospects accept your connection?"
+          count={data?.pending_acceptances?.length ?? 0}
+          accentColor="bg-emerald-100 text-emerald-600"
+          defaultCollapsed={false}
+        >
+          {data!.pending_acceptances!.map((c: any) => (
+            <div
+              key={c.contact_id}
+              className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3 mb-2"
+            >
+              <div className="flex-1 min-w-0">
+                <span className="font-medium text-sm text-gray-900">
+                  {c.full_name}
+                </span>
+                <span className="ml-2 text-xs text-gray-500">
+                  {c.title} · {c.company_name}
+                </span>
+                {c.linkedin_url && (
+                  <a
+                    href={c.linkedin_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-xs text-blue-500 hover:underline"
+                  >
+                    Open LinkedIn
+                  </a>
+                )}
+              </div>
+              <div className="flex gap-2 ml-3 shrink-0">
+                <button
+                  onClick={async () => {
+                    try {
+                      await markDone({
+                        action_type: "connection_accepted",
+                        contact_id: c.contact_id,
+                        company_id: c.company_id,
+                      });
+                      fetchData(true);
+                    } catch {}
+                  }}
+                  className="rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
+                >
+                  Accepted
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await markDone({
+                        action_type: "connection_ignored",
+                        contact_id: c.contact_id,
+                        company_id: c.company_id,
+                      });
+                      fetchData(true);
+                    } catch {}
+                  }}
+                  className="rounded-md bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                >
+                  Ignored
+                </button>
+              </div>
+            </div>
+          ))}
+        </SectionWrapper>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
       <SectionWrapper
         id="linkedin_dm"
         icon="message-circle"
         title="Send Opening DMs"
-        subtitle="Connections who accepted — start conversations"
+        subtitle="Connections who accepted 2+ days ago — start conversations"
         count={dmCount}
         accentColor="bg-indigo-100 text-indigo-600"
         defaultCollapsed={dmCount === 0}

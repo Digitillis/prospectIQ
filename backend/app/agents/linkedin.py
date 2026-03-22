@@ -188,17 +188,21 @@ EXAMPLE of correct style:
 EXAMPLE of wrong style (REJECTED):
 "Kyle, saw Douglas Dynamics' fabrication work for snow and ice control. Curious how you're handling seasonal ramp challenges with welding reliability."
 
-1. CONNECTION NOTE (50 words max)
-   - Reference ONE specific company fact: what they MAKE, who they SERVE, a specific PROCESS, or a recent event.
+1. CONNECTION NOTE (STRICT LIMIT: 200 characters max, including spaces)
+   - LinkedIn enforces a 200-character limit on connection notes. You MUST stay under 200 characters.
+   - Reference ONE specific company fact: what they MAKE or a recent event.
    - No pitch. No product mention. No "Would love to connect."
-   - NO closing CTA. End with a statement or observation. The content IS the close.
-   - Complete sentences only. Explicit "I" subject. "I am" not "I'm".
+   - NO closing CTA. Content IS the close.
+   - Complete sentences. "I am" not "I'm". Keep it tight — every word must earn its place.
 
-2. OPENING DM (80 words max, send after connection is accepted)
-   - Ask a genuine question about their operational process or challenge.
+2. OPENING DM (80 words max, send 2-3 days after connection is accepted)
+   - Jump straight into the question. Do NOT open with "Thanks for connecting"
+     or "Thanks for accepting." They know they accepted. Start with their name
+     and go directly into a genuine question about their operations.
+   - The question should demonstrate domain expertise specific to their sub-sector.
    - Do NOT mention Digitillis or any product.
-   - End with the question itself. The question IS the close. No "Would love to hear your thoughts" after it.
-   - Complete sentences. Can use contractions sparingly here.
+   - End with the question itself. The question IS the close.
+   - Use "I am" not "I'm". Complete sentences with explicit subjects.
 
 3. FOLLOW-UP DM (100 words max, send 5-7 days after opening DM if no reply)
    - You can mention what you are building (1 sentence max).
@@ -209,7 +213,7 @@ EXAMPLE of wrong style (REJECTED):
 
 OUTPUT FORMAT (JSON):
 {{
-    "connection_note": "The connection note text (50 words max)",
+    "connection_note": "MUST be under 200 characters including spaces",
     "opening_dm": "The opening DM text (80 words max)",
     "followup_dm": "The follow-up DM text (100 words max)",
     "personalization_notes": "Which specific research facts you used and why"
@@ -237,6 +241,7 @@ class LinkedInAgent(BaseAgent):
         company_ids: list[str] | None = None,
         limit: int = 20,
         regenerate: bool = False,
+        mode: str = "all",  # "all" = connection+DMs, "dm_only" = only DMs for accepted connections
     ) -> AgentResult:
         """Generate LinkedIn message drafts for qualified contacts.
 
