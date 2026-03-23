@@ -206,7 +206,7 @@ def _build_user_prompt(
 ) -> str:
     """Build the per-generation user prompt."""
     fmt_spec = _FORMAT_SPECS.get(format_type, _FORMAT_SPECS["data_insight"])
-    pillar_ctx = _PILLAR_CONTEXT.get(pillar, _PILLAR_CONTEXT["ops_excellence"])
+    pillar_ctx = _PILLAR_CONTEXT.get(pillar, _PILLAR_CONTEXT["manufacturing_operations"])
 
     # Pull any topic-specific context from guidelines if present
     topic_briefs: dict[str, str] = guidelines.get("topic_briefs", {})
