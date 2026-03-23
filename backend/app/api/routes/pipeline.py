@@ -17,6 +17,7 @@ from backend.app.agents.outreach import OutreachAgent
 from backend.app.agents.engagement import EngagementAgent
 from backend.app.agents.reengagement import ReengagementAgent
 from backend.app.agents.linkedin import LinkedInAgent
+from backend.app.agents.learning import LearningAgent
 from backend.app.orchestrator.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
@@ -79,6 +80,11 @@ class LinkedInRequest(BaseModel):
 class EngagementRequest(BaseModel):
     action: str = "send_approved"  # send_approved | process_due | check_status | poll_events
     campaign_name: Optional[str] = None
+
+
+class LearningRequest(BaseModel):
+    period_days: int = 30
+    auto_apply: bool = False
 
 
 # ------------------------------------------------------------------
@@ -286,6 +292,22 @@ async def poll_instantly():
     """
     agent = EngagementAgent()
     result = agent.execute(action="poll_events")
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/learning")
+async def run_learning(body: LearningRequest):
+    """Analyze outreach engagement outcomes and generate actionable insights.
+
+    Aggregates performance data from the last `period_days` days and uses
+    Claude to surface insights, suggest scoring adjustments, and recommend
+    ICP refinements.
+
+    Set auto_apply=true to write scoring adjustments directly to scoring.yaml.
+    Requires at least 20 outcome records in the analysis window.
+    """
+    agent = LearningAgent()
+    result = agent.execute(period_days=body.period_days, auto_apply=body.auto_apply)
     return {"data": _serialize_result(result)}
 
 

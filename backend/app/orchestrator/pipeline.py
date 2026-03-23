@@ -135,6 +135,15 @@ class Pipeline:
         self.results["outreach"] = result
         return result
 
+    def run_learning(self, **kwargs) -> AgentResult:
+        """Run learning agent to analyze engagement outcomes and refine scoring."""
+        from backend.app.agents.learning import LearningAgent
+
+        agent = LearningAgent(batch_id=f"{self.batch_prefix}_learning")
+        result = agent.execute(**kwargs)
+        self.results["learning"] = result
+        return result
+
     def _print_summary(self):
         """Print a summary table of all pipeline results."""
         console.print("\n")
