@@ -157,11 +157,30 @@ class EnrichmentAgent(BaseAgent):
                     contact = self._select_contact_to_enrich(contacts)
 
                     if not contact:
-                        console.print(
-                            f"  [dim]{company_name}: All contacts already enriched. Skipping.[/dim]"
-                        )
-                        result.skipped += 1
-                        result.add_detail(company_name, "skipped", "All contacts already have email")
+                        # All contacts already have email — count them as ready
+                        contacts_with_email = [c for c in contacts if c.get("email")]
+                        if contacts_with_email:
+                            # Mark contacts as enriched if they have email but status is still "identified"
+                            for c in contacts_with_email:
+                                if c.get("status") != "enriched":
+                                    self.db.update_contact(c["id"], {"status": "enriched"})
+                            best = contacts_with_email[0]
+                            best_name = best.get("full_name") or best.get("first_name") or "Unknown"
+                            console.print(
+                                f"  [green]{company_name}: {len(contacts_with_email)} contact(s) already have email "
+                                f"(best: {best_name} → {best.get('email')}). Ready for outreach.[/green]"
+                            )
+                            result.processed += 1
+                            result.add_detail(
+                                company_name, "ready",
+                                f"{len(contacts_with_email)} contacts with email (best: {best_name})"
+                            )
+                        else:
+                            console.print(
+                                f"  [dim]{company_name}: Contacts exist but none have email. Skipping.[/dim]"
+                            )
+                            result.skipped += 1
+                            result.add_detail(company_name, "skipped", "Contacts exist but no emails found")
                         continue
 
                     contact_name = contact.get("full_name") or contact.get("first_name") or "Unknown"
