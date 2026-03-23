@@ -8,7 +8,7 @@ version: "2.0"
 
 target_market:
   name: "US Mid-Market Manufacturing & Food Production"
-  description: "Mid-market manufacturers and food producers where the VP can sign a $3-5K/mo pilot without procurement"
+  description: "Mid-market manufacturers and food producers (200-2000 employees, $50M-$500M revenue) where a VP can sign a $3-5K/mo pilot without procurement"
 
 # Company-level filters (used for Apollo search)
 company_filters:
@@ -49,16 +49,17 @@ company_filters:
       apollo_industry: "automotive"
 
   revenue:
-    min: 20000000    # $20M — below this they can't afford $3K/mo
-    max: 200000000   # $200M — above this they have procurement teams and 12-month sales cycles
+    min: 50000000    # $50M — below this, limited budget and no LinkedIn/Apollo presence
+    max: 500000000   # $500M — above this, procurement committees and 12-month sales cycles
 
   employee_count:
-    min: 50
-    max: 500
+    min: 200
+    max: 2000
     # Apollo-specific range buckets
     apollo_ranges:
-      - "51,200"
       - "201,500"
+      - "501,1000"
+      - "1001,2000"
 
   geography:
     # All US — F&B is national, not just Midwest
