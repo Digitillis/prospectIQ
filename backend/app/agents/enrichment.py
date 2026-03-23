@@ -15,6 +15,7 @@ import logging
 from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
+from backend.app.agents.discovery import classify_persona
 from backend.app.integrations.apollo import ApolloClient
 
 console = Console()
@@ -88,12 +89,68 @@ class EnrichmentAgent(BaseAgent):
                     contacts = self.db.get_contacts_for_company(company_id)
 
                     if not contacts:
+                        # Auto-discover contacts via Apollo People Search (FREE)
+                        domain = company.get("domain")
                         console.print(
-                            f"  [yellow]{company_name}: No contacts found. Skipping.[/yellow]"
+                            f"  [cyan]{company_name}: No contacts — discovering via Apollo...[/cyan]"
                         )
-                        result.skipped += 1
-                        result.add_detail(company_name, "skipped", "No contacts")
-                        continue
+                        discovered_contacts = []
+                        try:
+                            search_kwargs: dict = {"per_page": 25}
+                            if domain:
+                                search_kwargs["q_organization_keyword_tags"] = [domain]
+                            else:
+                                search_kwargs["q_organization_keyword_tags"] = [company_name]
+                            # Target decision-maker titles
+                            search_kwargs["person_titles"] = [
+                                "VP Operations", "VP Quality", "Director Operations",
+                                "Director Quality", "Plant Manager", "COO",
+                                "Director Food Safety", "VP Manufacturing",
+                                "Director Maintenance", "VP Supply Chain",
+                            ]
+                            search_kwargs["person_seniorities"] = [
+                                "vp", "director", "c_suite", "owner",
+                            ]
+                            resp = apollo.search_people(**search_kwargs)
+                            people = resp.get("people", [])
+                            for person in people[:10]:  # cap at 10 per company
+                                contact_data = ApolloClient.extract_contact_data(person)
+                                if not contact_data.get("apollo_id"):
+                                    continue
+                                # Check not already in DB
+                                existing = self.db.get_contact_by_apollo_id(
+                                    contact_data["apollo_id"]
+                                )
+                                if existing:
+                                    continue
+                                persona_type, is_dm = classify_persona(
+                                    contact_data.get("title")
+                                )
+                                contact_insert = {
+                                    **contact_data,
+                                    "company_id": company_id,
+                                    "persona_type": persona_type,
+                                    "is_decision_maker": is_dm,
+                                }
+                                self.db.insert_contact(contact_insert)
+                                discovered_contacts.append(contact_insert)
+                            console.print(
+                                f"  [green]{company_name}: Discovered {len(discovered_contacts)} contacts[/green]"
+                            )
+                        except Exception as disc_err:
+                            logger.warning(
+                                f"Auto-discovery failed for {company_name}: {disc_err}"
+                            )
+
+                        # Re-fetch contacts after discovery
+                        contacts = self.db.get_contacts_for_company(company_id)
+                        if not contacts:
+                            console.print(
+                                f"  [yellow]{company_name}: Still no contacts after discovery. Skipping.[/yellow]"
+                            )
+                            result.skipped += 1
+                            result.add_detail(company_name, "skipped", "No contacts even after discovery")
+                            continue
 
                     # Note: has_email from People Search is unreliable — search often
                     # reports has_email=false but enrichment/match finds the email.
