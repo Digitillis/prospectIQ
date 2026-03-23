@@ -83,6 +83,8 @@ class ApolloClient:
         revenue_range: dict | None = None,
         organization_industry_tag_ids: list[str] | None = None,
         q_organization_keyword_tags: list[str] | None = None,
+        organization_domains: list[str] | None = None,
+        q_organization_name: str | None = None,
         page: int = 1,
         per_page: int = 100,
     ) -> dict:
@@ -116,6 +118,10 @@ class ApolloClient:
             payload["organization_industry_tag_ids"] = organization_industry_tag_ids
         if q_organization_keyword_tags:
             payload["q_organization_keyword_tags"] = q_organization_keyword_tags
+        if organization_domains:
+            payload["organization_domains"] = organization_domains
+        if q_organization_name:
+            payload["q_organization_name"] = q_organization_name
 
         return self._post("/mixed_people/api_search", payload)
 

@@ -92,8 +92,12 @@ async def get_linkedin_messages(
     """
     db = get_db()
 
-    # Fetch all LinkedIn drafts (channel=linkedin, approved)
-    drafts_query = (
+    from collections import defaultdict
+
+    # ── Two sources: contacts with drafts + contacts with linkedin activity ──
+
+    # Source 1: LinkedIn drafts (channel=linkedin, approved)
+    all_drafts = (
         db.client.table("outreach_drafts")
         .select(
             "id, company_id, contact_id, sequence_name, sequence_step, body, "
@@ -102,30 +106,48 @@ async def get_linkedin_messages(
         .eq("channel", "linkedin")
         .eq("approval_status", "approved")
         .order("created_at", desc=True)
-        .limit(limit * 5)  # over-fetch then de-dup by contact
-    )
-    all_drafts = drafts_query.execute().data
-
-    if not all_drafts:
-        return {"data": [], "count": 0}
-
-    # Group drafts by (company_id, contact_id)
-    from collections import defaultdict
+        .limit(limit * 5)
+    ).execute().data
 
     draft_map: dict[tuple, list[dict]] = defaultdict(list)
     for draft in all_drafts:
         key = (draft["company_id"], draft["contact_id"])
         draft_map[key].append(draft)
 
-    # Unique company/contact id pairs (respect limit)
+    # Source 2: Contacts with linkedin_status != 'not_sent' (manually reached out)
+    active_contacts_query = (
+        db.client.table("contacts")
+        .select(
+            "id, company_id, full_name, first_name, last_name, title, persona_type, "
+            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
+            "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
+            "linkedin_responded_at, linkedin_meeting_booked_at"
+        )
+        .neq("linkedin_status", "not_sent")
+        .order("created_at", desc=True)
+        .limit(limit * 3)
+    )
+    active_contacts = active_contacts_query.execute().data
+
+    # Merge: collect all unique (company_id, contact_id) pairs
     seen_contacts: set[str] = set()
     pairs: list[tuple[str, str]] = []
+    contact_prefetch: dict[str, dict] = {}
+
+    # From drafts
     for (company_id, contact_id), _ in draft_map.items():
         if contact_id not in seen_contacts:
             seen_contacts.add(contact_id)
             pairs.append((company_id, contact_id))
-        if len(pairs) >= limit:
-            break
+
+    # From active linkedin contacts (no draft required)
+    for c in active_contacts:
+        cid = c["id"]
+        comp_id = c.get("company_id")
+        if cid not in seen_contacts and comp_id:
+            seen_contacts.add(cid)
+            pairs.append((comp_id, cid))
+            contact_prefetch[cid] = c
 
     if not pairs:
         return {"data": [], "count": 0}
@@ -162,22 +184,25 @@ async def get_linkedin_messages(
     except Exception:
         pass
 
-    # Bulk fetch contacts
-    contact_ids = [cid for _, cid in pairs]
-    contacts_result = (
-        db.client.table("contacts")
-        .select(
-            "id, company_id, full_name, first_name, last_name, title, persona_type, "
-            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
-            "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
-            "linkedin_responded_at, linkedin_meeting_booked_at"
+    # Bulk fetch contacts not already prefetched
+    missing_contact_ids = [cid for _, cid in pairs if cid not in contact_prefetch]
+    contact_by_id = dict(contact_prefetch)
+    if missing_contact_ids:
+        contacts_result = (
+            db.client.table("contacts")
+            .select(
+                "id, company_id, full_name, first_name, last_name, title, persona_type, "
+                "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
+                "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
+                "linkedin_responded_at, linkedin_meeting_booked_at"
+            )
+            .in_("id", missing_contact_ids)
+            .execute()
         )
-        .in_("id", contact_ids)
-        .execute()
-    )
-    contact_by_id = {c["id"]: c for c in contacts_result.data}
+        for c in contacts_result.data:
+            contact_by_id[c["id"]] = c
 
-    # Apply filters
+    # Apply filters and build results
     results = []
     for company_id, contact_id in pairs:
         company = company_by_id.get(company_id, {})
@@ -201,11 +226,11 @@ async def get_linkedin_messages(
                 "personalization_notes": d.get("personalization_notes", ""),
                 "created_at": d["created_at"],
             }
-            for d in draft_map[(company_id, contact_id)]
+            for d in draft_map.get((company_id, contact_id), [])
         }
 
         # Derive personalization_notes from first available draft
-        first_draft = next(iter(draft_map[(company_id, contact_id)]), {})
+        first_draft = next(iter(draft_map.get((company_id, contact_id), [])), {})
         personalization_notes = first_draft.get("personalization_notes", "") or ""
 
         # Build intel block
@@ -247,6 +272,9 @@ async def get_linkedin_messages(
             "drafts": drafts_for_contact,
             "intel": intel,
         })
+
+        if len(results) >= limit:
+            break
 
     return {"data": results, "count": len(results)}
 

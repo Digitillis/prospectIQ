@@ -98,18 +98,15 @@ class EnrichmentAgent(BaseAgent):
                         try:
                             search_kwargs: dict = {"per_page": 25}
                             if domain:
-                                search_kwargs["q_organization_keyword_tags"] = [domain]
+                                # Use organization_domains for exact company match
+                                search_kwargs["organization_domains"] = [domain]
                             else:
-                                search_kwargs["q_organization_keyword_tags"] = [company_name]
-                            # Target decision-maker titles
-                            search_kwargs["person_titles"] = [
-                                "VP Operations", "VP Quality", "Director Operations",
-                                "Director Quality", "Plant Manager", "COO",
-                                "Director Food Safety", "VP Manufacturing",
-                                "Director Maintenance", "VP Supply Chain",
-                            ]
+                                # Fallback: search by company name
+                                search_kwargs["q_organization_name"] = company_name
+                            # Broad seniority filter only — don't filter by title
+                            # (small companies may have few people in Apollo)
                             search_kwargs["person_seniorities"] = [
-                                "vp", "director", "c_suite", "owner",
+                                "vp", "director", "c_suite", "owner", "manager",
                             ]
                             resp = apollo.search_people(**search_kwargs)
                             people = resp.get("people", [])
