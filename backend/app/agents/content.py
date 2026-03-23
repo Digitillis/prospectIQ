@@ -705,6 +705,8 @@ FLAGS: None"""
                         f"|credibility:{credibility_score}/10"
                         f"|publish_ready:{publish_ready}"
                     )
+                    # Store the full intel report so it survives page reload
+                    updated_notes += f"|intel_report::{intel_text}"
                     if quality_report:
                         updated_notes += f"|quality_report::{_json.dumps(quality_report, separators=(',', ':'))}"
 

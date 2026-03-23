@@ -77,14 +77,35 @@ def _parse_quality_report(notes: str) -> Optional[dict]:
     return None
 
 
+def _parse_intel_report(notes: str) -> Optional[str]:
+    """Extract the raw intel report text from personalization_notes."""
+    import re
+    # intel_report:: comes before quality_report:: (if present)
+    match = re.search(r"intel_report::(.+?)(?:\|quality_report::|$)", notes, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
 def _parse_draft(row: dict) -> dict:
     """Convert an outreach_drafts DB row to a ContentDraft-shaped dict."""
     notes = row.get("personalization_notes", "") or ""
+
+    # Extract intel report and quality report FIRST (they contain pipes/newlines)
+    # then strip them from notes before pipe-splitting the simple key:value fields
+    quality_report = _parse_quality_report(notes)
+    intel_report = _parse_intel_report(notes)
+
+    # Strip intel_report:: and quality_report:: sections for clean pipe-split
+    import re
+    clean_notes = re.sub(r"\|intel_report::.*?(?=\|quality_report::|$)", "", notes, flags=re.DOTALL)
+    clean_notes = re.sub(r"\|quality_report::.*", "", clean_notes, flags=re.DOTALL)
+
     pillar = ""
     fmt = ""
     credibility_score = None
     publish_ready = None
-    for part in notes.split("|"):
+    for part in clean_notes.split("|"):
         if part.startswith("format:"):
             fmt = part[len("format:"):]
         elif part.startswith("pillar:"):
@@ -99,7 +120,17 @@ def _parse_draft(row: dict) -> dict:
             publish_ready = val.lower() == "true"
 
     body = row.get("body", "") or ""
-    quality_report = _parse_quality_report(notes)
+
+    intel = None
+    if intel_report or credibility_score is not None:
+        intel = {
+            "report": intel_report,
+            "credibility_score": credibility_score,
+            "publish_ready": publish_ready,
+            "verification_rounds": 3 if intel_report else None,
+            "error": None,
+        }
+
     return {
         "id": row.get("id", ""),
         "topic": row.get("subject", ""),
@@ -112,6 +143,7 @@ def _parse_draft(row: dict) -> dict:
         "credibility_score": credibility_score,
         "publish_ready": publish_ready,
         "quality_report": quality_report,
+        "intel": intel,
     }
 
 
