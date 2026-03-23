@@ -279,7 +279,71 @@ class Database:
         )
         return result.data
 
+    
     # ------------------------------------------------------------------
+    # Action Queue
+    # ------------------------------------------------------------------
+
+    def get_action_queue(self, scheduled_date=None, action_type=None, status="pending", limit=100):
+        query = self.client.table("action_queue").select(
+            "*, companies(id, name, domain, tier, pqs_total, status, industry), "
+            "contacts(id, full_name, title, linkedin_url, linkedin_status, email)"
+        )
+        if scheduled_date:
+            query = query.eq("scheduled_date", scheduled_date)
+        if action_type:
+            query = query.eq("action_type", action_type)
+        query = query.eq("status", status).order("priority").order("pqs_at_queue_time", desc=True)
+        return query.limit(limit).execute().data
+
+    def insert_action_queue_item(self, data):
+        result = self.client.table("action_queue").insert(data).execute()
+        return result.data[0] if result.data else {}
+
+    def insert_action_queue_batch(self, items):
+        if not items: return []
+        return self.client.table("action_queue").insert(items).execute().data
+
+    def update_action_queue_item(self, item_id, data):
+        result = self.client.table("action_queue").update(data).eq("id", item_id).execute()
+        return result.data[0] if result.data else {}
+
+    def count_action_queue(self, scheduled_date, action_type=None, status=None):
+        query = self.client.table("action_queue").select("id", count="exact").eq("scheduled_date", scheduled_date)
+        if action_type: query = query.eq("action_type", action_type)
+        if status: query = query.eq("status", status)
+        return query.execute().count or 0
+
+    def get_queued_contact_ids(self, scheduled_date):
+        result = self.client.table("action_queue").select("contact_id").eq("scheduled_date", scheduled_date).in_("status", ["pending", "in_progress"]).execute()
+        return {r["contact_id"] for r in result.data if r.get("contact_id")}
+
+    def insert_action_request(self, data):
+        result = self.client.table("action_requests").insert(data).execute()
+        return result.data[0] if result.data else {}
+
+    def update_action_request(self, request_id, data):
+        result = self.client.table("action_requests").update(data).eq("id", request_id).execute()
+        return result.data[0] if result.data else {}
+
+    def get_action_requests(self, limit=50):
+        return self.client.table("action_requests").select("*").order("created_at", desc=True).limit(limit).execute().data
+
+    def get_daily_targets(self, effective_date=None):
+        if effective_date:
+            ov = self.client.table("daily_targets").select("*").eq("effective_date", effective_date).eq("is_active", True).execute().data
+            if ov:
+                ot = {r["action_type"] for r in ov}
+                df = self.client.table("daily_targets").select("*").is_("effective_date", "null").eq("is_active", True).execute().data
+                return ov + [d for d in df if d["action_type"] not in ot]
+        return self.client.table("daily_targets").select("*").is_("effective_date", "null").eq("is_active", True).execute().data
+
+    def upsert_daily_target(self, action_type, target_count, effective_date=None):
+        data = {"action_type": action_type, "target_count": target_count, "effective_date": effective_date, "is_active": True}
+        result = self.client.table("daily_targets").upsert(data, on_conflict="action_type,effective_date,day_of_week").execute()
+        return result.data[0] if result.data else {}
+
+# ------------------------------------------------------------------
     # Analytics helpers
     # ------------------------------------------------------------------
 

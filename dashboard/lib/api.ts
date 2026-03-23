@@ -1133,3 +1133,71 @@ export const getPendingActions = (contactId?: string) =>
   fetchAPI<{ data: ContactEvent[]; count: number }>(
     `/api/contacts/events/pending-actions${contactId ? `?contact_id=${contactId}` : ""}`
   );
+
+// Action Queue types
+export interface ActionQueueItem { id:string; action_type:string; company_id?:string; contact_id?:string; source:string; priority:number; pqs_at_queue_time?:number; status:string; scheduled_date:string; context:Record<string,unknown>; companies?:{id:string;name:string;tier?:string;pqs_total:number;industry?:string}; contacts?:{id:string;full_name?:string;title?:string;linkedin_url?:string;email?:string}; }
+export interface ActionRequestResult { request_id:string; action_type:string; requested:number; fulfilled:number; from_existing:number; from_apollo:number; queue_preview:{company:string;contact:string;pqs:number}[]; }
+export interface DailyTarget { id:string; action_type:string; target_count:number; effective_date?:string; is_active:boolean; }
+export interface QueueSummary { date:string; total_done:number; total_target:number; breakdown:Record<string,{done:number;pending:number;target:number}>; }
+
+// Action Queue API
+export const requestActions = (d: {
+  action_type: string;
+  count: number;
+  filters?: Record<string, unknown>;
+  source_preference?: string;
+}) =>
+  fetchAPI<{ data: ActionRequestResult; message: string }>(
+    "/api/action-queue/request",
+    { method: "POST", body: JSON.stringify(d) }
+  );
+
+export const getActionQueue = (params?: Record<string, string>) => {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return fetchAPI<{ data: ActionQueueItem[]; count: number }>(
+    "/api/action-queue" + qs
+  );
+};
+
+export const completeQueueAction = (
+  id: string,
+  d: { action_type: string; contact_id?: string; company_id?: string }
+) =>
+  fetchAPI<{ data: { item_id: string; status: string }; message: string }>(
+    `/api/action-queue/${id}/complete`,
+    { method: "POST", body: JSON.stringify(d) }
+  );
+
+export const skipQueueAction = (id: string, reason?: string) =>
+  fetchAPI<{ data: { item_id: string; status: string }; message: string }>(
+    `/api/action-queue/${id}/skip`,
+    { method: "POST", body: JSON.stringify({ reason }) }
+  );
+
+export const getDailyTargets = (date?: string) =>
+  fetchAPI<{ data: DailyTarget[]; summary: Record<string, number> }>(
+    "/api/action-queue/targets" + (date ? "?date=" + date : "")
+  );
+
+export const updateDailyTargetsBatch = (d: {
+  targets: { action_type: string; target_count: number }[];
+  effective_date?: string;
+}) =>
+  fetchAPI<{ data: DailyTarget[]; message: string }>(
+    "/api/action-queue/targets/batch",
+    { method: "PUT", body: JSON.stringify(d) }
+  );
+
+export const autoFillQueue = (scheduledDate?: string) =>
+  fetchAPI<{
+    data: { scheduled_date: string; total_added: number; by_type: Record<string, number> };
+    message: string;
+  }>("/api/action-queue/auto-fill", {
+    method: "POST",
+    body: JSON.stringify({ scheduled_date: scheduledDate }),
+  });
+
+export const getQueueSummary = (date?: string) =>
+  fetchAPI<{ data: QueueSummary }>(
+    "/api/action-queue/summary" + (date ? "?date=" + date : "")
+  );

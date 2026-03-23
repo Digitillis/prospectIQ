@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, contacts, today, content, events
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +132,7 @@ app.include_router(analytics.router)
 app.include_router(webhooks.router)
 app.include_router(settings.router)
 app.include_router(actions.router)
+app.include_router(action_queue.router)
 app.include_router(contacts.router)
 app.include_router(today.router)
 app.include_router(content.router)
