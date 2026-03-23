@@ -69,6 +69,10 @@ import {
   type LinkedInIntel,
   type ContentItem,
   type ProgressDetail,
+  type ActionQueueItem,
+  getActionQueue,
+  completeQueueAction,
+  skipQueueAction,
 } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 import AddActionsModal from "@/components/today/AddActionsModal";
@@ -487,6 +491,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   "clipboard-check": ClipboardCheck,
   "trending-up": TrendingUp,
   brain: Brain,
+  list: ArrowRight,
 };
 
 function SectionWrapper({
@@ -1486,6 +1491,52 @@ export default function TodayCockpitPage() {
   const [showAddActions, setShowAddActions] = useState(false);
   const [showEditTargets, setShowEditTargets] = useState(false);
 
+  // Action queue
+  const [queueItems, setQueueItems] = useState<ActionQueueItem[]>([]);
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [completingQueue, setCompletingQueue] = useState<Set<string>>(new Set());
+
+  const fetchQueue = useCallback(async () => {
+    try {
+      setQueueLoading(true);
+      const res = await getActionQueue({ status: "pending", scheduled_date: new Date().toISOString().split("T")[0] });
+      setQueueItems(res.data ?? []);
+    } catch {
+      // silent — queue is supplementary
+    } finally {
+      setQueueLoading(false);
+    }
+  }, []);
+
+  const handleQueueComplete = useCallback(async (item: ActionQueueItem) => {
+    setCompletingQueue((s) => new Set(s).add(item.id));
+    try {
+      await completeQueueAction(item.id, {
+        action_type: item.action_type,
+        contact_id: item.contact_id ?? undefined,
+        company_id: item.company_id ?? undefined,
+      });
+      setQueueItems((prev) => prev.filter((q) => q.id !== item.id));
+      setLocalExtraDone((n) => n + 1);
+    } catch {
+      // ignore
+    } finally {
+      setCompletingQueue((s) => { const n = new Set(s); n.delete(item.id); return n; });
+    }
+  }, []);
+
+  const handleQueueSkip = useCallback(async (item: ActionQueueItem) => {
+    setCompletingQueue((s) => new Set(s).add(item.id));
+    try {
+      await skipQueueAction(item.id, "Skipped from Today page");
+      setQueueItems((prev) => prev.filter((q) => q.id !== item.id));
+    } catch {
+      // ignore
+    } finally {
+      setCompletingQueue((s) => { const n = new Set(s); n.delete(item.id); return n; });
+    }
+  }, []);
+
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
@@ -1503,7 +1554,8 @@ export default function TodayCockpitPage() {
   // Initial load
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchQueue();
+  }, [fetchData, fetchQueue]);
 
   // Auto-refresh every 30 seconds (silent, no spinner)
   useEffect(() => {
@@ -1686,6 +1738,119 @@ export default function TodayCockpitPage() {
           Edit Targets
         </button>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* ACTION QUEUE — queued outreach items for today                      */}
+      {/* ------------------------------------------------------------------ */}
+      {queueItems.length > 0 && (
+        <SectionWrapper
+          id="action_queue"
+          icon="list"
+          title="Action Queue"
+          subtitle={`${queueItems.length} queued action${queueItems.length !== 1 ? "s" : ""} for today`}
+          count={queueItems.length}
+          defaultCollapsed={false}
+        >
+          <div className="space-y-1">
+            {queueItems.map((item) => {
+              const company = item.companies;
+              const contact = item.contacts;
+              const isProcessing = completingQueue.has(item.id);
+              const typeLabel: Record<string, string> = {
+                connection: "Connect",
+                dm: "Send DM",
+                email: "Email",
+                outcome: "Log Outcome",
+                post: "Post",
+              };
+              const typeColor: Record<string, string> = {
+                connection: "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800",
+                dm: "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800",
+                email: "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
+                outcome: "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800",
+                post: "bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-700",
+              };
+
+              return (
+                <div
+                  key={item.id}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5 transition-opacity",
+                    isProcessing && "opacity-50"
+                  )}
+                >
+                  {/* Type badge */}
+                  <span className={cn("shrink-0 rounded border px-2 py-0.5 text-xs font-medium", typeColor[item.action_type] ?? typeColor.post)}>
+                    {typeLabel[item.action_type] ?? item.action_type}
+                  </span>
+
+                  {/* Contact/Company info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      {contact?.full_name && (
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                          {contact.full_name}
+                        </span>
+                      )}
+                      {contact?.title && (
+                        <span className="text-xs text-gray-500 dark:text-gray-500 truncate hidden sm:inline">
+                          {contact.title}
+                        </span>
+                      )}
+                    </div>
+                    {company?.name && (
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-500">
+                        <Building2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{company.name}</span>
+                        {item.pqs_at_queue_time != null && (
+                          <span className={cn("ml-1 font-medium", getPQSColor(item.pqs_at_queue_time))}>
+                            PQS {item.pqs_at_queue_time}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* LinkedIn link */}
+                  {contact?.linkedin_url && (
+                    <a
+                      href={contact.linkedin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      title="Open LinkedIn"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+
+                  {/* Actions */}
+                  <button
+                    onClick={() => handleQueueSkip(item)}
+                    disabled={isProcessing}
+                    className="shrink-0 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-500 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors disabled:opacity-40"
+                    title="Skip"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleQueueComplete(item)}
+                    disabled={isProcessing}
+                    className="shrink-0 rounded-md bg-gray-900 dark:bg-gray-100 px-2.5 py-1 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-40"
+                    title="Mark done"
+                  >
+                    {isProcessing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </SectionWrapper>
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* SECTION 1: RESPOND NOW                                              */}
@@ -2037,7 +2202,7 @@ export default function TodayCockpitPage() {
       <AddActionsModal
         isOpen={showAddActions}
         onClose={() => setShowAddActions(false)}
-        onSuccess={() => fetchData(true)}
+        onSuccess={() => { fetchData(true); fetchQueue(); }}
       />
       <EditTargetsModal
         isOpen={showEditTargets}
