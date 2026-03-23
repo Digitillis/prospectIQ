@@ -109,25 +109,25 @@ function InteractionIcon({ type }: { type: string }) {
   const cls = "h-4 w-4";
   switch (type) {
     case "email_sent":
-      return <Mail className={cn(cls, "text-blue-500")} />;
+      return <Mail className={cn(cls, "text-gray-400")} />;
     case "email_opened":
-      return <MailOpen className={cn(cls, "text-indigo-500")} />;
+      return <MailOpen className={cn(cls, "text-gray-400")} />;
     case "email_clicked":
-      return <MailCheck className={cn(cls, "text-green-500")} />;
+      return <MailCheck className={cn(cls, "text-gray-400")} />;
     case "email_replied":
-      return <Reply className={cn(cls, "text-purple-500")} />;
+      return <Reply className={cn(cls, "text-gray-400")} />;
     case "email_bounced":
-      return <AlertTriangle className={cn(cls, "text-red-500")} />;
+      return <AlertTriangle className={cn(cls, "text-gray-400")} />;
     case "linkedin_connection":
-      return <Linkedin className={cn(cls, "text-blue-600")} />;
+      return <Linkedin className={cn(cls, "text-gray-400")} />;
     case "linkedin_message":
-      return <Linkedin className={cn(cls, "text-blue-500")} />;
+      return <Linkedin className={cn(cls, "text-gray-400")} />;
     case "phone_call":
-      return <Phone className={cn(cls, "text-green-600")} />;
+      return <Phone className={cn(cls, "text-gray-400")} />;
     case "meeting":
-      return <Calendar className={cn(cls, "text-pink-500")} />;
+      return <Calendar className={cn(cls, "text-gray-400")} />;
     case "note":
-      return <StickyNote className={cn(cls, "text-yellow-600")} />;
+      return <StickyNote className={cn(cls, "text-gray-400")} />;
     case "status_change":
       return <RefreshCw className={cn(cls, "text-gray-500")} />;
     default:
@@ -151,10 +151,10 @@ function PQSBreakdownBar({
   engagement: number;
 }) {
   const segments = [
-    { label: "F", value: firmographic, color: "bg-blue-500" },
-    { label: "T", value: technographic, color: "bg-green-500" },
-    { label: "Ti", value: timing, color: "bg-amber-500" },
-    { label: "E", value: engagement, color: "bg-purple-500" },
+    { label: "F", value: firmographic, color: "bg-gray-500" },
+    { label: "T", value: technographic, color: "bg-gray-600" },
+    { label: "Ti", value: timing, color: "bg-gray-700" },
+    { label: "E", value: engagement, color: "bg-gray-900" },
   ];
 
   return (
@@ -204,8 +204,8 @@ function ActionButton({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50",
         variant === "danger"
-          ? "border-red-200 text-red-600 hover:bg-red-50"
-          : "border-gray-300 text-gray-700 hover:bg-gray-50"
+          ? "border-gray-200 text-gray-700 hover:bg-gray-50"
+          : "border-gray-200 text-gray-700 hover:bg-gray-50"
       )}
     >
       {loading ? (
@@ -554,7 +554,7 @@ export default function ProspectDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         <span className="ml-2 text-sm text-gray-500">Loading prospect...</span>
       </div>
     );
@@ -563,11 +563,11 @@ export default function ProspectDetailPage() {
   if (error || !company) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-32">
-        <AlertCircle className="h-8 w-8 text-red-400" />
-        <p className="text-sm text-red-600">{error ?? "Company not found"}</p>
+        <AlertCircle className="h-8 w-8 text-gray-400" />
+        <p className="text-sm text-gray-700">{error ?? "Company not found"}</p>
         <button
           onClick={() => router.push("/prospects")}
-          className="text-sm text-indigo-600 hover:underline"
+          className="text-sm text-gray-500 hover:text-gray-900 hover:underline"
         >
           Back to Prospects
         </button>
@@ -600,17 +600,12 @@ export default function ProspectDetailPage() {
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             )}
-            <h2 className="text-2xl font-bold text-gray-900">{company.name}</h2>
-            <span
-              className={cn(
-                "rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-                STATUS_COLORS[company.status] ?? "bg-gray-100 text-gray-600"
-              )}
-            >
+            <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">{company.name}</h2>
+            <span className="rounded px-2 py-0.5 text-[10px] font-medium capitalize bg-gray-100 text-gray-600">
               {company.status.replace(/_/g, " ")}
             </span>
             {company.priority_flag && (
-              <Flag className="h-4 w-4 fill-orange-400 text-orange-400" />
+              <Flag className="h-4 w-4 fill-gray-600 text-gray-600" />
             )}
           </div>
 
@@ -629,7 +624,7 @@ export default function ProspectDetailPage() {
                 href={`https://${company.domain}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-indigo-600 hover:underline"
+                className="text-gray-500 hover:text-gray-900 hover:underline"
               >
                 {company.domain}
               </a>
@@ -640,7 +635,7 @@ export default function ProspectDetailPage() {
           <div className="max-w-md space-y-1">
             <div className="flex items-baseline gap-2">
               <span className="text-sm font-medium text-gray-700">PQS Score:</span>
-              <span className={cn("text-2xl font-bold", getPQSColor(company.pqs_total))}>
+              <span className="text-2xl font-semibold text-gray-900">
                 {company.pqs_total}
               </span>
               <span className="text-sm text-gray-400">/100</span>
@@ -659,13 +654,13 @@ export default function ProspectDetailPage() {
             {(company.custom_tags ?? []).map((tag: string) => (
               <span
                 key={tag}
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700"
+                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600"
               >
                 {tag}
                 <button
                   onClick={() => removeTag(tag)}
                   disabled={tagSaving}
-                  className="hover:text-red-500 disabled:opacity-50"
+                  className="hover:text-gray-900 disabled:opacity-50"
                   aria-label={`Remove tag ${tag}`}
                 >
                   <X className="h-3 w-3" />
@@ -683,7 +678,7 @@ export default function ProspectDetailPage() {
                 }}
                 disabled={tagSaving}
                 placeholder="Tag name..."
-                className="rounded-full border border-indigo-300 bg-white px-2.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400 w-24 disabled:opacity-50"
+                className="rounded-full border border-gray-300 bg-white px-2.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-200 w-24 disabled:opacity-50"
               />
             ) : (
               <button
@@ -735,15 +730,15 @@ export default function ProspectDetailPage() {
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-50",
               company.priority_flag
-                ? "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100"
-                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                ? "border-gray-200 bg-gray-100 text-gray-900 hover:bg-gray-200"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
             )}
           >
             <Flag
               className={cn(
                 "h-4 w-4",
                 company.priority_flag
-                  ? "fill-orange-400 text-orange-400"
+                  ? "fill-gray-600 text-gray-600"
                   : "text-gray-400"
               )}
             />
@@ -765,8 +760,8 @@ export default function ProspectDetailPage() {
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors",
               showReminderForm
-                ? "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100"
-                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                ? "border-gray-200 bg-gray-100 text-gray-900 hover:bg-gray-200"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
             )}
           >
             <Bell className="h-4 w-4 text-gray-400" />
@@ -775,11 +770,11 @@ export default function ProspectDetailPage() {
 
           {/* Inline reminder form */}
           {showReminderForm && (
-            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-2">
-              <p className="text-xs font-semibold text-orange-700">New Reminder</p>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-700">New Reminder</p>
               <div className="flex items-center gap-2">
                 <select
-                  className="rounded border border-orange-200 bg-white px-2 py-1 text-sm text-gray-700 focus:outline-none"
+                  className="rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:outline-none"
                   value={reminderDays}
                   onChange={(e) => setReminderDays(Number(e.target.value))}
                 >
@@ -792,7 +787,7 @@ export default function ProspectDetailPage() {
               </div>
               <input
                 placeholder="Reminder note..."
-                className="w-full rounded border border-orange-200 bg-white px-2 py-1 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none"
+                className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none"
                 value={reminderNote}
                 onChange={(e) => setReminderNote(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleSetReminder(); }}
@@ -801,13 +796,13 @@ export default function ProspectDetailPage() {
                 <button
                   onClick={handleSetReminder}
                   disabled={!reminderNote.trim()}
-                  className="rounded-md bg-orange-600 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-50"
+                  className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                 >
                   Set
                 </button>
                 <button
                   onClick={() => { setShowReminderForm(false); setReminderNote(""); }}
-                  className="rounded-md border border-orange-200 px-3 py-1 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                  className="rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -815,14 +810,14 @@ export default function ProspectDetailPage() {
             </div>
           )}
           {reminderSuccess && (
-            <p className="text-xs text-green-600">{reminderSuccess}</p>
+            <p className="text-xs text-gray-500">{reminderSuccess}</p>
           )}
 
           {/* Enrich Contacts */}
           <button
             onClick={handleEnrich}
             disabled={enrichLoading}
-            className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             title="Find emails for contacts via Apollo.io (consumes credits)"
           >
             {enrichLoading ? (
@@ -846,7 +841,7 @@ export default function ProspectDetailPage() {
                 <button
                   onClick={() => handleOutcome("won")}
                   disabled={outcomeLoading !== null}
-                  className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                 >
                   {outcomeLoading === "won" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -870,7 +865,7 @@ export default function ProspectDetailPage() {
                 <button
                   onClick={() => handleOutcome("no_response")}
                   disabled={outcomeLoading !== null}
-                  className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   {outcomeLoading === "no_response" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -896,7 +891,7 @@ export default function ProspectDetailPage() {
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
               placeholder="Write a note about this prospect..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
             />
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -908,7 +903,7 @@ export default function ProspectDetailPage() {
               <button
                 onClick={handleAddNote}
                 disabled={saving || !noteText.trim()}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save Note"}
               </button>
@@ -973,9 +968,7 @@ export default function ProspectDetailPage() {
           <div
             className={cn(
               "mt-2 rounded-lg border px-4 py-2 text-sm",
-              actionResult.type === "success"
-                ? "border-green-200 bg-green-50 text-green-700"
-                : "border-red-200 bg-red-50 text-red-700"
+              "border-gray-200 bg-gray-50 text-gray-700"
             )}
           >
             {actionResult.message}
@@ -987,17 +980,17 @@ export default function ProspectDetailPage() {
       {/* Outcome Tracking — Feature 20                                   */}
       {/* ================================================================ */}
       {["contacted", "engaged", "meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot"].includes(company.status) && (
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <section className="rounded-lg border border-gray-200 bg-white p-5">
           <div className="flex items-center gap-2 mb-4">
-            <Target className="h-5 w-5 text-indigo-500" />
-            <h3 className="text-lg font-semibold text-gray-900">Record Outcome</h3>
+            <Target className="h-4 w-4 text-gray-400" />
+            <h3 className="text-xs font-medium uppercase tracking-widest text-gray-400">Record Outcome</h3>
           </div>
           <p className="text-sm text-gray-500 mb-4">
             Close the loop — record what happened with this prospect to improve future scoring.
           </p>
 
           {outcomeSuccess && (
-            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+            <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
               {outcomeSuccess}
             </div>
           )}
@@ -1005,23 +998,23 @@ export default function ProspectDetailPage() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => handleOutcome("won")}
-              className="inline-flex items-center gap-2 rounded-lg border-2 border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
             >
               <Trophy className="h-5 w-5" />
               <div className="text-left">
                 <p className="font-semibold">Won</p>
-                <p className="text-xs text-green-600">Converted to customer</p>
+                <p className="text-xs text-gray-500">Converted to customer</p>
               </div>
             </button>
 
             <button
               onClick={() => handleOutcome("lost")}
-              className="inline-flex items-center gap-2 rounded-lg border-2 border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
             >
               <XCircle className="h-5 w-5" />
               <div className="text-left">
                 <p className="font-semibold">Lost</p>
-                <p className="text-xs text-red-600">Chose competitor or declined</p>
+                <p className="text-xs text-gray-500">Chose competitor or declined</p>
               </div>
             </button>
 
@@ -1050,13 +1043,13 @@ export default function ProspectDetailPage() {
                 onChange={(e) => setOutcomeNotes(e.target.value)}
                 placeholder="Optional notes — why did we win/lose? What did we learn?"
                 rows={3}
-                className="w-full rounded-md border border-gray-300 p-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-md border border-gray-200 p-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
               />
               <div className="mt-3 flex gap-2">
                 <button
                   onClick={submitOutcome}
                   disabled={outcomeSubmitLoading}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"
                 >
                   {outcomeSubmitLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -1067,7 +1060,7 @@ export default function ProspectDetailPage() {
                 </button>
                 <button
                   onClick={() => { setOutcomeModal(null); setOutcomeNotes(""); }}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  className="rounded-md border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
@@ -1087,7 +1080,7 @@ export default function ProspectDetailPage() {
               className={cn(
                 "whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium transition-colors",
                 activeTab === tab
-                  ? "border-indigo-500 text-indigo-600"
+                  ? "border-gray-900 text-gray-900"
                   : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
               )}
             >
@@ -1108,16 +1101,16 @@ export default function ProspectDetailPage() {
       {/* ================================================================ */}
       {/* Company Brief Generator — Feature 11                             */}
       {/* ================================================================ */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-gray-200 bg-white p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-indigo-500" />
-            <h3 className="text-lg font-semibold text-gray-900">Sales Brief</h3>
+            <FileText className="h-4 w-4 text-gray-400" />
+            <h3 className="text-xs font-medium uppercase tracking-widest text-gray-400">Sales Brief</h3>
           </div>
           <button
             onClick={generateBrief}
             disabled={briefLoading}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"
           >
             {briefLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1136,7 +1129,7 @@ export default function ProspectDetailPage() {
 
         {briefLoading && (
           <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
-            <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+            <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
             Compiling brief from prospect data…
           </div>
         )}
@@ -1183,10 +1176,10 @@ export default function ProspectDetailPage() {
       {/* Deal Value — Feature 28                                          */}
       {/* ================================================================ */}
       {["qualified","outreach_pending","contacted","engaged","meeting_scheduled","pilot_discussion","pilot_signed","active_pilot","converted"].includes(company.status) && (
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <section className="rounded-lg border border-gray-200 bg-white p-5">
           <div className="flex items-center gap-2 mb-4">
-            <DollarSign className="h-5 w-5 text-green-600" />
-            <h3 className="text-lg font-semibold">Deal Value</h3>
+            <DollarSign className="h-4 w-4 text-gray-400" />
+            <h3 className="text-xs font-medium uppercase tracking-widest text-gray-400">Deal Value</h3>
           </div>
           <p className="text-sm text-gray-500 mb-4">
             Assign an estimated annual contract value to track pipeline value across your funnel.
@@ -1200,13 +1193,13 @@ export default function ProspectDetailPage() {
                 onChange={(e) => setDealValue(e.target.value)}
                 placeholder="50000"
                 min="0"
-                className="w-40 rounded-lg border border-gray-300 pl-7 pr-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                className="w-40 rounded-md border border-gray-200 pl-7 pr-3 py-2 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
               />
             </div>
             <button
               onClick={saveDealValue}
               disabled={dealValueSaving}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"
             >
               {dealValueSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <DollarSign className="h-4 w-4" />}
               {dealValueSaving ? "Saving…" : "Save"}
@@ -1218,7 +1211,7 @@ export default function ProspectDetailPage() {
             )}
           </div>
           {dealValueSuccess && (
-            <p className="mt-2 text-sm text-green-600">{dealValueSuccess}</p>
+            <p className="mt-2 text-sm text-gray-500">{dealValueSuccess}</p>
           )}
         </section>
       )}
@@ -1227,11 +1220,11 @@ export default function ProspectDetailPage() {
       {/* Meeting Prep — Feature 13 (only shown when meeting is scheduled)  */}
       {/* ================================================================ */}
       {company.status === "meeting_scheduled" && (
-        <section className="rounded-xl border border-purple-200 bg-purple-50 p-6">
+        <section className="rounded-lg border border-gray-200 bg-white p-5">
           <div className="mb-4 flex items-center gap-2">
-            <CalendarCheck className="h-5 w-5 text-purple-600" />
-            <h3 className="text-lg font-semibold text-gray-900">Meeting Prep</h3>
-            <span className="ml-auto rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+            <CalendarCheck className="h-4 w-4 text-gray-400" />
+            <h3 className="text-xs font-medium uppercase tracking-widest text-gray-400">Meeting Prep</h3>
+            <span className="ml-auto rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium text-gray-600">
               Meeting Scheduled
             </span>
           </div>
@@ -1245,13 +1238,13 @@ export default function ProspectDetailPage() {
                 <ul className="mt-2 space-y-1.5 text-sm text-gray-600">
                   {company.pain_signals?.map((p, i) => (
                     <li key={`pain-${i}`} className="flex items-start gap-2">
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
                       <span>Address: {p}</span>
                     </li>
                   ))}
                   {company.personalization_hooks?.map((h, i) => (
                     <li key={`hook-${i}`} className="flex items-start gap-2">
-                      <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-400" />
+                      <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
                       <span>Reference: {h}</span>
                     </li>
                   ))}
@@ -1267,7 +1260,7 @@ export default function ProspectDetailPage() {
                   {company.technology_stack.map((t) => (
                     <span
                       key={t}
-                      className="rounded-md bg-white px-2.5 py-0.5 text-xs font-medium text-gray-700 border border-purple-100 shadow-sm"
+                      className="rounded-md bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 border border-gray-200"
                     >
                       {t}
                     </span>
@@ -1285,8 +1278,8 @@ export default function ProspectDetailPage() {
                     .filter((c) => c.is_decision_maker)
                     .map((c) => (
                       <li key={c.id} className="flex items-center gap-2 text-sm text-gray-700">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100">
-                          <User className="h-3.5 w-3.5 text-purple-600" />
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100">
+                          <User className="h-3.5 w-3.5 text-gray-500" />
                         </div>
                         <span>
                           <span className="font-medium">{c.full_name || "Unknown"}</span>
@@ -1296,7 +1289,7 @@ export default function ProspectDetailPage() {
                           {c.email && (
                             <a
                               href={`mailto:${c.email}`}
-                              className="ml-2 text-xs text-indigo-600 hover:underline"
+                              className="ml-2 text-xs text-gray-500 hover:text-gray-900 hover:underline"
                             >
                               {c.email}
                             </a>
@@ -1313,11 +1306,11 @@ export default function ProspectDetailPage() {
             </div>
 
             {/* PQS recap */}
-            <div className="rounded-lg border border-purple-100 bg-white px-4 py-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Prospect Score</p>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Prospect Score</p>
               <p className="mt-1 text-sm text-gray-700">
                 PQS{" "}
-                <span className="font-bold text-indigo-600">{company.pqs_total}/100</span>
+                <span className="font-bold text-gray-900">{company.pqs_total}/100</span>
                 <span className="ml-2 text-gray-400">
                   · F {company.pqs_firmographic} · T {company.pqs_technographic} · Ti {company.pqs_timing} · E {company.pqs_engagement}
                 </span>
@@ -1406,9 +1399,9 @@ function InsightsBox({ company }: { company: CompanyDetail }) {
   ];
 
   return (
-    <div className="rounded-xl border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 p-5 lg:col-span-2">
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-5 lg:col-span-2">
       <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900">
-        <Sparkles className="h-4 w-4 text-indigo-500" />
+        <Sparkles className="h-4 w-4 text-gray-400" />
         AI Prospect Assessment
       </h3>
 
@@ -1418,23 +1411,14 @@ function InsightsBox({ company }: { company: CompanyDetail }) {
           <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
             Fit Assessment
           </p>
-          <div className={cn("text-xl font-bold", getPQSColor(company.pqs_total))}>
+          <div className="text-xl font-bold text-gray-900">
             {classification}
           </div>
           <p className="text-xs text-gray-500">
             PQS {company.pqs_total}/100
           </p>
           {confidence && (
-            <span
-              className={cn(
-                "inline-block rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-                confidence === "high"
-                  ? "bg-green-100 text-green-700"
-                  : confidence === "medium"
-                  ? "bg-amber-100 text-amber-700"
-                  : "bg-gray-100 text-gray-600"
-              )}
-            >
+            <span className="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium capitalize text-gray-600">
               {confidence} research confidence
             </span>
           )}
@@ -1445,7 +1429,7 @@ function InsightsBox({ company }: { company: CompanyDetail }) {
                 <span className="w-20 shrink-0">{d.label}</span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
                   <div
-                    className="h-full rounded-full bg-indigo-400"
+                    className="h-full rounded-full bg-gray-500"
                     style={{ width: `${(d.value / d.max) * 100}%` }}
                   />
                 </div>
@@ -1466,7 +1450,7 @@ function InsightsBox({ company }: { company: CompanyDetail }) {
             <ul className="space-y-2">
               {keySignals.map((signal, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
                   {signal}
                 </li>
               ))}
@@ -1483,11 +1467,11 @@ function InsightsBox({ company }: { company: CompanyDetail }) {
           <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
             Recommended Next Action
           </p>
-          <p className="text-sm font-medium leading-relaxed text-indigo-800">
+          <p className="text-sm font-medium leading-relaxed text-gray-700">
             {nextAction}
           </p>
           {company.qualification_notes && (
-            <div className="mt-3 rounded-md bg-white/70 px-3 py-2 text-xs text-gray-600 border border-indigo-100">
+            <div className="mt-3 rounded-md bg-white px-3 py-2 text-xs text-gray-600 border border-gray-200">
               <span className="font-medium text-gray-700">Qualification note: </span>
               {company.qualification_notes}
             </div>
@@ -1569,7 +1553,7 @@ function FirmographicsCard({ company }: { company: CompanyDetail }) {
               href={websiteUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 hover:underline"
             >
               <ExternalLink className="h-3 w-3" />
               Website
@@ -1580,7 +1564,7 @@ function FirmographicsCard({ company }: { company: CompanyDetail }) {
               href={company.linkedin_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 hover:underline"
             >
               <Linkedin className="h-3 w-3" />
               LinkedIn
@@ -1694,7 +1678,7 @@ function OverviewTab({ company }: { company: CompanyDetail }) {
             {company.technology_stack.map((tech, i) => (
               <span
                 key={i}
-                className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+                className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600"
               >
                 {tech}
               </span>
@@ -1707,13 +1691,13 @@ function OverviewTab({ company }: { company: CompanyDetail }) {
       {company.pain_signals && company.pain_signals.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-5">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <AlertTriangle className="h-4 w-4 text-gray-400" />
             Pain Signals
           </h3>
           <ul className="space-y-2">
             {company.pain_signals.map((signal, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gray-400" />
                 {signal}
               </li>
             ))}
@@ -1725,16 +1709,16 @@ function OverviewTab({ company }: { company: CompanyDetail }) {
       {company.personalization_hooks && company.personalization_hooks.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-5">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <Sparkles className="h-4 w-4 text-purple-500" />
+            <Sparkles className="h-4 w-4 text-gray-400" />
             Personalization Hooks
           </h3>
           <ul className="space-y-2">
             {company.personalization_hooks.map((hook, i) => (
               <li
                 key={i}
-                className="flex items-start gap-2 rounded-md bg-purple-50 px-3 py-2 text-sm text-purple-800"
+                className="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700"
               >
-                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-400" />
+                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
                 {hook}
               </li>
             ))}
@@ -1817,7 +1801,7 @@ function ContactsTab({
         </p>
         <button
           onClick={() => setAddModalOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+          className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
         >
           <Plus className="h-4 w-4" />
           Add Contact
@@ -1834,12 +1818,12 @@ function ContactsTab({
           {contacts.map((contact) => (
             <div
               key={contact.id}
-              className="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
+              className="rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:bg-gray-50"
             >
               <div className="mb-3 flex items-start justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100">
-                    <User className="h-4 w-4 text-indigo-600" />
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100">
+                    <User className="h-4 w-4 text-gray-500" />
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5">
@@ -1847,7 +1831,7 @@ function ContactsTab({
                         {contact.full_name || "Unknown"}
                       </span>
                       {contact.is_decision_maker && (
-                        <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+                        <Star className="h-3.5 w-3.5 fill-gray-500 text-gray-500" />
                       )}
                     </div>
                     {contact.title && (
@@ -1862,7 +1846,7 @@ function ContactsTab({
 
               {/* Persona badge */}
               {contact.persona_type && (
-                <span className="mb-3 inline-block rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium capitalize text-indigo-700">
+                <span className="mb-3 inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium capitalize text-gray-600">
                   {contact.persona_type.replace(/_/g, " ")}
                 </span>
               )}
@@ -1872,7 +1856,7 @@ function ContactsTab({
                 {contact.email && (
                   <a
                     href={`mailto:${contact.email}`}
-                    className="flex items-center gap-2 text-gray-600 hover:text-indigo-600"
+                    className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
                   >
                     <Mail className="h-3.5 w-3.5 text-gray-400" />
                     <span className="truncate">{contact.email}</span>
@@ -1889,7 +1873,7 @@ function ContactsTab({
                     href={contact.linkedin_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-blue-600 hover:underline"
+                    className="flex items-center gap-2 text-gray-500 hover:text-gray-900 hover:underline"
                   >
                     <Linkedin className="h-3.5 w-3.5" />
                     <span className="truncate text-xs">LinkedIn Profile</span>
@@ -1905,22 +1889,22 @@ function ContactsTab({
       {/* Add Contact Modal */}
       {addModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Add Contact</h3>
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 border border-gray-200">
+            <h3 className="mb-4 text-xs font-medium uppercase tracking-widest text-gray-400">Add Contact</h3>
 
             <div className="space-y-3">
               {/* Name + Title row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Full Name <span className="text-red-400">*</span>
+                    Full Name <span className="text-gray-400">*</span>
                   </label>
                   <input
                     type="text"
                     value={form.full_name}
                     onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
                     placeholder="Jane Smith"
-                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -1930,7 +1914,7 @@ function ContactsTab({
                     value={form.title}
                     onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                     placeholder="VP of Operations"
-                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   />
                 </div>
               </div>
@@ -1944,7 +1928,7 @@ function ContactsTab({
                     value={form.email}
                     onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                     placeholder="jane@company.com"
-                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   />
                 </div>
                 <div>
@@ -1954,7 +1938,7 @@ function ContactsTab({
                     value={form.phone}
                     onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                     placeholder="+1 312 555 0100"
-                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   />
                 </div>
               </div>
@@ -1967,7 +1951,7 @@ function ContactsTab({
                   value={form.linkedin_url}
                   onChange={(e) => setForm((f) => ({ ...f, linkedin_url: e.target.value }))}
                   placeholder="https://linkedin.com/in/janesmith"
-                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                 />
               </div>
 
@@ -1978,7 +1962,7 @@ function ContactsTab({
                   <select
                     value={form.seniority}
                     onChange={(e) => setForm((f) => ({ ...f, seniority: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   >
                     <option value="">Select…</option>
                     {SENIORITY_OPTIONS.map((s) => (
@@ -1991,7 +1975,7 @@ function ContactsTab({
                   <select
                     value={form.persona_type}
                     onChange={(e) => setForm((f) => ({ ...f, persona_type: e.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   >
                     <option value="">Select…</option>
                     {PERSONA_OPTIONS.map((p) => (
@@ -2007,10 +1991,10 @@ function ContactsTab({
                   type="checkbox"
                   checked={form.is_decision_maker}
                   onChange={(e) => setForm((f) => ({ ...f, is_decision_maker: e.target.checked }))}
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-200"
                 />
                 Mark as Decision Maker
-                <Star className="h-3.5 w-3.5 text-yellow-400" />
+                <Star className="h-3.5 w-3.5 text-gray-400" />
               </label>
             </div>
 
@@ -2024,7 +2008,7 @@ function ContactsTab({
               <button
                 onClick={handleAdd}
                 disabled={saving || (!form.full_name.trim() && !form.email.trim())}
-                className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-gray-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
               >
                 {saving ? "Saving…" : "Add Contact"}
               </button>
@@ -2154,25 +2138,25 @@ function OutreachTab({ company }: { company: CompanyDetail }) {
             Sequence Status
           </h3>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-md bg-blue-50 px-4 py-3 text-center">
-              <Send className="mx-auto mb-1 h-4 w-4 text-blue-500" />
-              <p className="text-lg font-bold text-blue-700">{sentCount}</p>
-              <p className="text-xs text-blue-500">Sent</p>
+            <div className="rounded-md bg-gray-50 border border-gray-200 px-4 py-3 text-center">
+              <Send className="mx-auto mb-1 h-4 w-4 text-gray-400" />
+              <p className="text-lg font-bold text-gray-900">{sentCount}</p>
+              <p className="text-xs text-gray-500">Sent</p>
             </div>
-            <div className="rounded-md bg-indigo-50 px-4 py-3 text-center">
-              <MailOpen className="mx-auto mb-1 h-4 w-4 text-indigo-500" />
-              <p className="text-lg font-bold text-indigo-700">{openCount}</p>
-              <p className="text-xs text-indigo-500">Opened</p>
+            <div className="rounded-md bg-gray-50 border border-gray-200 px-4 py-3 text-center">
+              <MailOpen className="mx-auto mb-1 h-4 w-4 text-gray-400" />
+              <p className="text-lg font-bold text-gray-900">{openCount}</p>
+              <p className="text-xs text-gray-500">Opened</p>
             </div>
-            <div className="rounded-md bg-green-50 px-4 py-3 text-center">
-              <Reply className="mx-auto mb-1 h-4 w-4 text-green-500" />
-              <p className="text-lg font-bold text-green-700">{replyCount}</p>
-              <p className="text-xs text-green-500">Replied</p>
+            <div className="rounded-md bg-gray-50 border border-gray-200 px-4 py-3 text-center">
+              <Reply className="mx-auto mb-1 h-4 w-4 text-gray-400" />
+              <p className="text-lg font-bold text-gray-900">{replyCount}</p>
+              <p className="text-xs text-gray-500">Replied</p>
             </div>
-            <div className="rounded-md bg-red-50 px-4 py-3 text-center">
-              <AlertTriangle className="mx-auto mb-1 h-4 w-4 text-red-500" />
-              <p className="text-lg font-bold text-red-700">{bounceCount}</p>
-              <p className="text-xs text-red-500">Bounced</p>
+            <div className="rounded-md bg-gray-50 border border-gray-200 px-4 py-3 text-center">
+              <AlertTriangle className="mx-auto mb-1 h-4 w-4 text-gray-400" />
+              <p className="text-lg font-bold text-gray-900">{bounceCount}</p>
+              <p className="text-xs text-gray-500">Bounced</p>
             </div>
           </div>
         </div>
@@ -2195,28 +2179,28 @@ function OutreachTab({ company }: { company: CompanyDetail }) {
                 switch (ix.type) {
                   case "email_sent":
                     return (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
                         <CheckCircle2 className="h-3 w-3" />
                         Sent
                       </span>
                     );
                   case "email_opened":
                     return (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
                         <MailOpen className="h-3 w-3" />
                         Opened
                       </span>
                     );
                   case "email_replied":
                     return (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
                         <Reply className="h-3 w-3" />
                         Replied
                       </span>
                     );
                   case "email_bounced":
                     return (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
                         <XCircle className="h-3 w-3" />
                         Bounced
                       </span>
@@ -2260,7 +2244,7 @@ function OutreachTab({ company }: { company: CompanyDetail }) {
       <div className="rounded-lg border border-gray-200 bg-white p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <Bell className="h-4 w-4 text-orange-500" />
+            <Bell className="h-4 w-4 text-gray-400" />
             Reminders
           </h3>
           {companyReminders.length === 0 && (
@@ -2278,7 +2262,7 @@ function OutreachTab({ company }: { company: CompanyDetail }) {
                   className={cn(
                     "flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5",
                     isDue
-                      ? "border-orange-200 bg-orange-50"
+                      ? "border-gray-300 bg-gray-100"
                       : "border-gray-200 bg-gray-50"
                   )}
                 >
@@ -2287,7 +2271,7 @@ function OutreachTab({ company }: { company: CompanyDetail }) {
                     <p
                       className={cn(
                         "mt-0.5 text-xs",
-                        isDue ? "font-semibold text-orange-600" : "text-gray-400"
+                        isDue ? "font-semibold text-gray-700" : "text-gray-400"
                       )}
                     >
                       {isDue ? "Due: " : ""}

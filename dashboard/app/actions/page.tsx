@@ -139,7 +139,7 @@ function TierPills({
           className={cn(
             "rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors",
             selected.includes(tier)
-              ? "border-digitillis-accent bg-blue-50 text-digitillis-accent"
+              ? "border-gray-900 bg-gray-100 text-gray-900"
               : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
           )}
         >
@@ -186,7 +186,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
           max={500}
           value={f.limit as number}
           onChange={(e) => onChange("limit", parseInt(e.target.value) || 1)}
-          className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-digitillis-accent focus:outline-none"
+          className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-300 focus:outline-none"
         />
       </div>
 
@@ -201,7 +201,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
               max={10}
               value={f.max_pages as number}
               onChange={(e) => onChange("max_pages", parseInt(e.target.value) || 1)}
-              className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-digitillis-accent focus:outline-none"
+              className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-300 focus:outline-none"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -211,7 +211,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
               value={f.campaign as string}
               onChange={(e) => onChange("campaign", e.target.value)}
               placeholder="e.g. q1_foodbev"
-              className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 placeholder-gray-400 focus:border-digitillis-accent focus:outline-none"
+              className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 placeholder-gray-400 focus:border-gray-300 focus:outline-none"
             />
           </div>
         </>
@@ -228,7 +228,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
               max={100}
               value={f.min_score as number}
               onChange={(e) => onChange("min_score", parseInt(e.target.value) || 0)}
-              className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-digitillis-accent focus:outline-none"
+              className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-300 focus:outline-none"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -236,7 +236,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
             <select
               value={f.status as string}
               onChange={(e) => onChange("status", e.target.value)}
-              className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-digitillis-accent focus:outline-none"
+              className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-300 focus:outline-none"
             >
               <option value="">Any</option>
               <option value="discovered">discovered</option>
@@ -255,7 +255,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
               type="checkbox"
               checked={f.include_phone as boolean}
               onChange={(e) => onChange("include_phone", e.target.checked)}
-              className="rounded border-gray-300 text-digitillis-accent focus:ring-digitillis-accent"
+              className="rounded border-gray-300 text-gray-900 focus:ring-gray-300"
             />
             <span>Include phone numbers (async via webhook)</span>
           </label>
@@ -272,7 +272,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
             max={365}
             value={f.cooldown_days as number}
             onChange={(e) => onChange("cooldown_days", parseInt(e.target.value) || 90)}
-            className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-digitillis-accent focus:outline-none"
+            className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-300 focus:outline-none"
           />
           <span className="text-gray-400">days</span>
         </div>
@@ -288,7 +288,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
               value={f.sequence_name as string}
               onChange={(e) => onChange("sequence_name", e.target.value)}
               placeholder="e.g. initial_outreach"
-              className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 placeholder-gray-400 focus:border-digitillis-accent focus:outline-none"
+              className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 placeholder-gray-400 focus:border-gray-300 focus:outline-none"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -298,7 +298,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
               min={1}
               value={f.step as number}
               onChange={(e) => onChange("step", parseInt(e.target.value) || 1)}
-              className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-digitillis-accent focus:outline-none"
+              className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-300 focus:outline-none"
             />
           </div>
         </>
@@ -311,7 +311,7 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
 
 function RunDetails({ details }: { details: AgentRunDetails }) {
   return (
-    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-green-50 p-2.5 text-[10px] text-gray-600">
+    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-gray-50 p-2.5 text-[10px] text-gray-600">
       <span>
         <span className="font-semibold text-gray-800">{details.processed}</span> processed
       </span>
@@ -627,7 +627,7 @@ export default function ActionsPage() {
     <div className="space-y-8">
       {/* Page Header */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Daily Actions</h2>
+        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Daily Actions</h2>
         <p className="mt-1 text-sm text-gray-500">
           Today&apos;s tasks and pipeline operations
         </p>
@@ -636,21 +636,21 @@ export default function ActionsPage() {
       {/* Section 1: Follow-ups Due */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <Send className="h-5 w-5 text-digitillis-accent" />
-          <h3 className="text-lg font-semibold text-gray-900">
+          <Send className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400">
             Follow-ups Due
           </h3>
-          <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-accent">
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
             {loading ? "..." : followUps.length}
           </span>
         </div>
 
         {loading ? (
-          <div className="flex h-24 items-center justify-center rounded-xl border border-gray-200 bg-white">
-            <Loader2 className="h-6 w-6 animate-spin text-digitillis-accent" />
+          <div className="flex h-24 items-center justify-center rounded-lg border border-gray-200 bg-white">
+            <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
           </div>
         ) : followUps.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
             No follow-ups due today. Approved drafts will appear here.
           </div>
         ) : (
@@ -658,7 +658,7 @@ export default function ActionsPage() {
             {followUps.map((draft) => (
               <div
                 key={draft.id}
-                className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                className="rounded-lg border border-gray-200 bg-white p-4"
               >
                 <div className="flex items-start justify-between">
                   <div className="min-w-0 flex-1">
@@ -691,21 +691,21 @@ export default function ActionsPage() {
       {/* Section 2: LinkedIn Touches */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <Linkedin className="h-5 w-5 text-digitillis-accent" />
-          <h3 className="text-lg font-semibold text-gray-900">
+          <Linkedin className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400">
             LinkedIn Touches
           </h3>
-          <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-accent">
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
             {loading ? "..." : linkedInTasks.length}
           </span>
         </div>
 
         {loading ? (
-          <div className="flex h-24 items-center justify-center rounded-xl border border-gray-200 bg-white">
-            <Loader2 className="h-6 w-6 animate-spin text-digitillis-accent" />
+          <div className="flex h-24 items-center justify-center rounded-lg border border-gray-200 bg-white">
+            <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
           </div>
         ) : linkedInTasks.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
             No LinkedIn actions due. They appear here when a sequence step requires a LinkedIn touch.
           </div>
         ) : (
@@ -713,7 +713,7 @@ export default function ActionsPage() {
             {linkedInTasks.map((task) => (
               <div
                 key={task.id}
-                className="rounded-xl border border-blue-100 bg-white p-4 shadow-sm"
+                className="rounded-lg border border-gray-200 bg-white p-4"
               >
                 <div className="mb-2 flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -747,7 +747,7 @@ export default function ActionsPage() {
                       href={task.contacts.linkedin_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
                     >
                       <ExternalLink className="h-3 w-3" />
                       Open LinkedIn
@@ -756,7 +756,7 @@ export default function ActionsPage() {
                   <button
                     onClick={() => handleCompleteLinkedIn(task.id)}
                     disabled={completingId === task.id}
-                    className="inline-flex items-center gap-1 rounded-md bg-digitillis-accent px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                   >
                     {completingId === task.id ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -775,19 +775,19 @@ export default function ActionsPage() {
       {/* Section 3: Hot Replies */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <MessageSquare className="h-5 w-5 text-digitillis-warning" />
-          <h3 className="text-lg font-semibold text-gray-900">Hot Replies</h3>
-          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-digitillis-warning">
+          <MessageSquare className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400">Hot Replies</h3>
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
             {loading ? "..." : hotReplies.length}
           </span>
         </div>
 
         {loading ? (
-          <div className="flex h-24 items-center justify-center rounded-xl border border-gray-200 bg-white">
-            <Loader2 className="h-6 w-6 animate-spin text-digitillis-warning" />
+          <div className="flex h-24 items-center justify-center rounded-lg border border-gray-200 bg-white">
+            <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
           </div>
         ) : hotReplies.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
             No hot replies pending. Positive and question replies will surface here for your response.
           </div>
         ) : (
@@ -796,7 +796,7 @@ export default function ActionsPage() {
               <a
                 key={draft.id}
                 href="/approvals"
-                className="block rounded-xl border border-amber-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                className="block rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:bg-gray-50"
               >
                 <div className="mb-2 flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -807,14 +807,14 @@ export default function ActionsPage() {
                       {draft.contacts?.full_name ?? "Unknown"}
                     </p>
                   </div>
-                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-digitillis-warning">
+                  <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
                     Reply
                   </span>
                 </div>
                 <p className="mb-2 truncate text-xs font-medium text-gray-700">
                   {draft.subject}
                 </p>
-                <div className="flex items-center gap-1 text-xs text-amber-600">
+                <div className="flex items-center gap-1 text-xs text-gray-500">
                   <Reply className="h-3.5 w-3.5" />
                   <span>Response draft ready — review in Approvals</span>
                 </div>
@@ -827,31 +827,26 @@ export default function ActionsPage() {
       {/* Section 4: Pipeline Actions */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
-          <Zap className="h-5 w-5 text-digitillis-accent" />
-          <h3 className="text-lg font-semibold text-gray-900">
+          <Zap className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400">
             Pipeline Actions
           </h3>
         </div>
 
         {/* Run Full Pipeline */}
-        <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-slate-50 p-5 shadow-sm">
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-digitillis-accent" />
-                <h4 className="font-semibold text-gray-900">Run Full Pipeline</h4>
+                <Zap className="h-4 w-4 text-gray-400" />
+                <h4 className="text-sm font-semibold text-gray-900">Run Full Pipeline</h4>
               </div>
               <p className="mt-1 text-sm text-gray-500">
                 Discovery → Research → Qualification → Outreach drafts. Outreach still requires your approval before sending.
               </p>
               {agentStatus.full.result && (
                 <div
-                  className={cn(
-                    "mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
-                    agentStatus.full.result === "success"
-                      ? "bg-green-50 text-digitillis-success"
-                      : "bg-red-50 text-digitillis-danger"
-                  )}
+                  className="mt-3 flex items-center gap-1.5 rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-xs text-gray-700"
                 >
                   {agentStatus.full.result === "success" ? (
                     <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
@@ -869,10 +864,10 @@ export default function ActionsPage() {
               onClick={() => handleRunAgent("full")}
               disabled={agentStatus.full.loading}
               className={cn(
-                "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold transition-colors",
+                "inline-flex shrink-0 items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-medium transition-colors",
                 agentStatus.full.loading
                   ? "cursor-not-allowed bg-gray-100 text-gray-400"
-                  : "bg-digitillis-accent text-white hover:opacity-90"
+                  : "bg-gray-900 text-white hover:bg-gray-800"
               )}
             >
               {agentStatus.full.loading ? (
@@ -906,12 +901,12 @@ export default function ActionsPage() {
             return (
               <div
                 key={agent.name}
-                className="flex flex-col rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+                className="flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden"
               >
                 {/* Header — fixed height */}
                 <div className="px-5 py-4 border-b border-gray-100">
                   <div className="flex items-center gap-2">
-                    <Icon className="h-5 w-5 text-digitillis-accent" />
+                    <Icon className="h-5 w-5 text-gray-400" />
                     <h4 className="text-base font-semibold text-gray-900">{agent.label}</h4>
                   </div>
                   <p className="mt-1 text-sm text-gray-500">{agent.description}</p>
@@ -963,12 +958,12 @@ export default function ActionsPage() {
                             </span>
                           )}
                           {costPerCompany === 0 && (
-                            <span className="ml-1 text-green-600">· Free</span>
+                            <span className="ml-1 text-gray-500">· Free</span>
                           )}
                           <button
                             type="button"
                             onClick={() => estimateBatchSize(agent.name)}
-                            className="ml-2 underline hover:text-digitillis-accent"
+                            className="ml-2 underline hover:text-gray-900"
                           >
                             Refresh
                           </button>
@@ -977,7 +972,7 @@ export default function ActionsPage() {
                         <button
                           type="button"
                           onClick={() => estimateBatchSize(agent.name)}
-                          className="underline hover:text-digitillis-accent"
+                          className="underline hover:text-gray-900"
                         >
                           Estimate batch size
                         </button>
@@ -989,10 +984,10 @@ export default function ActionsPage() {
                       onClick={() => handleRunAgent(agent.name)}
                       disabled={status.loading}
                       className={cn(
-                        "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
+                        "inline-flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-medium transition-colors",
                         status.loading
                           ? "cursor-not-allowed bg-gray-100 text-gray-400"
-                          : "bg-digitillis-accent text-white hover:opacity-90"
+                          : "bg-gray-900 text-white hover:bg-gray-800"
                       )}
                     >
                       {status.loading ? (
@@ -1025,9 +1020,7 @@ export default function ActionsPage() {
                       <div
                         className={cn(
                           "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
-                          status.result === "success"
-                            ? "bg-green-50 text-digitillis-success"
-                            : "bg-red-50 text-digitillis-danger"
+                          "bg-gray-50 border border-gray-200 text-gray-700"
                         )}
                       >
                         {status.result === "success" ? (

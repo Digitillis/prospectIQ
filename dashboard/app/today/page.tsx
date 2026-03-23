@@ -105,9 +105,9 @@ function interactionLabel(type: string): string {
 
 function getGreetingIcon() {
   const h = new Date().getHours();
-  if (h < 12) return <Sun className="h-6 w-6 text-amber-400" />;
-  if (h < 17) return <Sunset className="h-6 w-6 text-orange-400" />;
-  return <Moon className="h-6 w-6 text-indigo-400" />;
+  if (h < 12) return <Sun className="h-5 w-5 text-gray-400" />;
+  if (h < 17) return <Sunset className="h-5 w-5 text-gray-400" />;
+  return <Moon className="h-5 w-5 text-gray-400" />;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +329,7 @@ function InlineEditableMessage({
     return (
       <div className="mt-2 space-y-2">
         <textarea
-          className="w-full rounded-lg border border-blue-300 p-3 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent resize-none"
+          className="w-full rounded-md border border-gray-300 p-3 text-sm text-gray-700 leading-relaxed focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 resize-none"
           rows={4}
           value={val}
           onChange={(e) => setVal(e.target.value)}
@@ -338,13 +338,13 @@ function InlineEditableMessage({
         <div className="flex gap-2">
           <button
             onClick={() => { onSave(val); setEditing(false); }}
-            className="rounded-lg bg-digitillis-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
           >
             Save
           </button>
           <button
             onClick={() => { setVal(text); setEditing(false); }}
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
           >
             Cancel
           </button>
@@ -355,7 +355,7 @@ function InlineEditableMessage({
 
   return (
     <div className="mt-2 group relative">
-      <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+      <div className="rounded-md bg-gray-50 border border-gray-100 p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
         {val}
       </div>
       <button
@@ -384,40 +384,33 @@ function ProgressBar({
 }) {
   const pct = Math.min(100, Math.round((completed / Math.max(target, 1)) * 100));
 
-  const barColor =
-    pct >= 100
-      ? "bg-green-500"
-      : pct >= 70
-      ? "bg-emerald-500"
-      : pct >= 30
-      ? "bg-amber-500"
-      : "bg-red-500";
+  const barColor = "bg-gray-900";
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           {getGreetingIcon()}
           <div>
-            <h2 className="text-lg font-bold text-gray-900">
+            <h2 className="text-sm font-semibold text-gray-900">
               Good morning, Avanish
             </h2>
             <p className="text-xs text-gray-400">{formatDate(new Date())}</p>
           </div>
         </div>
         <div className="text-right">
-          <span className="text-2xl font-bold text-gray-900 tabular-nums">
+          <span className="text-2xl font-semibold text-gray-900 tabular-nums">
             {completed}
           </span>
           <span className="text-sm text-gray-400">/{target}</span>
           <p className="text-xs text-gray-400 mt-0.5">
-            {pct >= 100 ? "Target hit 🎉" : `${target - completed} to go`}
+            {pct >= 100 ? "Target hit" : `${target - completed} to go`}
           </p>
         </div>
       </div>
 
       {/* Main bar */}
-      <div className="h-3 rounded-full bg-gray-100 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
         <div
           className={cn("h-full rounded-full transition-all duration-700", barColor)}
           style={{ width: `${pct}%` }}
@@ -426,46 +419,46 @@ function ProgressBar({
 
       {/* Confetti flash at 100% */}
       {pct >= 100 && (
-        <p className="mt-2 text-center text-sm font-semibold text-green-600">
-          ✅ All done for today — outstanding work!
+        <p className="mt-2 text-center text-xs font-medium text-green-600">
+          All done for today — outstanding work!
         </p>
       )}
 
       {/* Breakdown row */}
       {breakdown && (
-        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-gray-500">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
           <span className="flex items-center gap-1.5">
-            <UserPlus className="h-3.5 w-3.5 text-blue-400" />
+            <UserPlus className="h-3.5 w-3.5 text-gray-400" />
             <span>
-              <strong className="text-gray-800">{breakdown.linkedin_connections.done}</strong>
+              <strong className="text-gray-700">{breakdown.linkedin_connections.done}</strong>
               /{breakdown.linkedin_connections.target} connections
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <MessageCircle className="h-3.5 w-3.5 text-indigo-400" />
+            <MessageCircle className="h-3.5 w-3.5 text-gray-400" />
             <span>
-              <strong className="text-gray-800">{breakdown.linkedin_dms.done}</strong>
+              <strong className="text-gray-700">{breakdown.linkedin_dms.done}</strong>
               /{breakdown.linkedin_dms.target} DMs
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <MailCheck className="h-3.5 w-3.5 text-amber-400" />
+            <MailCheck className="h-3.5 w-3.5 text-gray-400" />
             <span>
-              <strong className="text-gray-800">{breakdown.emails_approved.done}</strong>
+              <strong className="text-gray-700">{breakdown.emails_approved.done}</strong>
               /{breakdown.emails_approved.target} emails
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <ClipboardCheck className="h-3.5 w-3.5 text-green-400" />
+            <ClipboardCheck className="h-3.5 w-3.5 text-gray-400" />
             <span>
-              <strong className="text-gray-800">{breakdown.outcomes_logged.done}</strong>
+              <strong className="text-gray-700">{breakdown.outcomes_logged.done}</strong>
               /{breakdown.outcomes_logged.target} outcomes
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <PenTool className="h-3.5 w-3.5 text-purple-400" />
+            <PenTool className="h-3.5 w-3.5 text-gray-400" />
             <span>
-              <strong className="text-gray-800">{breakdown.content_posted.done}</strong>
+              <strong className="text-gray-700">{breakdown.content_posted.done}</strong>
               /{breakdown.content_posted.target} posts
             </span>
           </span>
@@ -522,33 +515,31 @@ function SectionWrapper({
       : null;
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
       {/* Section header */}
       <button
         onClick={() => setCollapsed((c) => !c)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50 transition-colors text-left"
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
       >
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={cn("flex-shrink-0 rounded-lg p-2", accentColor ?? "bg-gray-100")}>
-            <Icon className="h-4 w-4" />
-          </div>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Icon className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+              <h3 className="text-xs font-medium uppercase tracking-widest text-gray-500">{title}</h3>
               {count !== undefined && (
                 <span
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
                     count === 0
                       ? "bg-gray-100 text-gray-400"
-                      : "bg-digitillis-accent/10 text-digitillis-accent"
+                      : "bg-gray-900 text-white"
                   )}
                 >
                   {count}
                 </span>
               )}
               {progress !== null && (
-                <span className="text-xs font-medium text-gray-500">
+                <span className="text-[10px] font-medium text-gray-400">
                   {countDone}/{countTarget}
                 </span>
               )}
@@ -557,9 +548,9 @@ function SectionWrapper({
           </div>
         </div>
         {collapsed ? (
-          <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
         ) : (
-          <ChevronUp className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <ChevronUp className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
         )}
       </button>
 
@@ -567,17 +558,14 @@ function SectionWrapper({
       {!collapsed && progress !== null && (
         <div className="h-0.5 bg-gray-100">
           <div
-            className={cn(
-              "h-full transition-all duration-700",
-              progress >= 100 ? "bg-green-500" : "bg-digitillis-accent"
-            )}
+            className="h-full bg-gray-900 transition-all duration-700"
             style={{ width: `${Math.min(100, progress)}%` }}
           />
         </div>
       )}
 
       {/* Content */}
-      {!collapsed && <div className="px-5 pb-5 pt-3 space-y-3">{children}</div>}
+      {!collapsed && <div className="px-4 pb-4 pt-3 space-y-3">{children}</div>}
     </div>
   );
 }
@@ -587,11 +575,11 @@ function SectionWrapper({
 // ---------------------------------------------------------------------------
 
 const OUTCOME_OPTIONS = [
-  { value: "interested", label: "Interested ✓", cls: "bg-green-600 hover:bg-green-700" },
-  { value: "not_now", label: "Not Now", cls: "bg-amber-500 hover:bg-amber-600" },
-  { value: "not_interested", label: "Not Interested", cls: "bg-red-600 hover:bg-red-700" },
-  { value: "wrong_person", label: "Wrong Person", cls: "bg-gray-500 hover:bg-gray-600" },
-  { value: "meeting_booked", label: "Meeting Booked 🎉", cls: "bg-digitillis-accent hover:opacity-90" },
+  { value: "interested", label: "Interested", cls: "bg-gray-900 hover:bg-gray-800" },
+  { value: "not_now", label: "Not Now", cls: "bg-gray-100 hover:bg-gray-200 !text-gray-700" },
+  { value: "not_interested", label: "Not Interested", cls: "bg-gray-100 hover:bg-gray-200 !text-gray-700" },
+  { value: "wrong_person", label: "Wrong Person", cls: "bg-gray-100 hover:bg-gray-200 !text-gray-700" },
+  { value: "meeting_booked", label: "Meeting Booked", cls: "bg-gray-900 hover:bg-gray-800" },
 ];
 
 function HotSignalCard({
@@ -632,10 +620,10 @@ function HotSignalCard({
   return (
     <div
       className={cn(
-        "rounded-xl border p-4 transition-all duration-300",
+        "rounded-lg border p-3.5 transition-all duration-300",
         isDone
           ? "opacity-40 border-gray-100 bg-gray-50"
-          : "border-orange-200 bg-orange-50"
+          : "border-gray-200 bg-white"
       )}
     >
       <div className="flex items-start gap-3">
@@ -646,28 +634,28 @@ function HotSignalCard({
               <img
                 src={`https://logo.clearbit.com/${signal.domain}`}
                 alt=""
-                className="h-5 w-5 rounded shrink-0"
+                className="h-4 w-4 rounded shrink-0"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             )}
             <Link
               href={`/prospects/${signal.id}`}
-              className="font-semibold text-gray-900 hover:text-digitillis-accent"
+              className="font-medium text-gray-900 hover:text-gray-600 text-sm"
             >
               {signal.name}
             </Link>
             {signal.tier && (
-              <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
                 {TIER_LABELS[signal.tier] ?? signal.tier}
               </span>
             )}
-            <span className={cn("text-sm font-bold", getPQSColor(signal.pqs_total))}>
+            <span className={cn("text-xs font-medium text-gray-500")}>
               PQS {signal.pqs_total}
             </span>
           </div>
 
           {primaryContact && (
-            <p className="mt-0.5 text-sm text-gray-600">
+            <p className="mt-0.5 text-xs text-gray-500">
               {primaryContact.full_name}
               {primaryContact.title && (
                 <span className="text-gray-400"> · {primaryContact.title}</span>
@@ -676,17 +664,16 @@ function HotSignalCard({
           )}
 
           {signal.last_interaction && (
-            <p className="mt-1.5 text-sm text-orange-800">
-              🔥{" "}
+            <p className="mt-1.5 text-xs text-gray-600">
               <span className="font-medium">{interactionLabel(signal.last_interaction.type)}</span>{" "}
-              <span className="text-xs text-gray-400">
+              <span className="text-gray-400">
                 {formatTimeAgo(signal.last_interaction.created_at)}
               </span>
             </p>
           )}
 
           {signal.last_interaction?.body && signal.last_interaction.type === "email_replied" && (
-            <p className="mt-2 rounded-lg bg-white border border-orange-100 p-2.5 text-sm text-gray-700 line-clamp-2 italic">
+            <p className="mt-2 rounded-md bg-gray-50 border border-gray-100 p-2.5 text-sm text-gray-700 line-clamp-2 italic">
               &ldquo;{signal.last_interaction.body}&rdquo;
             </p>
           )}
@@ -711,7 +698,7 @@ function HotSignalCard({
                   onClick={() => { setPendingOutcome(opt.value); setShowNotes(true); }}
                   disabled={logging}
                   className={cn(
-                    "rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-opacity disabled:opacity-50",
+                    "rounded-md px-2.5 py-1 text-xs font-medium text-white transition-opacity disabled:opacity-50",
                     opt.cls
                   )}
                 >
@@ -730,14 +717,14 @@ function HotSignalCard({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Notes (optional)..."
-                className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-digitillis-accent focus:outline-none"
+                className="flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none"
                 onKeyDown={(e) => { if (e.key === "Enter" && pendingOutcome) handleOutcome(pendingOutcome); }}
                 autoFocus
               />
               <button
                 onClick={() => pendingOutcome && handleOutcome(pendingOutcome)}
                 disabled={logging || !pendingOutcome}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
               >
                 {logging ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                 Save {pendingOutcome ? `(${OUTCOME_OPTIONS.find(o => o.value === pendingOutcome)?.label})` : ""}
@@ -812,16 +799,16 @@ function LinkedInConnectionCard({
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             )}
-            <span className="font-medium text-gray-900">{item.full_name ?? "Unknown"}</span>
+            <span className="font-medium text-gray-900 text-sm">{item.full_name ?? "Unknown"}</span>
             {item.title && <span className="text-xs text-gray-500">{item.title}</span>}
             <span className="text-xs text-gray-300">·</span>
-            <span className="text-xs text-gray-600">{item.company_name}</span>
+            <span className="text-xs text-gray-500">{item.company_name}</span>
             {item.company_tier && (
               <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
                 {TIER_LABELS[item.company_tier] ?? item.company_tier}
               </span>
             )}
-            <span className={cn("text-sm font-bold ml-auto", getPQSColor(item.pqs_total))}>
+            <span className="text-xs font-medium text-gray-400 ml-auto">
               PQS {item.pqs_total}
             </span>
           </div>
@@ -837,7 +824,7 @@ function LinkedInConnectionCard({
             href={item.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50"
           >
             <ExternalLink className="h-3 w-3" />
             Open LinkedIn
@@ -847,20 +834,18 @@ function LinkedInConnectionCard({
           onClick={handleSent}
           disabled={loading || isDone}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
             isDone
-              ? "bg-green-100 text-green-700"
-              : "border border-gray-200 bg-white text-gray-600 hover:bg-green-50 hover:border-green-200 hover:text-green-700 disabled:opacity-50"
+              ? "bg-gray-100 text-gray-500"
+              : "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
           )}
         >
           {loading ? (
             <Loader2 className="h-3 w-3 animate-spin" />
-          ) : isDone ? (
-            <Check className="h-3 w-3" />
           ) : (
             <Check className="h-3 w-3" />
           )}
-          {isDone ? "Sent ✓" : "Mark Sent"}
+          {isDone ? "Sent" : "Mark Sent"}
         </button>
       </div>
       <IntelPanel intel={item.intel} />
@@ -911,11 +896,11 @@ function LinkedInDMCard({
       )}
     >
       <div className="flex items-center gap-2 flex-wrap mb-2">
-        <span className="font-medium text-gray-900">{item.full_name ?? "Unknown"}</span>
+        <span className="font-medium text-gray-900 text-sm">{item.full_name ?? "Unknown"}</span>
         {item.title && <span className="text-xs text-gray-500">{item.title}</span>}
         <span className="text-xs text-gray-300">·</span>
-        <span className="text-xs text-gray-600">{item.company_name}</span>
-        <span className="ml-auto text-xs text-green-600 font-medium">✓ Connected</span>
+        <span className="text-xs text-gray-500">{item.company_name}</span>
+        <span className="ml-auto text-xs text-gray-400 font-medium">Connected</span>
       </div>
 
       <InlineEditableMessage text={msgText} onSave={setMsgText} />
@@ -927,7 +912,7 @@ function LinkedInDMCard({
             href={item.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50"
           >
             <ExternalLink className="h-3 w-3" />
             Open LinkedIn
@@ -937,14 +922,14 @@ function LinkedInDMCard({
           onClick={handleSent}
           disabled={loading || isDone}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
             isDone
-              ? "bg-green-100 text-green-700"
-              : "border border-gray-200 bg-white text-gray-600 hover:bg-green-50 hover:border-green-200 hover:text-green-700 disabled:opacity-50"
+              ? "bg-gray-100 text-gray-500"
+              : "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
           )}
         >
-          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : isDone ? <Check className="h-3 w-3" /> : <Check className="h-3 w-3" />}
-          {isDone ? "Sent ✓" : "Mark Sent"}
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+          {isDone ? "Sent" : "Mark Sent"}
         </button>
       </div>
       <IntelPanel intel={item.intel} />
@@ -1035,7 +1020,7 @@ function ApprovalCard({
         </div>
         <button
           onClick={() => setExpanded((e) => !e)}
-          className="shrink-0 text-xs text-digitillis-accent hover:underline flex items-center gap-1"
+          className="shrink-0 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
         >
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           {expanded ? "Hide" : "Preview"}
@@ -1053,7 +1038,7 @@ function ApprovalCard({
           <button
             onClick={handleApprove}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
             Approve
@@ -1061,14 +1046,14 @@ function ApprovalCard({
           <button
             onClick={handleReject}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-50"
           >
             <XCircle className="h-3 w-3" />
             Reject
           </button>
           <Link
             href="/approvals"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
           >
             <Pencil className="h-3 w-3" />
             Edit
@@ -1076,13 +1061,13 @@ function ApprovalCard({
           <button
             onClick={handleTestSend}
             disabled={testSending}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
           >
             {testSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
             Test Send
           </button>
           {testMsg && (
-            <span className={cn("text-xs font-medium", testMsg.startsWith("Test email sent") ? "text-green-600" : "text-red-500")}>
+            <span className={cn("text-xs font-medium", testMsg.startsWith("Test email sent") ? "text-green-600" : "text-gray-500")}>
               {testMsg}
             </span>
           )}
@@ -1124,18 +1109,18 @@ function ContentCard({
   return (
     <div
       className={cn(
-        "rounded-xl border p-4 transition-all duration-300",
-        isDone ? "opacity-40 border-gray-100 bg-gray-50" : "border-purple-100 bg-purple-50"
+        "rounded-lg border p-3.5 transition-all duration-300",
+        isDone ? "opacity-40 border-gray-100 bg-gray-50" : "border-gray-200 bg-white"
       )}
     >
       <div className="flex items-center gap-2 mb-2">
-        <PenTool className="h-4 w-4 text-purple-500" />
+        <PenTool className="h-3.5 w-3.5 text-gray-400" />
         <span className="font-medium text-gray-900 text-sm">{item.topic}</span>
         {item.approval_status === "approved" && (
-          <span className="rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-xs font-medium">Approved</span>
+          <span className="rounded bg-gray-100 text-gray-500 px-1.5 py-0.5 text-[10px] font-medium">Approved</span>
         )}
       </div>
-      <div className="rounded-lg bg-white border border-purple-100 p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+      <div className="rounded-md bg-gray-50 border border-gray-100 p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
         {item.post_text}
       </div>
       {!isDone && (
@@ -1143,8 +1128,8 @@ function ContentCard({
           <button
             onClick={handleCopy}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all",
-              copied ? "border-green-200 bg-green-50 text-green-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all",
+              copied ? "border-green-200 bg-white text-green-600" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
             )}
           >
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -1154,14 +1139,14 @@ function ContentCard({
             href="https://www.linkedin.com/post/new/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50"
           >
             <ExternalLink className="h-3 w-3" />
             Open LinkedIn
           </a>
           <button
             onClick={handleMarkPosted}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
           >
             <CheckCircle2 className="h-3 w-3" />
             Mark Posted
@@ -1194,18 +1179,18 @@ function OutcomeLoggerCard({
   const outcomes =
     channel === "linkedin"
       ? [
-          { value: "interested", label: "Interested", cls: "border-green-300 bg-green-50 text-green-800 hover:bg-green-100" },
-          { value: "not_now", label: "Not Now", cls: "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100" },
-          { value: "not_interested", label: "Not Interested", cls: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },
-          { value: "meeting_booked", label: "Meeting Booked 🎉", cls: "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100" },
+          { value: "interested", label: "Interested", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
+          { value: "not_now", label: "Not Now", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "not_interested", label: "Not Interested", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "meeting_booked", label: "Meeting Booked", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
         ]
       : [
-          { value: "interested", label: "Interested", cls: "border-green-300 bg-green-50 text-green-800 hover:bg-green-100" },
-          { value: "not_now", label: "Not Now", cls: "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100" },
-          { value: "not_interested", label: "Not Interested", cls: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },
-          { value: "wrong_person", label: "Wrong Person", cls: "border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100" },
-          { value: "bounce", label: "Bounce", cls: "border-orange-300 bg-orange-50 text-orange-800 hover:bg-orange-100" },
-          { value: "meeting_booked", label: "Meeting Booked 🎉", cls: "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100" },
+          { value: "interested", label: "Interested", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
+          { value: "not_now", label: "Not Now", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "not_interested", label: "Not Interested", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "wrong_person", label: "Wrong Person", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "bounce", label: "Bounce", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "meeting_booked", label: "Meeting Booked", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
         ];
 
   const handleSave = async () => {
@@ -1276,13 +1261,13 @@ function OutcomeLoggerCard({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Notes (optional)..."
-                className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
+                className="flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300"
                 onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
               />
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
               >
                 {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                 Save
@@ -1345,7 +1330,7 @@ function PipelineRow({ label, count, nextAction, agentName, agentLabel, limit = 
           <button
             onClick={handleRun}
             disabled={running}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
             {agentLabel ?? `Run (${limit})`}
@@ -1353,7 +1338,7 @@ function PipelineRow({ label, count, nextAction, agentName, agentLabel, limit = 
         ) : nextAction ? (
           <Link
             href={nextAction}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
           >
             Go <ArrowRight className="h-3 w-3" />
           </Link>
@@ -1382,7 +1367,7 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
   if (Array.isArray(company)) company = company[0] || {};
 
   return (
-    <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-4">
+    <div className="rounded-lg border border-gray-200 bg-white p-3.5">
       {/* Header */}
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -1398,12 +1383,12 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
           )}
         </div>
         {action.next_action_date && (
-          <span className="text-xs text-purple-600 font-medium">Due: {action.next_action_date}</span>
+          <span className="text-xs text-gray-500 font-medium">Due: {action.next_action_date}</span>
         )}
       </div>
 
       {/* What triggered this */}
-      <div className="text-xs text-gray-500 mb-2">
+      <div className="text-xs text-gray-400 mb-2">
         Based on:{" "}
         {action.event_type === "response_received" ? "Their response" : (action.event_type || "event").replace(/_/g, " ")}
         {action.sentiment && ` (${action.sentiment})`}
@@ -1411,15 +1396,15 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
       </div>
 
       {/* The recommendation */}
-      <div className="bg-white rounded p-3 border border-purple-100 mb-2">
-        <p className="text-sm text-gray-800">{action.next_action}</p>
+      <div className="bg-gray-50 rounded-md p-3 border border-gray-100 mb-2">
+        <p className="text-sm text-gray-700">{action.next_action}</p>
       </div>
 
       {/* Suggested message */}
       {action.suggested_message && (
-        <div className="bg-white rounded p-3 border border-blue-100 mb-2">
-          <div className="text-xs font-medium text-blue-700 mb-1">Suggested message:</div>
-          <p className="text-sm text-gray-800 whitespace-pre-wrap">{action.suggested_message}</p>
+        <div className="bg-gray-50 rounded-md p-3 border border-gray-100 mb-2">
+          <div className="text-xs font-medium text-gray-500 mb-1">Suggested message:</div>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap">{action.suggested_message}</p>
           <button
             onClick={() => {
               navigator.clipboard.writeText(action.suggested_message).catch(() => {
@@ -1433,18 +1418,18 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
-            className="mt-2 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+            className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
           >
-            {copied ? "✓ Copied!" : "📋 Copy message"}
+            {copied ? <span className="text-green-600">Copied!</span> : "Copy message"}
           </button>
         </div>
       )}
 
       {/* Reasoning (collapsible) */}
       {action.action_reasoning && (
-        <details className="text-xs text-gray-500 mb-2">
-          <summary className="cursor-pointer hover:text-gray-700">Why this recommendation</summary>
-          <p className="mt-1 pl-2 border-l-2 border-gray-200">{action.action_reasoning}</p>
+        <details className="text-xs text-gray-400 mb-2">
+          <summary className="cursor-pointer hover:text-gray-600">Why this recommendation</summary>
+          <p className="mt-1 pl-2 border-l-2 border-gray-200 text-gray-500">{action.action_reasoning}</p>
         </details>
       )}
 
@@ -1455,20 +1440,20 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
             href={contact.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-1.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+            className="px-2.5 py-1 text-xs border border-gray-200 text-blue-500 rounded-md hover:bg-gray-50"
           >
             Open LinkedIn
           </a>
         )}
         <button
           onClick={() => onDone(action.id)}
-          className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+          className="px-2.5 py-1 text-xs bg-gray-900 text-white rounded-md hover:bg-gray-800"
         >
-          ✓ Done
+          Done
         </button>
         <button
           onClick={() => onSkip(action.id)}
-          className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+          className="px-2.5 py-1 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200"
         >
           Skip
         </button>
@@ -1581,8 +1566,8 @@ export default function TodayCockpitPage() {
   if (loading && !data) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-digitillis-accent" />
-        <span className="ml-3 text-gray-500">Loading your day...</span>
+        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <span className="ml-3 text-sm text-gray-400">Loading your day...</span>
       </div>
     );
   }
@@ -1646,15 +1631,15 @@ export default function TodayCockpitPage() {
   const outcomesCount = recentInteractions.filter((i) => !doneOutcomes.has(i.id)).length;
 
   return (
-    <div className="space-y-4 pb-16 max-w-3xl mx-auto">
+    <div className="space-y-3 pb-16 max-w-4xl mx-auto">
       {/* ------------------------------------------------------------------ */}
       {/* PROGRESS BAR + HEADER                                               */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-3 text-xs text-gray-500">
           {pendingNextActions.length > 0 && (
-            <span className="flex items-center gap-1 rounded-full bg-purple-100 px-2 py-1 font-medium text-purple-700">
-              <Brain className="h-3 w-3" />
+            <span className="flex items-center gap-1 rounded bg-gray-100 px-2 py-1 font-medium text-gray-600">
+              <Brain className="h-3 w-3 text-gray-400" />
               {pendingNextActions.length} AI action{pendingNextActions.length !== 1 ? "s" : ""}
             </span>
           )}
@@ -1666,7 +1651,7 @@ export default function TodayCockpitPage() {
           <button
             onClick={() => fetchData()}
             disabled={loading}
-            className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+            className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-40"
           >
             <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
             Refresh
@@ -1675,7 +1660,7 @@ export default function TodayCockpitPage() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
           {error}
         </div>
       )}
@@ -1691,7 +1676,6 @@ export default function TodayCockpitPage() {
         title="Respond Now"
         subtitle="Hot signals and replies that need immediate attention"
         count={urgentCount}
-        accentColor="bg-orange-100 text-orange-600"
         defaultCollapsed={urgentCount === 0}
       >
         {urgentCount === 0 ? (
@@ -1720,7 +1704,6 @@ export default function TodayCockpitPage() {
           title="AI-Recommended Actions"
           subtitle={`${pendingNextActions.length} action${pendingNextActions.length !== 1 ? "s" : ""} due today`}
           count={pendingNextActions.length}
-          accentColor="bg-purple-100 text-purple-600"
           defaultCollapsed={pendingNextActions.length === 0}
         >
           {pendingNextActions.length === 0 ? (
@@ -1753,20 +1736,19 @@ export default function TodayCockpitPage() {
         count={connectCount}
         countDone={connectDone}
         countTarget={connectTarget}
-        accentColor="bg-blue-100 text-blue-600"
         defaultCollapsed={connectCount === 0}
       >
         {connectCount === 0 && connectItems.length === 0 ? (
           <p className="py-4 text-center text-sm text-gray-400">
             No contacts queued for connection requests.{" "}
-            <Link href="/actions" className="text-digitillis-accent hover:underline">
+            <Link href="/actions" className="text-gray-600 underline hover:text-gray-900">
               Run LinkedIn outreach
             </Link>{" "}
             to generate messages.
           </p>
         ) : connectItems.length === 0 ? (
-          <p className="py-4 text-center text-sm text-green-600">
-            ✅ All {connectDone} connection requests sent today!
+          <p className="py-4 text-center text-sm text-gray-500">
+            All {connectDone} connection requests sent today.
           </p>
         ) : (
           connectItems.map((item) => (
@@ -1792,7 +1774,6 @@ export default function TodayCockpitPage() {
           title="Mark Acceptances"
           subtitle="Check LinkedIn — did any of these prospects accept your connection?"
           count={data?.pending_acceptances?.length ?? 0}
-          accentColor="bg-emerald-100 text-emerald-600"
           defaultCollapsed={false}
         >
           {data!.pending_acceptances!.map((c: any) => (
@@ -1812,7 +1793,7 @@ export default function TodayCockpitPage() {
                     href={c.linkedin_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-2 text-xs text-blue-500 hover:underline"
+                    className="ml-2 text-xs text-blue-500 hover:underline inline-flex items-center gap-1"
                   >
                     Open LinkedIn
                   </a>
@@ -1830,7 +1811,7 @@ export default function TodayCockpitPage() {
                       fetchData(true);
                     } catch {}
                   }}
-                  className="rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
+                  className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700"
                 >
                   Accepted
                 </button>
@@ -1862,7 +1843,6 @@ export default function TodayCockpitPage() {
         title="Send Opening DMs"
         subtitle="Connections who accepted 2+ days ago — start conversations"
         count={dmCount}
-        accentColor="bg-indigo-100 text-indigo-600"
         defaultCollapsed={dmCount === 0}
       >
         {dmItems.length === 0 ? (
@@ -1890,13 +1870,12 @@ export default function TodayCockpitPage() {
         title="Review & Approve Emails"
         subtitle={`${approvalsCount} draft${approvalsCount !== 1 ? "s" : ""} waiting for your review`}
         count={approvalsCount}
-        accentColor="bg-amber-100 text-amber-600"
         defaultCollapsed={approvalsCount === 0}
       >
         {pendingApprovals.length === 0 ? (
           <p className="py-4 text-center text-sm text-gray-400">
             No pending drafts.{" "}
-            <Link href="/actions" className="text-digitillis-accent hover:underline">
+            <Link href="/actions" className="text-gray-600 underline hover:text-gray-900">
               Run Outreach
             </Link>{" "}
             to generate new ones.
@@ -1913,9 +1892,9 @@ export default function TodayCockpitPage() {
             ))}
             <Link
               href="/approvals"
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-200 py-3 text-sm text-digitillis-accent hover:bg-blue-50"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 py-3 text-xs text-gray-500 hover:bg-gray-50"
             >
-              View all in Approvals <ArrowRight className="h-3.5 w-3.5" />
+              View all in Approvals <ArrowRight className="h-3 w-3" />
             </Link>
           </>
         )}
@@ -1930,7 +1909,6 @@ export default function TodayCockpitPage() {
         title="Post Today's Content"
         subtitle="Thought leadership for LinkedIn"
         count={contentCount}
-        accentColor="bg-purple-100 text-purple-600"
         defaultCollapsed={contentItems.length === 0}
       >
         {contentItems.length === 0 ? (
@@ -1938,7 +1916,7 @@ export default function TodayCockpitPage() {
             <p className="text-sm text-gray-400 mb-3">No content draft ready for today.</p>
             <Link
               href="/actions"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
             >
               <PenTool className="h-3.5 w-3.5" />
               Generate Content
@@ -1965,7 +1943,6 @@ export default function TodayCockpitPage() {
         title="Log Responses"
         subtitle="Record outcomes from recent outreach"
         count={outcomesCount}
-        accentColor="bg-green-100 text-green-600"
         defaultCollapsed={outcomesCount === 0}
       >
         {recentInteractions.length === 0 ? (
@@ -1984,7 +1961,7 @@ export default function TodayCockpitPage() {
             ))}
             <p className="pt-1 text-center text-xs text-gray-400">
               Had a conversation not tracked here?{" "}
-              <Link href="/prospects?status=engaged" className="text-digitillis-accent hover:underline">
+              <Link href="/prospects?status=engaged" className="text-gray-600 underline hover:text-gray-900">
                 Find the prospect
               </Link>{" "}
               and log it manually.
@@ -2001,10 +1978,9 @@ export default function TodayCockpitPage() {
         icon="trending-up"
         title="Grow Pipeline"
         subtitle="Run discovery, research, and qualification"
-        accentColor="bg-teal-100 text-teal-600"
         defaultCollapsed={false}
       >
-        <div className="rounded-xl border border-gray-100 px-4 py-1">
+        <div className="rounded-md border border-gray-100 px-4 py-1">
           <PipelineRow
             label="discovered — waiting for research"
             count={pipelineSummary["discovered"] ?? 0}

@@ -213,7 +213,7 @@ export default function ApprovalsPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-digitillis-accent" />
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
       </div>
     );
   }
@@ -223,15 +223,15 @@ export default function ApprovalsPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-gray-900">Approval Queue</h2>
-          <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-digitillis-accent">
+          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Approval Queue</h2>
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
             {drafts.length} pending
           </span>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-digitillis-danger">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
           {error}
         </div>
       )}
@@ -256,10 +256,10 @@ export default function ApprovalsPage() {
             id={`draft-${draft.id}`}
             key={draft.id}
             className={cn(
-              "rounded-xl border bg-white shadow-sm transition-all",
+              "rounded-lg border bg-white transition-all",
               idx === focusedIndex
-                ? "border-digitillis-accent ring-2 ring-digitillis-accent/20"
-                : "border-gray-200 hover:shadow-md"
+                ? "border-gray-900 ring-1 ring-gray-900/10"
+                : "border-gray-200"
             )}
           >
             {/* Company Header */}
@@ -355,7 +355,7 @@ export default function ApprovalsPage() {
                         className={cn(
                           "flex w-full items-center gap-2 rounded-lg border p-2.5 text-left text-sm transition-colors",
                           abVariants[draft.id].selected === variant
-                            ? "border-digitillis-accent bg-blue-50 text-gray-900"
+                            ? "border-gray-900 bg-gray-50 text-gray-900"
                             : "border-gray-200 text-gray-600 hover:bg-gray-50"
                         )}
                       >
@@ -363,7 +363,7 @@ export default function ApprovalsPage() {
                           className={cn(
                             "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                             abVariants[draft.id].selected === variant
-                              ? "bg-digitillis-accent text-white"
+                              ? "bg-gray-900 text-white"
                               : "bg-gray-200 text-gray-500"
                           )}
                         >
@@ -386,7 +386,7 @@ export default function ApprovalsPage() {
                     value={editBody}
                     onChange={(e) => setEditBody(e.target.value)}
                     rows={6}
-                    className="mt-2 w-full rounded-md border border-gray-300 p-3 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent"
+                    className="mt-2 w-full rounded-md border border-gray-200 p-3 text-sm text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
                   />
                 ) : (
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
@@ -410,7 +410,7 @@ export default function ApprovalsPage() {
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                     placeholder="Rejection reason..."
-                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-digitillis-danger focus:outline-none focus:ring-1 focus:ring-digitillis-danger"
+                    className="flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleReject(draft.id);
                     }}
@@ -420,7 +420,7 @@ export default function ApprovalsPage() {
                     disabled={
                       !rejectReason.trim() || actionLoading === draft.id
                     }
-                    className="rounded-md bg-digitillis-danger px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                    className="rounded-md bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                   >
                     {actionLoading === draft.id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -444,7 +444,7 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => handleEditApprove(draft.id)}
                       disabled={actionLoading === draft.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                     >
                       {actionLoading === draft.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -458,7 +458,7 @@ export default function ApprovalsPage() {
                         setEditingId(null);
                         setEditBody("");
                       }}
-                      className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+                      className="rounded-md px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
                     >
                       Cancel
                     </button>
@@ -468,7 +468,7 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => handleApprove(draft.id)}
                       disabled={actionLoading === draft.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-success px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                     >
                       {actionLoading === draft.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -479,14 +479,14 @@ export default function ApprovalsPage() {
                     </button>
                     <button
                       onClick={() => startEditing(draft)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
                     >
                       <Pencil className="h-4 w-4" />
                       Edit & Approve
                     </button>
                     <button
                       onClick={() => startRejecting(draft.id)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-digitillis-danger px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
                     >
                       <XCircle className="h-4 w-4" />
                       Reject
@@ -506,11 +506,7 @@ export default function ApprovalsPage() {
                   </>
                 )}
                 {testSendResult?.id === draft.id && (
-                  <span className={cn(
-                    "text-xs font-medium",
-                    testSendResult.message.startsWith("Test email sent")
-                      ? "text-green-600" : "text-red-500"
-                  )}>
+                  <span className="text-xs font-medium text-gray-700">
                     {testSendResult.message}
                   </span>
                 )}

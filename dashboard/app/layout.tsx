@@ -40,11 +40,11 @@ export default function RootLayout({
           <SearchModal />
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* Top bar */}
-            <header className="flex h-14 items-center justify-between border-b border-white/10 bg-digitillis-dark px-6">
-              <h1 className="text-lg font-semibold text-white">ProspectIQ</h1>
+            <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-6">
+              <h1 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">ProspectIQ</h1>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
                 title="Sign out"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -52,7 +52,7 @@ export default function RootLayout({
               </button>
             </header>
             {/* Main content */}
-            <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
+            <main className="flex-1 overflow-y-auto bg-white p-6">
               {children}
             </main>
           </div>

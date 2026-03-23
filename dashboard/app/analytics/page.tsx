@@ -59,13 +59,13 @@ interface CostData {
 }
 
 const FUNNEL_STAGES = [
-  { key: "discovered", label: "Discovered", color: "bg-slate-400" },
-  { key: "researched", label: "Researched", color: "bg-digitillis-accent" },
-  { key: "qualified", label: "Qualified", color: "bg-digitillis-success" },
-  { key: "contacted", label: "Contacted", color: "bg-blue-600" },
-  { key: "engaged", label: "Engaged", color: "bg-purple-500" },
-  { key: "meeting_scheduled", label: "Meeting", color: "bg-pink-500" },
-  { key: "pilot_discussion", label: "Pilot", color: "bg-digitillis-warning" },
+  { key: "discovered", label: "Discovered", color: "bg-gray-300" },
+  { key: "researched", label: "Researched", color: "bg-gray-400" },
+  { key: "qualified", label: "Qualified", color: "bg-gray-500" },
+  { key: "contacted", label: "Contacted", color: "bg-gray-600" },
+  { key: "engaged", label: "Engaged", color: "bg-gray-700" },
+  { key: "meeting_scheduled", label: "Meeting", color: "bg-gray-800" },
+  { key: "pilot_discussion", label: "Pilot", color: "bg-gray-900" },
 ];
 
 export default function AnalyticsPage() {
@@ -171,17 +171,17 @@ export default function AnalyticsPage() {
     <div className="space-y-8">
       {/* Page Header */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Analytics</h2>
+        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Analytics</h2>
         <p className="mt-1 text-sm text-gray-500">
           Pipeline performance, costs, and outreach metrics
         </p>
       </div>
 
       {/* Section 1: Pipeline Funnel */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-center gap-2 mb-6">
-          <TrendingUp className="h-5 w-5 text-digitillis-accent" />
-          <h3 className="text-lg font-semibold text-gray-900">
+          <TrendingUp className="h-4 w-4 text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
             Pipeline Funnel
           </h3>
         </div>
@@ -249,10 +249,10 @@ export default function AnalyticsPage() {
       </section>
 
       {/* Section 2: API Costs */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-center gap-2 mb-6">
-          <DollarSign className="h-5 w-5 text-digitillis-success" />
-          <h3 className="text-lg font-semibold text-gray-900">API Costs</h3>
+          <DollarSign className="h-4 w-4 text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">API Costs</h3>
         </div>
 
         {loadingCosts ? (
@@ -268,7 +268,7 @@ export default function AnalyticsPage() {
                   <Coins className="h-4 w-4" />
                   Total Cost
                 </div>
-                <p className="mt-2 text-2xl font-bold text-gray-900">
+                <p className="mt-2 text-2xl font-semibold text-gray-900">
                   ${(costs?.total_cost ?? 0).toFixed(4)}
                 </p>
               </div>
@@ -277,7 +277,7 @@ export default function AnalyticsPage() {
                   <FileInput className="h-4 w-4" />
                   Input Tokens
                 </div>
-                <p className="mt-2 text-2xl font-bold text-gray-900">
+                <p className="mt-2 text-2xl font-semibold text-gray-900">
                   {(costs?.total_input_tokens ?? 0).toLocaleString()}
                 </p>
               </div>
@@ -286,7 +286,7 @@ export default function AnalyticsPage() {
                   <FileOutput className="h-4 w-4" />
                   Output Tokens
                 </div>
-                <p className="mt-2 text-2xl font-bold text-gray-900">
+                <p className="mt-2 text-2xl font-semibold text-gray-900">
                   {(costs?.total_output_tokens ?? 0).toLocaleString()}
                 </p>
               </div>
@@ -297,20 +297,20 @@ export default function AnalyticsPage() {
               <div className="overflow-x-auto rounded-lg border border-gray-200">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50">
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">
                         Provider
                       </th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">
+                      <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">
                         Model
                       </th>
-                      <th className="px-4 py-3 text-right font-medium text-gray-600">
+                      <th className="px-4 py-3 text-right text-[10px] font-medium uppercase tracking-widest text-gray-400">
                         Tokens
                       </th>
-                      <th className="px-4 py-3 text-right font-medium text-gray-600">
+                      <th className="px-4 py-3 text-right text-[10px] font-medium uppercase tracking-widest text-gray-400">
                         Cost
                       </th>
-                      <th className="px-4 py-3 text-right font-medium text-gray-600">
+                      <th className="px-4 py-3 text-right text-[10px] font-medium uppercase tracking-widest text-gray-400">
                         Date
                       </th>
                     </tr>
@@ -358,11 +358,11 @@ export default function AnalyticsPage() {
       </section>
 
       {/* Section 3: Duplicate Detection */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-center gap-2 mb-6">
-          <Copy className="h-5 w-5 text-amber-600" />
-          <h3 className="text-lg font-semibold text-gray-900">Potential Duplicates</h3>
-          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+          <Copy className="h-4 w-4 text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Potential Duplicates</h3>
+          <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium text-gray-600">
             {duplicates.length} groups
           </span>
         </div>
@@ -380,10 +380,10 @@ export default function AnalyticsPage() {
             {duplicates.map((group) => (
               <div
                 key={group.key}
-                className="rounded-lg border border-amber-100 bg-amber-50 p-4"
+                className="rounded-lg border border-gray-200 bg-gray-50 p-4"
               >
                 <p className="text-sm font-medium text-gray-700 mb-2">
-                  Domain: <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">{group.key}</code>
+                  Domain: <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{group.key}</code>
                   {" "}— {group.companies.length} companies
                 </p>
                 <div className="space-y-1">
@@ -391,7 +391,7 @@ export default function AnalyticsPage() {
                     <div key={c.id} className="flex items-center gap-3 text-sm">
                       <Link
                         href={`/prospects/${c.id}`}
-                        className="font-medium text-digitillis-accent hover:underline"
+                        className="font-medium text-gray-900 hover:underline"
                       >
                         {c.name}
                       </Link>
@@ -408,11 +408,11 @@ export default function AnalyticsPage() {
       </section>
 
       {/* Section 4: Competitive Intelligence */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-center gap-2 mb-2">
-          <ShieldAlert className="h-5 w-5 text-red-500" />
-          <h3 className="text-lg font-semibold text-gray-900">Competitive Intelligence</h3>
-          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+          <ShieldAlert className="h-4 w-4 text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Competitive Intelligence</h3>
+          <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium text-gray-600">
             {risks.length} companies
           </span>
         </div>
@@ -438,7 +438,7 @@ export default function AnalyticsPage() {
                 <div className="flex items-center gap-3">
                   <Link
                     href={`/prospects/${risk.company_id}`}
-                    className="text-sm font-medium text-digitillis-accent hover:underline"
+                    className="text-sm font-medium text-gray-900 hover:underline"
                   >
                     {risk.company?.name ?? risk.company_id}
                   </Link>
@@ -457,7 +457,7 @@ export default function AnalyticsPage() {
                   {risk.existing_solutions.map((s) => (
                     <span
                       key={s}
-                      className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+                      className="rounded bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600"
                     >
                       {s}
                     </span>
@@ -471,13 +471,13 @@ export default function AnalyticsPage() {
 
       {/* Section 4b: Pipeline Value Summary */}
       {!loadingPipeline && (
-        <section className="rounded-xl border border-green-200 bg-green-50 p-6 shadow-sm">
+        <section className="rounded-lg border border-gray-200 bg-white p-6">
           <div className="flex items-center gap-2 mb-2">
-            <DollarSign className="h-5 w-5 text-green-600" />
-            <h3 className="text-lg font-semibold text-gray-900">Pipeline Value</h3>
+            <DollarSign className="h-4 w-4 text-gray-400" />
+            <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pipeline Value</h3>
             <Link
               href="/analytics/win-loss"
-              className="ml-auto flex items-center gap-1 text-sm font-medium text-green-700 hover:underline"
+              className="ml-auto flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:underline"
             >
               Win/Loss Analysis
               <ArrowRight className="h-3.5 w-3.5" />
@@ -490,10 +490,10 @@ export default function AnalyticsPage() {
       )}
 
       {/* Section 5: Performance Metrics */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-center gap-2 mb-6">
-          <BarChart3 className="h-5 w-5 text-purple-600" />
-          <h3 className="text-lg font-semibold text-gray-900">
+          <BarChart3 className="h-4 w-4 text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
             Performance Metrics
           </h3>
         </div>
@@ -505,65 +505,48 @@ export default function AnalyticsPage() {
               value: "--",
               subtext: "Tracking via Instantly",
               icon: MailOpen,
-              color: "text-digitillis-accent",
-              bg: "bg-blue-50",
             },
             {
               label: "Reply Rate",
               value: replyRate,
               subtext: `${engaged} engaged / ${contacted} contacted`,
               icon: MessageSquareReply,
-              color: "text-digitillis-success",
-              bg: "bg-green-50",
             },
             {
               label: "Positive Reply Rate",
               value: positiveRate,
               subtext: `${meetings} meetings / ${engaged} engaged`,
               icon: ThumbsUp,
-              color: "text-purple-600",
-              bg: "bg-purple-50",
             },
             {
               label: "Meetings Booked",
               value: String(meetingsBooked),
               subtext: `${meetings} scheduled + ${pilots} in pilot`,
               icon: CalendarCheck,
-              color: "text-digitillis-warning",
-              bg: "bg-amber-50",
             },
             {
               label: "Disqualified",
               value: String(disqualified),
               subtext: "Removed from pipeline",
               icon: BarChart3,
-              color: "text-red-500",
-              bg: "bg-red-50",
             },
             {
               label: "Conversion Rate",
               value: conversionRate,
               subtext: `${converted} converted / ${totalProspects} total`,
               icon: TrendingUp,
-              color: "text-indigo-600",
-              bg: "bg-indigo-50",
             },
           ].map((metric) => {
             const Icon = metric.icon;
             return (
               <div
                 key={metric.label}
-                className="rounded-lg border border-gray-100 bg-white p-5"
+                className="rounded-lg border border-gray-100 bg-gray-50 p-5"
               >
-                <div
-                  className={cn(
-                    "inline-flex rounded-lg p-2",
-                    metric.bg
-                  )}
-                >
-                  <Icon className={cn("h-5 w-5", metric.color)} />
+                <div className="inline-flex rounded-md p-2 bg-white border border-gray-200">
+                  <Icon className="h-4 w-4 text-gray-400" />
                 </div>
-                <p className="mt-3 text-2xl font-bold text-gray-900">
+                <p className="mt-3 text-2xl font-semibold text-gray-900">
                   {metric.value}
                 </p>
                 <p className="mt-0.5 text-sm text-gray-500">{metric.label}</p>
@@ -581,10 +564,10 @@ export default function AnalyticsPage() {
       </section>
 
       {/* Pipeline Velocity */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-center gap-2 mb-2">
-          <Clock className="h-5 w-5 text-indigo-500" />
-          <h3 className="text-lg font-semibold text-gray-900">Pipeline Velocity</h3>
+          <Clock className="h-4 w-4 text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pipeline Velocity</h3>
         </div>
         <p className="text-sm text-gray-500 mb-6">Average days companies spend in each stage</p>
 
@@ -610,7 +593,7 @@ export default function AnalyticsPage() {
                     </div>
                     <div className="relative flex-1 h-8 rounded-lg bg-gray-100">
                       <div
-                        className="h-full rounded-lg bg-indigo-400 transition-all duration-500"
+                        className="h-full rounded-lg bg-gray-600 transition-all duration-500"
                         style={{ width: `${barWidth}%` }}
                       />
                       <div className="absolute inset-0 flex items-center px-3">

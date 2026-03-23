@@ -161,7 +161,7 @@ export default function ContactsPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Contacts</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-900">Contacts</h2>
           <p className="mt-1 text-sm text-gray-500">
             All contacts across companies — {loading ? "…" : contacts.length} total
           </p>
@@ -169,7 +169,7 @@ export default function ContactsPage() {
         <button
           onClick={() => exportCSV(contacts)}
           disabled={contacts.length === 0}
-          className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-40"
+          className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
         >
           <Download className="h-4 w-4" />
           Export CSV
@@ -185,7 +185,7 @@ export default function ContactsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name…"
-            className="h-9 rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-digitillis-accent/30 w-52"
+            className="h-9 rounded-md border border-gray-200 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gray-200 w-52"
           />
         </div>
 
@@ -193,7 +193,7 @@ export default function ContactsPage() {
         <select
           value={personaFilter}
           onChange={(e) => setPersonaFilter(e.target.value)}
-          className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-digitillis-accent/30"
+          className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-200"
         >
           <option value="">All Personas</option>
           {PERSONA_OPTIONS.map((p) => (
@@ -205,7 +205,7 @@ export default function ContactsPage() {
         <select
           value={seniorityFilter}
           onChange={(e) => setSeniorityFilter(e.target.value)}
-          className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-digitillis-accent/30"
+          className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-200"
         >
           <option value="">All Seniority</option>
           {SENIORITY_OPTIONS.map((s) => (
@@ -217,7 +217,7 @@ export default function ContactsPage() {
         <select
           value={departmentFilter}
           onChange={(e) => setDepartmentFilter(e.target.value)}
-          className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-digitillis-accent/30"
+          className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-200"
         >
           <option value="">All Departments</option>
           {DEPARTMENT_OPTIONS.map((d) => (
@@ -231,7 +231,7 @@ export default function ContactsPage() {
           className={cn(
             "flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors",
             dmOnly
-              ? "border-digitillis-accent bg-digitillis-accent/10 text-digitillis-accent"
+              ? "border-gray-900 bg-gray-100 text-gray-900"
               : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
           )}
         >
@@ -243,7 +243,7 @@ export default function ContactsPage() {
         {hasFilters && (
           <button
             onClick={clearFilters}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-500 hover:bg-gray-50"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-xs text-gray-500 hover:bg-gray-50"
           >
             <X className="h-3.5 w-3.5" />
             Clear
@@ -252,13 +252,13 @@ export default function ContactsPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
         {loading ? (
           <div className="flex h-48 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>
         ) : error ? (
-          <div className="flex h-48 flex-col items-center justify-center gap-2 text-red-500">
+          <div className="flex h-48 flex-col items-center justify-center gap-2 text-gray-500">
             <p className="text-sm">{error}</p>
           </div>
         ) : contacts.length === 0 ? (
@@ -272,14 +272,14 @@ export default function ContactsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Title</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Email</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Company</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Seniority</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Department</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">DM</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">LinkedIn</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">Name</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">Title</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">Email</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">Company</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">Seniority</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-widest text-gray-400">Department</th>
+                    <th className="px-4 py-3 text-center text-[10px] font-medium uppercase tracking-widest text-gray-400">DM</th>
+                    <th className="px-4 py-3 text-center text-[10px] font-medium uppercase tracking-widest text-gray-400">LinkedIn</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -289,7 +289,7 @@ export default function ContactsPage() {
                         {contact.companies?.id ? (
                           <Link
                             href={`/prospects/${contact.companies.id}`}
-                            className="hover:text-digitillis-accent hover:underline"
+                            className="hover:text-gray-900 hover:underline"
                           >
                             {contact.full_name || "—"}
                           </Link>
@@ -302,7 +302,7 @@ export default function ContactsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         {contact.email ? (
-                          <a href={`mailto:${contact.email}`} className="hover:text-digitillis-accent hover:underline">
+                          <a href={`mailto:${contact.email}`} className="hover:text-gray-900 hover:underline">
                             {contact.email}
                           </a>
                         ) : (
@@ -313,7 +313,7 @@ export default function ContactsPage() {
                         {contact.companies ? (
                           <Link
                             href={`/prospects/${contact.companies.id}`}
-                            className="font-medium text-gray-800 hover:text-digitillis-accent hover:underline"
+                            className="font-medium text-gray-800 hover:text-gray-900 hover:underline"
                           >
                             {contact.companies.name}
                           </Link>
@@ -335,7 +335,7 @@ export default function ContactsPage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {contact.is_decision_maker ? (
-                          <CheckCircle2 className="mx-auto h-4 w-4 text-green-500" />
+                          <CheckCircle2 className="mx-auto h-4 w-4 text-gray-500" />
                         ) : (
                           <span className="text-gray-300">—</span>
                         )}
@@ -346,7 +346,7 @@ export default function ContactsPage() {
                             href={contact.linkedin_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center text-blue-500 hover:text-blue-700"
+                            className="inline-flex items-center justify-center text-gray-400 hover:text-gray-700"
                           >
                             <ExternalLink className="h-4 w-4" />
                           </a>
@@ -370,7 +370,7 @@ export default function ContactsPage() {
                   <button
                     onClick={() => setPage((p) => p - 1)}
                     disabled={page === 0}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+                    className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
@@ -380,7 +380,7 @@ export default function ContactsPage() {
                   <button
                     onClick={() => setPage((p) => p + 1)}
                     disabled={page >= totalPages - 1}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+                    className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>

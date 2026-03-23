@@ -82,7 +82,7 @@ const FLOW_STEPS = [
     description: "Deep-dive each company with Perplexity + Claude",
     details: "Web research extracts tech stack, pain signals, IoT maturity, personalization hooks. ~$0.05/company.",
     action: "Actions → Run Research",
-    color: "bg-blue-500",
+    color: "bg-gray-500",
     status: "researched",
   },
   {
@@ -91,7 +91,7 @@ const FLOW_STEPS = [
     description: "Score prospects 0-100 across 4 dimensions (PQS)",
     details: "Firmographic fit + technographic readiness + timing signals + engagement. Companies scoring 15+ qualify.",
     action: "Actions → Run Qualification",
-    color: "bg-purple-500",
+    color: "bg-gray-600",
     status: "qualified",
   },
   {
@@ -100,7 +100,7 @@ const FLOW_STEPS = [
     description: "Get verified emails and phone numbers",
     details: "Apollo People Match reveals contact details. Domain MX verification prevents bounces. Uses Apollo credits.",
     action: "Actions → Run Enrichment",
-    color: "bg-indigo-500",
+    color: "bg-gray-700",
     status: "enriched",
   },
   {
@@ -109,7 +109,7 @@ const FLOW_STEPS = [
     description: "Claude generates personalized email drafts",
     details: "Uses your Outreach Guidelines (Settings tab) for tone, structure, and signature. ~$0.02/draft.",
     action: "Actions → Run Outreach",
-    color: "bg-amber-500",
+    color: "bg-gray-700",
     status: "outreach_pending",
   },
   {
@@ -118,7 +118,7 @@ const FLOW_STEPS = [
     description: "Read each draft, edit if needed, send test to yourself",
     details: "Quality score shown per draft. 'Send Test to Me' delivers to your inbox. Nothing sends without your approval.",
     action: "Approvals page",
-    color: "bg-orange-500",
+    color: "bg-gray-800",
     status: "approved",
   },
   {
@@ -127,7 +127,7 @@ const FLOW_STEPS = [
     description: "Approved drafts sent via Instantly.ai, track opens/replies",
     details: "Multi-step sequences with follow-ups. Buying signals auto-detected. Hot replies trigger Slack alerts.",
     action: "Actions → Run Engagement",
-    color: "bg-green-500",
+    color: "bg-gray-900",
     status: "contacted",
   },
 ];
@@ -163,10 +163,10 @@ function HowItWorksGuide() {
   }
 
   return (
-    <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
+    <div className="rounded-lg border border-gray-200 bg-white p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold text-gray-900">
+          <h3 className="text-sm font-semibold text-gray-900">
             How ProspectIQ Works
           </h3>
           <p className="mt-0.5 text-xs text-gray-500">
@@ -175,7 +175,7 @@ function HowItWorksGuide() {
         </div>
         <button
           onClick={dismiss}
-          className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600"
         >
           Dismiss
         </button>
@@ -222,15 +222,15 @@ function HowItWorksGuide() {
       </div>
 
       {/* Quick links */}
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-blue-100 pt-3">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Quick start:</span>
-        <Link href="/actions" className="rounded-full bg-digitillis-accent/10 px-2.5 py-1 text-[10px] font-medium text-digitillis-accent hover:bg-digitillis-accent/20">
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3">
+        <span className="text-[10px] font-medium uppercase tracking-widest text-gray-400">Quick start:</span>
+        <Link href="/actions" className="rounded bg-gray-900 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-gray-800">
           Run Pipeline →
         </Link>
-        <Link href="/settings" className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
+        <Link href="/settings" className="rounded bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
           Configure ICP
         </Link>
-        <Link href="/approvals" className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
+        <Link href="/approvals" className="rounded bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
           Review Drafts
         </Link>
       </div>
@@ -319,8 +319,8 @@ export default function PipelinePage() {
         icon: Bell,
         label: `${dueReminders.length} follow-up reminder${dueReminders.length !== 1 ? "s" : ""} due`,
         href: "/prospects",
-        color: "border-orange-200 bg-orange-50 text-orange-800",
-        dot: "bg-orange-500",
+        color: "border-gray-200 bg-gray-50 text-gray-900",
+        dot: "bg-gray-900",
         priority: 0,
       });
 
@@ -330,32 +330,32 @@ export default function PipelinePage() {
         id: "engaged",
         label: `${engagedCount} prospect${engagedCount !== 1 ? "s" : ""} replied — follow up now!`,
         href: "/prospects?status=engaged",
-        color: "border-purple-200 bg-purple-50 text-purple-800",
-        dot: "bg-purple-500",
+        color: "border-gray-200 bg-gray-50 text-gray-900",
+        dot: "bg-gray-900",
         icon: Zap,
         priority: 1,
       });
 
-    // Priority 2: Pending approvals — amber warning
+    // Priority 2: Pending approvals
     if (approvalCount > 0)
       nudges.push({
         id: "approvals",
         label: `${approvalCount} draft${approvalCount !== 1 ? "s" : ""} pending your approval`,
         href: "/approvals",
-        color: "border-amber-200 bg-amber-50 text-amber-800",
-        dot: "bg-amber-400",
+        color: "border-gray-200 bg-gray-50 text-gray-900",
+        dot: "bg-gray-700",
         icon: AlertCircle,
         priority: 2,
       });
 
-    // Priority 3: Pipeline bottleneck — red warning
+    // Priority 3: Pipeline bottleneck
     if (discoveredCount > 100 && researchedCount < 10)
       nudges.push({
         id: "bottleneck",
         label: `Pipeline bottleneck: ${discoveredCount} discovered but only ${researchedCount} researched. Run Research to move them forward.`,
         href: "/actions",
-        color: "border-red-200 bg-red-50 text-red-800",
-        dot: "bg-red-500",
+        color: "border-gray-200 bg-gray-50 text-gray-900",
+        dot: "bg-gray-500",
         icon: AlertTriangle,
         priority: 3,
       });
@@ -366,8 +366,8 @@ export default function PipelinePage() {
         id: "outreach",
         label: `${qualifiedCount} qualified prospects — generate outreach drafts?`,
         href: "/actions",
-        color: "border-blue-200 bg-blue-50 text-blue-800",
-        dot: "bg-digitillis-accent",
+        color: "border-gray-200 bg-gray-50 text-gray-900",
+        dot: "bg-gray-900",
         icon: Mail,
         priority: 4,
       });
@@ -378,8 +378,8 @@ export default function PipelinePage() {
         id: "qualify",
         label: `${researchedCount} researched companies ready for qualification scoring.`,
         href: "/actions",
-        color: "border-green-200 bg-green-50 text-green-800",
-        dot: "bg-green-500",
+        color: "border-gray-200 bg-gray-50 text-gray-900",
+        dot: "bg-gray-500",
         icon: Filter,
         priority: 5,
       });
@@ -430,7 +430,7 @@ export default function PipelinePage() {
       {/* Page header with approval badge */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Pipeline</h2>
+          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pipeline</h2>
           <p className="mt-1 text-sm text-gray-500">
             Overview of your prospect pipeline
           </p>
@@ -439,7 +439,7 @@ export default function PipelinePage() {
           {approvalCount > 0 && (
             <Link
               href="/approvals"
-              className="flex items-center gap-2 rounded-lg bg-yellow-50 px-3 py-2 text-sm font-medium text-yellow-700 transition-colors hover:bg-yellow-100"
+              className="flex items-center gap-2 rounded-md bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
             >
               <AlertCircle className="h-4 w-4" />
               {approvalCount} Pending Approval{approvalCount !== 1 ? "s" : ""}
@@ -448,7 +448,7 @@ export default function PipelinePage() {
           <button
             onClick={fetchData}
             disabled={loading}
-            className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-50"
           >
             <RefreshCw
               className={cn("h-4 w-4", loading && "animate-spin")}
@@ -464,38 +464,38 @@ export default function PipelinePage() {
           label="Total Prospects"
           value={totalProspects}
           icon={Users}
-          color="bg-blue-50 text-digitillis-accent"
+          color="bg-gray-100 text-gray-600"
         />
         <MetricCard
           label="Qualified"
           value={qualifiedCount}
           icon={Target}
-          color="bg-green-50 text-digitillis-success"
+          color="bg-gray-100 text-gray-600"
         />
         <MetricCard
           label="Contacted"
           value={contactedCount}
           icon={Send}
-          color="bg-blue-50 text-digitillis-accent"
+          color="bg-gray-100 text-gray-600"
         />
         <MetricCard
           label="Response Rate"
           value={`${responseRate}%`}
           icon={TrendingUp}
-          color="bg-purple-50 text-purple-600"
+          color="bg-gray-100 text-gray-600"
         />
         <MetricCard
           label="Disqualified"
           value={disqualifiedCount}
           icon={Ban}
-          color="bg-red-50 text-digitillis-danger"
+          color="bg-gray-100 text-gray-600"
           href="/prospects?status=disqualified"
         />
       </div>
 
       {/* Error state */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-digitillis-danger">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
           {error}
         </div>
       )}
@@ -549,7 +549,7 @@ function MetricCard({
           <Icon className="h-5 w-5" />
         </div>
       </div>
-      <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+      <p className="mt-2 text-2xl font-semibold text-gray-900">{value}</p>
     </>
   );
 
@@ -557,7 +557,7 @@ function MetricCard({
     return (
       <Link
         href={href}
-        className="block rounded-xl border border-gray-200 bg-white p-5 transition-shadow hover:shadow-md"
+        className="block rounded-lg border border-gray-200 bg-white p-5 transition-colors hover:bg-gray-50"
       >
         {inner}
       </Link>
@@ -565,7 +565,7 @@ function MetricCard({
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">{inner}</div>
+    <div className="rounded-lg border border-gray-200 bg-white p-5">{inner}</div>
   );
 }
 
@@ -581,22 +581,17 @@ function PipelineColumn({
   count: number;
 }) {
   return (
-    <div className="flex flex-col rounded-xl border border-gray-200 bg-white">
+    <div className="flex flex-col rounded-lg border border-gray-200 bg-white">
       {/* Column header */}
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-        <h3 className="text-sm font-semibold text-gray-800">{label}</h3>
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-medium",
-            STATUS_COLORS[status] ?? "bg-gray-100 text-gray-700"
-          )}
-        >
+        <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400">{label}</h3>
+        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
           {count}
         </span>
       </div>
 
       {/* Company cards */}
-      <div className="flex flex-col gap-2.5 p-3">
+      <div className="flex flex-col p-2">
         {companies.length === 0 ? (
           <p className="py-4 text-center text-xs text-gray-400">
             No prospects
@@ -609,7 +604,7 @@ function PipelineColumn({
         {count > 5 && (
           <Link
             href={`/prospects?status=${status}`}
-            className="mt-1 text-center text-xs font-medium text-digitillis-accent hover:opacity-80"
+            className="mt-1 text-center text-xs font-medium text-gray-500 hover:text-gray-900"
           >
             View all {count} &rarr;
           </Link>
@@ -623,7 +618,7 @@ function CompanyCard({ company }: { company: Company }) {
   return (
     <Link
       href={`/prospects/${company.id}`}
-      className="block rounded-lg border border-gray-100 bg-gray-50 p-3 transition-colors hover:border-gray-200 hover:bg-white"
+      className="block border-b border-gray-100 last:border-0 px-2 py-2.5 transition-colors hover:bg-gray-50"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -641,18 +636,13 @@ function CompanyCard({ company }: { company: Company }) {
           </p>
         </div>
         {company.tier && (
-          <span className="ml-1 shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+          <span className="ml-1 shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
             {TIER_LABELS[company.tier] ?? company.tier}
           </span>
         )}
       </div>
-      <div className="mt-2 flex items-center justify-between">
-        <span
-          className={cn(
-            "text-sm font-semibold",
-            getPQSColor(company.pqs_total)
-          )}
-        >
+      <div className="mt-1.5 flex items-center justify-between">
+        <span className="text-xs font-mono text-gray-400">
           PQS {company.pqs_total}
         </span>
         <span className="flex items-center gap-1 text-[11px] text-gray-400">

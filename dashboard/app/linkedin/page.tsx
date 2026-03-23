@@ -36,32 +36,14 @@ const STATUS_LABELS: Record<LinkedInStatus, string> = {
   meeting_booked: "Meeting Booked",
 };
 
-const STATUS_COLORS: Record<LinkedInStatus, string> = {
-  not_sent: "text-slate-400",
-  connection_sent: "text-blue-400",
-  accepted: "text-teal-400",
-  dm_sent: "text-violet-400",
-  responded: "text-amber-400",
-  meeting_booked: "text-green-400",
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier badge
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TierBadge({ tier }: { tier?: string }) {
   if (!tier) return null;
-  const colors: Record<string, string> = {
-    "fb_1": "bg-emerald-900/40 text-emerald-300 border-emerald-700",
-    "fb_2": "bg-emerald-900/30 text-emerald-400 border-emerald-800",
-    "mfg_1": "bg-blue-900/40 text-blue-300 border-blue-700",
-    "mfg_2": "bg-blue-900/30 text-blue-400 border-blue-800",
-    "1": "bg-blue-900/40 text-blue-300 border-blue-700",
-    "2": "bg-blue-900/30 text-blue-400 border-blue-800",
-  };
-  const cls = colors[tier] ?? "bg-slate-800 text-slate-300 border-slate-600";
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-xs font-medium ${cls}`}>
+    <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-500 bg-gray-100">
       Tier {tier}
     </span>
   );
@@ -95,15 +77,15 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 transition-colors"
       title="Copy to clipboard"
     >
       {copied ? (
-        <Check className="h-3.5 w-3.5 text-green-400" />
+        <Check className="h-3.5 w-3.5 text-green-600" />
       ) : (
         <Copy className="h-3.5 w-3.5" />
       )}
-      {copied ? "Copied!" : "Copy"}
+      {copied ? <span className="text-green-600">Copied!</span> : "Copy"}
     </button>
   );
 }
@@ -123,18 +105,16 @@ function MessageBlock({
   const [value, setValue] = useState(text);
 
   return (
-    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[10px] font-medium tracking-widest uppercase text-gray-400">
           {label}
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-3">
           <CopyButton text={value} />
           <button
             onClick={() => setEditing((e) => !e)}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-white/10 hover:text-white ${
-              editing ? "text-amber-400" : "text-slate-400"
-            }`}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 transition-colors"
             title={editing ? "Close editor" : "Edit message"}
           >
             <Pencil className="h-3.5 w-3.5" />
@@ -147,13 +127,13 @@ function MessageBlock({
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="w-full rounded bg-black/30 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
           rows={5}
         />
       ) : (
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+        <div className="bg-gray-50 border border-gray-100 rounded-md p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
           {value}
-        </p>
+        </div>
       )}
     </div>
   );
@@ -189,7 +169,7 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
     <div className="mt-3">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 transition-colors"
       >
         {open ? (
           <ChevronDown className="h-3 w-3" />
@@ -200,14 +180,14 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
       </button>
 
       {open && (
-        <div className="mt-2 rounded-lg bg-white/5 border border-white/10 p-3 text-xs space-y-3">
+        <div className="mt-2 rounded-md bg-gray-50 border border-gray-100 p-3 text-xs space-y-3">
           {/* RESEARCH SUMMARY */}
           {intel.company?.research_summary && (
             <div>
-              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
-                RESEARCH SUMMARY
+              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+                Research Summary
               </div>
-              <p className="text-slate-300 whitespace-pre-wrap">{intel.company.research_summary}</p>
+              <p className="text-gray-600 whitespace-pre-wrap">{intel.company.research_summary}</p>
             </div>
           )}
 
@@ -218,10 +198,10 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             (intel.company?.pain_signals?.length ?? 0) > 0 ||
             intel.research?.known_systems?.length) ? (
             <div>
-              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
-                KEY FINDINGS
+              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+                Key Findings
               </div>
-              <div className="space-y-1 text-slate-400">
+              <div className="space-y-1 text-gray-600">
                 {(intel.research?.products_services?.length ?? 0) > 0 && (
                   <p>Products: {intel.research!.products_services!.join(", ")}</p>
                 )}
@@ -252,10 +232,10 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             intel.contact?.city ||
             intel.contact?.state) && (
             <div>
-              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
-                CONTACT
+              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+                Contact
               </div>
-              <div className="space-y-0.5 text-slate-400">
+              <div className="space-y-0.5 text-gray-600">
                 {intel.contact?.title && <p>Title: {intel.contact.title}</p>}
                 {intel.contact?.seniority && (
                   <p>Seniority: {intel.contact.seniority}</p>
@@ -278,10 +258,10 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             intel.company?.revenue_printed ||
             intel.company?.headcount_growth_6m != null) && (
             <div>
-              <div className="font-semibold text-slate-400 mb-1 uppercase tracking-wide text-[10px]">
-                COMPANY
+              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+                Company
               </div>
-              <div className="space-y-0.5 text-slate-400">
+              <div className="space-y-0.5 text-gray-600">
                 {intel.company?.industry && (
                   <p>Industry: {intel.company.industry}</p>
                 )}
@@ -355,25 +335,25 @@ function ContactCard({ item }: { item: LinkedInContact }) {
   const followupDm = drafts["linkedin_dm_followup"];
 
   return (
-    <div className="rounded-xl border border-white/10 bg-digitillis-card p-5">
+    <div className="bg-white border border-gray-200 rounded-lg p-5">
       {/* Header */}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-white truncate">
+            <span className="text-sm font-medium text-gray-900 truncate">
               {contact.full_name || `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() || "Unknown"}
             </span>
             <TierBadge tier={company.tier} />
             {contact.is_decision_maker && (
-              <span className="rounded border border-amber-700 bg-amber-900/30 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-500 bg-gray-100">
                 DM
               </span>
             )}
           </div>
-          <div className="mt-0.5 text-sm text-slate-400">
+          <div className="mt-0.5 text-xs text-gray-500">
             {contact.title} &middot; {company.name}
           </div>
-          <div className="mt-0.5 text-xs text-slate-500">
+          <div className="mt-0.5 text-xs font-mono text-gray-400">
             PQS {company.pqs_total}
             {company.sub_sector ? ` · ${company.sub_sector}` : ""}
           </div>
@@ -385,17 +365,17 @@ function ContactCard({ item }: { item: LinkedInContact }) {
             href={contact.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-700 bg-blue-900/30 px-3 py-1.5 text-xs font-medium text-blue-300 transition-colors hover:bg-blue-800/40 hover:text-blue-200"
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
           >
             <Linkedin className="h-3.5 w-3.5" />
-            Profile
+            Open LI
             <ExternalLink className="h-3 w-3" />
           </a>
         )}
       </div>
 
       {/* Messages */}
-      <div className="space-y-3">
+      <div className="space-y-4">
         {connectionNote && (
           <MessageBlock label="Connection Note" text={connectionNote.body} />
         )}
@@ -411,37 +391,34 @@ function ContactCard({ item }: { item: LinkedInContact }) {
       <IntelPanel intel={intel} />
 
       {/* Status + Notes */}
-      <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mt-4 border-t border-gray-100 pt-4">
         <div className="mb-3">
-          <div className="mb-2 text-xs font-medium text-slate-500">Status</div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="mb-2 text-[10px] font-medium uppercase tracking-widest text-gray-400">
+            Status
+          </div>
+          <div className="flex flex-wrap gap-1">
             {(Object.keys(STATUS_LABELS) as LinkedInStatus[]).map((s) => (
               <button
                 key={s}
                 onClick={() => handleStatusChange(s)}
                 disabled={saving}
-                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition-all ${
+                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                   status === s
-                    ? "border-blue-500 bg-blue-500/20 text-blue-300"
-                    : "border-white/10 text-slate-500 hover:border-white/20 hover:text-slate-300"
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
                 {STATUS_LABELS[s]}
               </button>
             ))}
-            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />}
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
           </div>
-          {status !== "not_sent" && (
-            <div className={`mt-1 text-xs ${STATUS_COLORS[status]}`}>
-              {STATUS_LABELS[status]}
-            </div>
-          )}
         </div>
 
         {/* Notes */}
         <div>
-          <div className="mb-1 text-xs font-medium text-slate-500">
-            Notes (conversation context)
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-widest text-gray-400">
+            Notes
           </div>
           <div className="flex gap-2">
             <textarea
@@ -449,13 +426,13 @@ function ContactCard({ item }: { item: LinkedInContact }) {
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add notes about the conversation..."
               rows={2}
-              className="flex-1 rounded bg-black/30 px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="flex-1 rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-700 placeholder-gray-400 bg-white focus:outline-none focus:ring-1 focus:ring-gray-300"
             />
             {notes.trim() && (
               <button
                 onClick={handleNotesSave}
                 disabled={saving}
-                className="self-end rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+                className="self-end rounded-md px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50"
               >
                 Save
               </button>
@@ -529,131 +506,131 @@ export default function LinkedInPage() {
         });
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-gray-50">
       {/* Header */}
-      <div className="border-b border-white/10 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Linkedin className="h-6 w-6 text-blue-400" />
+      <div className="border-b border-gray-200 bg-white px-6 py-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-white">LinkedIn Outreach</h1>
-              <p className="text-xs text-slate-500">
-                Copy-paste personalized messages for each contact
-              </p>
+              <h1 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                LinkedIn Outreach
+              </h1>
+              {!loading && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {filteredItems.length} contact{filteredItems.length !== 1 ? "s" : ""}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchMessages}
+                disabled={loading}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50"
+                title="Refresh"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              </button>
+              <button
+                onClick={handleGenerate}
+                disabled={generating}
+                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+              >
+                {generating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Linkedin className="h-3.5 w-3.5" />
+                )}
+                {generating ? "Generating..." : "Generate Messages"}
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={fetchMessages}
-              disabled={loading}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
-              title="Refresh"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
-            <button
-              onClick={handleGenerate}
-              disabled={generating}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60"
-            >
-              {generating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Linkedin className="h-4 w-4" />
-              )}
-              {generating ? "Generating..." : "Generate Messages"}
-            </button>
-          </div>
-        </div>
 
-        {/* Filters */}
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {/* Status filter */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500">Status:</span>
-            <div className="flex flex-wrap gap-1">
-              {["all", "not_sent", "connection_sent", "accepted", "dm_sent", "responded", "meeting_booked"].map(
-                (s) => (
+          {/* Filters */}
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            {/* Status filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-400">Status</span>
+              <div className="flex flex-wrap gap-1">
+                {["all", "not_sent", "connection_sent", "accepted", "dm_sent", "responded", "meeting_booked"].map(
+                  (s) => (
+                    <button
+                      key={s}
+                      onClick={() => setStatusFilter(s)}
+                      className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                        statusFilter === s
+                          ? "bg-gray-900 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {s === "all"
+                        ? "All"
+                        : STATUS_LABELS[s as LinkedInStatus] ?? s}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Vertical filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-400">Vertical</span>
+              <div className="flex gap-1">
+                {[
+                  { value: "all", label: "All" },
+                  { value: "fb", label: "F&B" },
+                  { value: "mfg", label: "Mfg" },
+                ].map(({ value, label }) => (
                   <button
-                    key={s}
-                    onClick={() => setStatusFilter(s)}
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                      statusFilter === s
-                        ? "bg-blue-600 text-white"
-                        : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                    key={value}
+                    onClick={() => setVerticalFilter(value)}
+                    className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                      verticalFilter === value
+                        ? "bg-gray-900 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                   >
-                    {s === "all"
-                      ? "All"
-                      : STATUS_LABELS[s as LinkedInStatus] ?? s}
+                    {label}
                   </button>
-                )
-              )}
+                ))}
+              </div>
             </div>
           </div>
-
-          {/* Vertical filter */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500">Vertical:</span>
-            <div className="flex gap-1">
-              {[
-                { value: "all", label: "All" },
-                { value: "fb", label: "F&B" },
-                { value: "mfg", label: "Mfg" },
-              ].map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => setVerticalFilter(value)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                    verticalFilter === value
-                      ? "bg-blue-600 text-white"
-                      : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Count badge */}
-          {!loading && (
-            <span className="ml-auto text-xs text-slate-500">
-              {filteredItems.length} contact{filteredItems.length !== 1 ? "s" : ""}
-            </span>
-          )}
         </div>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="mx-6 mt-4 rounded-lg border border-red-700 bg-red-900/20 px-4 py-3 text-sm text-red-300">
-          {error}
+        <div className="max-w-4xl mx-auto w-full px-6 mt-4">
+          <div className="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+            {error}
+          </div>
         </div>
       )}
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
-          </div>
-        ) : filteredItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Linkedin className="mb-4 h-12 w-12 text-slate-700" />
-            <p className="text-slate-400">No LinkedIn messages yet.</p>
-            <p className="mt-1 text-sm text-slate-600">
-              Click "Generate Messages" to create personalized LinkedIn messages
-              for your qualified contacts.
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredItems.map((item) => (
-              <ContactCard key={item.contact.id} item={item} />
-            ))}
-          </div>
-        )}
+        <div className="max-w-4xl mx-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <Linkedin className="mb-3 h-8 w-8 text-gray-300" />
+              <p className="text-sm text-gray-500">No LinkedIn messages yet.</p>
+              <p className="mt-1 text-xs text-gray-400">
+                Click &ldquo;Generate Messages&rdquo; to create personalized LinkedIn messages
+                for your qualified contacts.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3">
+              {filteredItems.map((item) => (
+                <ContactCard key={item.contact.id} item={item} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

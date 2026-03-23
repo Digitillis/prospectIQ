@@ -227,7 +227,7 @@ export default function SettingsPage() {
       {/* Page Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
+          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Settings</h2>
           <p className="mt-1 text-sm text-gray-500">
             {editMode
               ? "Edit mode — changes will be written to the YAML config files on save."
@@ -241,7 +241,7 @@ export default function SettingsPage() {
                 <button
                   onClick={handleCancel}
                   disabled={saving}
-                  className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Cancel
@@ -249,7 +249,7 @@ export default function SettingsPage() {
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="flex items-center gap-1.5 rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+                  className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
                 >
                   {saving ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -262,7 +262,7 @@ export default function SettingsPage() {
             ) : (
               <button
                 onClick={handleEdit}
-                className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
@@ -274,7 +274,7 @@ export default function SettingsPage() {
 
       {/* Save success */}
       {saveSuccess && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-digitillis-success">
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           Settings saved successfully. Changes will take effect on the next agent run.
         </div>
@@ -282,7 +282,7 @@ export default function SettingsPage() {
 
       {/* Save error */}
       {saveError && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-digitillis-danger">
+        <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <span>{saveError}</span>
         </div>
@@ -290,7 +290,7 @@ export default function SettingsPage() {
 
       {/* Edit mode banner */}
       {editMode && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
           <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             You are in <strong>edit mode</strong>. Modify values below and click{" "}
@@ -303,7 +303,7 @@ export default function SettingsPage() {
 
       {/* Info banner (read-only) */}
       {!editMode && (
-        <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-digitillis-accent">
+        <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             Settings are read from YAML files in the{" "}
@@ -322,7 +322,7 @@ export default function SettingsPage() {
             className={cn(
               "flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
               activeTab === id
-                ? "bg-white text-digitillis-accent shadow-sm"
+                ? "bg-white text-gray-900"
                 : "text-gray-500 hover:text-gray-700"
             )}
           >
@@ -334,11 +334,11 @@ export default function SettingsPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="flex h-64 items-center justify-center rounded-xl border border-gray-200 bg-white">
-          <Loader2 className="h-6 w-6 animate-spin text-digitillis-accent" />
+        <div className="flex h-64 items-center justify-center rounded-lg border border-gray-200 bg-white">
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         </div>
       ) : error ? (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-digitillis-danger">
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
@@ -496,7 +496,7 @@ function ICPTab({
             onRemove={removeState}
             onAdd={addState}
             addPlaceholder="Add state…"
-            chipClass="bg-blue-50 text-digitillis-accent"
+            chipClass="bg-gray-100 text-gray-600"
           />
         </div>
         <KV label="Countries" value={icp.geography.countries.join(", ")} />
@@ -574,7 +574,7 @@ function ICPTab({
               {icp.industries.map((ind, idx) => (
                 <tr key={ind.tier}>
                   <td className="py-2 pr-4">
-                    <span className="rounded bg-digitillis-accent/10 px-2 py-0.5 text-xs font-semibold text-digitillis-accent">
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
                       {ind.tier}
                     </span>
                   </td>
@@ -584,7 +584,7 @@ function ICPTab({
                         type="text"
                         value={ind.label}
                         onChange={(e) => updateIndustry(idx, "label", e.target.value)}
-                        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-800 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent/30"
+                        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-800 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                       />
                     ) : (
                       <span className="font-medium text-gray-800">{ind.label}</span>
@@ -596,7 +596,7 @@ function ICPTab({
                         type="text"
                         value={ind.apollo_industry}
                         onChange={(e) => updateIndustry(idx, "apollo_industry", e.target.value)}
-                        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-500 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent/30"
+                        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-500 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                       />
                     ) : (
                       <span className="text-gray-500">{ind.apollo_industry}</span>
@@ -606,7 +606,7 @@ function ICPTab({
                     <td className="py-2 pl-2">
                       <button
                         onClick={() => removeIndustry(idx)}
-                        className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-digitillis-danger"
+                        className="rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-700"
                         title="Remove industry"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -622,7 +622,7 @@ function ICPTab({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowIndustryPicker(!showIndustryPicker)}
-                  className="flex items-center gap-1.5 rounded-lg border border-digitillis-accent/30 bg-digitillis-accent/5 px-3 py-2 text-xs font-medium text-digitillis-accent hover:bg-digitillis-accent/10"
+                  className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add from catalog ({INDUSTRY_CATALOG.length} industries)
@@ -642,7 +642,7 @@ function ICPTab({
                     value={industrySearch}
                     onChange={(e) => setIndustrySearch(e.target.value)}
                     placeholder="Search industries… (e.g., pharma, plastics, aerospace)"
-                    className="mb-3 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent/30"
+                    className="mb-3 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   />
                   <div className="max-h-72 overflow-y-auto space-y-1">
                     {filteredCatalog.length === 0 ? (
@@ -654,7 +654,7 @@ function ICPTab({
                         <button
                           key={entry.tier}
                           onClick={() => addIndustryFromCatalog(entry)}
-                          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-white hover:shadow-sm transition-all"
+                          className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-white hover:border hover:border-gray-200 transition-all"
                         >
                           <div className="min-w-0 flex-1">
                             <span className="font-medium text-gray-800">{entry.label}</span>
@@ -664,7 +664,7 @@ function ICPTab({
                             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-mono text-gray-500">
                               NAICS {entry.naics_prefix}
                             </span>
-                            <Plus className="h-3.5 w-3.5 text-digitillis-accent" />
+                            <Plus className="h-3.5 w-3.5 text-gray-400" />
                           </div>
                         </button>
                       ))
@@ -692,7 +692,7 @@ function ICPTab({
           {icp.seniority.map((s) => (
             <span
               key={s}
-              className="rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-digitillis-success"
+              className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
             >
               {s}
             </span>
@@ -802,8 +802,8 @@ function OutreachGuidelinesTab() {
     }
   };
 
-  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-digitillis-accent" /></div>;
-  if (error) return <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>;
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
+  if (error) return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{error}</div>;
   if (!draft) return null;
 
   const updateField = (field: string, value: unknown) => {
@@ -846,14 +846,14 @@ function OutreachGuidelinesTab() {
           {editMode ? (
             <>
               <button onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"><RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">{saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}{saving ? "Saving…" : "Save"}</button>
+              <button onClick={handleSave} disabled={saving} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60">{saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}{saving ? "Saving…" : "Save"}</button>
             </>
           ) : (
             <button onClick={() => setEditMode(true)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Pencil className="mr-1 inline h-3.5 w-3.5" />Edit</button>
           )}
         </div>
       </div>
-      {saveMsg && <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-600")}>{saveMsg}</div>}
+      {saveMsg && <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 bg-gray-50 text-gray-700" : "border-gray-200 bg-gray-50 text-gray-700")}>{saveMsg}</div>}
 
       {/* Sender Info */}
       <Section icon={Users} title="Sender Identity">
@@ -862,12 +862,12 @@ function OutreachGuidelinesTab() {
             {[["Name", "name"], ["Title", "title"], ["Email", "email"], ["Phone", "phone"]].map(([label, field]) => (
               <div key={field} className="flex items-center justify-between gap-4 text-sm">
                 <span className="text-gray-500 w-20">{label}</span>
-                <input type="text" value={(draft.sender as unknown as Record<string, string>)[field] || ""} onChange={(e) => updateSender(field, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none" />
+                <input type="text" value={(draft.sender as unknown as Record<string, string>)[field] || ""} onChange={(e) => updateSender(field, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-gray-300 focus:outline-none" />
               </div>
             ))}
             <div>
               <p className="mb-1 text-xs font-medium text-gray-500">Signature Block</p>
-              <textarea value={draft.sender.signature} onChange={(e) => updateSender("signature", e.target.value)} rows={6} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm font-mono text-gray-700 focus:border-digitillis-accent focus:outline-none" />
+              <textarea value={draft.sender.signature} onChange={(e) => updateSender("signature", e.target.value)} rows={6} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm font-mono text-gray-700 focus:border-gray-300 focus:outline-none" />
             </div>
           </div>
         ) : (
@@ -887,7 +887,7 @@ function OutreachGuidelinesTab() {
       {/* Voice & Tone */}
       <Section icon={Target} title="Voice & Tone">
         {editMode ? (
-          <textarea value={draft.voice_and_tone} onChange={(e) => updateField("voice_and_tone", e.target.value)} rows={10} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none" placeholder="Describe how outreach emails should sound..." />
+          <textarea value={draft.voice_and_tone} onChange={(e) => updateField("voice_and_tone", e.target.value)} rows={10} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none" placeholder="Describe how outreach emails should sound..." />
         ) : (
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.voice_and_tone}</p>
         )}
@@ -896,7 +896,7 @@ function OutreachGuidelinesTab() {
       {/* Email Structure */}
       <Section icon={Sliders} title="Email Structure">
         {editMode ? (
-          <textarea value={draft.email_structure} onChange={(e) => updateField("email_structure", e.target.value)} rows={7} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none" />
+          <textarea value={draft.email_structure} onChange={(e) => updateField("email_structure", e.target.value)} rows={7} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none" />
         ) : (
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.email_structure}</p>
         )}
@@ -905,7 +905,7 @@ function OutreachGuidelinesTab() {
       {/* Subject Line Rules */}
       <Section icon={Mail} title="Subject Line Rules">
         {editMode ? (
-          <textarea value={draft.subject_line_rules} onChange={(e) => updateField("subject_line_rules", e.target.value)} rows={5} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none" />
+          <textarea value={draft.subject_line_rules} onChange={(e) => updateField("subject_line_rules", e.target.value)} rows={5} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none" />
         ) : (
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.subject_line_rules}</p>
         )}
@@ -924,8 +924,8 @@ function OutreachGuidelinesTab() {
               <div key={idx} className="flex items-center gap-2">
                 {editMode ? (
                   <>
-                    <input type="text" value={item} onChange={(e) => updateList(field, idx, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none" />
-                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-red-500"><X className="h-3.5 w-3.5" /></button>
+                    <input type="text" value={item} onChange={(e) => updateList(field, idx, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-gray-300 focus:outline-none" />
+                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-gray-700"><X className="h-3.5 w-3.5" /></button>
                   </>
                 ) : (
                   <span className="text-sm text-gray-700">• {item}</span>
@@ -933,7 +933,7 @@ function OutreachGuidelinesTab() {
               </div>
             ))}
             {editMode && (
-              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-digitillis-accent hover:underline"><Plus className="h-3 w-3" />Add</button>
+              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 hover:underline"><Plus className="h-3 w-3" />Add</button>
             )}
           </div>
         </Section>
@@ -998,8 +998,8 @@ function ContentGuidelinesTab() {
     }
   };
 
-  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-digitillis-accent" /></div>;
-  if (error) return <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>;
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
+  if (error) return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{error}</div>;
   if (!draft) return null;
 
   const updateField = (field: string, value: unknown) => {
@@ -1050,7 +1050,7 @@ function ContentGuidelinesTab() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
               >
                 {saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}
                 {saving ? "Saving…" : "Save"}
@@ -1067,7 +1067,7 @@ function ContentGuidelinesTab() {
         </div>
       </div>
       {saveMsg && (
-        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-600")}>
+        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 bg-gray-50 text-gray-700" : "border-gray-200 bg-gray-50 text-gray-700")}>
           {saveMsg}
         </div>
       )}
@@ -1083,7 +1083,7 @@ function ContentGuidelinesTab() {
                   type="text"
                   value={(draft.author as unknown as Record<string, string>)[field] || ""}
                   onChange={(e) => updateAuthor(field, e.target.value)}
-                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none"
+                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
                 />
               </div>
             ))}
@@ -1104,7 +1104,7 @@ function ContentGuidelinesTab() {
             value={draft.voice_and_tone}
             onChange={(e) => updateField("voice_and_tone", e.target.value)}
             rows={12}
-            className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none"
+            className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none"
             placeholder="Describe how LinkedIn posts should sound..."
           />
         ) : (
@@ -1144,9 +1144,9 @@ function ContentGuidelinesTab() {
                       type="text"
                       value={item}
                       onChange={(e) => updateList(field, idx, e.target.value)}
-                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none"
+                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-gray-300 focus:outline-none"
                     />
-                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-red-500">
+                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-gray-700">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </>
@@ -1156,7 +1156,7 @@ function ContentGuidelinesTab() {
               </div>
             ))}
             {editMode && (
-              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-digitillis-accent hover:underline">
+              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 hover:underline">
                 <Plus className="h-3 w-3" />Add
               </button>
             )}
@@ -1226,8 +1226,8 @@ function LinkedInMessagesTab() {
     }
   };
 
-  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-digitillis-accent" /></div>;
-  if (error) return <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>;
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
+  if (error) return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{error}</div>;
   if (!draft) return null;
 
   const updateField = (field: keyof LinkedInGuidelines, value: unknown) => {
@@ -1278,7 +1278,7 @@ function LinkedInMessagesTab() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-lg bg-digitillis-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
               >
                 {saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}
                 {saving ? "Saving…" : "Save"}
@@ -1295,7 +1295,7 @@ function LinkedInMessagesTab() {
         </div>
       </div>
       {saveMsg && (
-        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-600")}>
+        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 bg-gray-50 text-gray-700" : "border-gray-200 bg-gray-50 text-gray-700")}>
           {saveMsg}
         </div>
       )}
@@ -1311,7 +1311,7 @@ function LinkedInMessagesTab() {
                   type="text"
                   value={(draft.sender as unknown as Record<string, string>)[field] || ""}
                   onChange={(e) => updateSender(field, e.target.value)}
-                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-digitillis-accent focus:outline-none"
+                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
                 />
               </div>
             ))}
@@ -1338,7 +1338,7 @@ function LinkedInMessagesTab() {
               value={draft[field] as string}
               onChange={(e) => updateField(field, e.target.value)}
               rows={rows}
-              className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-digitillis-accent focus:outline-none"
+              className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none"
             />
           ) : (
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft[field] as string}</p>
@@ -1363,9 +1363,9 @@ function LinkedInMessagesTab() {
                       type="text"
                       value={item}
                       onChange={(e) => updateListItem(field, idx, e.target.value)}
-                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-digitillis-accent focus:outline-none"
+                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-gray-300 focus:outline-none"
                     />
-                    <button onClick={() => removeListItem(field, idx)} className="text-gray-300 hover:text-red-500">
+                    <button onClick={() => removeListItem(field, idx)} className="text-gray-300 hover:text-gray-700">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </>
@@ -1375,7 +1375,7 @@ function LinkedInMessagesTab() {
               </div>
             ))}
             {editMode && (
-              <button onClick={() => addListItem(field)} className="mt-1 flex items-center gap-1 text-xs text-digitillis-accent hover:underline">
+              <button onClick={() => addListItem(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 hover:underline">
                 <Plus className="h-3 w-3" />Add
               </button>
             )}
@@ -1400,10 +1400,10 @@ function ScoringTab({
   onChange: (updated: AppSettings["scoring"]) => void;
 }) {
   const DIMENSION_COLORS: Record<string, string> = {
-    firmographic: "bg-digitillis-accent",
-    technographic: "bg-purple-500",
-    timing: "bg-digitillis-warning",
-    engagement: "bg-digitillis-success",
+    firmographic: "bg-gray-700",
+    technographic: "bg-gray-600",
+    timing: "bg-gray-500",
+    engagement: "bg-gray-800",
   };
 
   const updateSignalPoints = (dimName: string, sigName: string, points: number) => {
@@ -1483,14 +1483,14 @@ function ScoringTab({
                         updateSignalPoints(dimName, sigName, parseInt(e.target.value, 10) || 0)
                       }
                       className={cn(
-                        "w-16 rounded-full px-2 py-1 text-center text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-white/50",
+                        "w-16 rounded-md px-2 py-1 text-center text-xs font-medium text-white focus:outline-none focus:ring-1 focus:ring-gray-300",
                         DIMENSION_COLORS[dimName] ?? "bg-gray-400"
                       )}
                     />
                   ) : (
                     <span
                       className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-bold text-white",
+                        "rounded-md px-2.5 py-1 text-xs font-medium text-white",
                         DIMENSION_COLORS[dimName] ?? "bg-gray-400"
                       )}
                     >
@@ -1515,11 +1515,11 @@ function ScoringTab({
         <div className="space-y-2">
           {Object.entries(scoring.thresholds).map(([name, threshold]) => {
             const COLOR_MAP: Record<string, string> = {
-              unqualified: "bg-digitillis-danger",
-              research_needed: "bg-digitillis-warning",
-              qualified: "bg-digitillis-accent",
-              high_priority: "bg-digitillis-success",
-              hot_prospect: "bg-purple-500",
+              unqualified: "bg-gray-300",
+              research_needed: "bg-gray-400",
+              qualified: "bg-gray-500",
+              high_priority: "bg-gray-700",
+              hot_prospect: "bg-gray-900",
             };
             return (
               <div
@@ -1546,7 +1546,7 @@ function ScoringTab({
                       onChange={(e) =>
                         updateThresholdMax(name, parseInt(e.target.value, 10) || 0)
                       }
-                      className="w-16 rounded border border-gray-200 bg-white px-2 py-1 text-center text-xs font-medium text-gray-700 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent/30"
+                      className="w-16 rounded-md border border-gray-200 bg-white px-2 py-1 text-center text-xs font-medium text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                     />
                     <span className="text-xs text-gray-400">pts</span>
                   </div>
@@ -1582,9 +1582,9 @@ const CHANNEL_ICON: Record<string, typeof Mail> = {
 };
 
 const CHANNEL_COLOR: Record<string, string> = {
-  email: "bg-blue-100 text-digitillis-accent",
-  linkedin: "bg-sky-100 text-sky-700",
-  phone: "bg-green-100 text-digitillis-success",
+  email: "bg-gray-100 text-gray-600",
+  linkedin: "bg-gray-100 text-gray-600",
+  phone: "bg-gray-100 text-gray-600",
 };
 
 function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
@@ -1592,7 +1592,7 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+      <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
         No sequences configured. Add sequences to{" "}
         <code className="font-mono text-xs">config/sequences.yaml</code>.
       </div>
@@ -1610,7 +1610,7 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
         </span>
       </div>
       {entries.map(([key, seq]) => (
-        <div key={key} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div key={key} className="rounded-lg border border-gray-200 bg-white p-6">
           <div className="mb-5">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -1676,7 +1676,7 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
                           </p>
                         )}
                         {(step.instructions.note as string | undefined) && (
-                          <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                          <p className="mt-1 rounded bg-gray-50 px-2 py-1 text-xs text-gray-600">
                             {step.instructions.note as string}
                           </p>
                         )}
@@ -1709,15 +1709,10 @@ function Section({
   accent?: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
       <div className="mb-4 flex items-center gap-2">
-        <Icon
-          className={cn(
-            "h-5 w-5",
-            accent ? "text-white" : "text-digitillis-accent"
-          )}
-        />
-        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+        <Icon className="h-4 w-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">{title}</h3>
         {accent && (
           <span className={cn("ml-auto h-2 w-2 rounded-full", accent)} />
         )}
@@ -1758,7 +1753,7 @@ function NumberField({
         max={max}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-32 rounded border border-gray-200 bg-white px-2 py-1 text-right text-sm font-medium text-gray-900 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent/30"
+        className="w-32 rounded border border-gray-200 bg-white px-2 py-1 text-right text-sm font-medium text-gray-900 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
       />
     </div>
   );
@@ -1822,7 +1817,7 @@ function ChipList({
               if (e.key === "Enter") { e.preventDefault(); commit(); }
             }}
             placeholder={addPlaceholder}
-            className="flex-1 rounded border border-dashed border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-600 placeholder:text-gray-400 focus:border-digitillis-accent focus:outline-none"
+            className="flex-1 rounded border border-dashed border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-600 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none"
           />
           <button
             onClick={commit}

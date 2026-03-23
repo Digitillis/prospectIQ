@@ -86,11 +86,11 @@ export function Sidebar() {
   const isTodayActive = pathname === "/today";
 
   return (
-    <nav className="group flex h-full w-16 flex-col bg-digitillis-darker transition-all duration-200 hover:w-60">
+    <nav className="group flex h-full w-14 flex-col bg-white border-r border-gray-200 transition-all duration-200 hover:w-52">
       {/* Logo area */}
-      <div className="flex h-14 items-center justify-center border-b border-white/10 px-4">
-        <span className="text-xl font-bold text-white">P</span>
-        <span className="ml-1 hidden truncate text-lg font-semibold text-white group-hover:inline">
+      <div className="flex h-14 items-center justify-center border-b border-gray-200 px-4">
+        <span className="text-sm font-semibold text-gray-900">P</span>
+        <span className="ml-1 hidden truncate text-sm font-semibold text-gray-900 group-hover:inline">
           rospectIQ
         </span>
       </div>
@@ -102,42 +102,42 @@ export function Sidebar() {
             new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })
           )
         }
-        className="mx-2 mt-3 flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+        className="mx-2 mt-3 flex items-center gap-3 rounded-md px-3 py-2 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
         title="Search (⌘K)"
       >
-        <Search className="h-5 w-5 shrink-0" />
+        <Search className="h-4 w-4 shrink-0 text-gray-400" />
         <span className="hidden min-w-0 flex-1 truncate text-left group-hover:inline">
           Search
         </span>
-        <kbd className="hidden shrink-0 rounded border border-white/20 px-1.5 py-0.5 text-xs group-hover:inline">
+        <kbd className="hidden shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] group-hover:inline">
           ⌘K
         </kbd>
       </button>
 
       {/* Navigation links — scrollable when viewport is short */}
-      <ul className="mt-2 flex flex-1 flex-col gap-1 overflow-y-auto px-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+      <ul className="mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
 
         {/* TODAY — always first, with notification badge */}
         <li>
           <Link
             href="/today"
             className={cn(
-              "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "relative flex items-center gap-3 rounded-md px-3 py-2 text-xs font-medium transition-colors",
               isTodayActive
-                ? "bg-amber-500/20 text-white"
-                : "text-slate-400 hover:bg-white/10 hover:text-white"
+                ? "bg-gray-100 text-gray-900"
+                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
             )}
           >
             <div className="relative shrink-0">
               <Sun
                 className={cn(
-                  "h-5 w-5",
-                  isTodayActive ? "text-amber-400" : ""
+                  "h-4 w-4",
+                  isTodayActive ? "text-gray-900" : "text-gray-400"
                 )}
               />
               {/* Notification badge */}
               {todayCount > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white leading-none">
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-900 px-1 text-[9px] font-bold text-white leading-none">
                   {todayCount > 99 ? "99+" : todayCount}
                 </span>
               )}
@@ -145,7 +145,7 @@ export function Sidebar() {
             <span className="hidden truncate group-hover:inline">Today</span>
             {/* Badge visible in expanded state */}
             {todayCount > 0 && (
-              <span className="ml-auto hidden shrink-0 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white group-hover:inline">
+              <span className="ml-auto hidden shrink-0 rounded-full bg-gray-900 px-1.5 py-0.5 text-[10px] font-bold text-white group-hover:inline">
                 {todayCount > 99 ? "99+" : todayCount}
               </span>
             )}
@@ -153,7 +153,7 @@ export function Sidebar() {
         </li>
 
         {/* Divider */}
-        <li className="mx-2 my-1 border-t border-white/10" />
+        <li className="mx-2 my-1 border-t border-gray-200" />
 
         {/* All other nav items */}
         {NAV_ITEMS.map((item) => {
@@ -168,13 +168,13 @@ export function Sidebar() {
               <Link
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-xs transition-colors",
                   isActive
-                    ? "bg-digitillis-accent/20 text-white"
-                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                    ? "bg-gray-100 text-gray-900 font-medium"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                 )}
               >
-                <Icon className={cn("h-5 w-5 shrink-0", isActive && "text-digitillis-accent")} />
+                <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-gray-900" : "text-gray-400")} />
                 <span className="hidden truncate group-hover:inline">
                   {item.label}
                 </span>
