@@ -20,6 +20,8 @@ import {
   ExternalLink,
   BarChart2,
   X,
+  Trash2,
+  Search as SearchIcon,
 } from "lucide-react";
 import {
   getContentCalendar,
@@ -32,6 +34,9 @@ import {
   archiveContent,
   updateEngagement,
   getContentAnalytics,
+  deleteContentDraft,
+  deleteAllContentDrafts,
+  runIntelOnDraft,
   type ContentDraft,
   type ContentQualityReport,
   type AutoCalendarPost,
@@ -419,11 +424,13 @@ function BatchDraftCard({
   index,
   onRegenerate,
   onMarkPosted,
+  onDelete,
 }: {
   draft: ContentDraft;
   index: number;
   onRegenerate: (topic: string, pillar: string, format: string) => void;
   onMarkPosted: (id: string, linkedinUrl?: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState(draft.post_text);
@@ -515,6 +522,14 @@ function BatchDraftCard({
         </span>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => { if (confirm("Delete this draft?")) onDelete(draft.id); }}
+            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            title="Delete draft"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+
           <button
             onClick={handleCopy}
             className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
@@ -695,12 +710,13 @@ function RawReportToggle({ report }: { report: string }) {
   );
 }
 
-function IntelPanel({ draft }: { draft: ContentDraft }) {
+function IntelPanel({ draft, onIntelUpdated }: { draft: ContentDraft; onIntelUpdated?: (intel: ContentDraft["intel"], credibility: number, publishReady: boolean) => void }) {
   const [open, setOpen] = useState(false);
-  const intel = draft.intel;
+  const [running, setRunning] = useState(false);
+  const [intel, setIntel] = useState(draft.intel);
   const qr = draft.quality_report;
 
-  if (!intel && !qr) return null;
+  const hasIntel = !!(intel?.report);
 
   const credScore = intel?.credibility_score ?? draft.credibility_score ?? null;
   const publishReady = intel?.publish_ready ?? draft.publish_ready ?? null;
@@ -716,15 +732,39 @@ function IntelPanel({ draft }: { draft: ContentDraft }) {
       : "text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
     : "";
 
+  const handleRunIntel = async () => {
+    if (!draft.id) return;
+    setRunning(true);
+    try {
+      const res = await runIntelOnDraft(draft.id);
+      if (res?.data?.intel) {
+        setIntel(res.data.intel);
+        onIntelUpdated?.(res.data.intel, res.data.credibility_score, res.data.publish_ready);
+        setOpen(true);
+      }
+    } catch (err) {
+      console.error("Intel verification failed:", err);
+    } finally {
+      setRunning(false);
+    }
+  };
+
   return (
     <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-2">
       <div className="flex items-center gap-2">
         <button
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          onClick={() => hasIntel ? setOpen(!open) : handleRunIntel()}
+          disabled={running}
+          className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
         >
-          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          Intel
+          {running ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : hasIntel ? (
+            open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />
+          ) : (
+            <SearchIcon className="h-3 w-3" />
+          )}
+          {running ? "Verifying..." : hasIntel ? "Intel" : "Run Intel"}
         </button>
         {credScore !== null && (
           <span className={`text-xs px-2 py-0.5 rounded border font-medium ${scoreColor}`}>
@@ -735,6 +775,16 @@ function IntelPanel({ draft }: { draft: ContentDraft }) {
           <span className={`text-xs ${publishReady ? "text-green-600 dark:text-green-500" : "text-amber-600 dark:text-amber-500"}`}>
             {publishReady ? "Publish Ready" : "Needs Review"}
           </span>
+        )}
+        {hasIntel && (
+          <button
+            onClick={handleRunIntel}
+            disabled={running}
+            className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+            title="Re-run verification"
+          >
+            <RefreshCw className={`h-3 w-3 ${running ? "animate-spin" : ""}`} />
+          </button>
         )}
       </div>
 
@@ -1904,6 +1954,27 @@ export default function ContentPage() {
     }
   };
 
+  const handleDeleteDraft = async (id: string) => {
+    try {
+      await deleteContentDraft(id);
+      setDrafts((prev) => prev.filter((d) => d.id !== id));
+      setBatchDrafts((prev) => prev.filter((d) => d.id !== id));
+    } catch (e) {
+      setError(`Failed to delete draft: ${(e as Error).message}`);
+    }
+  };
+
+  const handleClearAllDrafts = async () => {
+    if (!confirm("Delete all drafts? This cannot be undone. Archived posts will not be affected.")) return;
+    try {
+      await deleteAllContentDrafts();
+      setDrafts([]);
+      setBatchDrafts([]);
+    } catch (e) {
+      setError(`Failed to clear drafts: ${(e as Error).message}`);
+    }
+  };
+
   // ── Auto-calendar handler ─────────────────────────────────────────────────
 
   const handleAutoGenerate = async () => {
@@ -2145,6 +2216,14 @@ export default function ContentPage() {
             <Sparkles className="h-4 w-4 text-gray-400 dark:text-gray-500" />
             Batch Results ({activeBatchDrafts.length} posts)
           </button>
+          <button
+            onClick={handleClearAllDrafts}
+            className="ml-auto flex items-center gap-1 rounded-md px-2.5 py-1 text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            title="Clear all drafts"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Clear All
+          </button>
 
           {showBatchDrafts && (
             <div className="flex flex-col gap-4">
@@ -2155,6 +2234,7 @@ export default function ContentPage() {
                   index={idx}
                   onRegenerate={handleRegenerate}
                   onMarkPosted={handleMarkPosted}
+                  onDelete={handleDeleteDraft}
                 />
               ))}
             </div>

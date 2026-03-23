@@ -822,6 +822,23 @@ export const checkContentDedup = (topic: string) =>
     `/api/content/archive/dedup-check?topic=${encodeURIComponent(topic)}`
   );
 
+// Content draft management
+export const deleteContentDraft = (draftId: string) =>
+  fetchAPI<{ data: { deleted: string } }>(`/api/content/${draftId}`, {
+    method: "DELETE",
+  });
+
+export const deleteAllContentDrafts = () =>
+  fetchAPI<{ data: { deleted_count: number } }>("/api/content/drafts/all", {
+    method: "DELETE",
+  });
+
+export const runIntelOnDraft = (draftId: string) =>
+  fetchAPI<{ data: { draft_id: string; credibility_score: number; publish_ready: boolean; intel: ContentIntel } }>(
+    `/api/content/${draftId}/run-intel`,
+    { method: "POST" }
+  );
+
 // LinkedIn task queue
 export const getLinkedInTasks = () =>
   fetchAPI<{ data: LinkedInTask[]; count: number }>("/api/actions/linkedin-tasks");

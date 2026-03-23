@@ -889,6 +889,180 @@ async def get_archive_analytics():
     }
 
 
+# ---------------------------------------------------------------------------
+# Delete & Intel endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/drafts/all")
+async def delete_all_drafts():
+    """Delete all thought_leadership drafts (not archived posts)."""
+    db = Database()
+    try:
+        result = db.client.table("outreach_drafts").select("id").eq(
+            "draft_type", "thought_leadership"
+        ).execute()
+        ids = [r["id"] for r in (result.data or [])]
+        if ids:
+            for draft_id in ids:
+                db.client.table("outreach_drafts").delete().eq("id", draft_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear drafts: {str(e)}")
+    return {"data": {"deleted_count": len(ids)}}
+
+
+@router.delete("/{draft_id}")
+async def delete_draft(draft_id: str):
+    """Delete a single content draft."""
+    db = Database()
+    try:
+        db.client.table("outreach_drafts").delete().eq("id", draft_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete draft: {str(e)}")
+    return {"data": {"deleted": draft_id}}
+
+
+@router.post("/{draft_id}/run-intel")
+async def run_intel_on_draft(draft_id: str):
+    """Run the 3-round intel verification on an existing draft that has no intel data."""
+    db = Database()
+
+    # Fetch draft
+    try:
+        res = db.client.table("outreach_drafts").select("*").eq("id", draft_id).limit(1).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    draft_row = res.data[0]
+    post_text = draft_row.get("body", "") or ""
+    if not post_text.strip():
+        raise HTTPException(status_code=422, detail="Draft has no text to verify")
+
+    # Run the intel verification using a ContentAgent instance
+    agent = ContentAgent()
+
+    intel_prompt = (
+        "You are a fact-checking editor for a thought leadership publication.\n\n"
+        f"LINKEDIN POST TO VERIFY:\n{post_text}\n\n"
+        "Perform 3 rounds of verification:\n\n"
+        "ROUND 1 — SOURCE VERIFICATION:\n"
+        "For each statistical claim, industry reference, or factual statement:\n"
+        "- Identify the claim\n"
+        "- Find the most likely real-world source\n"
+        "- Rate: VERIFIED (source found) / PLAUSIBLE (reasonable but unverified) / UNVERIFIABLE\n\n"
+        "ROUND 2 — AUTHENTICITY CHECK:\n"
+        "For each claim, assess: Is this number realistic? Could it be verified by a reader?\n"
+        "Flag any claim that sounds fabricated, exaggerated, or too precise to be real.\n"
+        "Check for common AI hallucination patterns (overly round numbers, fake study citations).\n\n"
+        "ROUND 3 — CREDIBILITY ASSESSMENT:\n"
+        "Overall credibility score (1-10, where 10 = every claim is verifiable).\n"
+        "Would a McKinsey partner publish this without edits? Yes/No and why.\n"
+        "List any thought leaders, companies, or organizations referenced or relevant.\n\n"
+        "OUTPUT FORMAT:\n"
+        "SOURCES:\n"
+        "- [claim]: [source] (VERIFIED / PLAUSIBLE / UNVERIFIABLE)\n"
+        "FLAGGED CLAIMS:\n"
+        "- [any suspicious or unverifiable claims]\n"
+        "CREDIBILITY SCORE: [X]/10\n"
+        "PUBLISH READY: [Yes/No]\n"
+        "REASON: [one-line reason]\n"
+        "REFERENCED ENTITIES:\n"
+        "- Organizations: ...\n"
+        "- Reports/Studies: ...\n"
+        "- Regulations/Standards: ...\n"
+        "SUGGESTED IMPROVEMENTS:\n"
+        "- [actionable edits to increase verifiability]\n"
+    )
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        intel_response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1200,
+            system="You are a rigorous fact-checking editor. Flag anything that cannot be independently verified. No leniency.",
+            messages=[{"role": "user", "content": intel_prompt}],
+        )
+        intel_text = intel_response.content[0].text.strip()
+
+        # Track cost
+        agent.track_cost(
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            endpoint="/messages",
+            company_id=None,
+            input_tokens=intel_response.usage.input_tokens,
+            output_tokens=intel_response.usage.output_tokens,
+        )
+    except Exception as e:
+        logger.error(f"Intel verification failed for draft {draft_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Intel verification failed: {str(e)}")
+
+    # Parse credibility score
+    credibility_score = 0
+    publish_ready = False
+    for line in intel_text.split("\n"):
+        line_stripped = line.strip()
+        if line_stripped.startswith("CREDIBILITY SCORE:"):
+            try:
+                score_part = line_stripped.split(":")[1].strip().split("/")[0].strip()
+                credibility_score = int(score_part)
+            except (ValueError, IndexError):
+                pass
+        if line_stripped.startswith("PUBLISH READY:"):
+            publish_ready = "yes" in line_stripped.lower()
+
+    # Update persisted notes with intel report
+    import json as _json
+    notes = draft_row.get("personalization_notes", "") or ""
+
+    # Strip any existing intel/quality sections
+    import re
+    clean_notes = re.sub(r"\|intel_report::.*?(?=\|quality_report::|$)", "", notes, flags=re.DOTALL)
+    clean_notes = re.sub(r"\|quality_report::.*", "", clean_notes, flags=re.DOTALL)
+
+    # Re-add credibility + publish_ready + intel report
+    # Remove old credibility/publish_ready
+    parts = [p for p in clean_notes.split("|") if p and not p.startswith("credibility:") and not p.startswith("publish_ready:")]
+    parts.append(f"credibility:{credibility_score}/10")
+    parts.append(f"publish_ready:{publish_ready}")
+    updated_notes = "|".join(parts)
+    updated_notes += f"|intel_report::{intel_text}"
+
+    # Re-attach quality_report if it existed
+    quality_report_text = ""
+    qr_match = re.search(r"quality_report::(.+)", notes, flags=re.DOTALL)
+    if qr_match:
+        updated_notes += f"|quality_report::{qr_match.group(1)}"
+
+    try:
+        db.client.table("outreach_drafts").update({
+            "personalization_notes": updated_notes,
+        }).eq("id", draft_id).execute()
+    except Exception:
+        pass  # Non-critical — intel is still returned
+
+    intel = {
+        "report": intel_text,
+        "credibility_score": credibility_score,
+        "publish_ready": publish_ready,
+        "verification_rounds": 3,
+        "error": None,
+    }
+
+    return {
+        "data": {
+            "draft_id": draft_id,
+            "credibility_score": credibility_score,
+            "publish_ready": publish_ready,
+            "intel": intel,
+        }
+    }
+
+
 @router.get("/archive/dedup-check")
 async def check_dedup(topic: str = Query(..., description="Topic to check for duplicate posts")):
     """Check whether a topic was recently posted (within 60 days)."""
