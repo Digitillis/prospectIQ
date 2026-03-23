@@ -341,6 +341,9 @@ class OutreachAgent(BaseAgent):
                     tier = company.get("tier", "2")
                     value_msg = ontology.get("value_messaging", {}).get(tier, {})
 
+                    # Resolve channel from step or sequence level
+                    resolved_channel = step_config.get("channel") or sequence.get("channel", "email")
+
                     # Build the prompt
                     prompt = self._build_prompt(
                         company=company,
@@ -350,6 +353,7 @@ class OutreachAgent(BaseAgent):
                         sequence_name=sequence_name,
                         value_messaging=value_msg,
                         global_principles=seq_config.get("global_principles", {}),
+                        channel=resolved_channel,
                     )
 
                     # Call Claude
@@ -391,7 +395,7 @@ class OutreachAgent(BaseAgent):
                     draft_data = {
                         "company_id": company_id,
                         "contact_id": contact["id"],
-                        "channel": step_config["channel"],
+                        "channel": resolved_channel,
                         "sequence_name": sequence_name,
                         "sequence_step": sequence_step,
                         "subject": parsed.get("subject", ""),
@@ -503,6 +507,7 @@ class OutreachAgent(BaseAgent):
         sequence_name: str,
         value_messaging: dict,
         global_principles: dict,
+        channel: str = "email",
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -589,7 +594,7 @@ class OutreachAgent(BaseAgent):
             value_messaging=value_text or "No tier-specific messaging available",
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
-            channel=step_config["channel"],
+            channel=channel,
             step_instructions=step_text,
             anti_patterns=anti_text,
             max_words=max_words,
