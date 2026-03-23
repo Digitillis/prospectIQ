@@ -566,10 +566,8 @@ function BatchDraftCard({
         </div>
       )}
 
-      {/* Intel / Verification Panel */}
-      {draft.intel && draft.intel.report && (
-        <ContentIntelPanel intel={draft.intel} credibility={draft.credibility_score} publishReady={draft.publish_ready} />
-      )}
+      {/* Intel */}
+      <IntelPanel draft={draft} />
 
       {/* Quality Report Panel */}
       <QualityReportPanel report={parseQualityReport(draft)} />
@@ -577,33 +575,208 @@ function BatchDraftCard({
   );
 }
 
-function ContentIntelPanel({ intel, credibility, publishReady }: { intel: any; credibility?: number | null; publishReady?: boolean | null }) {
-  const [open, setOpen] = useState(false);
-  if (!intel || !intel.report) return null;
+// ─── Intel helpers ─────────────────────────────────────────────────────────────
 
-  const score = credibility ?? intel.credibility_score ?? 0;
-  const ready = publishReady ?? intel.publish_ready ?? false;
-  const readyBadge = ready
-    ? "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300"
-    : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700";
+function parseIntelSections(report: string) {
+  const lines = report.split("\n").map(l => l.trim()).filter(Boolean);
+  const sources: string[] = [];
+  const flagged: string[] = [];
+  const organizations: string[] = [];
+  const reports: string[] = [];
+  const regulations: string[] = [];
+  const improvements: string[] = [];
+
+  let section = "";
+
+  for (const line of lines) {
+    const upper = line.toUpperCase();
+    if (upper.startsWith("SOURCES:") || upper.startsWith("SOURCES")) {
+      section = "sources"; continue;
+    }
+    if (upper.startsWith("FLAGGED CLAIMS:") || upper.startsWith("FLAGGED")) {
+      section = "flagged"; continue;
+    }
+    if (upper.startsWith("CREDIBILITY SCORE:") || upper.startsWith("PUBLISH READY:") || upper.startsWith("REASON:")) {
+      section = "meta"; continue;
+    }
+    if (upper.startsWith("REFERENCED ENTITIES:")) {
+      section = "entities"; continue;
+    }
+    if (upper.startsWith("SUGGESTED IMPROVEMENTS:")) {
+      section = "improvements"; continue;
+    }
+    if (upper.startsWith("- ORGANIZATIONS:") || upper.startsWith("ORGANIZATIONS:")) {
+      const val = line.replace(/^-?\s*(Organizations|ORGANIZATIONS)\s*:\s*/i, "");
+      if (val) organizations.push(...val.split(",").map(s => s.trim()).filter(Boolean));
+      continue;
+    }
+    if (upper.startsWith("- REPORTS") || upper.startsWith("REPORTS/STUDIES:")) {
+      const val = line.replace(/^-?\s*(Reports\/Studies|REPORTS\/STUDIES|Reports)\s*:\s*/i, "");
+      if (val) reports.push(...val.split(",").map(s => s.trim()).filter(Boolean));
+      continue;
+    }
+    if (upper.startsWith("- REGULATIONS") || upper.startsWith("REGULATIONS/STANDARDS:") || upper.startsWith("- STANDARDS")) {
+      const val = line.replace(/^-?\s*(Regulations\/Standards|REGULATIONS\/STANDARDS|Standards|Regulations)\s*:\s*/i, "");
+      if (val) regulations.push(...val.split(",").map(s => s.trim()).filter(Boolean));
+      continue;
+    }
+    if (upper.startsWith("- THOUGHT LEADERS:")) continue;
+
+    if (line.startsWith("- ") || line.startsWith("* ")) {
+      const content = line.replace(/^[-*]\s*/, "");
+      if (section === "sources") sources.push(content);
+      else if (section === "flagged") flagged.push(content);
+      else if (section === "improvements") improvements.push(content);
+    }
+  }
+
+  return { sources, flagged, organizations, reports, regulations, improvements };
+}
+
+function RawReportToggle({ report }: { report: string }) {
+  const [showRaw, setShowRaw] = useState(false);
+  return (
+    <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
+      <button
+        onClick={() => setShowRaw(!showRaw)}
+        className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+      >
+        {showRaw ? "Hide" : "Show"} full verification report
+      </button>
+      {showRaw && (
+        <pre className="mt-2 whitespace-pre-wrap text-xs text-gray-500 dark:text-gray-500 leading-relaxed font-mono bg-white dark:bg-gray-900 rounded p-2 border border-gray-100 dark:border-gray-700 max-h-[300px] overflow-y-auto">
+          {report}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function IntelPanel({ draft }: { draft: ContentDraft }) {
+  const [open, setOpen] = useState(false);
+  const intel = draft.intel;
+  const qr = draft.quality_report;
+
+  if (!intel && !qr) return null;
+
+  const credScore = intel?.credibility_score ?? draft.credibility_score ?? null;
+  const publishReady = intel?.publish_ready ?? draft.publish_ready ?? null;
+
+  const report = intel?.report || "";
+  const sections = parseIntelSections(report);
+
+  const scoreColor = credScore !== null
+    ? credScore >= 7
+      ? "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+      : credScore >= 5
+      ? "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+      : "text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+    : "";
 
   return (
     <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-2">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500 hover:text-gray-900 dark:text-gray-100 transition-colors w-full"
-      >
-        <span className="font-semibold text-gray-700 dark:text-gray-300">Credibility: {score}/10</span>
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium border ${readyBadge}`}>
-          {ready ? "PUBLISH READY" : "REVIEW NEEDED"}
-        </span>
-        <span className="text-gray-400 dark:text-gray-500 text-[10px]">3-round verification</span>
-        <span className="ml-auto">{open ? "Hide" : "View"} Intel</span>
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+        >
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          Intel
+        </button>
+        {credScore !== null && (
+          <span className={`text-xs px-2 py-0.5 rounded border font-medium ${scoreColor}`}>
+            Credibility {credScore}/10
+          </span>
+        )}
+        {publishReady !== null && (
+          <span className={`text-xs ${publishReady ? "text-green-600 dark:text-green-500" : "text-amber-600 dark:text-amber-500"}`}>
+            {publishReady ? "Publish Ready" : "Needs Review"}
+          </span>
+        )}
+      </div>
 
       {open && (
-        <div className="mt-2 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-[400px] overflow-y-auto">
-          {intel.report}
+        <div className="mt-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 text-xs space-y-3 max-h-[500px] overflow-y-auto">
+
+          {/* SOURCES */}
+          {sections.sources.length > 0 && (
+            <div>
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">SOURCES &amp; VERIFICATION</div>
+              <div className="space-y-1">
+                {sections.sources.map((source, i) => (
+                  <div key={i} className="flex items-start gap-2 text-gray-600 dark:text-gray-400">
+                    <span className={`shrink-0 mt-0.5 ${
+                      source.includes("VERIFIED") ? "text-green-600 dark:text-green-500" :
+                      source.includes("PLAUSIBLE") ? "text-amber-600 dark:text-amber-500" :
+                      "text-red-500 dark:text-red-400"
+                    }`}>
+                      {source.includes("VERIFIED") ? "✓" : source.includes("PLAUSIBLE") ? "~" : "✗"}
+                    </span>
+                    <span>{source}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* FLAGGED CLAIMS */}
+          {sections.flagged.length > 0 && (
+            <div>
+              <div className="font-semibold text-amber-700 dark:text-amber-400 mb-1">FLAGGED CLAIMS</div>
+              {sections.flagged.map((flag, i) => (
+                <div key={i} className="text-amber-600 dark:text-amber-400 flex items-start gap-1">
+                  <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+                  <span>{flag}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* REFERENCED ENTITIES */}
+          {(sections.organizations.length > 0 || sections.reports.length > 0 || sections.regulations.length > 0) && (
+            <div>
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">REFERENCED ENTITIES</div>
+              <div className="space-y-1 text-gray-600 dark:text-gray-400">
+                {sections.organizations.length > 0 && (
+                  <div><span className="text-gray-500 dark:text-gray-500">Organizations:</span> {sections.organizations.join(", ")}</div>
+                )}
+                {sections.reports.length > 0 && (
+                  <div><span className="text-gray-500 dark:text-gray-500">Reports/Studies:</span> {sections.reports.join(", ")}</div>
+                )}
+                {sections.regulations.length > 0 && (
+                  <div><span className="text-gray-500 dark:text-gray-500">Standards:</span> {sections.regulations.join(", ")}</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* SUGGESTED IMPROVEMENTS */}
+          {sections.improvements.length > 0 && (
+            <div>
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">SUGGESTED IMPROVEMENTS</div>
+              {sections.improvements.map((imp, i) => (
+                <div key={i} className="text-gray-600 dark:text-gray-400">{imp}</div>
+              ))}
+            </div>
+          )}
+
+          {/* QUALITY REPORT SOURCES (fallback if no intel report) */}
+          {sections.sources.length === 0 && qr?.fact_check?.sources && qr.fact_check.sources.length > 0 && (
+            <div>
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">DATA SOURCES</div>
+              <div className="text-gray-600 dark:text-gray-400">
+                {qr.fact_check.sources.join(", ")}
+              </div>
+              {qr.fact_check.note && (
+                <div className="text-gray-500 dark:text-gray-500 mt-1 italic">{qr.fact_check.note}</div>
+              )}
+            </div>
+          )}
+
+          {/* RAW REPORT (collapsible) */}
+          {report && (
+            <RawReportToggle report={report} />
+          )}
         </div>
       )}
     </div>
