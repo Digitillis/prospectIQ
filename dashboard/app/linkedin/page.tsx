@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  Search,
 } from "lucide-react";
 import { runAgent, getLinkedInMessages, updateLinkedInStatus } from "@/lib/api";
 import type { LinkedInContact, LinkedInIntel } from "@/lib/api";
@@ -458,6 +459,7 @@ export default function LinkedInPage() {
   const [genLimit, setGenLimit] = useState(20);
   const [genMode, setGenMode] = useState<"all" | "dm_only">("all");
   const [genRegenerate, setGenRegenerate] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
@@ -497,24 +499,33 @@ export default function LinkedInPage() {
     }
   };
 
-  // Derive vertical display filter from tier prefix
-  const filteredItems =
-    verticalFilter === "all"
-      ? items
-      : items.filter((item) => {
-          const tier = item.company.tier ?? "";
-          if (verticalFilter === "fb") return tier.startsWith("fb");
-          if (verticalFilter === "mfg") return !tier.startsWith("fb");
-          return true;
-        });
+  // Apply search + vertical filter on client side
+  const filteredItems = items.filter((item) => {
+    // Vertical filter
+    if (verticalFilter !== "all") {
+      const tier = item.company.tier ?? "";
+      if (verticalFilter === "fb" && !tier.startsWith("fb")) return false;
+      if (verticalFilter === "mfg" && tier.startsWith("fb")) return false;
+    }
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const name = (item.contact.full_name || `${item.contact.first_name ?? ""} ${item.contact.last_name ?? ""}`).toLowerCase();
+      const company = (item.company.name || "").toLowerCase();
+      const title = (item.contact.title || "").toLowerCase();
+      if (!name.includes(q) && !company.includes(q) && !title.includes(q)) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
       {/* Header */}
       <div className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-6 py-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div>
+        <div className="max-w-4xl mx-auto space-y-3">
+          {/* Row 1: Title + Search */}
+          <div className="flex items-center gap-3">
+            <div className="shrink-0">
               <h1 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">
                 LinkedIn Outreach
               </h1>
@@ -524,57 +535,53 @@ export default function LinkedInPage() {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={fetchMessages}
-                disabled={loading}
-                className="flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-50"
-                title="Refresh"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              </button>
-              <button
-                onClick={handleGenerate}
-                disabled={generating}
-                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
-              >
-                {generating ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Linkedin className="h-3.5 w-3.5" />
-                )}
-                {generating ? "Generating..." : "Generate Messages"}
-              </button>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name, company, or title..."
+                className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 pl-8 pr-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
+              />
+            </div>
+            <button
+              onClick={fetchMessages}
+              disabled={loading}
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-50"
+              title="Refresh"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+
+          {/* Row 2: Status filters */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">Status</span>
+            <div className="flex flex-wrap gap-1">
+              {["all", "not_sent", "connection_sent", "accepted", "dm_sent", "responded", "meeting_booked"].map(
+                (s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                      statusFilter === s
+                        ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    }`}
+                  >
+                    {s === "all"
+                      ? "All"
+                      : STATUS_LABELS[s as LinkedInStatus] ?? s}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="mt-3 flex flex-wrap items-center gap-4">
-            {/* Status filter */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-400 dark:text-gray-500">Status</span>
-              <div className="flex flex-wrap gap-1">
-                {["all", "not_sent", "connection_sent", "accepted", "dm_sent", "responded", "meeting_booked"].map(
-                  (s) => (
-                    <button
-                      key={s}
-                      onClick={() => setStatusFilter(s)}
-                      className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                        statusFilter === s
-                          ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
-                          : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-                      }`}
-                    >
-                      {s === "all"
-                        ? "All"
-                        : STATUS_LABELS[s as LinkedInStatus] ?? s}
-                    </button>
-                  )
-                )}
-              </div>
-            </div>
-
-            {/* Vertical filter */}
+          {/* Row 3: Generation controls */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Vertical */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-gray-400 dark:text-gray-500">Vertical</span>
               <div className="flex gap-1">
@@ -588,8 +595,8 @@ export default function LinkedInPage() {
                     onClick={() => setVerticalFilter(value)}
                     className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                       verticalFilter === value
-                        ? "bg-gray-900 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                     }`}
                   >
                     {label}
@@ -598,7 +605,7 @@ export default function LinkedInPage() {
               </div>
             </div>
 
-            {/* Generation options */}
+            {/* Limit */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-gray-400 dark:text-gray-500">Limit</span>
               <select
@@ -614,6 +621,7 @@ export default function LinkedInPage() {
               </select>
             </div>
 
+            {/* Mode */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-gray-400 dark:text-gray-500">Mode</span>
               <div className="flex gap-1">
@@ -636,17 +644,30 @@ export default function LinkedInPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={genRegenerate}
-                  onChange={(e) => setGenRegenerate(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                />
-                <span className="text-xs text-gray-500 dark:text-gray-400">Regenerate existing</span>
-              </label>
-            </div>
+            {/* Regenerate checkbox */}
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={genRegenerate}
+                onChange={(e) => setGenRegenerate(e.target.checked)}
+                className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+              />
+              <span className="text-xs text-gray-500 dark:text-gray-400">Regenerate existing</span>
+            </label>
+
+            {/* Generate button */}
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60 ml-auto"
+            >
+              {generating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Linkedin className="h-3.5 w-3.5" />
+              )}
+              {generating ? "Generating..." : "Generate Messages"}
+            </button>
           </div>
         </div>
       </div>

@@ -198,10 +198,14 @@ async def generate_content(req: ContentRequest):
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
 
     if not result.success or result.errors > 0:
-        raise HTTPException(
-            status_code=500,
-            detail="Content generation failed. Check server logs for details.",
-        )
+        # Surface actual error details instead of a generic message
+        error_detail = "Content generation failed."
+        if result.details:
+            first = result.details[0]
+            msg = first.get("message", "")
+            if msg:
+                error_detail = f"Content generation failed: {msg}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
     if not result.details:
         raise HTTPException(status_code=500, detail="No draft was generated.")
