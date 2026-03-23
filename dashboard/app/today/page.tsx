@@ -48,6 +48,8 @@ import {
   Building2,
   User,
   UserCheck,
+  Plus,
+  Settings,
 } from "lucide-react";
 import {
   getTodayData,
@@ -69,6 +71,8 @@ import {
   type ProgressDetail,
 } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
+import AddActionsModal from "@/components/today/AddActionsModal";
+import EditTargetsModal from "@/components/today/EditTargetsModal";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1478,6 +1482,10 @@ export default function TodayCockpitPage() {
   // Local progress delta (optimistic)
   const [localExtraDone, setLocalExtraDone] = useState(0);
 
+  // Modal state
+  const [showAddActions, setShowAddActions] = useState(false);
+  const [showEditTargets, setShowEditTargets] = useState(false);
+
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
@@ -1660,6 +1668,24 @@ export default function TodayCockpitPage() {
       )}
 
       <ProgressBar completed={completed} target={target} breakdown={breakdown} />
+
+      {/* Action plan controls */}
+      <div className="flex items-center gap-2 mt-2">
+        <button
+          onClick={() => setShowAddActions(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+        >
+          <Plus className="h-3 w-3" />
+          Add Actions
+        </button>
+        <button
+          onClick={() => setShowEditTargets(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+        >
+          <Settings className="h-3 w-3" />
+          Edit Targets
+        </button>
+      </div>
 
       {/* ------------------------------------------------------------------ */}
       {/* SECTION 1: RESPOND NOW                                              */}
@@ -2006,6 +2032,18 @@ export default function TodayCockpitPage() {
           />
         </div>
       </SectionWrapper>
+
+      {/* Modals */}
+      <AddActionsModal
+        isOpen={showAddActions}
+        onClose={() => setShowAddActions(false)}
+        onSuccess={() => fetchData(true)}
+      />
+      <EditTargetsModal
+        isOpen={showEditTargets}
+        onClose={() => setShowEditTargets(false)}
+        onSave={() => fetchData(true)}
+      />
     </div>
   );
 }
