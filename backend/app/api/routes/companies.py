@@ -168,7 +168,7 @@ async def get_linkedin_messages(
         db.client.table("contacts")
         .select(
             "id, company_id, full_name, first_name, last_name, title, persona_type, "
-            "is_decision_maker, linkedin_url, linkedin_status, status, created_at"
+            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at"
         )
         .in_("id", contact_ids)
         .execute()
@@ -283,15 +283,16 @@ async def update_linkedin_status(contact_id: str, body: dict):
     contact = contact_result.data[0]
     company_id = contact.get("company_id")
 
-    # Update the contact linkedin_status
-    # NOTE: requires `linkedin_status` TEXT column on the contacts table.
-    # Run: ALTER TABLE contacts ADD COLUMN IF NOT EXISTS linkedin_status TEXT DEFAULT 'not_sent';
-    db.client.table("contacts").update(
-        {"linkedin_status": new_status}
-    ).eq("id", contact_id).execute()
+    # Extract notes before updating
+    notes = body.get("notes", "")
+
+    # Update the contact linkedin_status and notes
+    update_data: dict = {"linkedin_status": new_status}
+    if notes:
+        update_data["linkedin_notes"] = notes
+    db.client.table("contacts").update(update_data).eq("id", contact_id).execute()
 
     # Log an interaction so activity feed reflects the LinkedIn touch
-    notes = body.get("notes", "")
     interaction_body = f"LinkedIn status updated to: {new_status}"
     if notes:
         interaction_body += f"\nNotes: {notes}"
@@ -307,7 +308,7 @@ async def update_linkedin_status(contact_id: str, body: dict):
             "source": "manual",
         })
 
-    return {"data": {"contact_id": contact_id, "linkedin_status": new_status}}
+    return {"data": {"contact_id": contact_id, "linkedin_status": new_status, "linkedin_notes": notes}}
 
 
 @router.get("/")

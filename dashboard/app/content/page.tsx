@@ -60,21 +60,17 @@ const FORMAT_LABELS: Record<string, string> = {
 };
 
 const PILLAR_LABELS: Record<string, string> = {
-  food_safety: "F&B",
+  manufacturing_intelligence: "Mfg Intelligence",
+  manufacturing_strategy: "Strategy",
+  manufacturing_operations: "Operations",
   food_safety_compliance: "F&B",
-  predictive_maintenance: "Mfg",
-  ops_excellence: "Ops",
-  leadership: "Leadership",
-  leadership_strategy: "Leadership",
 };
 
 const PILLAR_COLORS: Record<string, string> = {
-  food_safety: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
+  manufacturing_intelligence: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
+  manufacturing_strategy: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
+  manufacturing_operations: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
   food_safety_compliance: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
-  predictive_maintenance: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
-  ops_excellence: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
-  leadership: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
-  leadership_strategy: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 border-gray-200 dark:border-gray-700",
 };
 
 const FORMAT_COLORS: Record<string, string> = {
@@ -90,38 +86,38 @@ const CHAR_WARN = 1100;
 // Dropdown option sets
 const PILLAR_OPTIONS = [
   { value: "", label: "All Themes" },
-  // Food & Beverage
-  { value: "food_safety", label: "Food Safety & Compliance (all)" },
-  { value: "food_safety:fsma", label: "FSMA & FDA Enforcement" },
-  { value: "food_safety:haccp", label: "HACCP & CCP Management" },
-  { value: "food_safety:allergen", label: "Allergen Control & Traceability" },
-  { value: "food_safety:audit", label: "Audit Readiness & SQF/BRC" },
-  { value: "food_safety:cold_chain", label: "Cold Chain & Temperature Control" },
-  // Manufacturing
-  { value: "predictive_maintenance", label: "Predictive Maintenance (all)" },
-  { value: "predictive_maintenance:oee", label: "OEE & Downtime Analysis" },
-  { value: "predictive_maintenance:cbm", label: "Condition-Based Monitoring" },
-  { value: "predictive_maintenance:sensors", label: "Sensors & Data Infrastructure" },
-  { value: "predictive_maintenance:rul", label: "Remaining Useful Life & Prognostics" },
-  // Operations
-  { value: "ops_excellence", label: "Manufacturing Operations (all)" },
-  { value: "ops_excellence:i40", label: "Industry 4.0 & Digital Transformation" },
-  { value: "ops_excellence:energy", label: "Energy & Sustainability" },
-  { value: "ops_excellence:quality", label: "Quality Management & SPC" },
-  { value: "ops_excellence:supply_chain", label: "Supply Chain Resilience" },
-  // Leadership
-  { value: "leadership", label: "Manufacturing Leadership (all)" },
-  { value: "leadership:workforce", label: "Workforce & Skills Gap" },
-  { value: "leadership:culture", label: "Data-Driven Culture" },
-  { value: "leadership:capex", label: "Capital Allocation & ROI" },
-  { value: "leadership:pilots", label: "Technology Pilot Programs" },
+  // Manufacturing Intelligence (Tuesday)
+  { value: "manufacturing_intelligence", label: "Manufacturing Intelligence & AI (all)" },
+  { value: "manufacturing_intelligence:pdm", label: "Predictive Maintenance & CBM" },
+  { value: "manufacturing_intelligence:sensors", label: "Sensors & Data Infrastructure" },
+  { value: "manufacturing_intelligence:oee", label: "OEE & Downtime Analysis" },
+  { value: "manufacturing_intelligence:rul", label: "Remaining Useful Life & Prognostics" },
+  // Manufacturing Strategy (Thursday, alternating)
+  { value: "manufacturing_strategy", label: "Manufacturing Strategy & Leadership (all)" },
+  { value: "manufacturing_strategy:capex", label: "Capital Allocation & ROI" },
+  { value: "manufacturing_strategy:pilots", label: "Technology Pilot Programs" },
+  { value: "manufacturing_strategy:workforce", label: "Workforce & Skills Gap" },
+  { value: "manufacturing_strategy:culture", label: "Data-Driven Culture" },
+  // Manufacturing Operations (Thursday, alternating)
+  { value: "manufacturing_operations", label: "Operations Excellence & Performance (all)" },
+  { value: "manufacturing_operations:quality", label: "Quality Management & SPC" },
+  { value: "manufacturing_operations:energy", label: "Energy & Sustainability" },
+  { value: "manufacturing_operations:i40", label: "Industry 4.0 & Digital Transformation" },
+  { value: "manufacturing_operations:supply_chain", label: "Supply Chain Resilience" },
+  // Food Safety (Saturday)
+  { value: "food_safety_compliance", label: "Food Safety & Compliance (all)" },
+  { value: "food_safety_compliance:fsma", label: "FSMA & FDA Enforcement" },
+  { value: "food_safety_compliance:haccp", label: "HACCP & CCP Management" },
+  { value: "food_safety_compliance:allergen", label: "Allergen Control & Traceability" },
+  { value: "food_safety_compliance:audit", label: "Audit Readiness & SQF/BRC" },
+  { value: "food_safety_compliance:cold_chain", label: "Cold Chain & Temperature Control" },
 ];
 
 const TIME_HORIZON_OPTIONS = [
   { value: "single", label: "Single Post" },
-  { value: "1_week", label: "1 Week (4 posts)" },
-  { value: "30_days", label: "30 Days (16 posts)" },
-  { value: "60_days", label: "60 Days (32 posts)" },
+  { value: "1_week", label: "1 Week (3 posts)" },
+  { value: "30_days", label: "30 Days (12 posts)" },
+  { value: "60_days", label: "60 Days (24 posts)" },
 ];
 
 const FORMAT_OPTIONS = [
@@ -133,9 +129,9 @@ const FORMAT_OPTIONS = [
 ];
 
 const TIME_HORIZON_COUNTS: Record<string, number> = {
-  "1_week": 4,
-  "30_days": 16,
-  "60_days": 32,
+  "1_week": 3,
+  "30_days": 12,
+  "60_days": 24,
 };
 
 // ─── Week selector helpers ─────────────────────────────────────────────────────
@@ -167,10 +163,10 @@ function getScheduledDate(postIndex: number): string {
   const nextMonday = new Date(now);
   nextMonday.setDate(now.getDate() + daysToMonday);
 
-  // Posts go Mon/Tue/Thu/Fri within each week
-  const POSTING_DAYS = [0, 1, 3, 4]; // offsets from Monday
-  const weekOffset = Math.floor(postIndex / 4) * 7;
-  const dayOffset = POSTING_DAYS[postIndex % 4];
+  // Posts go Tue/Thu/Sat within each week
+  const POSTING_DAYS = [1, 3, 5]; // offsets from Monday: Tue, Thu, Sat
+  const weekOffset = Math.floor(postIndex / 3) * 7;
+  const dayOffset = POSTING_DAYS[postIndex % 3];
 
   const postDate = new Date(nextMonday);
   postDate.setDate(nextMonday.getDate() + weekOffset + dayOffset);

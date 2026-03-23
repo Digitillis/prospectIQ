@@ -23,26 +23,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 CONTENT_CALENDAR: list[dict[str, Any]] = [
-    # Week 1 — PdM x2, F&B x1, Ops x1
-    {"week": 1, "day": "Monday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "The real cost of one unplanned stop (calculation template)"},
-    {"week": 1, "day": "Tuesday",  "format": "framework",    "pillar": "food_safety",            "topic": "Food Safety Automation Maturity Model (4 levels)"},
-    {"week": 1, "day": "Thursday", "format": "contrarian",   "pillar": "predictive_maintenance",  "topic": "PdM fails because of work orders, not algorithms"},
-    {"week": 1, "day": "Friday",   "format": "data_insight", "pillar": "ops_excellence",         "topic": "The data infrastructure gap: sensors installed, insights missing"},
-    # Week 2 — F&B x1, PdM x1, Leadership x1, Ops x1
-    {"week": 2, "day": "Monday",   "format": "data_insight", "pillar": "food_safety",            "topic": "FDA 483 observation patterns: what actually triggers citations"},
-    {"week": 2, "day": "Tuesday",  "format": "framework",    "pillar": "predictive_maintenance",  "topic": "Maintenance Maturity Matrix: where does your plant fall?"},
-    {"week": 2, "day": "Thursday", "format": "data_insight", "pillar": "leadership",             "topic": "The retiring expert problem: quantifying tribal knowledge loss"},
-    {"week": 2, "day": "Friday",   "format": "contrarian",   "pillar": "ops_excellence",         "topic": "Industry 4.0 is a vendor narrative, not a strategy"},
-    # Week 3 — PdM x2, F&B x1, Ops x1
-    {"week": 3, "day": "Monday",   "format": "framework",    "pillar": "ops_excellence",         "topic": "Sensor ROI Framework: which measurements actually predict failure"},
-    {"week": 3, "day": "Tuesday",  "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "OEE benchmarks: what good looks like by manufacturing sub-sector"},
-    {"week": 3, "day": "Thursday", "format": "contrarian",   "pillar": "food_safety",            "topic": "Your HACCP plan is a compliance artifact, not a safety tool"},
-    {"week": 3, "day": "Friday",   "format": "benchmark",    "pillar": "predictive_maintenance",  "topic": "We analyzed maintenance spend at 50 mid-market manufacturers"},
-    # Week 4 — PdM x1, F&B x1, Ops x1, Leadership x1
-    {"week": 4, "day": "Monday",   "format": "data_insight", "pillar": "predictive_maintenance",  "topic": "Bearing failure signatures: what vibration data actually tells you"},
-    {"week": 4, "day": "Tuesday",  "format": "data_insight", "pillar": "ops_excellence",         "topic": "Start with your work order process, not your sensor strategy"},
-    {"week": 4, "day": "Thursday", "format": "benchmark",    "pillar": "food_safety",            "topic": "We analyzed 200+ FDA warning letters: here is what we found"},
-    {"week": 4, "day": "Friday",   "format": "framework",    "pillar": "leadership",             "topic": "The 90-Day Technology Pilot Evaluation Framework"},
+    # Week 1
+    {"week": 1, "day": "Tuesday",  "format": "contrarian",   "pillar": "manufacturing_intelligence", "topic": "Why 85% of predictive maintenance pilots fail to scale"},
+    {"week": 1, "day": "Thursday", "format": "framework",    "pillar": "manufacturing_strategy",     "topic": "The capital allocation framework for manufacturing technology"},
+    {"week": 1, "day": "Saturday", "format": "data_insight", "pillar": "food_safety_compliance",     "topic": "FDA 483 patterns: what actually triggers citations"},
+    # Week 2
+    {"week": 2, "day": "Tuesday",  "format": "framework",    "pillar": "manufacturing_intelligence", "topic": "The maintenance maturity spectrum: where most plants actually sit"},
+    {"week": 2, "day": "Thursday", "format": "contrarian",   "pillar": "manufacturing_operations",   "topic": "Quality-first vs. throughput-first"},
+    {"week": 2, "day": "Saturday", "format": "data_insight", "pillar": "food_safety_compliance",     "topic": "FSMA compliance costs by food category"},
+    # Week 3
+    {"week": 3, "day": "Tuesday",  "format": "data_insight", "pillar": "manufacturing_intelligence", "topic": "OEE benchmarks by sub-sector: what good looks like"},
+    {"week": 3, "day": "Thursday", "format": "framework",    "pillar": "manufacturing_strategy",     "topic": "How to run a 90-day technology pilot that produces a decision"},
+    {"week": 3, "day": "Saturday", "format": "contrarian",   "pillar": "food_safety_compliance",     "topic": "Your HACCP plan is a compliance artifact, not a safety tool"},
+    # Week 4
+    {"week": 4, "day": "Tuesday",  "format": "data_insight", "pillar": "manufacturing_intelligence", "topic": "The real cost of one unplanned stop"},
+    {"week": 4, "day": "Thursday", "format": "contrarian",   "pillar": "manufacturing_operations",   "topic": "Why continuous improvement programs plateau after 18 months"},
+    {"week": 4, "day": "Saturday", "format": "benchmark",    "pillar": "food_safety_compliance",     "topic": "We analyzed 200+ FDA warning letters: here is what we found"},
 ]
 
 # Default guidelines used if content_guidelines.yaml doesn't exist
@@ -131,25 +127,25 @@ _FORMAT_SPECS: dict[str, dict[str, Any]] = {
 }
 
 _PILLAR_CONTEXT: dict[str, str] = {
-    "food_safety": (
+    "manufacturing_intelligence": (
+        "Target reader: VP Operations, VP Engineering, Plant Manager, COO at discrete manufacturers. "
+        "Data sources to reference: Plant Engineering annual surveys, ARC Advisory Group research, "
+        "McKinsey manufacturing operations reports, SMRP benchmarking data, Deloitte manufacturing competitiveness studies."
+    ),
+    "manufacturing_strategy": (
+        "Target reader: COO, VP Operations, Plant Manager, Manufacturing VP, Board members. "
+        "Data sources to reference: Deloitte Global Manufacturing Competitiveness Index, "
+        "NAM/Manufacturers Alliance surveys, Industry Week CEO surveys, Gartner MES/MOM market analysis."
+    ),
+    "manufacturing_operations": (
+        "Target reader: VP Operations, Reliability Manager, Continuous Improvement, Quality Director. "
+        "Data sources to reference: SMRP Best Practices benchmarks, Reliable Plant survey data, "
+        "ASQ quality benchmarks, ISA standards and implementation data, MESA International MES benchmarks."
+    ),
+    "food_safety_compliance": (
         "Target reader: VP Quality, VP Food Safety, Director QA at food manufacturers. "
-        "Data sources to reference: FDA warning letter database, FSIS enforcement reports, "
-        "SQF audit statistics, GFSI benchmarking data, 21 CFR Part 117 (FSMA)."
-    ),
-    "predictive_maintenance": (
-        "Target reader: VP Operations, Maintenance Director, Reliability Manager at discrete manufacturers. "
-        "Data sources to reference: Plant Engineering surveys, Reliable Plant benchmarks, "
-        "ARC Advisory Group reports, SMRP data, industry MTBF/MTTR databases."
-    ),
-    "ops_excellence": (
-        "Target reader: Both food safety and discrete manufacturing ops leaders. "
-        "Data sources to reference: Industry 4.0 adoption surveys, Gartner manufacturing studies, "
-        "McKinsey manufacturing digitization reports, ISA standards data."
-    ),
-    "leadership": (
-        "Target reader: COO, Plant Manager, C-suite at mid-market manufacturers ($50M-$500M revenue). "
-        "Data sources to reference: CFO surveys on technology ROI, board reporting benchmarks, "
-        "talent management studies for manufacturing, capital allocation frameworks."
+        "Data sources to reference: FDA warning letter database and 483 observations, "
+        "FSIS enforcement reports, SQF audit statistics, GFSI benchmarking data, CDC foodborne illness surveillance."
     ),
 }
 

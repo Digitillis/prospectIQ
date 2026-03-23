@@ -898,6 +898,7 @@ export interface Contact {
   is_decision_maker: boolean;
   linkedin_url?: string;
   linkedin_status?: string; // not_sent | connection_sent | accepted | dm_sent | responded | meeting_booked
+  linkedin_notes?: string;
   status?: string;
   relationship_strength?: number; // 0-100
   last_interaction_note?: string;

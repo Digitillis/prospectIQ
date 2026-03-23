@@ -303,7 +303,7 @@ function ContactCard({ item }: { item: LinkedInContact }) {
   const [status, setStatus] = useState<LinkedInStatus>(
     (contact.linkedin_status as LinkedInStatus) || "not_sent"
   );
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(contact.linkedin_notes || "");
   const [saving, setSaving] = useState(false);
 
   const handleStatusChange = async (newStatus: LinkedInStatus) => {
@@ -455,6 +455,9 @@ export default function LinkedInPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [verticalFilter, setVerticalFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
+  const [genLimit, setGenLimit] = useState(20);
+  const [genMode, setGenMode] = useState<"all" | "dm_only">("all");
+  const [genRegenerate, setGenRegenerate] = useState(false);
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
@@ -484,7 +487,7 @@ export default function LinkedInPage() {
     setGenerating(true);
     setError(null);
     try {
-      await runAgent("linkedin", { limit: 20, regenerate: false });
+      await runAgent("linkedin", { limit: genLimit, regenerate: genRegenerate, mode: genMode });
       await fetchMessages();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to generate LinkedIn messages.";
@@ -593,6 +596,56 @@ export default function LinkedInPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Generation options */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-400 dark:text-gray-500">Limit</span>
+              <select
+                value={genLimit}
+                onChange={(e) => setGenLimit(Number(e.target.value))}
+                className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300 focus:outline-none"
+              >
+                {[5, 10, 20, 50, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-400 dark:text-gray-500">Mode</span>
+              <div className="flex gap-1">
+                {[
+                  { value: "all", label: "All Messages" },
+                  { value: "dm_only", label: "DM Only" },
+                ].map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setGenMode(value as "all" | "dm_only")}
+                    className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                      genMode === value
+                        ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={genRegenerate}
+                  onChange={(e) => setGenRegenerate(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                />
+                <span className="text-xs text-gray-500 dark:text-gray-400">Regenerate existing</span>
+              </label>
             </div>
           </div>
         </div>
