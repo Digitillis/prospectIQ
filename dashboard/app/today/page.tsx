@@ -47,6 +47,7 @@ import {
   XCircle,
   Building2,
   User,
+  UserCheck,
 } from "lucide-react";
 import {
   getTodayData,
@@ -475,6 +476,7 @@ function ProgressBar({
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   flame: Flame,
   "user-plus": UserPlus,
+  "user-check": UserCheck,
   "message-circle": MessageCircle,
   "mail-check": MailCheck,
   "pen-tool": PenTool,
@@ -756,13 +758,7 @@ function LinkedInConnectionCard({
   isDone: boolean;
   onDone: (contactId: string) => void;
 }) {
-  const [msgText, setMsgText] = useState(
-    item.message_text ??
-      `Hi ${item.full_name?.split(" ")[0] ?? "there"}, I noticed you work at ${item.company_name ?? "your company"} — would love to connect and share some ideas around predictive maintenance for manufacturing.`
-  );
   const [loading, setLoading] = useState(false);
-
-  const actionId = item.contact_id;
 
   const handleSent = async () => {
     setLoading(true);
@@ -772,7 +768,7 @@ function LinkedInConnectionCard({
         contact_id: item.contact_id,
         company_id: item.company_id,
       });
-      onDone(actionId);
+      onDone(item.contact_id);
     } catch (e) {
       console.error(e);
     } finally {
@@ -784,41 +780,40 @@ function LinkedInConnectionCard({
     <div
       className={cn(
         "rounded-xl border p-4 transition-all duration-300",
-        isDone ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+        isDone
+          ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
+          : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
       )}
     >
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            {item.company_domain && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`https://logo.clearbit.com/${item.company_domain}`}
-                alt=""
-                className="h-4 w-4 rounded shrink-0"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-            )}
-            <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">{item.full_name ?? "Unknown"}</span>
-            {item.title && <span className="text-xs text-gray-500 dark:text-gray-500">{item.title}</span>}
-            <span className="text-xs text-gray-300">·</span>
-            <span className="text-xs text-gray-500 dark:text-gray-500">{item.company_name}</span>
-            {item.company_tier && (
-              <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-500">
-                {TIER_LABELS[item.company_tier] ?? item.company_tier}
-              </span>
-            )}
-            <span className="text-xs font-medium text-gray-400 dark:text-gray-500 ml-auto">
-              PQS {item.pqs_total}
-            </span>
-          </div>
-
-          <InlineEditableMessage text={msgText} onSave={setMsgText} />
-        </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {item.company_domain && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`https://logo.clearbit.com/${item.company_domain}`}
+            alt=""
+            className="h-4 w-4 rounded shrink-0"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        )}
+        <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+          {item.full_name ?? "Unknown"}
+        </span>
+        {item.title && (
+          <span className="text-xs text-gray-500 dark:text-gray-500">{item.title}</span>
+        )}
+        <span className="text-xs text-gray-300">·</span>
+        <span className="text-xs text-gray-500 dark:text-gray-500">{item.company_name}</span>
+        {item.company_tier && (
+          <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-500">
+            {TIER_LABELS[item.company_tier] ?? item.company_tier}
+          </span>
+        )}
+        <span className="text-xs font-medium text-gray-400 dark:text-gray-500 ml-auto">
+          PQS {item.pqs_total}
+        </span>
       </div>
 
       <div className="mt-3 flex items-center gap-2 flex-wrap">
-        <CopyButton text={msgText} />
         {item.linkedin_url && (
           <a
             href={item.linkedin_url}
@@ -848,7 +843,6 @@ function LinkedInConnectionCard({
           {isDone ? "Sent" : "Mark Sent"}
         </button>
       </div>
-      <IntelPanel intel={item.intel} />
     </div>
   );
 }

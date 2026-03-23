@@ -195,13 +195,12 @@ EXAMPLE of wrong style (REJECTED):
    - NO closing CTA. Content IS the close.
    - Complete sentences. "I am" not "I'm". Keep it tight — every word must earn its place.
 
-2. OPENING DM (80 words max, send 2-3 days after connection is accepted)
+2. OPENING DM (80 words max)
    - Jump straight into the question. Do NOT open with "Thanks for connecting"
-     or "Thanks for accepting." They know they accepted. Start with their name
-     and go directly into a genuine question about their operations.
+     or "Thanks for accepting." Start with their name and go directly into a
+     genuine question about their operations.
    - The question should demonstrate domain expertise specific to their sub-sector.
-   - Do NOT mention Digitillis or any product.
-   - End with the question itself. The question IS the close.
+   - No product mention. No Digitillis mention.
    - Use "I am" not "I'm". Complete sentences with explicit subjects.
 
 3. FOLLOW-UP DM (100 words max, send 5-7 days after opening DM if no reply)
@@ -241,7 +240,7 @@ class LinkedInAgent(BaseAgent):
         company_ids: list[str] | None = None,
         limit: int = 20,
         regenerate: bool = False,
-        mode: str = "all",  # "all" = connection+DMs, "dm_only" = only DMs for accepted connections
+        mode: str = "all",  # "all" (generates all 3 messages) or "dm_only" (only opening + follow-up DM)
     ) -> AgentResult:
         """Generate LinkedIn message drafts for qualified contacts.
 
@@ -249,6 +248,9 @@ class LinkedInAgent(BaseAgent):
             company_ids: Specific company IDs to process (overrides query).
             limit: Max companies to process when company_ids is not set.
             regenerate: If True, regenerate even if drafts already exist.
+            mode: "all" generates connection note + opening DM + follow-up DM.
+                  "dm_only" only generates opening DM + follow-up DM, for contacts
+                  where a connection has already been accepted.
 
         Returns:
             AgentResult with draft creation stats.
@@ -305,6 +307,13 @@ class LinkedInAgent(BaseAgent):
                 # Get contacts with a LinkedIn URL
                 all_contacts = self.db.get_contacts_for_company(company_id)
                 contacts = [c for c in all_contacts if c.get("linkedin_url")]
+
+                # In dm_only mode, restrict to contacts with an accepted connection
+                if mode == "dm_only":
+                    contacts = [
+                        c for c in contacts
+                        if c.get("linkedin_status") == "connection_accepted"
+                    ]
 
                 if not contacts:
                     console.print(
@@ -396,12 +405,19 @@ class LinkedInAgent(BaseAgent):
                     parsed = json.loads(content)
                     personalization_notes = parsed.get("personalization_notes", "")
 
-                    # Store all 3 message types as separate outreach_drafts
-                    message_map = [
-                        (self.SEQUENCE_CONNECTION, "connection_note", 1),
-                        (self.SEQUENCE_DM_OPENING, "opening_dm", 2),
-                        (self.SEQUENCE_DM_FOLLOWUP, "followup_dm", 3),
-                    ]
+                    # Store message types as separate outreach_drafts.
+                    # In dm_only mode, skip the connection note.
+                    if mode == "dm_only":
+                        message_map = [
+                            (self.SEQUENCE_DM_OPENING, "opening_dm", 2),
+                            (self.SEQUENCE_DM_FOLLOWUP, "followup_dm", 3),
+                        ]
+                    else:
+                        message_map = [
+                            (self.SEQUENCE_CONNECTION, "connection_note", 1),
+                            (self.SEQUENCE_DM_OPENING, "opening_dm", 2),
+                            (self.SEQUENCE_DM_FOLLOWUP, "followup_dm", 3),
+                        ]
 
                     for sequence_name, key, step in message_map:
                         body_text = parsed.get(key, "")
@@ -422,9 +438,10 @@ class LinkedInAgent(BaseAgent):
                         }
                         self.db.insert_outreach_draft(draft_data)
 
+                    msg_count = len(message_map)
                     console.print(
                         f"  [green]{company_name} → {contact_name}: "
-                        f"3 LinkedIn messages created (auto-approved).[/green]"
+                        f"{msg_count} LinkedIn message(s) created (auto-approved).[/green]"
                     )
 
                     result.processed += 1

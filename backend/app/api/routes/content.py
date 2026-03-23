@@ -67,18 +67,42 @@ class ContentDraft(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _parse_quality_report(notes: str) -> Optional[dict]:
+    """Extract and parse a quality_report JSON from personalization_notes."""
+    import json as _json
+    import re
+    match = re.search(r"quality_report::(.+)", notes, re.DOTALL)
+    if match:
+        try:
+            return _json.loads(match.group(1))
+        except Exception:
+            return None
+    return None
+
+
 def _parse_draft(row: dict) -> dict:
     """Convert an outreach_drafts DB row to a ContentDraft-shaped dict."""
     notes = row.get("personalization_notes", "") or ""
     pillar = ""
     fmt = ""
+    credibility_score = None
+    publish_ready = None
     for part in notes.split("|"):
         if part.startswith("format:"):
             fmt = part[len("format:"):]
         elif part.startswith("pillar:"):
             pillar = part[len("pillar:"):]
+        elif part.startswith("credibility:"):
+            try:
+                credibility_score = int(part[len("credibility:"):].split("/")[0])
+            except (ValueError, IndexError):
+                pass
+        elif part.startswith("publish_ready:"):
+            val = part[len("publish_ready:"):]
+            publish_ready = val.lower() == "true"
 
     body = row.get("body", "") or ""
+    quality_report = _parse_quality_report(notes)
     return {
         "id": row.get("id", ""),
         "topic": row.get("subject", ""),
@@ -88,6 +112,9 @@ def _parse_draft(row: dict) -> dict:
         "char_count": len(body),
         "generated_at": row.get("created_at", datetime.now(timezone.utc).isoformat()),
         "approval_status": row.get("approval_status", "pending"),
+        "credibility_score": credibility_score,
+        "publish_ready": publish_ready,
+        "quality_report": quality_report,
     }
 
 
@@ -133,6 +160,7 @@ def _detail_to_draft(detail: dict) -> dict:
         "approval_status": "pending",
         "credibility_score": detail.get("credibility_score"),
         "publish_ready": detail.get("publish_ready"),
+        "quality_report": detail.get("quality_report") or None,
         "intel": {
             "report": intel.get("intel_report", "") if intel and not intel.get("error") else None,
             "credibility_score": intel.get("credibility_score", 0) if intel else None,

@@ -12,6 +12,7 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Sparkles,
   AlertCircle,
   Zap,
@@ -32,6 +33,7 @@ import {
   updateEngagement,
   getContentAnalytics,
   type ContentDraft,
+  type ContentQualityReport,
   type AutoCalendarPost,
   type AutoCalendarResponse,
   type ContentArchiveEntry,
@@ -208,6 +210,165 @@ function Select({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+// ─── Quality Report helpers ───────────────────────────────────────────────────
+
+function parseQualityReport(draft: ContentDraft): ContentQualityReport | null {
+  // Prefer the structured field returned directly from the API
+  if (draft.quality_report) return draft.quality_report;
+  return null;
+}
+
+function CheckOrX({ value }: { value: boolean }) {
+  return value ? (
+    <span className="text-green-600 dark:text-green-500 ml-1">Yes ✓</span>
+  ) : (
+    <span className="text-red-500 dark:text-red-400 ml-1">No ✗</span>
+  );
+}
+
+function QualityReportPanel({ report }: { report: ContentQualityReport | null }) {
+  const [open, setOpen] = useState(false);
+  if (!report) return null;
+
+  const score = report.score || 0;
+  const verdict = report.verdict || "Unknown";
+  const isReady = score >= 7 || verdict.toLowerCase().includes("ready");
+  const verdictColor = isReady
+    ? "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+    : "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800";
+
+  return (
+    <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-2">
+      {/* Always-visible summary line */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+        >
+          {open ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+          Quality Report
+        </button>
+        <span className={`text-xs px-2 py-0.5 rounded border font-medium ${verdictColor}`}>
+          {verdict} ({score}/10)
+        </span>
+      </div>
+
+      {open && (
+        <div className="mt-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 text-xs space-y-3 max-h-[500px] overflow-y-auto">
+
+          {/* FACT CHECK */}
+          <div>
+            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">FACT CHECK</div>
+            <div className="flex items-center gap-2">
+              <span
+                className={
+                  report.fact_check?.result === "PASS"
+                    ? "text-green-600 dark:text-green-500"
+                    : "text-red-500 dark:text-red-400"
+                }
+              >
+                {report.fact_check?.result === "PASS" ? "PASS ✓" : "FAIL ✗"}
+              </span>
+              {report.fact_check?.note && (
+                <span className="text-gray-500 dark:text-gray-400">{report.fact_check.note}</span>
+              )}
+            </div>
+            {report.fact_check?.sources && report.fact_check.sources.length > 0 && (
+              <div className="text-gray-500 dark:text-gray-400 mt-1">
+                Sources: {report.fact_check.sources.join(", ")}
+              </div>
+            )}
+          </div>
+
+          {/* PUBLICATION STANDARD */}
+          <div>
+            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">PUBLICATION STANDARD</div>
+            <div className="space-y-0.5 text-gray-600 dark:text-gray-400">
+              <div>McKinsey partner would share? <CheckOrX value={!!report.publication_standard?.mckinsey_share} /></div>
+              <div>Free of fluff? <CheckOrX value={!!report.publication_standard?.fluff_free} /></div>
+              <div>Claims supported? <CheckOrX value={!!report.publication_standard?.claims_supported} /></div>
+              <div>Worth sharing internally? <CheckOrX value={!!report.publication_standard?.worth_sharing} /></div>
+            </div>
+          </div>
+
+          {/* CONTENT OBJECTIVE */}
+          {report.content_objective && report.content_objective.length > 0 && (
+            <div>
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">CONTENT OBJECTIVE</div>
+              {report.content_objective.map((obj: string, i: number) => (
+                <div key={i} className="text-gray-600 dark:text-gray-400">✓ {obj}</div>
+              ))}
+            </div>
+          )}
+
+          {/* POSITIONING */}
+          <div>
+            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">POSITIONING</div>
+            <div className="space-y-0.5 text-gray-600 dark:text-gray-400">
+              <div>Systems thinker? <CheckOrX value={!!report.positioning?.systems_thinker} /></div>
+              <div>Pattern recognizer? <CheckOrX value={!!report.positioning?.pattern_recognizer} /></div>
+              <div>Builder? <CheckOrX value={!!report.positioning?.builder} /></div>
+            </div>
+          </div>
+
+          {/* DIFFERENTIATION */}
+          <div>
+            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">DIFFERENTIATION</div>
+            <div className="space-y-0.5 text-gray-600 dark:text-gray-400">
+              <div>Unique — others couldn&apos;t write this? <CheckOrX value={!report.differentiation?.could_100_write} /></div>
+              <div>Original insight? <CheckOrX value={!!report.differentiation?.original_insight} /></div>
+              {report.differentiation?.note && (
+                <div className="italic text-gray-500 dark:text-gray-400">{report.differentiation.note}</div>
+              )}
+            </div>
+          </div>
+
+          {/* CRAFT */}
+          <div>
+            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">CRAFT</div>
+            <div className="space-y-0.5 text-gray-600 dark:text-gray-400">
+              <div>
+                Banned phrases:{" "}
+                {report.craft?.banned_phrases && report.craft.banned_phrases.length > 0 ? (
+                  <span className="text-red-500 dark:text-red-400">{report.craft.banned_phrases.join(", ")}</span>
+                ) : (
+                  <span className="text-green-600 dark:text-green-500">None ✓</span>
+                )}
+              </div>
+              <div>No em dashes? <CheckOrX value={!report.craft?.em_dashes} /></div>
+              <div>Character count OK? <CheckOrX value={!!report.craft?.char_count_ok} /></div>
+              <div>Mobile formatting? <CheckOrX value={!!report.craft?.mobile_format} /></div>
+            </div>
+          </div>
+
+          {/* READER VALUE */}
+          <div>
+            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">READER VALUE</div>
+            <div className="space-y-0.5 text-gray-600 dark:text-gray-400">
+              <div>Actionable or shifts thinking? <CheckOrX value={!!report.reader_value?.actionable} /></div>
+              <div>Explains WHY not just WHAT? <CheckOrX value={!!report.reader_value?.explains_why} /></div>
+            </div>
+          </div>
+
+          {/* FLAGS */}
+          {report.flags && report.flags.length > 0 && (
+            <div>
+              <div className="font-semibold text-amber-700 dark:text-amber-400 mb-1">FLAGS</div>
+              {report.flags.map((flag: string, i: number) => (
+                <div key={i} className="text-amber-600 dark:text-amber-400">⚠ {flag}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -413,6 +574,9 @@ function BatchDraftCard({
       {draft.intel && draft.intel.report && (
         <ContentIntelPanel intel={draft.intel} credibility={draft.credibility_score} publishReady={draft.publish_ready} />
       )}
+
+      {/* Quality Report Panel */}
+      <QualityReportPanel report={parseQualityReport(draft)} />
     </div>
   );
 }
@@ -647,6 +811,14 @@ function DraftCard({
           </div>
         </div>
       )}
+
+      {/* Intel / Verification Panel */}
+      {draft.intel && draft.intel.report && (
+        <ContentIntelPanel intel={draft.intel} credibility={draft.credibility_score} publishReady={draft.publish_ready} />
+      )}
+
+      {/* Quality Report Panel */}
+      <QualityReportPanel report={parseQualityReport(draft)} />
     </div>
   );
 }

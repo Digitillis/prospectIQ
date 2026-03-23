@@ -509,12 +509,209 @@ class ContentAgent(BaseAgent):
                         "verification_rounds": 3,
                     }
 
-                    # Update the draft's personalization_notes to include intel
+                    # ── QUALITY REPORT — structured self-assessment ──
+                    # Third Claude call: comprehensive quality review
+                    quality_report: dict[str, Any] = {}
+                    try:
+                        VERIFICATION_PROMPT = """You are a quality reviewer for LinkedIn thought leadership posts.
+Review this post against the following criteria and produce a structured assessment.
+
+POST TO REVIEW:
+{post_text}
+
+TOPIC: {topic}
+PILLAR: {pillar}
+
+EVALUATE EACH CRITERION:
+
+1. FACT CHECK
+- Are all statistics and data points sourceable?
+- Are any claims fabricated or unverifiable?
+- List all data sources referenced or implied.
+Result: PASS or FAIL
+
+2. PUBLICATION STANDARD
+- Would a McKinsey Senior Partner share this internally? (yes/no)
+- Free of fluff or exaggeration? (yes/no)
+- No unsupported claims? (yes/no)
+- Worth sharing internally? (yes/no)
+
+3. CONTENT OBJECTIVE FULFILLED
+Which of these does the post accomplish (list all that apply):
+- Challenge a widely accepted belief
+- Reveal a hidden pattern or constraint
+- Reframe a known problem with a more useful lens
+- Introduce a practical framework or decision model
+- Explain the underlying mechanism behind outcomes
+
+4. POSITIONING CHECK
+- Systems thinker, not commentator? (yes/no)
+- Pattern recognizer, not storyteller? (yes/no)
+- Builder, not observer? (yes/no)
+
+5. DIFFERENTIATION
+- Could 100 other manufacturing experts write this? (yes/no)
+- Contains original insight or reframing? (yes/no)
+- What makes this post distinct? (one sentence)
+
+6. CRAFT
+- Any banned phrases found? (list or "none")
+- Any em dashes? (yes/no)
+- Character count acceptable? (yes/no)
+- Mobile formatting good? (yes/no)
+
+7. READER VALUE
+- Can the reader act or think differently after reading? (yes/no)
+- Explains WHY not just WHAT? (yes/no)
+
+8. OVERALL SCORE: X/10
+9. VERDICT: "Ready to Publish" or "Needs Revision"
+10. FLAGS: Any specific issues to address (or "None")
+
+Respond in this EXACT format (parseable):
+FACT_CHECK: PASS|FAIL
+FACT_CHECK_SOURCES: source1, source2, ...
+FACT_CHECK_NOTE: any note about fact check
+PUB_STANDARD_MCKINSEY: YES|NO
+PUB_STANDARD_FLUFF: YES|NO
+PUB_STANDARD_CLAIMS: YES|NO
+PUB_STANDARD_SHAREABLE: YES|NO
+OBJECTIVE: objective1, objective2
+POSITIONING_THINKER: YES|NO
+POSITIONING_PATTERN: YES|NO
+POSITIONING_BUILDER: YES|NO
+DIFFERENTIATION_100: YES|NO
+DIFFERENTIATION_ORIGINAL: YES|NO
+DIFFERENTIATION_NOTE: what makes it distinct
+CRAFT_BANNED: none|phrase1, phrase2
+CRAFT_EMDASH: YES|NO
+CRAFT_CHARS: OK|OVER
+CRAFT_MOBILE: YES|NO
+READER_ACTION: YES|NO
+READER_WHY: YES|NO
+SCORE: 8
+VERDICT: Ready to Publish
+FLAGS: None"""
+
+                        quality_prompt = VERIFICATION_PROMPT.format(
+                            post_text=post_text,
+                            topic=job_topic,
+                            pillar=job_pillar,
+                        )
+
+                        quality_response = client.messages.create(
+                            model="claude-sonnet-4-20250514",
+                            max_tokens=1000,
+                            system="You are a rigorous quality reviewer. Evaluate posts honestly against all criteria. Be specific with flags.",
+                            messages=[{"role": "user", "content": quality_prompt}],
+                        )
+
+                        self.track_cost(
+                            provider="anthropic",
+                            model="claude-sonnet-4-20250514",
+                            endpoint="/messages",
+                            company_id=None,
+                            input_tokens=quality_response.usage.input_tokens,
+                            output_tokens=quality_response.usage.output_tokens,
+                        )
+
+                        quality_text = quality_response.content[0].text.strip()
+
+                        # Parse the structured response into a dict
+                        def _parse_quality_line(text: str, key: str) -> str:
+                            for line in text.split("\n"):
+                                stripped = line.strip()
+                                if stripped.startswith(f"{key}:"):
+                                    return stripped[len(f"{key}:"):].strip()
+                            return ""
+
+                        def _yes(val: str) -> bool:
+                            return val.strip().upper() in ("YES", "Y", "TRUE")
+
+                        qr_score_raw = _parse_quality_line(quality_text, "SCORE")
+                        try:
+                            qr_score = int(qr_score_raw.split("/")[0].strip())
+                        except (ValueError, IndexError):
+                            qr_score = 0
+
+                        qr_verdict = _parse_quality_line(quality_text, "VERDICT") or "Needs Revision"
+
+                        qr_fact_check = _parse_quality_line(quality_text, "FACT_CHECK")
+                        qr_fc_sources_raw = _parse_quality_line(quality_text, "FACT_CHECK_SOURCES")
+                        qr_fc_sources = [s.strip() for s in qr_fc_sources_raw.split(",") if s.strip() and s.strip().lower() != "none"]
+                        qr_fc_note = _parse_quality_line(quality_text, "FACT_CHECK_NOTE")
+
+                        qr_objectives_raw = _parse_quality_line(quality_text, "OBJECTIVE")
+                        qr_objectives = [o.strip() for o in qr_objectives_raw.split(",") if o.strip()]
+
+                        qr_banned_raw = _parse_quality_line(quality_text, "CRAFT_BANNED")
+                        if qr_banned_raw.lower() in ("none", "none found", ""):
+                            qr_banned: list[str] = []
+                        else:
+                            qr_banned = [p.strip() for p in qr_banned_raw.split(",") if p.strip()]
+
+                        qr_flags_raw = _parse_quality_line(quality_text, "FLAGS")
+                        if qr_flags_raw.lower() in ("none", "none found", ""):
+                            qr_flags: list[str] = []
+                        else:
+                            qr_flags = [f.strip() for f in qr_flags_raw.split(",") if f.strip()]
+
+                        quality_report = {
+                            "score": qr_score,
+                            "verdict": qr_verdict,
+                            "fact_check": {
+                                "result": qr_fact_check.upper() if qr_fact_check else "FAIL",
+                                "sources": qr_fc_sources,
+                                "note": qr_fc_note,
+                            },
+                            "publication_standard": {
+                                "mckinsey_share": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_MCKINSEY")),
+                                "fluff_free": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_FLUFF")),
+                                "claims_supported": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_CLAIMS")),
+                                "worth_sharing": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_SHAREABLE")),
+                            },
+                            "content_objective": qr_objectives,
+                            "positioning": {
+                                "systems_thinker": _yes(_parse_quality_line(quality_text, "POSITIONING_THINKER")),
+                                "pattern_recognizer": _yes(_parse_quality_line(quality_text, "POSITIONING_PATTERN")),
+                                "builder": _yes(_parse_quality_line(quality_text, "POSITIONING_BUILDER")),
+                            },
+                            "differentiation": {
+                                "could_100_write": _yes(_parse_quality_line(quality_text, "DIFFERENTIATION_100")),
+                                "original_insight": _yes(_parse_quality_line(quality_text, "DIFFERENTIATION_ORIGINAL")),
+                                "note": _parse_quality_line(quality_text, "DIFFERENTIATION_NOTE"),
+                            },
+                            "craft": {
+                                "banned_phrases": qr_banned,
+                                "em_dashes": _yes(_parse_quality_line(quality_text, "CRAFT_EMDASH")),
+                                "char_count_ok": _parse_quality_line(quality_text, "CRAFT_CHARS").upper() != "OVER",
+                                "mobile_format": _yes(_parse_quality_line(quality_text, "CRAFT_MOBILE")),
+                            },
+                            "reader_value": {
+                                "actionable": _yes(_parse_quality_line(quality_text, "READER_ACTION")),
+                                "explains_why": _yes(_parse_quality_line(quality_text, "READER_WHY")),
+                            },
+                            "flags": qr_flags,
+                        }
+
+                        console.print(
+                            f"  Quality Report: {qr_verdict} — {qr_score}/10"
+                        )
+
+                    except Exception as qr_err:
+                        logger.warning(f"Quality report generation failed for '{job_topic}': {qr_err}")
+                        quality_report = {}
+
+                    # Update the draft's personalization_notes to include intel + quality report
+                    import json as _json
                     updated_notes = (
                         f"format:{job_format}|pillar:{job_pillar}"
                         f"|credibility:{credibility_score}/10"
                         f"|publish_ready:{publish_ready}"
                     )
+                    if quality_report:
+                        updated_notes += f"|quality_report::{_json.dumps(quality_report, separators=(',', ':'))}"
+
                     if draft_id:
                         try:
                             self.db.update_outreach_draft(draft_id, {
@@ -526,6 +723,7 @@ class ContentAgent(BaseAgent):
                     result.details[-1]["intel"] = intel_data
                     result.details[-1]["credibility_score"] = credibility_score
                     result.details[-1]["publish_ready"] = publish_ready
+                    result.details[-1]["quality_report"] = quality_report
 
                     # Log verification result
                     status_icon = "[green]PASS[/green]" if publish_ready else "[yellow]REVIEW[/yellow]"

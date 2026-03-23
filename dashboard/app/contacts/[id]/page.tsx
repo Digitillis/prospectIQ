@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertCircle,
   ArrowLeft,
   Building2,
   Check,
@@ -18,7 +19,6 @@ import {
   MessageSquare,
   Pencil,
   Phone,
-  AlertCircle,
   Star,
   Zap,
 } from "lucide-react";
@@ -31,7 +31,7 @@ import {
   type ContactEvent,
   type LinkedInIntel,
 } from "@/lib/api";
-import { cn, formatTimeAgo, STATUS_COLORS } from "@/lib/utils";
+import { cn, formatTimeAgo, STATUS_COLORS, getPQSColor } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +67,8 @@ type ContactDetail = Contact & {
     subject?: string;
     approval_status: string;
   }>;
+  city?: string;
+  state?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -79,7 +81,6 @@ function formatEventType(type: string): string {
     response_received: "Response Received",
     connection_accepted: "Connection Accepted",
     connection_sent: "Connection Sent",
-    status_change: "Status Changed",
     note_added: "Note",
     meeting_scheduled: "Meeting Scheduled",
     meeting_held: "Meeting Held",
@@ -88,6 +89,7 @@ function formatEventType(type: string): string {
     email_opened: "Email Opened",
     link_clicked: "Link Clicked",
     profile_viewed: "Profile Viewed",
+    status_change: "Status Changed",
     system_action: "System",
   };
   return labels[type] || type.replace(/_/g, " ");
@@ -133,7 +135,7 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   return (
     <button
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
     >
       {copied ? (
         <Check className="h-3 w-3 text-green-500" />
@@ -168,7 +170,7 @@ function TierBadge({ tier }: { tier?: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// IntelPanel — reuses pattern from linkedin/page.tsx
+// IntelPanel
 // ---------------------------------------------------------------------------
 
 function IntelPanel({
@@ -197,20 +199,20 @@ function IntelPanel({
     <div className="mt-3">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
       >
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         {open ? "Hide Intel" : "View Company Intel"}
       </button>
 
       {open && (
-        <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs space-y-3">
+        <div className="mt-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 text-xs space-y-3">
           {intel?.personalization_notes && (
             <div>
               <div className="font-semibold text-gray-500 mb-1 uppercase tracking-wide text-[10px]">
                 WHY THIS CONTACT
               </div>
-              <p className="text-gray-700">{intel.personalization_notes}</p>
+              <p className="text-gray-700 dark:text-gray-300">{intel.personalization_notes}</p>
             </div>
           )}
 
@@ -287,7 +289,7 @@ function MessageDraftBlock({
   const [value, setValue] = useState(body);
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
           {label}
@@ -297,7 +299,7 @@ function MessageDraftBlock({
           <button
             onClick={() => setEditing((e) => !e)}
             className={cn(
-              "flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-gray-200",
+              "flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-gray-200 dark:hover:bg-gray-700",
               editing ? "text-amber-600" : "text-gray-400"
             )}
           >
@@ -310,11 +312,11 @@ function MessageDraftBlock({
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          className="w-full rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-400"
           rows={4}
         />
       ) : (
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{value}</p>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">{value}</p>
       )}
     </div>
   );
@@ -337,40 +339,33 @@ function EventCard({
   const isInbound = event.direction === "inbound";
 
   return (
-    <div className={cn("flex gap-3 mb-4", isOutbound ? "flex-row-reverse" : "")}>
+    <div className="flex gap-3 mb-4">
       {/* Timeline dot + line */}
       <div className="flex flex-col items-center flex-shrink-0">
         <div
           className={cn(
-            "w-3 h-3 rounded-full mt-1 flex-shrink-0",
+            "w-3 h-3 rounded-full mt-1.5 flex-shrink-0 ring-2 ring-white dark:ring-gray-900",
             isOutbound
               ? "bg-blue-500"
               : isInbound
               ? "bg-green-500"
-              : "bg-gray-300"
+              : "bg-gray-300 dark:bg-gray-600"
           )}
         />
-        <div className="w-px flex-1 bg-gray-100 mt-1" />
+        <div className="w-px flex-1 bg-gray-100 dark:bg-gray-800 mt-1" />
       </div>
 
       {/* Card */}
-      <div
-        className={cn(
-          "flex-1 rounded-lg p-3 text-sm",
-          isOutbound
-            ? "bg-blue-50 border border-blue-200"
-            : isInbound
-            ? "bg-green-50 border border-green-200"
-            : "bg-gray-50 border border-gray-200"
-        )}
-      >
+      <div className="flex-1 min-w-0 rounded-xl p-3.5 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-sm mb-1">
         {/* Header row */}
-        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mb-1.5">
-          <span className="font-semibold text-gray-700">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-2">
+          <span className="font-semibold text-gray-800 dark:text-gray-100">
             {formatEventType(event.event_type)}
           </span>
-          {event.channel && <span>· {event.channel}</span>}
-          <span>· {formatRelativeTime(event.created_at)}</span>
+          {event.channel && (
+            <span className="capitalize text-gray-400">· {event.channel}</span>
+          )}
+          <span className="text-gray-400">· {formatRelativeTime(event.created_at)}</span>
           {event.ai_analyzed && (
             <span title="AI analyzed" className="text-purple-500">
               <Zap className="w-3 h-3 inline" />
@@ -379,12 +374,12 @@ function EventCard({
           {event.sentiment && (
             <span
               className={cn(
-                "px-1.5 py-0.5 rounded text-xs font-medium",
+                "px-1.5 py-0.5 rounded-full text-xs font-medium",
                 event.sentiment === "positive"
-                  ? "bg-green-100 text-green-700"
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                   : event.sentiment === "negative"
-                  ? "bg-red-100 text-red-700"
-                  : "bg-gray-100 text-gray-600"
+                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
               )}
             >
               {event.sentiment}
@@ -394,37 +389,23 @@ function EventCard({
 
         {/* Body */}
         {event.body && (
-          <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+          <p className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
             {event.body}
           </p>
         )}
 
         {/* Sentiment reason */}
         {event.sentiment_reason && (
-          <p className="text-xs text-gray-400 mt-1 italic">{event.sentiment_reason}</p>
+          <p className="text-xs text-gray-400 mt-1.5 italic">{event.sentiment_reason}</p>
         )}
 
-        {/* Tags */}
-        {(event.tags?.length ?? 0) > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {event.tags!.map((t, i) => (
-              <span
-                key={i}
-                className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs"
-              >
-                {t}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Signals */}
+        {/* Signal tags */}
         {(event.signals?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
             {event.signals!.map((s, i) => (
               <span
                 key={i}
-                className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs"
+                className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-xs font-medium"
               >
                 {s}
               </span>
@@ -432,26 +413,42 @@ function EventCard({
           </div>
         )}
 
+        {/* General tags */}
+        {(event.tags?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {event.tags!.map((t, i) => (
+              <span
+                key={i}
+                className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full text-xs"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Pending next action */}
         {event.next_action && event.next_action_status === "pending" && (
-          <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="text-xs font-semibold text-amber-800 mb-1 uppercase tracking-wide">
-              Recommended Next Action
+          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-400 uppercase tracking-wide">
+                Recommended Next Action
+              </span>
               {event.next_action_date && (
-                <span className="ml-1 font-normal normal-case">
-                  — {event.next_action_date}
+                <span className="text-xs text-amber-600 dark:text-amber-500">
+                  {event.next_action_date}
                 </span>
               )}
             </div>
-            <p className="text-sm text-amber-900">{event.next_action}</p>
+            <p className="text-sm text-amber-900 dark:text-amber-300">{event.next_action}</p>
 
             {event.suggested_message && (
-              <div className="mt-2 p-2 bg-white rounded border border-amber-100">
-                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              <div className="mt-2 p-2.5 bg-white dark:bg-gray-900 rounded-lg border border-amber-100 dark:border-amber-800/50">
+                <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
                   {event.suggested_message}
                 </p>
                 <button
-                  className="mt-1 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  className="mt-1.5 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
                   onClick={() =>
                     navigator.clipboard.writeText(event.suggested_message!)
                   }
@@ -462,7 +459,7 @@ function EventCard({
             )}
 
             {event.action_reasoning && (
-              <p className="text-xs text-amber-600 mt-1.5 italic">
+              <p className="text-xs text-amber-600 dark:text-amber-500 mt-1.5 italic">
                 {event.action_reasoning}
               </p>
             )}
@@ -470,13 +467,13 @@ function EventCard({
             <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => onMarkDone(event.id)}
-                className="px-2.5 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                className="px-3 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
               >
                 Mark Done
               </button>
               <button
                 onClick={() => onSkip(event.id)}
-                className="px-2.5 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300 transition-colors"
+                className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
               >
                 Skip
               </button>
@@ -486,7 +483,7 @@ function EventCard({
 
         {/* Completed next action */}
         {event.next_action && event.next_action_status === "done" && (
-          <div className="mt-2 flex items-center gap-1 text-xs text-green-600">
+          <div className="mt-2 flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
             <Check className="w-3 h-3" /> Action completed
           </div>
         )}
@@ -522,6 +519,12 @@ const CHANNELS = [
   { value: "in_person", label: "In Person" },
 ] as const;
 
+const INBOUND_TYPES = new Set([
+  "response_received",
+  "email_reply",
+  "connection_accepted",
+]);
+
 function AddEventForm({
   contactId,
   onSaved,
@@ -532,14 +535,11 @@ function AddEventForm({
   const [eventType, setEventType] = useState<string>("response_received");
   const [channel, setChannel] = useState<string>("linkedin");
   const [body, setBody] = useState("");
-  const [tags, setTags] = useState("");
   const [analyze, setAnalyze] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isInbound = ["response_received", "email_reply", "connection_accepted"].includes(
-    eventType
-  );
+  const isInbound = INBOUND_TYPES.has(eventType);
 
   const handleSubmit = async () => {
     setError(null);
@@ -549,16 +549,10 @@ function AddEventForm({
         event_type: eventType,
         channel: channel || undefined,
         body: body.trim() || undefined,
-        tags: tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
         analyze: analyze && isInbound,
       });
       onSaved(res.data);
-      // Reset form
       setBody("");
-      setTags("");
       setAnalyze(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save event");
@@ -567,9 +561,12 @@ function AddEventForm({
     }
   };
 
+  const selectCls =
+    "w-full border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400";
+
   return (
-    <div className="border-t border-gray-100 pt-4 mt-2">
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+    <div>
+      <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
         Add Event
       </h3>
 
@@ -580,7 +577,7 @@ function AddEventForm({
           <select
             value={eventType}
             onChange={(e) => setEventType(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className={selectCls}
           >
             {EVENT_TYPES.map((t) => (
               <option key={t.value} value={t.value}>
@@ -596,7 +593,7 @@ function AddEventForm({
           <select
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className={selectCls}
           >
             {CHANNELS.map((c) => (
               <option key={c.value} value={c.value}>
@@ -609,37 +606,22 @@ function AddEventForm({
         {/* Body */}
         <div>
           <label className="block text-xs text-gray-400 mb-1">
-            {isInbound ? "Their message" : "Notes"}
+            {isInbound ? "Their message" : "Your notes"}
           </label>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder={
               isInbound
-                ? "Paste their reply here…"
+                ? "Paste their reply or message here…"
                 : "Add notes about this interaction…"
             }
             rows={3}
-            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+            className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
           />
         </div>
 
-        {/* Tags */}
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">
-            Tags{" "}
-            <span className="font-normal">(comma-separated)</span>
-          </label>
-          <input
-            type="text"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="interested, timing, objection"
-            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
-          />
-        </div>
-
-        {/* AI analysis checkbox — only for inbound */}
+        {/* AI analysis — only shown for inbound events */}
         {isInbound && (
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
@@ -648,7 +630,7 @@ function AddEventForm({
               onChange={(e) => setAnalyze(e.target.checked)}
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-400"
             />
-            <span className="text-xs text-gray-600 flex items-center gap-1">
+            <span className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-1">
               <Zap className="w-3 h-3 text-purple-500" />
               Run AI analysis
             </span>
@@ -664,12 +646,12 @@ function AddEventForm({
         <button
           onClick={handleSubmit}
           disabled={saving}
-          className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+          className="w-full py-2 rounded-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {saving ? (
             <>
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              {analyze && isInbound ? "Analyzing with AI…" : "Saving…"}
+              {analyze && isInbound ? "Analyzing…" : "Saving…"}
             </>
           ) : (
             "Save Event"
@@ -695,9 +677,9 @@ export default function ContactDetailPage() {
 
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Data fetching
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   const fetchContact = useCallback(async () => {
     try {
@@ -715,7 +697,7 @@ export default function ContactDetailPage() {
       const res = await getContactEvents(id);
       setEvents(res.data);
     } catch {
-      // Event table may not exist yet — show empty thread
+      // contact_events table may not exist yet — show empty thread
     } finally {
       setEventsLoading(false);
     }
@@ -732,12 +714,12 @@ export default function ContactDetailPage() {
     };
   }, [fetchContact, fetchEvents]);
 
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Event handlers
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   const handleEventSaved = (newEvent: ContactEvent) => {
-    // Optimistic prepend
+    // Optimistic prepend — newest event at top
     setEvents((prev) => [newEvent, ...prev]);
   };
 
@@ -763,23 +745,23 @@ export default function ContactDetailPage() {
     }
   };
 
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Render states
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
       </div>
     );
   }
 
   if (error || !contact) {
     return (
-      <div className="p-8 text-center">
+      <div className="p-8 text-center min-h-screen bg-gray-50 dark:bg-gray-950">
         <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
-        <p className="text-gray-600">{error ?? "Contact not found"}</p>
+        <p className="text-gray-600 dark:text-gray-400">{error ?? "Contact not found"}</p>
         <Link
           href="/contacts"
           className="mt-4 inline-flex items-center gap-1 text-blue-600 text-sm hover:underline"
@@ -795,7 +777,7 @@ export default function ContactDetailPage() {
     ? `https://logo.clearbit.com/${company.domain}`
     : null;
 
-  // Filter drafts by channel type for the prepared messages section
+  // Outreach drafts
   const drafts = contact.outreach_drafts ?? [];
   const connectionNote = drafts.find(
     (d) =>
@@ -816,7 +798,6 @@ export default function ContactDetailPage() {
   );
   const emailDraft = drafts.find((d) => d.channel === "email");
 
-  // Build a minimal LinkedInIntel object from the company data we have
   const intel: LinkedInIntel | undefined = company
     ? {
         company: {
@@ -830,18 +811,23 @@ export default function ContactDetailPage() {
       }
     : undefined;
 
-  // -----------------------------------------------------------------------
+  // Pending next actions count for badge
+  const pendingActionsCount = events.filter(
+    (e) => e.next_action && e.next_action_status === "pending"
+  ).length;
+
+  // -------------------------------------------------------------------------
   // Main render — two-panel layout
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         {/* Back nav */}
         <Link
           href="/contacts"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-5 transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 mb-5 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Contacts
@@ -849,27 +835,28 @@ export default function ContactDetailPage() {
 
         <div className="flex gap-6 items-start">
 
-          {/* ================================================================
+          {/* ==============================================================
               LEFT PANEL — 40% width, sticky
-          ================================================================ */}
+          ============================================================== */}
           <div
             className="w-[40%] flex-shrink-0 sticky top-6 max-h-[calc(100vh-5rem)] overflow-y-auto space-y-4"
             style={{ scrollbarWidth: "thin" }}
           >
 
             {/* ── Contact header card ── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+
               {/* Avatar + name */}
               <div className="flex items-start gap-3 mb-4">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 text-white font-semibold text-lg">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 text-white font-semibold text-lg select-none">
                   {(contact.full_name ?? "?")[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h1 className="text-lg font-semibold text-gray-900 leading-tight">
+                  <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 leading-tight">
                     {contact.full_name || "Unknown Contact"}
                   </h1>
                   {contact.title && (
-                    <p className="text-sm text-gray-500">{contact.title}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{contact.title}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     {contact.is_decision_maker && (
@@ -890,13 +877,23 @@ export default function ContactDetailPage() {
                     )}
                   </div>
                 </div>
+
+                {/* PQS score */}
+                {company && (
+                  <div className="flex-shrink-0 text-right">
+                    <div className={cn("text-xl font-bold tabular-nums", getPQSColor(company.pqs_total))}>
+                      {company.pqs_total}
+                    </div>
+                    <div className="text-[10px] text-gray-400 uppercase tracking-wide">PQS</div>
+                  </div>
+                )}
               </div>
 
               {/* Company link */}
               {company && (
                 <Link
                   href={`/prospects/${company.id}`}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-gray-50 hover:bg-blue-50 transition-colors group mb-4"
+                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group mb-4"
                 >
                   {logoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -912,19 +909,14 @@ export default function ContactDetailPage() {
                     <Building2 className="w-5 h-5 text-gray-400 flex-shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 group-hover:text-blue-700 truncate">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-blue-700 dark:group-hover:text-blue-400 truncate">
                       {company.name}
                     </p>
                     {company.sub_sector && (
                       <p className="text-xs text-gray-400 truncate">{company.sub_sector}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-xs font-semibold text-gray-400">
-                      PQS {company.pqs_total}
-                    </span>
-                    <ExternalLink className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400" />
-                  </div>
+                  <ExternalLink className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 flex-shrink-0" />
                 </Link>
               )}
 
@@ -933,7 +925,7 @@ export default function ContactDetailPage() {
                 {contact.email && (
                   <a
                     href={`mailto:${contact.email}`}
-                    className="flex items-center gap-2.5 text-sm text-gray-600 hover:text-blue-600 transition-colors group"
+                    className="flex items-center gap-2.5 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                   >
                     <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <span className="truncate">{contact.email}</span>
@@ -944,7 +936,7 @@ export default function ContactDetailPage() {
                     href={contact.linkedin_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2.5 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                    className="flex items-center gap-2.5 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 transition-colors"
                   >
                     <Linkedin className="w-4 h-4 flex-shrink-0" />
                     LinkedIn Profile
@@ -954,46 +946,41 @@ export default function ContactDetailPage() {
                 {contact.phone && (
                   <a
                     href={`tel:${contact.phone}`}
-                    className="flex items-center gap-2.5 text-sm text-gray-600 hover:text-blue-600 transition-colors"
+                    className="flex items-center gap-2.5 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 transition-colors"
                   >
                     <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     {contact.phone}
                   </a>
                 )}
-                {(contact as ContactDetail & { city?: string; state?: string }).city ||
-                  (contact as ContactDetail & { city?: string; state?: string }).state ? (
-                  <div className="flex items-center gap-2.5 text-sm text-gray-500">
+                {(contact.city || contact.state) && (
+                  <div className="flex items-center gap-2.5 text-sm text-gray-500 dark:text-gray-400">
                     <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    {[
-                      (contact as ContactDetail & { city?: string }).city,
-                      (contact as ContactDetail & { state?: string }).state,
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
+                    {[contact.city, contact.state].filter(Boolean).join(", ")}
                   </div>
-                ) : null}
+                )}
               </div>
 
-              {/* LinkedIn status */}
+              {/* LinkedIn channel status */}
               {contact.linkedin_status && contact.linkedin_status !== "not_sent" && (
-                <div className="mt-3 pt-3 border-t border-gray-50">
+                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
                   <div className="flex items-center gap-2 text-xs">
+                    <Linkedin className="w-3.5 h-3.5 text-blue-500" />
                     <span className="text-gray-400">LinkedIn:</span>
-                    <span className="font-medium text-blue-600 capitalize">
+                    <span className="font-medium text-blue-600 dark:text-blue-400 capitalize">
                       {contact.linkedin_status.replace(/_/g, " ")}
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* Intel section */}
+              {/* Intel panel */}
               <IntelPanel intel={intel} research={contact.research} />
             </div>
 
             {/* ── Prepared messages card ── */}
             {(connectionNote || openingDm || followupDm || emailDraft) && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+                <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
                   Prepared Messages
                 </h2>
                 <div className="space-y-3">
@@ -1026,30 +1013,38 @@ export default function ContactDetailPage() {
             )}
 
             {/* ── Add Event form card ── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-5">
               <AddEventForm contactId={id} onSaved={handleEventSaved} />
             </div>
           </div>
 
-          {/* ================================================================
+          {/* ==============================================================
               RIGHT PANEL — 60% width, scrollable event thread
-          ================================================================ */}
+          ============================================================== */}
           <div className="flex-1 min-w-0">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+
               {/* Thread header */}
               <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <MessageSquare className="w-4 h-4 text-gray-400" />
-                  <h2 className="text-base font-semibold text-gray-800">
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
                     Event Thread
                   </h2>
                   {events.length > 0 && (
-                    <span className="text-xs text-gray-400 font-normal">
-                      {events.length} event{events.length !== 1 ? "s" : ""}
+                    <span className="text-xs text-gray-400 font-normal bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+                      {events.length}
+                    </span>
+                  )}
+                  {pendingActionsCount > 0 && (
+                    <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                      {pendingActionsCount} action{pendingActionsCount !== 1 ? "s" : ""} pending
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-gray-400">
+
+                {/* Legend */}
+                <div className="flex items-center gap-3 text-xs text-gray-400">
                   <span className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
                     Outbound
@@ -1059,22 +1054,22 @@ export default function ContactDetailPage() {
                     Inbound
                   </span>
                   <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-gray-300 inline-block" />
+                    <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600 inline-block" />
                     Internal
                   </span>
                 </div>
               </div>
 
-              {/* Events */}
+              {/* Events list */}
               {eventsLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
                 </div>
               ) : events.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <MessageSquare className="w-10 h-10 text-gray-200 mb-3" />
-                  <p className="text-gray-400 font-medium">No events yet</p>
-                  <p className="text-sm text-gray-300 mt-1">
+                  <MessageSquare className="w-10 h-10 text-gray-200 dark:text-gray-700 mb-3" />
+                  <p className="text-gray-400 dark:text-gray-500 font-medium">No events yet</p>
+                  <p className="text-sm text-gray-300 dark:text-gray-600 mt-1">
                     Use the form on the left to log the first interaction.
                   </p>
                 </div>

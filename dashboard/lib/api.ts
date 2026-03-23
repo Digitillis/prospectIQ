@@ -642,6 +642,19 @@ export interface ContentIntel {
   error: string | null;
 }
 
+export interface ContentQualityReport {
+  score: number;
+  verdict: string;
+  fact_check: { result: string; sources: string[]; note: string };
+  publication_standard: { mckinsey_share: boolean; fluff_free: boolean; claims_supported: boolean; worth_sharing: boolean };
+  content_objective: string[];
+  positioning: { systems_thinker: boolean; pattern_recognizer: boolean; builder: boolean };
+  differentiation: { could_100_write: boolean; original_insight: boolean; note: string };
+  craft: { banned_phrases: string[]; em_dashes: boolean; char_count_ok: boolean; mobile_format: boolean };
+  reader_value: { actionable: boolean; explains_why: boolean };
+  flags: string[];
+}
+
 export interface ContentDraft {
   id: string;
   topic: string;
@@ -654,6 +667,7 @@ export interface ContentDraft {
   credibility_score?: number | null;
   publish_ready?: boolean | null;
   intel?: ContentIntel | null;
+  quality_report?: ContentQualityReport | null;
 }
 
 export const getContentCalendar = () =>

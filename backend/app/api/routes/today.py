@@ -150,17 +150,17 @@ async def get_today_data():
         logger.warning(f"Failed to fetch linkedin queue: {e}")
         linkedin_rows = []
 
-    # --- LinkedIn connection items (contacts ready for connection request) ---
+    # --- LinkedIn connection items (contacts ready for blank connection request) ---
+    # Blank-connect flow: send the connection with NO note text. No pre-generated
+    # message is needed here — the user just opens LinkedIn and sends a blank request.
     linkedin_connect_items: list[dict] = []
     try:
-        # Contacts with LinkedIn URL and not yet sent
+        # Qualified contacts with LinkedIn URL that haven't been contacted yet
         connect_contacts = (
             db.client.table("contacts")
             .select(
-                "id, full_name, title, linkedin_url, linkedin_status, company_id, seniority, city, state, "
-                "companies(id, name, tier, pqs_total, status, domain, industry, employee_count, "
-                "revenue_printed, headcount_growth_6m, is_public, parent_company_name, "
-                "pain_signals, personalization_hooks, research_summary)"
+                "id, full_name, title, linkedin_url, linkedin_status, company_id, "
+                "companies(id, name, tier, pqs_total, status, domain)"
             )
             .not_.is_("linkedin_url", "null")
             .in_("linkedin_status", ["not_sent", "null"])
@@ -172,88 +172,7 @@ async def get_today_data():
         # Filter to only qualified/outreach_pending companies
         for contact in connect_contacts:
             company = contact.get("companies") or {}
-            if company.get("status") in ("qualified", "outreach_pending", "researched"):
-                # Try to find pre-generated connection draft
-                draft_body = None
-                draft_id = None
-                try:
-                    drafts = (
-                        db.client.table("outreach_drafts")
-                        .select("id, body, personalization_notes")
-                        .eq("contact_id", contact["id"])
-                        .eq("channel", "linkedin")
-                        .in_("sequence_name", ["linkedin_connection", "linkedin_connect"])
-                        .order("created_at", desc=True)
-                        .limit(1)
-                        .execute()
-                        .data
-                    ) or []
-                    if drafts:
-                        draft_body = drafts[0].get("body")
-                        draft_id = drafts[0].get("id")
-                except Exception:
-                    pass
-
-                # Build intel block for this contact
-                intel_data: dict = {
-                    "personalization_notes": "",
-                    "company": {
-                        "industry": company.get("industry"),
-                        "employee_count": company.get("employee_count"),
-                        "revenue_printed": company.get("revenue_printed"),
-                        "headcount_growth_6m": company.get("headcount_growth_6m"),
-                        "is_public": company.get("is_public"),
-                        "parent_company_name": company.get("parent_company_name"),
-                        "pain_signals": company.get("pain_signals", []),
-                        "personalization_hooks": company.get("personalization_hooks", []),
-                        "research_summary": company.get("research_summary"),
-                    },
-                    "research": None,
-                    "contact": {
-                        "title": contact.get("title"),
-                        "seniority": contact.get("seniority"),
-                        "city": contact.get("city") or company.get("city"),
-                        "state": contact.get("state") or company.get("state"),
-                    },
-                }
-                if drafts and drafts[0].get("personalization_notes"):
-                    intel_data["personalization_notes"] = drafts[0]["personalization_notes"]
-                # Fetch research
-                try:
-                    research_rows = (
-                        db.client.table("research_intelligence")
-                        .select("*")
-                        .eq("company_id", contact["company_id"])
-                        .order("created_at", desc=True)
-                        .limit(1)
-                        .execute()
-                        .data
-                    ) or []
-                    if research_rows:
-                        row = research_rows[0]
-                        # claude_analysis is a JSONB column with structured research
-                        ca = row.get("claude_analysis") or {}
-                        if isinstance(ca, str):
-                            try:
-                                import json as _json
-                                ca = _json.loads(ca)
-                            except Exception:
-                                ca = {}
-                        intel_data["research"] = {
-                            "company_description": ca.get("company_description") or row.get("company_description") or "",
-                            "manufacturing_type": ca.get("manufacturing_type") or row.get("manufacturing_type") or "",
-                            "equipment_types": ca.get("equipment_types") or row.get("equipment_types") or [],
-                            "maintenance_approach": ca.get("maintenance_approach") or row.get("maintenance_approach") or "",
-                            "iot_maturity": ca.get("iot_maturity") or row.get("iot_maturity") or "",
-                            "pain_points": ca.get("pain_points") or row.get("pain_points") or [],
-                            "opportunities": ca.get("opportunities") or row.get("opportunities") or [],
-                            "known_systems": ca.get("known_systems") or row.get("known_systems") or [],
-                            "existing_solutions": ca.get("existing_solutions") or row.get("existing_solutions") or [],
-                            "confidence": row.get("confidence_level"),
-                        }
-                except Exception:
-                    pass
-
+            if company.get("status") in ("qualified", "outreach_pending"):
                 linkedin_connect_items.append({
                     "contact_id": contact["id"],
                     "company_id": contact["company_id"],
@@ -265,9 +184,10 @@ async def get_today_data():
                     "company_tier": company.get("tier"),
                     "company_domain": company.get("domain"),
                     "pqs_total": company.get("pqs_total", 0),
-                    "draft_id": draft_id,
-                    "message_text": draft_body,
-                    "intel": intel_data,
+                    # No message text — blank connection requests have no note
+                    "draft_id": None,
+                    "message_text": None,
+                    "intel": None,
                 })
         # Sort by PQS descending
         linkedin_connect_items.sort(key=lambda x: x.get("pqs_total", 0), reverse=True)
@@ -275,9 +195,14 @@ async def get_today_data():
     except Exception as e:
         logger.warning(f"Failed to fetch linkedin connect items: {e}")
 
-    # --- LinkedIn DM items (contacts who accepted connection, ready for DM) ---
+    # --- LinkedIn DM items (contacts who accepted connection 2+ days ago, ready for opening DM) ---
+    # Only show contacts where linkedin_status = "connection_accepted" AND the acceptance
+    # was recorded at least 2 days ago (so the connection has had time to be seen/noticed).
     linkedin_dm_items: list[dict] = []
     try:
+        accepted_cutoff = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+
+        # Fetch contacts with accepted connections
         accepted_contacts = (
             db.client.table("contacts")
             .select(
@@ -286,11 +211,34 @@ async def get_today_data():
                 "revenue_printed, headcount_growth_6m, is_public, parent_company_name, "
                 "pain_signals, personalization_hooks, research_summary)"
             )
-            .eq("linkedin_status", "accepted")
-            .limit(15)
+            .eq("linkedin_status", "connection_accepted")
+            .limit(50)
             .execute()
             .data
         ) or []
+
+        # Filter to those accepted 2+ days ago by checking their acceptance interaction timestamp
+        accepted_contact_ids = [c["id"] for c in accepted_contacts]
+        dm_eligible_ids: set[str] = set()
+        if accepted_contact_ids:
+            try:
+                acceptance_interactions = (
+                    db.client.table("interactions")
+                    .select("contact_id, created_at")
+                    .in_("contact_id", accepted_contact_ids)
+                    .eq("type", "connection_accepted")
+                    .lte("created_at", accepted_cutoff)
+                    .execute()
+                    .data
+                ) or []
+                dm_eligible_ids = {row["contact_id"] for row in acceptance_interactions}
+            except Exception:
+                # If we can't check interaction timestamps, fall back to showing all accepted
+                dm_eligible_ids = set(accepted_contact_ids)
+
+        # Only keep contacts whose acceptance was 2+ days ago
+        accepted_contacts = [c for c in accepted_contacts if c["id"] in dm_eligible_ids]
+        accepted_contacts = accepted_contacts[:15]
 
         for contact in accepted_contacts:
             company = contact.get("companies") or {}
