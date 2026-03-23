@@ -387,10 +387,6 @@ class OutreachAgent(BaseAgent):
 
                     parsed = json.loads(content)
 
-                    # Add jitter to prevent all approved drafts from sending at the same time.
-                    # Instantly.ai uses this field to stagger sends when drafts are queued.
-                    suggested_delay_minutes = random.randint(0, 30)
-
                     # Create outreach draft
                     draft_data = {
                         "company_id": company_id,
@@ -402,7 +398,6 @@ class OutreachAgent(BaseAgent):
                         "body": parsed.get("body", ""),
                         "personalization_notes": parsed.get("personalization_notes", ""),
                         "approval_status": "pending",
-                        "suggested_delay_minutes": suggested_delay_minutes,
                     }
 
                     self.db.insert_outreach_draft(draft_data)
