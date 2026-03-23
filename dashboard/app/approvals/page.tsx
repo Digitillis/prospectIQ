@@ -213,7 +213,7 @@ export default function ApprovalsPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400 dark:text-gray-500" />
       </div>
     );
   }
@@ -223,27 +223,27 @@ export default function ApprovalsPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Approval Queue</h2>
-          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Approval Queue</h2>
+          <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-500">
             {drafts.length} pending
           </span>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">
           {error}
         </div>
       )}
 
       {/* Empty State */}
       {drafts.length === 0 && !error && (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-white py-16">
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-16">
           <Inbox className="h-12 w-12 text-gray-300" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">
+          <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">
             No pending approvals
           </h3>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">
             All outreach drafts have been reviewed. Check back later.
           </p>
         </div>
@@ -256,32 +256,32 @@ export default function ApprovalsPage() {
             id={`draft-${draft.id}`}
             key={draft.id}
             className={cn(
-              "rounded-lg border bg-white transition-all",
+              "rounded-lg border bg-white dark:bg-gray-900 transition-all",
               idx === focusedIndex
                 ? "border-gray-900 ring-1 ring-gray-900/10"
-                : "border-gray-200"
+                : "border-gray-200 dark:border-gray-700"
             )}
           >
             {/* Company Header */}
-            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+            <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-6 py-4">
               <div className="flex items-center gap-3">
-                <Building2 className="h-5 w-5 text-gray-400" />
-                <span className="text-lg font-semibold text-gray-900">
+                <Building2 className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {draft.companies?.name ?? "Unknown Company"}
                 </span>
                 {draft.companies?.tier && (
-                  <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+                  <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-500">
                     {TIER_LABELS[draft.companies.tier] ?? draft.companies.tier}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-4">
                 {/* Draft position indicator */}
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-gray-400 dark:text-gray-500">
                   {idx + 1} of {drafts.length}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
                     PQS
                   </span>
                   <span
@@ -298,36 +298,36 @@ export default function ApprovalsPage() {
 
             <div className="px-6 py-4 space-y-4">
               {/* Contact Info */}
-              <div className="flex items-center gap-4 text-sm text-gray-600">
+              <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-500">
                 <div className="flex items-center gap-1.5">
-                  <User className="h-4 w-4 text-gray-400" />
+                  <User className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                   <span className="font-medium">
                     {draft.contacts?.full_name ?? "Unknown Contact"}
                   </span>
                   {draft.contacts?.title && (
-                    <span className="text-gray-400">
+                    <span className="text-gray-400 dark:text-gray-500">
                       &middot; {draft.contacts.title}
                     </span>
                   )}
                 </div>
                 {draft.contacts?.email && (
                   <div className="flex items-center gap-1.5">
-                    <Mail className="h-4 w-4 text-gray-400" />
+                    <Mail className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                     <span>{draft.contacts.email}</span>
                   </div>
                 )}
               </div>
 
               {/* Message Preview */}
-              <div className="rounded-lg bg-gray-50 p-4">
+              <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-4">
                 {/* Subject with A/B test option */}
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-gray-900 flex-1">{draft.subject}</p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex-1">{draft.subject}</p>
                   {!abVariants[draft.id] && (
                     <button
                       onClick={(e) => { e.stopPropagation(); generateVariant(draft); }}
                       disabled={abLoading === draft.id}
-                      className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 px-2 py-0.5 text-xs text-gray-500 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
                     >
                       {abLoading === draft.id ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -342,7 +342,7 @@ export default function ApprovalsPage() {
                 {/* A/B variant selector */}
                 {abVariants[draft.id] && (
                   <div className="mt-2 space-y-2">
-                    <p className="text-xs font-medium text-gray-500">Choose a subject line:</p>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-500">Choose a subject line:</p>
                     {(["a", "b"] as const).map((variant) => (
                       <button
                         key={variant}
@@ -355,26 +355,26 @@ export default function ApprovalsPage() {
                         className={cn(
                           "flex w-full items-center gap-2 rounded-lg border p-2.5 text-left text-sm transition-colors",
                           abVariants[draft.id].selected === variant
-                            ? "border-gray-900 bg-gray-50 text-gray-900"
-                            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                            ? "border-gray-900 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                            : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
                         )}
                       >
                         <span
                           className={cn(
                             "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                             abVariants[draft.id].selected === variant
-                              ? "bg-gray-900 text-white"
-                              : "bg-gray-200 text-gray-500"
+                              ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
+                              : "bg-gray-200 text-gray-500 dark:text-gray-500"
                           )}
                         >
                           {variant.toUpperCase()}
                         </span>
                         <span className="flex-1">{abVariants[draft.id][variant]}</span>
                         {variant === "a" && (
-                          <span className="text-xs text-gray-400">Original</span>
+                          <span className="text-xs text-gray-400 dark:text-gray-500">Original</span>
                         )}
                         {variant === "b" && (
-                          <span className="text-xs text-gray-400">Variant</span>
+                          <span className="text-xs text-gray-400 dark:text-gray-500">Variant</span>
                         )}
                       </button>
                     ))}
@@ -386,10 +386,10 @@ export default function ApprovalsPage() {
                     value={editBody}
                     onChange={(e) => setEditBody(e.target.value)}
                     rows={6}
-                    className="mt-2 w-full rounded-md border border-gray-200 p-3 text-sm text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                    className="mt-2 w-full rounded-md border border-gray-200 dark:border-gray-700 p-3 text-sm text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
                   />
                 ) : (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">
                     {draft.body}
                   </p>
                 )}
@@ -397,7 +397,7 @@ export default function ApprovalsPage() {
 
               {/* Personalization Notes */}
               {draft.personalization_notes && (
-                <p className="text-xs italic text-gray-500">
+                <p className="text-xs italic text-gray-500 dark:text-gray-500">
                   {draft.personalization_notes}
                 </p>
               )}
@@ -410,7 +410,7 @@ export default function ApprovalsPage() {
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                     placeholder="Rejection reason..."
-                    className="flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                    className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleReject(draft.id);
                     }}
@@ -430,7 +430,7 @@ export default function ApprovalsPage() {
                   </button>
                   <button
                     onClick={() => setRejectingId(null)}
-                    className="rounded-md px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
+                    className="rounded-md px-3 py-2 text-sm text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300"
                   >
                     Cancel
                   </button>
@@ -458,7 +458,7 @@ export default function ApprovalsPage() {
                         setEditingId(null);
                         setEditBody("");
                       }}
-                      className="rounded-md px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                      className="rounded-md px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
                     >
                       Cancel
                     </button>
@@ -479,14 +479,14 @@ export default function ApprovalsPage() {
                     </button>
                     <button
                       onClick={() => startEditing(draft)}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                     >
                       <Pencil className="h-4 w-4" />
                       Edit & Approve
                     </button>
                     <button
                       onClick={() => startRejecting(draft.id)}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                     >
                       <XCircle className="h-4 w-4" />
                       Reject
@@ -494,7 +494,7 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => handleTestSend(draft.id)}
                       disabled={testSendingId === draft.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
                     >
                       {testSendingId === draft.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -506,7 +506,7 @@ export default function ApprovalsPage() {
                   </>
                 )}
                 {testSendResult?.id === draft.id && (
-                  <span className="text-xs font-medium text-gray-700">
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                     {testSendResult.message}
                   </span>
                 )}
@@ -518,27 +518,27 @@ export default function ApprovalsPage() {
 
       {/* Keyboard Shortcut Legend */}
       {drafts.length > 0 && (
-        <div className="flex items-center justify-center gap-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-2 text-xs text-gray-400">
+        <div className="flex items-center justify-center gap-4 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 px-4 py-2 text-xs text-gray-400 dark:text-gray-500">
           <span>
-            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">j</kbd>
+            <kbd className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 font-mono">j</kbd>
             {" / "}
-            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">k</kbd>
+            <kbd className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 font-mono">k</kbd>
             {" Navigate"}
           </span>
           <span>
-            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">a</kbd>
+            <kbd className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 font-mono">a</kbd>
             {" Approve"}
           </span>
           <span>
-            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">e</kbd>
+            <kbd className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 font-mono">e</kbd>
             {" Edit"}
           </span>
           <span>
-            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">r</kbd>
+            <kbd className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 font-mono">r</kbd>
             {" Reject"}
           </span>
           <span>
-            <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono">esc</kbd>
+            <kbd className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 font-mono">esc</kbd>
             {" Cancel"}
           </span>
         </div>

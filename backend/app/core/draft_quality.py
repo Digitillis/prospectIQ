@@ -23,6 +23,16 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+# Spam trigger words that activate email filters
+SPAM_TRIGGER_WORDS = [
+    "free", "guarantee", "act now", "limited time", "click here",
+    "special offer", "discount", "exclusive deal", "risk-free",
+    "no obligation", "winner", "congratulations", "urgent",
+    "100%", "best price", "buy now", "order now", "subscribe",
+    "unsubscribe", "opt-in", "double your", "earn money",
+    "incredible deal", "once in a lifetime", "don't miss",
+]
+
 # Banned phrases that signal generic/low-quality outreach
 _BANNED_PHRASES = [
     "i hope this email finds you well",
@@ -171,6 +181,14 @@ def validate_draft(
                 f"Contains banned phrase: '{phrase}'"
             )
             break  # One is enough to flag
+
+    # 5b. Spam trigger words check
+    spam_found = [w for w in SPAM_TRIGGER_WORDS if w in body_lower]
+    if spam_found:
+        report.add_issue(
+            "error", "spam_words",
+            f"Contains spam trigger words: {', '.join(spam_found)}. These trigger email filters.",
+        )
 
     # 6. CTA check — must have exactly one clear call-to-action
     cta_count = 0

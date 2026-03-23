@@ -227,8 +227,8 @@ export default function SettingsPage() {
       {/* Page Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Settings</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Settings</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">
             {editMode
               ? "Edit mode — changes will be written to the YAML config files on save."
               : "Current pipeline configuration. Click Edit to modify ICP criteria, scoring, and discovery settings."}
@@ -241,7 +241,7 @@ export default function SettingsPage() {
                 <button
                   onClick={handleCancel}
                   disabled={saving}
-                  className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Cancel
@@ -262,7 +262,7 @@ export default function SettingsPage() {
             ) : (
               <button
                 onClick={handleEdit}
-                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
@@ -274,7 +274,7 @@ export default function SettingsPage() {
 
       {/* Save success */}
       {saveSuccess && (
-        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           Settings saved successfully. Changes will take effect on the next agent run.
         </div>
@@ -282,7 +282,7 @@ export default function SettingsPage() {
 
       {/* Save error */}
       {saveError && (
-        <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+        <div className="flex items-start gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <span>{saveError}</span>
         </div>
@@ -290,7 +290,7 @@ export default function SettingsPage() {
 
       {/* Edit mode banner */}
       {editMode && (
-        <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+        <div className="flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
           <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             You are in <strong>edit mode</strong>. Modify values below and click{" "}
@@ -303,7 +303,7 @@ export default function SettingsPage() {
 
       {/* Info banner (read-only) */}
       {!editMode && (
-        <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+        <div className="flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm text-gray-600 dark:text-gray-500">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             Settings are read from YAML files in the{" "}
@@ -314,7 +314,7 @@ export default function SettingsPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1">
+      <div className="flex gap-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 p-1">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -322,8 +322,8 @@ export default function SettingsPage() {
             className={cn(
               "flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
               activeTab === id
-                ? "bg-white text-gray-900"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                : "text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300"
             )}
           >
             <Icon className="h-4 w-4" />
@@ -334,11 +334,11 @@ export default function SettingsPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="flex h-64 items-center justify-center rounded-lg border border-gray-200 bg-white">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <div className="flex h-64 items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-gray-500" />
         </div>
       ) : error ? (
-        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
@@ -487,7 +487,7 @@ function ICPTab({
       {/* Geography */}
       <Section icon={MapPin} title="Geography">
         <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
             Primary States
           </p>
           <ChipList
@@ -496,7 +496,7 @@ function ICPTab({
             onRemove={removeState}
             onAdd={addState}
             addPlaceholder="Add state…"
-            chipClass="bg-gray-100 text-gray-600"
+            chipClass="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500"
           />
         </div>
         <KV label="Countries" value={icp.geography.countries.join(", ")} />
@@ -563,7 +563,7 @@ function ICPTab({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-xs font-medium uppercase tracking-wider text-gray-400">
+              <tr className="border-b border-gray-100 dark:border-gray-800 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
                 <th className="pb-2 pr-4 text-left">Tier</th>
                 <th className="pb-2 pr-4 text-left">Label</th>
                 <th className="pb-2 text-left">Apollo Industry</th>
@@ -574,7 +574,7 @@ function ICPTab({
               {icp.industries.map((ind, idx) => (
                 <tr key={ind.tier}>
                   <td className="py-2 pr-4">
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                    <span className="rounded bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300">
                       {ind.tier}
                     </span>
                   </td>
@@ -584,7 +584,7 @@ function ICPTab({
                         type="text"
                         value={ind.label}
                         onChange={(e) => updateIndustry(idx, "label", e.target.value)}
-                        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-800 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+                        className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                       />
                     ) : (
                       <span className="font-medium text-gray-800">{ind.label}</span>
@@ -596,17 +596,17 @@ function ICPTab({
                         type="text"
                         value={ind.apollo_industry}
                         onChange={(e) => updateIndustry(idx, "apollo_industry", e.target.value)}
-                        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-500 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+                        className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-500 dark:text-gray-500 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                       />
                     ) : (
-                      <span className="text-gray-500">{ind.apollo_industry}</span>
+                      <span className="text-gray-500 dark:text-gray-500">{ind.apollo_industry}</span>
                     )}
                   </td>
                   {editMode && (
                     <td className="py-2 pl-2">
                       <button
                         onClick={() => removeIndustry(idx)}
-                        className="rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-700"
+                        className="rounded p-1 text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:text-gray-300"
                         title="Remove industry"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -622,31 +622,31 @@ function ICPTab({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowIndustryPicker(!showIndustryPicker)}
-                  className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                  className="flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add from catalog ({INDUSTRY_CATALOG.length} industries)
                 </button>
                 <button
                   onClick={addCustomIndustry}
-                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline"
+                  className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:text-gray-500 hover:underline"
                 >
                   <Plus className="h-3 w-3" />
                   Custom
                 </button>
               </div>
               {showIndustryPicker && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
                   <input
                     type="text"
                     value={industrySearch}
                     onChange={(e) => setIndustrySearch(e.target.value)}
                     placeholder="Search industries… (e.g., pharma, plastics, aerospace)"
-                    className="mb-3 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+                    className="mb-3 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 placeholder:text-gray-400 dark:text-gray-500 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                   />
                   <div className="max-h-72 overflow-y-auto space-y-1">
                     {filteredCatalog.length === 0 ? (
-                      <p className="py-4 text-center text-xs text-gray-400">
+                      <p className="py-4 text-center text-xs text-gray-400 dark:text-gray-500">
                         No matching industries (or all already added)
                       </p>
                     ) : (
@@ -654,17 +654,17 @@ function ICPTab({
                         <button
                           key={entry.tier}
                           onClick={() => addIndustryFromCatalog(entry)}
-                          className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-white hover:border hover:border-gray-200 transition-all"
+                          className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-white dark:bg-gray-900 hover:border hover:border-gray-200 dark:border-gray-700 transition-all"
                         >
                           <div className="min-w-0 flex-1">
                             <span className="font-medium text-gray-800">{entry.label}</span>
-                            <span className="ml-2 text-xs text-gray-400">{entry.category}</span>
+                            <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">{entry.category}</span>
                           </div>
                           <div className="ml-3 flex items-center gap-2 shrink-0">
-                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-mono text-gray-500">
+                            <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-xs font-mono text-gray-500 dark:text-gray-500">
                               NAICS {entry.naics_prefix}
                             </span>
-                            <Plus className="h-3.5 w-3.5 text-gray-400" />
+                            <Plus className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
                           </div>
                         </button>
                       ))
@@ -685,14 +685,14 @@ function ICPTab({
           onRemove={removeTitle}
           onAdd={addTitle}
           addPlaceholder="Add title…"
-          chipClass="bg-gray-100 text-gray-600"
+          chipClass="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500"
         />
         <div className="mt-3 flex items-center gap-2">
-          <p className="text-xs font-medium text-gray-500">Seniority filters:</p>
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-500">Seniority filters:</p>
           {icp.seniority.map((s) => (
             <span
               key={s}
-              className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+              className="rounded bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-500"
             >
               {s}
             </span>
@@ -802,8 +802,8 @@ function OutreachGuidelinesTab() {
     }
   };
 
-  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
-  if (error) return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{error}</div>;
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400 dark:text-gray-500" /></div>;
+  if (error) return <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">{error}</div>;
   if (!draft) return null;
 
   const updateField = (field: string, value: unknown) => {
@@ -836,7 +836,7 @@ function OutreachGuidelinesTab() {
       {/* Header with Edit/Save */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-500">
             {editMode
               ? "Edit your outreach guidelines below. Changes apply to the next outreach run."
               : `Version ${draft.version}. Click Edit to refine your outreach voice and rules.`}
@@ -845,15 +845,15 @@ function OutreachGuidelinesTab() {
         <div className="flex items-center gap-2">
           {editMode ? (
             <>
-              <button onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"><RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel</button>
+              <button onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"><RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel</button>
               <button onClick={handleSave} disabled={saving} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60">{saving ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 inline h-3.5 w-3.5" />}{saving ? "Saving…" : "Save"}</button>
             </>
           ) : (
-            <button onClick={() => setEditMode(true)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Pencil className="mr-1 inline h-3.5 w-3.5" />Edit</button>
+            <button onClick={() => setEditMode(true)} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"><Pencil className="mr-1 inline h-3.5 w-3.5" />Edit</button>
           )}
         </div>
       </div>
-      {saveMsg && <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 bg-gray-50 text-gray-700" : "border-gray-200 bg-gray-50 text-gray-700")}>{saveMsg}</div>}
+      {saveMsg && <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300")}>{saveMsg}</div>}
 
       {/* Sender Info */}
       <Section icon={Users} title="Sender Identity">
@@ -861,13 +861,13 @@ function OutreachGuidelinesTab() {
           <div className="space-y-3">
             {[["Name", "name"], ["Title", "title"], ["Email", "email"], ["Phone", "phone"]].map(([label, field]) => (
               <div key={field} className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-gray-500 w-20">{label}</span>
-                <input type="text" value={(draft.sender as unknown as Record<string, string>)[field] || ""} onChange={(e) => updateSender(field, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-gray-300 focus:outline-none" />
+                <span className="text-gray-500 dark:text-gray-500 w-20">{label}</span>
+                <input type="text" value={(draft.sender as unknown as Record<string, string>)[field] || ""} onChange={(e) => updateSender(field, e.target.value)} className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-gray-300 focus:outline-none" />
               </div>
             ))}
             <div>
-              <p className="mb-1 text-xs font-medium text-gray-500">Signature Block</p>
-              <textarea value={draft.sender.signature} onChange={(e) => updateSender("signature", e.target.value)} rows={6} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm font-mono text-gray-700 focus:border-gray-300 focus:outline-none" />
+              <p className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-500">Signature Block</p>
+              <textarea value={draft.sender.signature} onChange={(e) => updateSender("signature", e.target.value)} rows={6} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm font-mono text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none" />
             </div>
           </div>
         ) : (
@@ -877,8 +877,8 @@ function OutreachGuidelinesTab() {
             <KV label="Email" value={draft.sender.email} />
             <KV label="Phone" value={draft.sender.phone} />
             <div className="mt-3">
-              <p className="text-xs font-medium text-gray-400 mb-1">Signature Preview</p>
-              <pre className="whitespace-pre-wrap rounded bg-gray-50 border border-gray-100 p-3 text-xs text-gray-600 font-mono">{draft.sender.signature}</pre>
+              <p className="text-xs font-medium text-gray-400 dark:text-gray-500 mb-1">Signature Preview</p>
+              <pre className="whitespace-pre-wrap rounded bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 p-3 text-xs text-gray-600 dark:text-gray-500 font-mono">{draft.sender.signature}</pre>
             </div>
           </div>
         )}
@@ -887,27 +887,27 @@ function OutreachGuidelinesTab() {
       {/* Voice & Tone */}
       <Section icon={Target} title="Voice & Tone">
         {editMode ? (
-          <textarea value={draft.voice_and_tone} onChange={(e) => updateField("voice_and_tone", e.target.value)} rows={10} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none" placeholder="Describe how outreach emails should sound..." />
+          <textarea value={draft.voice_and_tone} onChange={(e) => updateField("voice_and_tone", e.target.value)} rows={10} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 leading-relaxed focus:border-gray-300 focus:outline-none" placeholder="Describe how outreach emails should sound..." />
         ) : (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.voice_and_tone}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">{draft.voice_and_tone}</p>
         )}
       </Section>
 
       {/* Email Structure */}
       <Section icon={Sliders} title="Email Structure">
         {editMode ? (
-          <textarea value={draft.email_structure} onChange={(e) => updateField("email_structure", e.target.value)} rows={7} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none" />
+          <textarea value={draft.email_structure} onChange={(e) => updateField("email_structure", e.target.value)} rows={7} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 leading-relaxed focus:border-gray-300 focus:outline-none" />
         ) : (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.email_structure}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">{draft.email_structure}</p>
         )}
       </Section>
 
       {/* Subject Line Rules */}
       <Section icon={Mail} title="Subject Line Rules">
         {editMode ? (
-          <textarea value={draft.subject_line_rules} onChange={(e) => updateField("subject_line_rules", e.target.value)} rows={5} className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none" />
+          <textarea value={draft.subject_line_rules} onChange={(e) => updateField("subject_line_rules", e.target.value)} rows={5} className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 leading-relaxed focus:border-gray-300 focus:outline-none" />
         ) : (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.subject_line_rules}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">{draft.subject_line_rules}</p>
         )}
       </Section>
 
@@ -924,16 +924,16 @@ function OutreachGuidelinesTab() {
               <div key={idx} className="flex items-center gap-2">
                 {editMode ? (
                   <>
-                    <input type="text" value={item} onChange={(e) => updateList(field, idx, e.target.value)} className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-gray-300 focus:outline-none" />
-                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-gray-700"><X className="h-3.5 w-3.5" /></button>
+                    <input type="text" value={item} onChange={(e) => updateList(field, idx, e.target.value)} className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none" />
+                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-gray-700 dark:text-gray-300"><X className="h-3.5 w-3.5" /></button>
                   </>
                 ) : (
-                  <span className="text-sm text-gray-700">• {item}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">• {item}</span>
                 )}
               </div>
             ))}
             {editMode && (
-              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 hover:underline"><Plus className="h-3 w-3" />Add</button>
+              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:text-gray-100 hover:underline"><Plus className="h-3 w-3" />Add</button>
             )}
           </div>
         </Section>
@@ -998,8 +998,8 @@ function ContentGuidelinesTab() {
     }
   };
 
-  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
-  if (error) return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{error}</div>;
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400 dark:text-gray-500" /></div>;
+  if (error) return <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">{error}</div>;
   if (!draft) return null;
 
   const updateField = (field: string, value: unknown) => {
@@ -1032,7 +1032,7 @@ function ContentGuidelinesTab() {
       {/* Header with Edit/Save */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-500">
             {editMode
               ? "Edit your content guidelines below. Changes apply to the next post generation."
               : `Version ${draft.version}. Governs LinkedIn thought leadership post generation.`}
@@ -1043,7 +1043,7 @@ function ContentGuidelinesTab() {
             <>
               <button
                 onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 <RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel
               </button>
@@ -1059,7 +1059,7 @@ function ContentGuidelinesTab() {
           ) : (
             <button
               onClick={() => setEditMode(true)}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
               <Pencil className="mr-1 inline h-3.5 w-3.5" />Edit
             </button>
@@ -1067,7 +1067,7 @@ function ContentGuidelinesTab() {
         </div>
       </div>
       {saveMsg && (
-        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 bg-gray-50 text-gray-700" : "border-gray-200 bg-gray-50 text-gray-700")}>
+        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300")}>
           {saveMsg}
         </div>
       )}
@@ -1078,12 +1078,12 @@ function ContentGuidelinesTab() {
           <div className="space-y-3">
             {([["Name", "name"], ["Title", "title"], ["LinkedIn URL", "linkedin_url"]] as [string, string][]).map(([label, field]) => (
               <div key={field} className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-gray-500 w-24">{label}</span>
+                <span className="text-gray-500 dark:text-gray-500 w-24">{label}</span>
                 <input
                   type="text"
                   value={(draft.author as unknown as Record<string, string>)[field] || ""}
                   onChange={(e) => updateAuthor(field, e.target.value)}
-                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                  className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-gray-300 focus:outline-none"
                 />
               </div>
             ))}
@@ -1104,11 +1104,11 @@ function ContentGuidelinesTab() {
             value={draft.voice_and_tone}
             onChange={(e) => updateField("voice_and_tone", e.target.value)}
             rows={12}
-            className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none"
+            className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 leading-relaxed focus:border-gray-300 focus:outline-none"
             placeholder="Describe how LinkedIn posts should sound..."
           />
         ) : (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft.voice_and_tone}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">{draft.voice_and_tone}</p>
         )}
       </Section>
 
@@ -1116,13 +1116,13 @@ function ContentGuidelinesTab() {
       <Section icon={BarChart3} title="Content Pillars">
         <div className="space-y-3">
           {(draft.content_pillars ?? []).map((pillar) => (
-            <div key={pillar.name} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <div key={pillar.name} className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 p-4">
               <p className="text-sm font-semibold text-gray-800">{pillar.display_name}</p>
-              <p className="mt-0.5 text-xs text-gray-500">{pillar.target_reader}</p>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-500">{pillar.target_reader}</p>
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs text-gray-400">
+        <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
           Edit pillar details directly in <code className="font-mono">config/content_guidelines.yaml</code>.
         </p>
       </Section>
@@ -1144,19 +1144,19 @@ function ContentGuidelinesTab() {
                       type="text"
                       value={item}
                       onChange={(e) => updateList(field, idx, e.target.value)}
-                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-gray-300 focus:outline-none"
+                      className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none"
                     />
-                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-gray-700">
+                    <button onClick={() => removeFromList(field, idx)} className="text-gray-300 hover:text-gray-700 dark:text-gray-300">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </>
                 ) : (
-                  <span className="text-sm text-gray-700">• {item}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">• {item}</span>
                 )}
               </div>
             ))}
             {editMode && (
-              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 hover:underline">
+              <button onClick={() => addToList(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:text-gray-100 hover:underline">
                 <Plus className="h-3 w-3" />Add
               </button>
             )}
@@ -1226,8 +1226,8 @@ function LinkedInMessagesTab() {
     }
   };
 
-  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
-  if (error) return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{error}</div>;
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400 dark:text-gray-500" /></div>;
+  if (error) return <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">{error}</div>;
   if (!draft) return null;
 
   const updateField = (field: keyof LinkedInGuidelines, value: unknown) => {
@@ -1260,7 +1260,7 @@ function LinkedInMessagesTab() {
       {/* Header with Edit/Save */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-500">
             {editMode
               ? "Edit your LinkedIn DM guidelines below. Changes apply to the next LinkedIn outreach run."
               : `Version ${draft.version}. Governs connection notes and LinkedIn DM generation.`}
@@ -1271,7 +1271,7 @@ function LinkedInMessagesTab() {
             <>
               <button
                 onClick={() => { setDraft(JSON.parse(JSON.stringify(guidelines))); setEditMode(false); }}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 <RotateCcw className="mr-1 inline h-3.5 w-3.5" />Cancel
               </button>
@@ -1287,7 +1287,7 @@ function LinkedInMessagesTab() {
           ) : (
             <button
               onClick={() => setEditMode(true)}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
               <Pencil className="mr-1 inline h-3.5 w-3.5" />Edit
             </button>
@@ -1295,7 +1295,7 @@ function LinkedInMessagesTab() {
         </div>
       </div>
       {saveMsg && (
-        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 bg-gray-50 text-gray-700" : "border-gray-200 bg-gray-50 text-gray-700")}>
+        <div className={cn("rounded-lg border px-4 py-3 text-sm", saveMsg.includes("saved") ? "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300" : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300")}>
           {saveMsg}
         </div>
       )}
@@ -1306,12 +1306,12 @@ function LinkedInMessagesTab() {
           <div className="space-y-3">
             {([["Name", "name"], ["Title", "title"], ["LinkedIn URL", "linkedin_url"]] as [string, string][]).map(([label, field]) => (
               <div key={field} className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-gray-500 w-24">{label}</span>
+                <span className="text-gray-500 dark:text-gray-500 w-24">{label}</span>
                 <input
                   type="text"
                   value={(draft.sender as unknown as Record<string, string>)[field] || ""}
                   onChange={(e) => updateSender(field, e.target.value)}
-                  className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                  className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-gray-300 focus:outline-none"
                 />
               </div>
             ))}
@@ -1338,10 +1338,10 @@ function LinkedInMessagesTab() {
               value={draft[field] as string}
               onChange={(e) => updateField(field, e.target.value)}
               rows={rows}
-              className="w-full rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:border-gray-300 focus:outline-none"
+              className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 leading-relaxed focus:border-gray-300 focus:outline-none"
             />
           ) : (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{draft[field] as string}</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">{draft[field] as string}</p>
           )}
         </Section>
       ))}
@@ -1363,19 +1363,19 @@ function LinkedInMessagesTab() {
                       type="text"
                       value={item}
                       onChange={(e) => updateListItem(field, idx, e.target.value)}
-                      className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 focus:border-gray-300 focus:outline-none"
+                      className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none"
                     />
-                    <button onClick={() => removeListItem(field, idx)} className="text-gray-300 hover:text-gray-700">
+                    <button onClick={() => removeListItem(field, idx)} className="text-gray-300 hover:text-gray-700 dark:text-gray-300">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </>
                 ) : (
-                  <span className="text-sm text-gray-700">• {item}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">• {item}</span>
                 )}
               </div>
             ))}
             {editMode && (
-              <button onClick={() => addListItem(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 hover:underline">
+              <button onClick={() => addListItem(field)} className="mt-1 flex items-center gap-1 text-xs text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:text-gray-100 hover:underline">
                 <Plus className="h-3 w-3" />Add
               </button>
             )}
@@ -1402,7 +1402,7 @@ function ScoringTab({
   const DIMENSION_COLORS: Record<string, string> = {
     firmographic: "bg-gray-700",
     technographic: "bg-gray-600",
-    timing: "bg-gray-500",
+    timing: "bg-gray-50 dark:bg-gray-8000",
     engagement: "bg-gray-800",
   };
 
@@ -1462,13 +1462,13 @@ function ScoringTab({
             {Object.entries(dim.signals).map(([sigName, sig]) => (
               <div
                 key={sigName}
-                className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3"
+                className="flex items-center justify-between rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-gray-800">
                     {sig.description || sigName.replace(/_/g, " ")}
                   </p>
-                  <p className="mt-0.5 text-xs text-gray-400 capitalize">
+                  <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500 capitalize">
                     {sig.evaluation.replace(/_/g, " ")}
                   </p>
                 </div>
@@ -1483,7 +1483,7 @@ function ScoringTab({
                         updateSignalPoints(dimName, sigName, parseInt(e.target.value, 10) || 0)
                       }
                       className={cn(
-                        "w-16 rounded-md px-2 py-1 text-center text-xs font-medium text-white focus:outline-none focus:ring-1 focus:ring-gray-300",
+                        "w-16 rounded-md px-2 py-1 text-center text-xs font-medium text-white focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600",
                         DIMENSION_COLORS[dimName] ?? "bg-gray-400"
                       )}
                     />
@@ -1507,7 +1507,7 @@ function ScoringTab({
       {/* Thresholds */}
       <Section icon={Sliders} title="Qualification Thresholds">
         {!editMode && (
-          <p className="mb-3 text-xs text-gray-500">
+          <p className="mb-3 text-xs text-gray-500 dark:text-gray-500">
             Min firmographic score to proceed to research:{" "}
             <strong>{scoring.min_firmographic_for_research}</strong>
           </p>
@@ -1517,14 +1517,14 @@ function ScoringTab({
             const COLOR_MAP: Record<string, string> = {
               unqualified: "bg-gray-300",
               research_needed: "bg-gray-400",
-              qualified: "bg-gray-500",
+              qualified: "bg-gray-50 dark:bg-gray-8000",
               high_priority: "bg-gray-700",
               hot_prospect: "bg-gray-900",
             };
             return (
               <div
                 key={name}
-                className="flex items-center gap-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3"
+                className="flex items-center gap-4 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 px-4 py-3"
               >
                 <span
                   className={cn(
@@ -1537,7 +1537,7 @@ function ScoringTab({
                 </p>
                 {editMode && threshold.max_score !== undefined ? (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-400">≤</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">≤</span>
                     <input
                       type="number"
                       min={0}
@@ -1546,19 +1546,19 @@ function ScoringTab({
                       onChange={(e) =>
                         updateThresholdMax(name, parseInt(e.target.value, 10) || 0)
                       }
-                      className="w-16 rounded-md border border-gray-200 bg-white px-2 py-1 text-center text-xs font-medium text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+                      className="w-16 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-center text-xs font-medium text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
                     />
-                    <span className="text-xs text-gray-400">pts</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">pts</span>
                   </div>
                 ) : (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 dark:text-gray-500">
                     {threshold.max_score !== undefined
                       ? `≤ ${threshold.max_score} pts`
                       : "no cap"}
                   </span>
                 )}
                 {threshold.new_status && (
-                  <span className="rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
+                  <span className="rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-500">
                     → {threshold.new_status}
                   </span>
                 )}
@@ -1582,9 +1582,9 @@ const CHANNEL_ICON: Record<string, typeof Mail> = {
 };
 
 const CHANNEL_COLOR: Record<string, string> = {
-  email: "bg-gray-100 text-gray-600",
-  linkedin: "bg-gray-100 text-gray-600",
-  phone: "bg-gray-100 text-gray-600",
+  email: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500",
+  linkedin: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500",
+  phone: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500",
 };
 
 function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
@@ -1592,7 +1592,7 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-8 text-center text-sm text-gray-500 dark:text-gray-500">
         No sequences configured. Add sequences to{" "}
         <code className="font-mono text-xs">config/sequences.yaml</code>.
       </div>
@@ -1601,8 +1601,8 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+      <div className="flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm text-gray-500 dark:text-gray-500">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
         <span>
           Sequences are read-only in the UI. Edit{" "}
           <code className="font-mono text-xs">config/sequences.yaml</code> directly to
@@ -1610,14 +1610,14 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
         </span>
       </div>
       {entries.map(([key, seq]) => (
-        <div key={key} className="rounded-lg border border-gray-200 bg-white p-6">
+        <div key={key} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6">
           <div className="mb-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-base font-semibold text-gray-900">{seq.name}</h3>
-                <p className="mt-0.5 text-sm text-gray-500">{seq.description}</p>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{seq.name}</h3>
+                <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-500">{seq.description}</p>
               </div>
-              <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+              <span className="shrink-0 rounded-full bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-500">
                 {seq.total_steps} step{seq.total_steps !== 1 ? "s" : ""}
               </span>
             </div>
@@ -1632,7 +1632,7 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
                     <div
                       className={cn(
                         "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                        CHANNEL_COLOR[step.channel] ?? "bg-gray-100 text-gray-600"
+                        CHANNEL_COLOR[step.channel] ?? "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500"
                       )}
                     >
                       <Icon className="h-4 w-4" />
@@ -1643,40 +1643,40 @@ function SequencesTab({ sequences }: { sequences: Record<string, Sequence> }) {
                   </div>
                   <div className={cn("pb-5 min-w-0 flex-1", isLast && "pb-0")}>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-gray-900 capitalize">
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 capitalize">
                         Step {step.step} — {step.channel}
                       </span>
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                      <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-500 dark:text-gray-500">
                         Day {step.delay_days}
                       </span>
-                      <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-mono text-gray-500">
+                      <code className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-xs font-mono text-gray-500 dark:text-gray-500">
                         {step.template}
                       </code>
                     </div>
                     {step.instructions && (
                       <div className="mt-2 space-y-1">
                         {(step.instructions.body_approach as string | undefined) && (
-                          <p className="text-xs text-gray-500 leading-relaxed">
+                          <p className="text-xs text-gray-500 dark:text-gray-500 leading-relaxed">
                             {step.instructions.body_approach as string}
                           </p>
                         )}
                         {(step.instructions.approach as string | undefined) && (
-                          <p className="text-xs text-gray-500 leading-relaxed">
+                          <p className="text-xs text-gray-500 dark:text-gray-500 leading-relaxed">
                             {step.instructions.approach as string}
                           </p>
                         )}
                         {(step.instructions.tone as string | undefined) && (
-                          <p className="mt-1 text-xs font-medium text-gray-400">
+                          <p className="mt-1 text-xs font-medium text-gray-400 dark:text-gray-500">
                             Tone: {step.instructions.tone as string}
                           </p>
                         )}
                         {(step.instructions.max_words as number | undefined) && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-400 dark:text-gray-500">
                             Max {step.instructions.max_words as number} words
                           </p>
                         )}
                         {(step.instructions.note as string | undefined) && (
-                          <p className="mt-1 rounded bg-gray-50 px-2 py-1 text-xs text-gray-600">
+                          <p className="mt-1 rounded bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs text-gray-600 dark:text-gray-500">
                             {step.instructions.note as string}
                           </p>
                         )}
@@ -1709,10 +1709,10 @@ function Section({
   accent?: string;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6">
       <div className="mb-4 flex items-center gap-2">
-        <Icon className="h-4 w-4 text-gray-400" />
-        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">{title}</h3>
+        <Icon className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">{title}</h3>
         {accent && (
           <span className={cn("ml-auto h-2 w-2 rounded-full", accent)} />
         )}
@@ -1725,8 +1725,8 @@ function Section({
 function KV({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className="font-medium text-gray-900">{value}</span>
+      <span className="text-gray-500 dark:text-gray-500">{label}</span>
+      <span className="font-medium text-gray-900 dark:text-gray-100">{value}</span>
     </div>
   );
 }
@@ -1746,14 +1746,14 @@ function NumberField({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
-      <span className="text-gray-500">{label}</span>
+      <span className="text-gray-500 dark:text-gray-500">{label}</span>
       <input
         type="number"
         min={min}
         max={max}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-32 rounded border border-gray-200 bg-white px-2 py-1 text-right text-sm font-medium text-gray-900 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+        className="w-32 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-right text-sm font-medium text-gray-900 dark:text-gray-100 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
       />
     </div>
   );
@@ -1817,11 +1817,11 @@ function ChipList({
               if (e.key === "Enter") { e.preventDefault(); commit(); }
             }}
             placeholder={addPlaceholder}
-            className="flex-1 rounded border border-dashed border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-600 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none"
+            className="flex-1 rounded border border-dashed border-gray-300 bg-white dark:bg-gray-900 px-2.5 py-1 text-xs text-gray-600 dark:text-gray-500 placeholder:text-gray-400 dark:text-gray-500 focus:border-gray-300 focus:outline-none"
           />
           <button
             onClick={commit}
-            className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            className="flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <Plus className="h-3 w-3" />
             Add

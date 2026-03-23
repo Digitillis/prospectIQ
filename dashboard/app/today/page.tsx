@@ -105,9 +105,9 @@ function interactionLabel(type: string): string {
 
 function getGreetingIcon() {
   const h = new Date().getHours();
-  if (h < 12) return <Sun className="h-5 w-5 text-gray-400" />;
-  if (h < 17) return <Sunset className="h-5 w-5 text-gray-400" />;
-  return <Moon className="h-5 w-5 text-gray-400" />;
+  if (h < 12) return <Sun className="h-5 w-5 text-gray-400 dark:text-gray-500" />;
+  if (h < 17) return <Sunset className="h-5 w-5 text-gray-400 dark:text-gray-500" />;
+  return <Moon className="h-5 w-5 text-gray-400 dark:text-gray-500" />;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +139,7 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
         "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200",
         copied
           ? "border-green-200 bg-green-50 text-green-700"
-          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900",
+          : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:text-gray-100",
         className
       )}
     >
@@ -179,7 +179,7 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
     <div className="mt-2">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:text-gray-500 transition-colors"
       >
         {open ? (
           <ChevronDown className="h-3 w-3" />
@@ -190,57 +190,57 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
       </button>
 
       {open && (
-        <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs space-y-3">
+        <div className="mt-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 text-xs space-y-3">
           {/* RESEARCH SUMMARY — full narrative from Perplexity/Claude research */}
           {intel.company?.research_summary && (
             <div>
-              <div className="font-semibold text-gray-700 mb-1">RESEARCH SUMMARY</div>
-              <p className="text-gray-600 whitespace-pre-wrap">{intel.company.research_summary}</p>
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">RESEARCH SUMMARY</div>
+              <p className="text-gray-600 dark:text-gray-500 whitespace-pre-wrap">{intel.company.research_summary}</p>
             </div>
           )}
 
           {/* KEY FINDINGS — structured research data */}
           {(intel.research || intel.company?.pain_signals?.length || intel.company?.personalization_hooks?.length) ? (
             <div>
-              <div className="font-semibold text-gray-700 mb-1">KEY FINDINGS</div>
-              <div className="space-y-1.5 text-gray-600">
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">KEY FINDINGS</div>
+              <div className="space-y-1.5 text-gray-600 dark:text-gray-500">
                 {intel.research?.company_description && (
-                  <div><span className="font-medium text-gray-700">Description:</span> {intel.research.company_description}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Description:</span> {intel.research.company_description}</div>
                 )}
                 {intel.research?.manufacturing_type && (
-                  <div><span className="font-medium text-gray-700">Manufacturing Type:</span> {intel.research.manufacturing_type}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Manufacturing Type:</span> {intel.research.manufacturing_type}</div>
                 )}
                 {(intel.research?.equipment_types?.length ?? 0) > 0 && (
-                  <div><span className="font-medium text-gray-700">Equipment:</span> {intel.research!.equipment_types!.join(", ")}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Equipment:</span> {intel.research!.equipment_types!.join(", ")}</div>
                 )}
                 {intel.research?.maintenance_approach && (
-                  <div><span className="font-medium text-gray-700">Maintenance Approach:</span> {intel.research.maintenance_approach}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Maintenance Approach:</span> {intel.research.maintenance_approach}</div>
                 )}
                 {intel.research?.iot_maturity && (
-                  <div><span className="font-medium text-gray-700">IoT/Digital Maturity:</span> {intel.research.iot_maturity}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">IoT/Digital Maturity:</span> {intel.research.iot_maturity}</div>
                 )}
                 {((intel.research?.pain_points?.length ?? 0) > 0 ||
                   (intel.company?.pain_signals?.length ?? 0) > 0) && (
-                  <div><span className="font-medium text-gray-700">Pain Points:</span>{(
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Pain Points:</span>{(
                       intel.research?.pain_points ||
                       intel.company?.pain_signals ||
                       []
                     ).map((p: string, i: number) => <span key={i} className="block ml-3">• {p}</span>)}</div>
                 )}
                 {(intel.research?.opportunities?.length ?? 0) > 0 && (
-                  <div><span className="font-medium text-gray-700">Opportunities:</span>{intel.research!.opportunities!.map((o: string, i: number) => <span key={i} className="block ml-3">• {o}</span>)}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Opportunities:</span>{intel.research!.opportunities!.map((o: string, i: number) => <span key={i} className="block ml-3">• {o}</span>)}</div>
                 )}
                 {(intel.research?.known_systems?.length ?? 0) > 0 && (
-                  <div><span className="font-medium text-gray-700">Known Systems/Tech:</span> {intel.research!.known_systems!.join(", ")}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Known Systems/Tech:</span> {intel.research!.known_systems!.join(", ")}</div>
                 )}
                 {(intel.research?.existing_solutions?.length ?? 0) > 0 && (
-                  <div><span className="font-medium text-gray-700">Existing Solutions:</span> {intel.research!.existing_solutions!.join(", ")}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Existing Solutions:</span> {intel.research!.existing_solutions!.join(", ")}</div>
                 )}
                 {(intel.company?.personalization_hooks?.length ?? 0) > 0 && (
-                  <div><span className="font-medium text-gray-700">Outreach Hooks:</span>{(intel.company!.personalization_hooks as string[]).map((h: string, i: number) => <span key={i} className="block ml-3">• {h}</span>)}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Outreach Hooks:</span>{(intel.company!.personalization_hooks as string[]).map((h: string, i: number) => <span key={i} className="block ml-3">• {h}</span>)}</div>
                 )}
                 {intel.research?.confidence && (
-                  <div><span className="font-medium text-gray-700">Research Confidence:</span> {intel.research.confidence}</div>
+                  <div><span className="font-medium text-gray-700 dark:text-gray-300">Research Confidence:</span> {intel.research.confidence}</div>
                 )}
               </div>
             </div>
@@ -252,8 +252,8 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             intel.contact?.city ||
             intel.contact?.state) && (
             <div>
-              <div className="font-semibold text-gray-700 mb-1">CONTACT</div>
-              <div className="space-y-0.5 text-gray-600">
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">CONTACT</div>
+              <div className="space-y-0.5 text-gray-600 dark:text-gray-500">
                 {intel.contact?.title && <p>Title: {intel.contact.title}</p>}
                 {intel.contact?.seniority && (
                   <p>Seniority: {intel.contact.seniority}</p>
@@ -276,8 +276,8 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             intel.company?.revenue_printed ||
             intel.company?.headcount_growth_6m != null) && (
             <div>
-              <div className="font-semibold text-gray-700 mb-1">COMPANY</div>
-              <div className="space-y-0.5 text-gray-600">
+              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">COMPANY</div>
+              <div className="space-y-0.5 text-gray-600 dark:text-gray-500">
                 {intel.company?.industry && (
                   <p>Industry: {intel.company.industry}</p>
                 )}
@@ -329,7 +329,7 @@ function InlineEditableMessage({
     return (
       <div className="mt-2 space-y-2">
         <textarea
-          className="w-full rounded-md border border-gray-300 p-3 text-sm text-gray-700 leading-relaxed focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 resize-none"
+          className="w-full rounded-md border border-gray-300 p-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600 resize-none"
           rows={4}
           value={val}
           onChange={(e) => setVal(e.target.value)}
@@ -344,7 +344,7 @@ function InlineEditableMessage({
           </button>
           <button
             onClick={() => { setVal(text); setEditing(false); }}
-            className="rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Cancel
           </button>
@@ -355,12 +355,12 @@ function InlineEditableMessage({
 
   return (
     <div className="mt-2 group relative">
-      <div className="rounded-md bg-gray-50 border border-gray-100 p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+      <div className="rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 p-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
         {val}
       </div>
       <button
         onClick={() => setEditing(true)}
-        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 rounded-md border border-gray-200 bg-white p-1 text-gray-400 hover:text-gray-600 transition-opacity"
+        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:text-gray-500 transition-opacity"
         title="Edit message"
       >
         <Pencil className="h-3 w-3" />
@@ -387,23 +387,23 @@ function ProgressBar({
   const barColor = "bg-gray-900";
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           {getGreetingIcon()}
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               Good morning, Avanish
             </h2>
-            <p className="text-xs text-gray-400">{formatDate(new Date())}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">{formatDate(new Date())}</p>
           </div>
         </div>
         <div className="text-right">
-          <span className="text-2xl font-semibold text-gray-900 tabular-nums">
+          <span className="text-2xl font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
             {completed}
           </span>
-          <span className="text-sm text-gray-400">/{target}</span>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <span className="text-sm text-gray-400 dark:text-gray-500">/{target}</span>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
             {pct >= 100 ? "Target hit" : `${target - completed} to go`}
           </p>
         </div>
@@ -426,39 +426,39 @@ function ProgressBar({
 
       {/* Breakdown row */}
       {breakdown && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-500">
           <span className="flex items-center gap-1.5">
-            <UserPlus className="h-3.5 w-3.5 text-gray-400" />
+            <UserPlus className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
             <span>
-              <strong className="text-gray-700">{breakdown.linkedin_connections.done}</strong>
+              <strong className="text-gray-700 dark:text-gray-300">{breakdown.linkedin_connections.done}</strong>
               /{breakdown.linkedin_connections.target} connections
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <MessageCircle className="h-3.5 w-3.5 text-gray-400" />
+            <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
             <span>
-              <strong className="text-gray-700">{breakdown.linkedin_dms.done}</strong>
+              <strong className="text-gray-700 dark:text-gray-300">{breakdown.linkedin_dms.done}</strong>
               /{breakdown.linkedin_dms.target} DMs
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <MailCheck className="h-3.5 w-3.5 text-gray-400" />
+            <MailCheck className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
             <span>
-              <strong className="text-gray-700">{breakdown.emails_approved.done}</strong>
+              <strong className="text-gray-700 dark:text-gray-300">{breakdown.emails_approved.done}</strong>
               /{breakdown.emails_approved.target} emails
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <ClipboardCheck className="h-3.5 w-3.5 text-gray-400" />
+            <ClipboardCheck className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
             <span>
-              <strong className="text-gray-700">{breakdown.outcomes_logged.done}</strong>
+              <strong className="text-gray-700 dark:text-gray-300">{breakdown.outcomes_logged.done}</strong>
               /{breakdown.outcomes_logged.target} outcomes
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <PenTool className="h-3.5 w-3.5 text-gray-400" />
+            <PenTool className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
             <span>
-              <strong className="text-gray-700">{breakdown.content_posted.done}</strong>
+              <strong className="text-gray-700 dark:text-gray-300">{breakdown.content_posted.done}</strong>
               /{breakdown.content_posted.target} posts
             </span>
           </span>
@@ -515,48 +515,48 @@ function SectionWrapper({
       : null;
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
       {/* Section header */}
       <button
         onClick={() => setCollapsed((c) => !c)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <Icon className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+          <Icon className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-medium uppercase tracking-widest text-gray-500">{title}</h3>
+              <h3 className="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-gray-500">{title}</h3>
               {count !== undefined && (
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
                     count === 0
-                      ? "bg-gray-100 text-gray-400"
-                      : "bg-gray-900 text-white"
+                      ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
+                      : "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
                   )}
                 >
                   {count}
                 </span>
               )}
               {progress !== null && (
-                <span className="text-[10px] font-medium text-gray-400">
+                <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500">
                   {countDone}/{countTarget}
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-400 mt-0.5 truncate">{subtitle}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">{subtitle}</p>
           </div>
         </div>
         {collapsed ? (
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+          <ChevronDown className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
         ) : (
-          <ChevronUp className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+          <ChevronUp className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
         )}
       </button>
 
       {/* Progress mini-bar for sections with targets */}
       {!collapsed && progress !== null && (
-        <div className="h-0.5 bg-gray-100">
+        <div className="h-0.5 bg-gray-100 dark:bg-gray-800">
           <div
             className="h-full bg-gray-900 transition-all duration-700"
             style={{ width: `${Math.min(100, progress)}%` }}
@@ -576,9 +576,9 @@ function SectionWrapper({
 
 const OUTCOME_OPTIONS = [
   { value: "interested", label: "Interested", cls: "bg-gray-900 hover:bg-gray-800" },
-  { value: "not_now", label: "Not Now", cls: "bg-gray-100 hover:bg-gray-200 !text-gray-700" },
-  { value: "not_interested", label: "Not Interested", cls: "bg-gray-100 hover:bg-gray-200 !text-gray-700" },
-  { value: "wrong_person", label: "Wrong Person", cls: "bg-gray-100 hover:bg-gray-200 !text-gray-700" },
+  { value: "not_now", label: "Not Now", cls: "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 !text-gray-700 dark:text-gray-300" },
+  { value: "not_interested", label: "Not Interested", cls: "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 !text-gray-700 dark:text-gray-300" },
+  { value: "wrong_person", label: "Wrong Person", cls: "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 !text-gray-700 dark:text-gray-300" },
   { value: "meeting_booked", label: "Meeting Booked", cls: "bg-gray-900 hover:bg-gray-800" },
 ];
 
@@ -622,8 +622,8 @@ function HotSignalCard({
       className={cn(
         "rounded-lg border p-3.5 transition-all duration-300",
         isDone
-          ? "opacity-40 border-gray-100 bg-gray-50"
-          : "border-gray-200 bg-white"
+          ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
+          : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
       )}
     >
       <div className="flex items-start gap-3">
@@ -640,40 +640,40 @@ function HotSignalCard({
             )}
             <Link
               href={`/prospects/${signal.id}`}
-              className="font-medium text-gray-900 hover:text-gray-600 text-sm"
+              className="font-medium text-gray-900 dark:text-gray-100 hover:text-gray-600 dark:text-gray-500 text-sm"
             >
               {signal.name}
             </Link>
             {signal.tier && (
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+              <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:text-gray-500">
                 {TIER_LABELS[signal.tier] ?? signal.tier}
               </span>
             )}
-            <span className={cn("text-xs font-medium text-gray-500")}>
+            <span className={cn("text-xs font-medium text-gray-500 dark:text-gray-500")}>
               PQS {signal.pqs_total}
             </span>
           </div>
 
           {primaryContact && (
-            <p className="mt-0.5 text-xs text-gray-500">
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-500">
               {primaryContact.full_name}
               {primaryContact.title && (
-                <span className="text-gray-400"> · {primaryContact.title}</span>
+                <span className="text-gray-400 dark:text-gray-500"> · {primaryContact.title}</span>
               )}
             </p>
           )}
 
           {signal.last_interaction && (
-            <p className="mt-1.5 text-xs text-gray-600">
+            <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-500">
               <span className="font-medium">{interactionLabel(signal.last_interaction.type)}</span>{" "}
-              <span className="text-gray-400">
+              <span className="text-gray-400 dark:text-gray-500">
                 {formatTimeAgo(signal.last_interaction.created_at)}
               </span>
             </p>
           )}
 
           {signal.last_interaction?.body && signal.last_interaction.type === "email_replied" && (
-            <p className="mt-2 rounded-md bg-gray-50 border border-gray-100 p-2.5 text-sm text-gray-700 line-clamp-2 italic">
+            <p className="mt-2 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 p-2.5 text-sm text-gray-700 dark:text-gray-300 line-clamp-2 italic">
               &ldquo;{signal.last_interaction.body}&rdquo;
             </p>
           )}
@@ -681,7 +681,7 @@ function HotSignalCard({
 
         <Link
           href={`/prospects/${signal.id}`}
-          className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          className="shrink-0 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
         >
           View
         </Link>
@@ -691,7 +691,7 @@ function HotSignalCard({
         <div className="mt-3">
           {!showNotes ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-gray-500">Log outcome:</span>
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-500">Log outcome:</span>
               {OUTCOME_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -717,7 +717,7 @@ function HotSignalCard({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Notes (optional)..."
-                className="flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none"
+                className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none"
                 onKeyDown={(e) => { if (e.key === "Enter" && pendingOutcome) handleOutcome(pendingOutcome); }}
                 autoFocus
               />
@@ -731,7 +731,7 @@ function HotSignalCard({
               </button>
               <button
                 onClick={() => { setShowNotes(false); setPendingOutcome(null); setNotes(""); }}
-                className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+                className="rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1.5 text-xs text-gray-500 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 Cancel
               </button>
@@ -784,7 +784,7 @@ function LinkedInConnectionCard({
     <div
       className={cn(
         "rounded-xl border p-4 transition-all duration-300",
-        isDone ? "opacity-40 border-gray-100 bg-gray-50" : "border-gray-200 bg-white"
+        isDone ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
       )}
     >
       <div className="flex items-start gap-3">
@@ -799,16 +799,16 @@ function LinkedInConnectionCard({
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             )}
-            <span className="font-medium text-gray-900 text-sm">{item.full_name ?? "Unknown"}</span>
-            {item.title && <span className="text-xs text-gray-500">{item.title}</span>}
+            <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">{item.full_name ?? "Unknown"}</span>
+            {item.title && <span className="text-xs text-gray-500 dark:text-gray-500">{item.title}</span>}
             <span className="text-xs text-gray-300">·</span>
-            <span className="text-xs text-gray-500">{item.company_name}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-500">{item.company_name}</span>
             {item.company_tier && (
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+              <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-500">
                 {TIER_LABELS[item.company_tier] ?? item.company_tier}
               </span>
             )}
-            <span className="text-xs font-medium text-gray-400 ml-auto">
+            <span className="text-xs font-medium text-gray-400 dark:text-gray-500 ml-auto">
               PQS {item.pqs_total}
             </span>
           </div>
@@ -824,7 +824,7 @@ function LinkedInConnectionCard({
             href={item.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <ExternalLink className="h-3 w-3" />
             Open LinkedIn
@@ -836,7 +836,7 @@ function LinkedInConnectionCard({
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
             isDone
-              ? "bg-gray-100 text-gray-500"
+              ? "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500"
               : "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
           )}
         >
@@ -892,15 +892,15 @@ function LinkedInDMCard({
     <div
       className={cn(
         "rounded-xl border p-4 transition-all duration-300",
-        isDone ? "opacity-40 border-gray-100 bg-gray-50" : "border-gray-200 bg-white"
+        isDone ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
       )}
     >
       <div className="flex items-center gap-2 flex-wrap mb-2">
-        <span className="font-medium text-gray-900 text-sm">{item.full_name ?? "Unknown"}</span>
-        {item.title && <span className="text-xs text-gray-500">{item.title}</span>}
+        <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">{item.full_name ?? "Unknown"}</span>
+        {item.title && <span className="text-xs text-gray-500 dark:text-gray-500">{item.title}</span>}
         <span className="text-xs text-gray-300">·</span>
-        <span className="text-xs text-gray-500">{item.company_name}</span>
-        <span className="ml-auto text-xs text-gray-400 font-medium">Connected</span>
+        <span className="text-xs text-gray-500 dark:text-gray-500">{item.company_name}</span>
+        <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 font-medium">Connected</span>
       </div>
 
       <InlineEditableMessage text={msgText} onSave={setMsgText} />
@@ -912,7 +912,7 @@ function LinkedInDMCard({
             href={item.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <ExternalLink className="h-3 w-3" />
             Open LinkedIn
@@ -924,7 +924,7 @@ function LinkedInDMCard({
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
             isDone
-              ? "bg-gray-100 text-gray-500"
+              ? "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500"
               : "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
           )}
         >
@@ -997,15 +997,15 @@ function ApprovalCard({
     <div
       className={cn(
         "rounded-xl border p-4 transition-all duration-300",
-        isDone ? "opacity-40 border-gray-100 bg-gray-50" : "border-gray-200 bg-white"
+        isDone ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-gray-900">{draft.companies?.name ?? "Unknown"}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{draft.companies?.name ?? "Unknown"}</span>
             {draft.companies?.tier && (
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+              <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:text-gray-500">
                 {TIER_LABELS[draft.companies.tier] ?? draft.companies.tier}
               </span>
             )}
@@ -1013,14 +1013,14 @@ function ApprovalCard({
               PQS {draft.companies?.pqs_total ?? 0}
             </span>
             {draft.contacts?.full_name && (
-              <span className="text-sm text-gray-500">· {draft.contacts.full_name}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-500">· {draft.contacts.full_name}</span>
             )}
           </div>
           <p className="mt-1 text-sm font-medium text-gray-800">{draft.subject}</p>
         </div>
         <button
           onClick={() => setExpanded((e) => !e)}
-          className="shrink-0 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+          className="shrink-0 text-xs text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 flex items-center gap-1"
         >
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           {expanded ? "Hide" : "Preview"}
@@ -1028,7 +1028,7 @@ function ApprovalCard({
       </div>
 
       {expanded && (
-        <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+        <div className="mt-3 rounded-lg bg-gray-50 dark:bg-gray-800 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
           {draft.body}
         </div>
       )}
@@ -1046,14 +1046,14 @@ function ApprovalCard({
           <button
             onClick={handleReject}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
           >
             <XCircle className="h-3 w-3" />
             Reject
           </button>
           <Link
             href="/approvals"
-            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <Pencil className="h-3 w-3" />
             Edit
@@ -1061,13 +1061,13 @@ function ApprovalCard({
           <button
             onClick={handleTestSend}
             disabled={testSending}
-            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
           >
             {testSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
             Test Send
           </button>
           {testMsg && (
-            <span className={cn("text-xs font-medium", testMsg.startsWith("Test email sent") ? "text-green-600" : "text-gray-500")}>
+            <span className={cn("text-xs font-medium", testMsg.startsWith("Test email sent") ? "text-green-600" : "text-gray-500 dark:text-gray-500")}>
               {testMsg}
             </span>
           )}
@@ -1110,17 +1110,17 @@ function ContentCard({
     <div
       className={cn(
         "rounded-lg border p-3.5 transition-all duration-300",
-        isDone ? "opacity-40 border-gray-100 bg-gray-50" : "border-gray-200 bg-white"
+        isDone ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
       )}
     >
       <div className="flex items-center gap-2 mb-2">
-        <PenTool className="h-3.5 w-3.5 text-gray-400" />
-        <span className="font-medium text-gray-900 text-sm">{item.topic}</span>
+        <PenTool className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+        <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">{item.topic}</span>
         {item.approval_status === "approved" && (
-          <span className="rounded bg-gray-100 text-gray-500 px-1.5 py-0.5 text-[10px] font-medium">Approved</span>
+          <span className="rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500 px-1.5 py-0.5 text-[10px] font-medium">Approved</span>
         )}
       </div>
-      <div className="rounded-md bg-gray-50 border border-gray-100 p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+      <div className="rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 p-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
         {item.post_text}
       </div>
       {!isDone && (
@@ -1129,7 +1129,7 @@ function ContentCard({
             onClick={handleCopy}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all",
-              copied ? "border-green-200 bg-white text-green-600" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              copied ? "border-green-200 bg-white dark:bg-gray-900 text-green-600" : "border-gray-200 dark:border-gray-700 bg-white  text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
             )}
           >
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -1139,7 +1139,7 @@ function ContentCard({
             href="https://www.linkedin.com/post/new/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1 text-xs font-medium text-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <ExternalLink className="h-3 w-3" />
             Open LinkedIn
@@ -1180,16 +1180,16 @@ function OutcomeLoggerCard({
     channel === "linkedin"
       ? [
           { value: "interested", label: "Interested", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
-          { value: "not_now", label: "Not Now", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
-          { value: "not_interested", label: "Not Interested", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "not_now", label: "Not Now", cls: "border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700" },
+          { value: "not_interested", label: "Not Interested", cls: "border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700" },
           { value: "meeting_booked", label: "Meeting Booked", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
         ]
       : [
           { value: "interested", label: "Interested", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
-          { value: "not_now", label: "Not Now", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
-          { value: "not_interested", label: "Not Interested", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
-          { value: "wrong_person", label: "Wrong Person", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
-          { value: "bounce", label: "Bounce", cls: "border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200" },
+          { value: "not_now", label: "Not Now", cls: "border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700" },
+          { value: "not_interested", label: "Not Interested", cls: "border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700" },
+          { value: "wrong_person", label: "Wrong Person", cls: "border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700" },
+          { value: "bounce", label: "Bounce", cls: "border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700" },
           { value: "meeting_booked", label: "Meeting Booked", cls: "border-gray-300 bg-gray-900 text-white hover:bg-gray-800" },
         ];
 
@@ -1216,22 +1216,22 @@ function OutcomeLoggerCard({
     <div
       className={cn(
         "rounded-xl border p-4 transition-all duration-300",
-        isDone ? "opacity-40 border-gray-100 bg-gray-50" : "border-gray-200 bg-white"
+        isDone ? "opacity-40 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800" : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
       )}
     >
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <Building2 className="h-4 w-4 text-gray-400" />
-        <span className="font-medium text-gray-900">
+        <Building2 className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+        <span className="font-medium text-gray-900 dark:text-gray-100">
           {interaction.companies?.name ?? "Unknown Company"}
         </span>
         {interaction.contacts?.full_name && (
           <>
             <span className="text-gray-300">·</span>
-            <User className="h-3.5 w-3.5 text-gray-400" />
-            <span className="text-sm text-gray-600">{interaction.contacts.full_name}</span>
+            <User className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+            <span className="text-sm text-gray-600 dark:text-gray-500">{interaction.contacts.full_name}</span>
           </>
         )}
-        <span className="ml-auto text-xs text-gray-400">
+        <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">
           {interactionLabel(interaction.type)} · {formatTimeAgo(interaction.created_at)}
         </span>
       </div>
@@ -1261,7 +1261,7 @@ function OutcomeLoggerCard({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Notes (optional)..."
-                className="flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
                 onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
               />
               <button
@@ -1319,10 +1319,10 @@ function PipelineRow({ label, count, nextAction, agentName, agentLabel, limit = 
   };
 
   return (
-    <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+    <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
       <div className="flex items-center gap-3">
-        <span className="text-2xl font-bold text-gray-900 tabular-nums w-12 text-right">{count}</span>
-        <span className="text-sm text-gray-600">{label}</span>
+        <span className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums w-12 text-right">{count}</span>
+        <span className="text-sm text-gray-600 dark:text-gray-500">{label}</span>
       </div>
       <div className="flex items-center gap-2">
         {result && <span className="text-xs font-medium text-green-600">{result}</span>}
@@ -1338,12 +1338,12 @@ function PipelineRow({ label, count, nextAction, agentName, agentLabel, limit = 
         ) : nextAction ? (
           <Link
             href={nextAction}
-            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Go <ArrowRight className="h-3 w-3" />
           </Link>
         ) : (
-          <span className="text-xs text-gray-400">—</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
         )}
       </div>
     </div>
@@ -1367,28 +1367,28 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
   if (Array.isArray(company)) company = company[0] || {};
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3.5">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3.5">
       {/* Header */}
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm text-gray-900">{contact.full_name || "Unknown contact"}</span>
+          <span className="font-medium text-sm text-gray-900 dark:text-gray-100">{contact.full_name || "Unknown contact"}</span>
           {contact.title && (
-            <span className="text-xs text-gray-500">{contact.title}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-500">{contact.title}</span>
           )}
           {company.name && (
             <>
-              <span className="text-xs text-gray-400">·</span>
-              <span className="text-xs text-gray-500">{company.name}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">·</span>
+              <span className="text-xs text-gray-500 dark:text-gray-500">{company.name}</span>
             </>
           )}
         </div>
         {action.next_action_date && (
-          <span className="text-xs text-gray-500 font-medium">Due: {action.next_action_date}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-500 font-medium">Due: {action.next_action_date}</span>
         )}
       </div>
 
       {/* What triggered this */}
-      <div className="text-xs text-gray-400 mb-2">
+      <div className="text-xs text-gray-400 dark:text-gray-500 mb-2">
         Based on:{" "}
         {action.event_type === "response_received" ? "Their response" : (action.event_type || "event").replace(/_/g, " ")}
         {action.sentiment && ` (${action.sentiment})`}
@@ -1396,15 +1396,15 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
       </div>
 
       {/* The recommendation */}
-      <div className="bg-gray-50 rounded-md p-3 border border-gray-100 mb-2">
-        <p className="text-sm text-gray-700">{action.next_action}</p>
+      <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-3 border border-gray-100 dark:border-gray-800 mb-2">
+        <p className="text-sm text-gray-700 dark:text-gray-300">{action.next_action}</p>
       </div>
 
       {/* Suggested message */}
       {action.suggested_message && (
-        <div className="bg-gray-50 rounded-md p-3 border border-gray-100 mb-2">
-          <div className="text-xs font-medium text-gray-500 mb-1">Suggested message:</div>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">{action.suggested_message}</p>
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-3 border border-gray-100 dark:border-gray-800 mb-2">
+          <div className="text-xs font-medium text-gray-500 dark:text-gray-500 mb-1">Suggested message:</div>
+          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{action.suggested_message}</p>
           <button
             onClick={() => {
               navigator.clipboard.writeText(action.suggested_message).catch(() => {
@@ -1418,7 +1418,7 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
-            className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+            className="mt-2 flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:text-gray-500"
           >
             {copied ? <span className="text-green-600">Copied!</span> : "Copy message"}
           </button>
@@ -1427,9 +1427,9 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
 
       {/* Reasoning (collapsible) */}
       {action.action_reasoning && (
-        <details className="text-xs text-gray-400 mb-2">
-          <summary className="cursor-pointer hover:text-gray-600">Why this recommendation</summary>
-          <p className="mt-1 pl-2 border-l-2 border-gray-200 text-gray-500">{action.action_reasoning}</p>
+        <details className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+          <summary className="cursor-pointer hover:text-gray-600 dark:text-gray-500">Why this recommendation</summary>
+          <p className="mt-1 pl-2 border-l-2 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-500">{action.action_reasoning}</p>
         </details>
       )}
 
@@ -1440,7 +1440,7 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
             href={contact.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-2.5 py-1 text-xs border border-gray-200 text-blue-500 rounded-md hover:bg-gray-50"
+            className="px-2.5 py-1 text-xs border border-gray-200 dark:border-gray-700 text-blue-500 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Open LinkedIn
           </a>
@@ -1453,7 +1453,7 @@ function NextActionCard({ action, onDone, onSkip }: { action: any; onDone: (id: 
         </button>
         <button
           onClick={() => onSkip(action.id)}
-          className="px-2.5 py-1 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200"
+          className="px-2.5 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
         >
           Skip
         </button>
@@ -1566,8 +1566,8 @@ export default function TodayCockpitPage() {
   if (loading && !data) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-        <span className="ml-3 text-sm text-gray-400">Loading your day...</span>
+        <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-gray-500" />
+        <span className="ml-3 text-sm text-gray-400 dark:text-gray-500">Loading your day...</span>
       </div>
     );
   }
@@ -1636,22 +1636,22 @@ export default function TodayCockpitPage() {
       {/* PROGRESS BAR + HEADER                                               */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-3 text-xs text-gray-500">
+        <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-500">
           {pendingNextActions.length > 0 && (
-            <span className="flex items-center gap-1 rounded bg-gray-100 px-2 py-1 font-medium text-gray-600">
-              <Brain className="h-3 w-3 text-gray-400" />
+            <span className="flex items-center gap-1 rounded bg-gray-100 dark:bg-gray-800 px-2 py-1 font-medium text-gray-600 dark:text-gray-500">
+              <Brain className="h-3 w-3 text-gray-400 dark:text-gray-500" />
               {pendingNextActions.length} AI action{pendingNextActions.length !== 1 ? "s" : ""}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 text-xs text-gray-400">
+        <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
           {lastRefresh && (
             <span>Updated {formatTimeAgo(lastRefresh.toISOString())}</span>
           )}
           <button
             onClick={() => fetchData()}
             disabled={loading}
-            className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+            className="flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
           >
             <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
             Refresh
@@ -1660,7 +1660,7 @@ export default function TodayCockpitPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+        <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 text-xs text-gray-600 dark:text-gray-500">
           {error}
         </div>
       )}
@@ -1679,7 +1679,7 @@ export default function TodayCockpitPage() {
         defaultCollapsed={urgentCount === 0}
       >
         {urgentCount === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-400">
+          <p className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             No urgent signals right now. Check back throughout the day.
           </p>
         ) : (
@@ -1707,7 +1707,7 @@ export default function TodayCockpitPage() {
           defaultCollapsed={pendingNextActions.length === 0}
         >
           {pendingNextActions.length === 0 ? (
-            <p className="py-4 text-center text-sm text-gray-400">
+            <p className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
               All AI-recommended actions are done for today.
             </p>
           ) : (
@@ -1739,15 +1739,15 @@ export default function TodayCockpitPage() {
         defaultCollapsed={connectCount === 0}
       >
         {connectCount === 0 && connectItems.length === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-400">
+          <p className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             No contacts queued for connection requests.{" "}
-            <Link href="/actions" className="text-gray-600 underline hover:text-gray-900">
+            <Link href="/actions" className="text-gray-600 dark:text-gray-500 underline hover:text-gray-900 dark:text-gray-100">
               Run LinkedIn outreach
             </Link>{" "}
             to generate messages.
           </p>
         ) : connectItems.length === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-500">
+          <p className="py-4 text-center text-sm text-gray-500 dark:text-gray-500">
             All {connectDone} connection requests sent today.
           </p>
         ) : (
@@ -1779,13 +1779,13 @@ export default function TodayCockpitPage() {
           {data!.pending_acceptances!.map((c: any) => (
             <div
               key={c.contact_id}
-              className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3 mb-2"
+              className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 mb-2"
             >
               <div className="flex-1 min-w-0">
-                <span className="font-medium text-sm text-gray-900">
+                <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
                   {c.full_name}
                 </span>
-                <span className="ml-2 text-xs text-gray-500">
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-500">
                   {c.title} · {c.company_name}
                 </span>
                 {c.linkedin_url && (
@@ -1826,7 +1826,7 @@ export default function TodayCockpitPage() {
                       fetchData(true);
                     } catch {}
                   }}
-                  className="rounded-md bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                  className="rounded-md bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-300"
                 >
                   Ignored
                 </button>
@@ -1846,7 +1846,7 @@ export default function TodayCockpitPage() {
         defaultCollapsed={dmCount === 0}
       >
         {dmItems.length === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-400">
+          <p className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             No accepted connections awaiting DMs.
           </p>
         ) : (
@@ -1873,9 +1873,9 @@ export default function TodayCockpitPage() {
         defaultCollapsed={approvalsCount === 0}
       >
         {pendingApprovals.length === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-400">
+          <p className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             No pending drafts.{" "}
-            <Link href="/actions" className="text-gray-600 underline hover:text-gray-900">
+            <Link href="/actions" className="text-gray-600 dark:text-gray-500 underline hover:text-gray-900 dark:text-gray-100">
               Run Outreach
             </Link>{" "}
             to generate new ones.
@@ -1892,7 +1892,7 @@ export default function TodayCockpitPage() {
             ))}
             <Link
               href="/approvals"
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 py-3 text-xs text-gray-500 hover:bg-gray-50"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 py-3 text-xs text-gray-500 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
               View all in Approvals <ArrowRight className="h-3 w-3" />
             </Link>
@@ -1913,7 +1913,7 @@ export default function TodayCockpitPage() {
       >
         {contentItems.length === 0 ? (
           <div className="py-4 text-center">
-            <p className="text-sm text-gray-400 mb-3">No content draft ready for today.</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mb-3">No content draft ready for today.</p>
             <Link
               href="/actions"
               className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
@@ -1946,7 +1946,7 @@ export default function TodayCockpitPage() {
         defaultCollapsed={outcomesCount === 0}
       >
         {recentInteractions.length === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-400">
+          <p className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             No interactions to log in the last 24 hours.
           </p>
         ) : (
@@ -1959,9 +1959,9 @@ export default function TodayCockpitPage() {
                 onDone={markOutcomeDone}
               />
             ))}
-            <p className="pt-1 text-center text-xs text-gray-400">
+            <p className="pt-1 text-center text-xs text-gray-400 dark:text-gray-500">
               Had a conversation not tracked here?{" "}
-              <Link href="/prospects?status=engaged" className="text-gray-600 underline hover:text-gray-900">
+              <Link href="/prospects?status=engaged" className="text-gray-600 dark:text-gray-500 underline hover:text-gray-900 dark:text-gray-100">
                 Find the prospect
               </Link>{" "}
               and log it manually.
@@ -1980,7 +1980,7 @@ export default function TodayCockpitPage() {
         subtitle="Run discovery, research, and qualification"
         defaultCollapsed={false}
       >
-        <div className="rounded-md border border-gray-100 px-4 py-1">
+        <div className="rounded-md border border-gray-100 dark:border-gray-800 px-4 py-1">
           <PipelineRow
             label="discovered — waiting for research"
             count={pipelineSummary["discovered"] ?? 0}

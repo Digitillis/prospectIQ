@@ -107,7 +107,7 @@ function MessageBlock({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-[10px] font-medium tracking-widest uppercase text-gray-400">
+        <span className="text-[10px] font-medium tracking-widest uppercase text-gray-400 dark:text-gray-500">
           {label}
         </span>
         <div className="flex items-center gap-3">
@@ -127,11 +127,11 @@ function MessageBlock({
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
+          className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
           rows={5}
         />
       ) : (
-        <div className="bg-gray-50 border border-gray-100 rounded-md p-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+        <div className="bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-md p-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
           {value}
         </div>
       )}
@@ -180,14 +180,14 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
       </button>
 
       {open && (
-        <div className="mt-2 rounded-md bg-gray-50 border border-gray-100 p-3 text-xs space-y-3">
+        <div className="mt-2 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-3 text-xs space-y-3">
           {/* RESEARCH SUMMARY */}
           {intel.company?.research_summary && (
             <div>
-              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+              <div className="font-medium text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-widest text-[10px]">
                 Research Summary
               </div>
-              <p className="text-gray-600 whitespace-pre-wrap">{intel.company.research_summary}</p>
+              <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{intel.company.research_summary}</p>
             </div>
           )}
 
@@ -198,10 +198,10 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             (intel.company?.pain_signals?.length ?? 0) > 0 ||
             intel.research?.known_systems?.length) ? (
             <div>
-              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+              <div className="font-medium text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-widest text-[10px]">
                 Key Findings
               </div>
-              <div className="space-y-1 text-gray-600">
+              <div className="space-y-1 text-gray-600 dark:text-gray-400">
                 {(intel.research?.products_services?.length ?? 0) > 0 && (
                   <p>Products: {intel.research!.products_services!.join(", ")}</p>
                 )}
@@ -232,10 +232,10 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             intel.contact?.city ||
             intel.contact?.state) && (
             <div>
-              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+              <div className="font-medium text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-widest text-[10px]">
                 Contact
               </div>
-              <div className="space-y-0.5 text-gray-600">
+              <div className="space-y-0.5 text-gray-600 dark:text-gray-400">
                 {intel.contact?.title && <p>Title: {intel.contact.title}</p>}
                 {intel.contact?.seniority && (
                   <p>Seniority: {intel.contact.seniority}</p>
@@ -258,10 +258,10 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
             intel.company?.revenue_printed ||
             intel.company?.headcount_growth_6m != null) && (
             <div>
-              <div className="font-medium text-gray-400 mb-1 uppercase tracking-widest text-[10px]">
+              <div className="font-medium text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-widest text-[10px]">
                 Company
               </div>
-              <div className="space-y-0.5 text-gray-600">
+              <div className="space-y-0.5 text-gray-600 dark:text-gray-400">
                 {intel.company?.industry && (
                   <p>Industry: {intel.company.industry}</p>
                 )}
@@ -335,12 +335,12 @@ function ContactCard({ item }: { item: LinkedInContact }) {
   const followupDm = drafts["linkedin_dm_followup"];
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-5">
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-5">
       {/* Header */}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-gray-900 truncate">
+            <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
               {contact.full_name || `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() || "Unknown"}
             </span>
             <TierBadge tier={company.tier} />
@@ -350,10 +350,10 @@ function ContactCard({ item }: { item: LinkedInContact }) {
               </span>
             )}
           </div>
-          <div className="mt-0.5 text-xs text-gray-500">
+          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
             {contact.title} &middot; {company.name}
           </div>
-          <div className="mt-0.5 text-xs font-mono text-gray-400">
+          <div className="mt-0.5 text-xs font-mono text-gray-400 dark:text-gray-500">
             PQS {company.pqs_total}
             {company.sub_sector ? ` · ${company.sub_sector}` : ""}
           </div>
@@ -365,7 +365,7 @@ function ContactCard({ item }: { item: LinkedInContact }) {
             href={contact.linkedin_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2.5 py-1 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
           >
             <Linkedin className="h-3.5 w-3.5" />
             Open LI
@@ -391,9 +391,9 @@ function ContactCard({ item }: { item: LinkedInContact }) {
       <IntelPanel intel={intel} />
 
       {/* Status + Notes */}
-      <div className="mt-4 border-t border-gray-100 pt-4">
+      <div className="mt-4 border-t border-gray-100 dark:border-gray-700 pt-4">
         <div className="mb-3">
-          <div className="mb-2 text-[10px] font-medium uppercase tracking-widest text-gray-400">
+          <div className="mb-2 text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">
             Status
           </div>
           <div className="flex flex-wrap gap-1">
@@ -417,7 +417,7 @@ function ContactCard({ item }: { item: LinkedInContact }) {
 
         {/* Notes */}
         <div>
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-widest text-gray-400">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">
             Notes
           </div>
           <div className="flex gap-2">
@@ -426,13 +426,13 @@ function ContactCard({ item }: { item: LinkedInContact }) {
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add notes about the conversation..."
               rows={2}
-              className="flex-1 rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-700 placeholder-gray-400 bg-white focus:outline-none focus:ring-1 focus:ring-gray-300"
+              className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
             />
             {notes.trim() && (
               <button
                 onClick={handleNotesSave}
                 disabled={saving}
-                className="self-end rounded-md px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50"
+                className="self-end rounded-md px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
               >
                 Save
               </button>
@@ -506,17 +506,17 @@ export default function LinkedInPage() {
         });
 
   return (
-    <div className="flex h-full flex-col bg-gray-50">
+    <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
       {/* Header */}
-      <div className="border-b border-gray-200 bg-white px-6 py-4">
+      <div className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-6 py-4">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+              <h1 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">
                 LinkedIn Outreach
               </h1>
               {!loading && (
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   {filteredItems.length} contact{filteredItems.length !== 1 ? "s" : ""}
                 </p>
               )}
@@ -525,7 +525,7 @@ export default function LinkedInPage() {
               <button
                 onClick={fetchMessages}
                 disabled={loading}
-                className="flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-50"
                 title="Refresh"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -549,7 +549,7 @@ export default function LinkedInPage() {
           <div className="mt-3 flex flex-wrap items-center gap-4">
             {/* Status filter */}
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-400">Status</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">Status</span>
               <div className="flex flex-wrap gap-1">
                 {["all", "not_sent", "connection_sent", "accepted", "dm_sent", "responded", "meeting_booked"].map(
                   (s) => (
@@ -558,8 +558,8 @@ export default function LinkedInPage() {
                       onClick={() => setStatusFilter(s)}
                       className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                         statusFilter === s
-                          ? "bg-gray-900 text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                          : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                       }`}
                     >
                       {s === "all"
@@ -573,7 +573,7 @@ export default function LinkedInPage() {
 
             {/* Vertical filter */}
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-400">Vertical</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">Vertical</span>
               <div className="flex gap-1">
                 {[
                   { value: "all", label: "All" },
@@ -601,7 +601,7 @@ export default function LinkedInPage() {
       {/* Error */}
       {error && (
         <div className="max-w-4xl mx-auto w-full px-6 mt-4">
-          <div className="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+          <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
             {error}
           </div>
         </div>

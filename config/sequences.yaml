@@ -126,7 +126,7 @@ sequences:
             it to what you're building. End with a low-friction question, not
             a meeting request.
           tone: "Expert sharing something useful. The email should be worth reading even if they never respond."
-          max_words: 150
+          max_words: 80
           anti_patterns:
             - "Do not open with 'I noticed your company...'"
             - "No meeting request in step 1 -- end with a question"
@@ -146,7 +146,7 @@ sequences:
             reduction). Do not fabricate case studies. Be specific about the
             type of equipment and the outcome.
           tone: "Evidence-based. Specific. Not a generic case study."
-          max_words: 130
+          max_words: 100
           anti_patterns:
             - "No fabricated case studies -- use real platform capabilities as examples"
             - "Equipment type and outcome must be specific, not generic"
@@ -163,7 +163,7 @@ sequences:
             For Mfg: 'The maintenance maturity spectrum -- where does your
             plant fall?' This demonstrates expertise and provides standalone value.
           tone: "Consultant sharing a tool. The framework should be genuinely useful."
-          max_words: 120
+          max_words: 100
           anti_patterns:
             - "Framework must be actionable on its own, not a hook to get a call"
             - "No urgency or scarcity language"
@@ -180,7 +180,7 @@ sequences:
             15-minute demo tailored to their equipment type. Make it binary --
             easy to say yes or no. No guilt. No 'just following up.'
           tone: "Direct, respectful of their time. Binary ask."
-          max_words: 100
+          max_words: 60
           anti_patterns:
             - "No 'just following up' or 'circling back'"
             - "No guilt or manufactured urgency"
@@ -211,7 +211,7 @@ sequences:
             compliance, email about cost reduction. If LinkedIn was about
             maintenance, email about quality. New angle, new value prop.
           tone: "Fresh introduction. As if LinkedIn never happened."
-          max_words: 140
+          max_words: 80
           anti_patterns:
             - "Do not reference LinkedIn or prior contact"
             - "Must use a genuinely different angle than whatever LinkedIn sequence used"
@@ -227,7 +227,7 @@ sequences:
             Follow up with evidence supporting the new angle. Specific data,
             specific outcomes, specific equipment types.
           tone: "Evidence-based follow-up."
-          max_words: 120
+          max_words: 100
           anti_patterns:
             - "Evidence must match the new angle, not drift back to the LinkedIn angle"
             - "Specific equipment type and outcome required -- no vague claims"
@@ -242,7 +242,7 @@ sequences:
             Final touch. Direct ask with a specific offer. If no response,
             the prospect goes to re-engagement queue (90-day cooldown).
           tone: "Last touch. Respectful. No desperation."
-          max_words: 100
+          max_words: 60
           anti_patterns:
             - "No guilt or desperation"
             - "No 'last chance' or urgency language"

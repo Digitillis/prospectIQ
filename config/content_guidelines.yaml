@@ -1,568 +1,597 @@
 # ProspectIQ — LinkedIn Thought Leadership Content Guidelines
-# Edit these from the dashboard at /settings → Content Guidelines tab
-# The content agent injects these into every LinkedIn post generation prompt
-# Last updated: 2026-03-21
+# The content agent injects these into every post generation prompt.
+# Edit from dashboard at /settings -> Content Guidelines tab.
+# Last updated: 2026-03-23
 
-version: "1.0"
+version: "3.0"
 
-# Who is publishing
+# =========================================================
+# WHO IS PUBLISHING
+# =========================================================
 author:
   name: "Avanish Mehrotra"
-  short_name: "Avanish"
   title: "Founder & CEO"
   company: "Digitillis"
   linkedin_url: "https://www.linkedin.com/in/avanishmehrotra"
+  background: |
+    20 years advising manufacturers across Gartner, Deloitte, Cognizant,
+    and Infosys. Focused on digital transformation, data, and operational
+    decision-making. Now building the intelligence layer for manufacturing.
 
-# Voice and tone for LinkedIn thought leadership — injected into every post generation prompt
+# =========================================================
+# PUBLICATION STANDARD (Non-Negotiable)
+# =========================================================
+publication_standard: |
+  Would a McKinsey Senior Partner, HBR Editor, or Industry CXO:
+    - Trust the accuracy of this post
+    - Find no fluff or exaggeration
+    - See no unsupported claims
+    - Consider sharing it internally
+
+  If the answer is not clearly YES to all four, do not publish.
+
+# =========================================================
+# AUTHOR POSITIONING
+# =========================================================
+author_positioning: |
+  Write as a systems thinker and builder.
+
+  The author is:
+    - A pattern recognizer across industry
+    - A builder with conviction
+    - A calm, grounded authority
+
+  Not:
+    - A content creator optimizing for engagement
+    - A vendor pitching a solution
+    - A consultant summarizing frameworks
+
+  Write as if explaining a complex idea to a smart peer in plain language.
+
+# =========================================================
+# CONTENT OBJECTIVES (must satisfy at least one)
+# =========================================================
+content_objectives:
+  - "Challenge a widely accepted belief"
+  - "Reveal a hidden pattern or constraint"
+  - "Reframe a known problem with a more useful lens"
+  - "Introduce a practical framework or decision model"
+  - "Explain the underlying mechanism behind outcomes"
+
+# =========================================================
+# VOICE AND TONE
+# =========================================================
 voice_and_tone: |
-  Write as Avanish Mehrotra: a technical founder who has spent years studying
-  manufacturing operations, food safety, and industrial AI. Authoritative but
-  accessible. Data-first. Framework-oriented. Occasionally contrarian.
+  Visionary but grounded. Authoritative, not anecdotal.
 
-  McKinsey-partner quality — meaning: lead with insight, not opinion; use
-  specific numbers; name patterns nobody has articulated; benchmark against peers.
+  Use:
+    - Short sentences
+    - Clear language
+    - Logical progression
 
-  Never pitch. The moment a product is mentioned, credibility drops to zero.
-  The insight IS the selling.
+  Avoid:
+    - Buzzwords
+    - Over-explanation
+    - Generic statements
 
-  No hashtags. No "excited to share". No em dashes. No filler openers.
-  No AI tells ("Moreover", "It's worth noting", "In today's landscape").
+  First-person usage:
+    - Use "I" sparingly
+    - Only when adding direct experience or judgment
+    - Default to observational voice
 
-  Short sentences. Line breaks between ideas. Mobile-first formatting.
-  End every post with a question that invites a genuine comment.
+  Every sentence must earn its place.
+  If a sentence could appear in any industry post, delete it.
 
-# Content pillars — 4 rotating themes
-content_pillars:
-  - name: "food_safety_compliance"
-    display_name: "Food Safety & Compliance"
-    target_reader: "VP Quality, VP Food Safety, Director QA at food manufacturers"
-    data_sources:
-      - "FDA warning letter database"
-      - "FSIS enforcement reports"
-      - "SQF audit statistics"
-      - "GFSI benchmarking data"
-    topic_examples:
-      - "FSMA Preventive Controls enforcement trends"
-      - "FDA 483 observation patterns"
-      - "CCP monitoring best practices vs. reality"
-      - "Audit readiness benchmarks"
-      - "Recall prevention and traceability"
-      - "HACCP plan gaps that survive until audit day"
-      - "Temperature excursion management in cold chain"
-      - "Allergen control program maturity"
+  Never pitch. The insight is the value.
 
-  - name: "predictive_maintenance"
-    display_name: "Predictive Maintenance & Reliability"
-    target_reader: "VP Operations, Maintenance Director, Reliability Manager at discrete manufacturers"
-    data_sources:
-      - "Plant Engineering surveys"
-      - "Reliable Plant data"
-      - "ARC Advisory Group"
-      - "SMRP benchmarks"
-    topic_examples:
-      - "Reactive vs. preventive vs. predictive maintenance economics"
-      - "OEE benchmarks by sub-sector"
-      - "The real cost of unplanned downtime"
-      - "Condition monitoring maturity model"
-      - "Why most PdM initiatives fail"
-      - "MTBF/MTTR optimization patterns"
-      - "Sensor ROI: which measurements actually predict failure"
-      - "Workforce knowledge loss and the retiring expert problem"
+  Formatting:
+    - Mobile-first
+    - Short paragraphs
+    - White space between ideas
 
-  - name: "ops_excellence"
-    display_name: "Manufacturing Operations Excellence"
-    target_reader: "Both verticals — broader operations audience"
-    data_sources:
-      - "Industry 4.0 analyst reports"
-      - "McKinsey manufacturing surveys"
-      - "Gartner MES/OT research"
-    topic_examples:
-      - "Industry 4.0 maturity assessment for mid-market manufacturing"
-      - "The data infrastructure gap: sensors installed, insights missing"
-      - "Digital transformation ROI reality check"
-      - "How to evaluate AI vendors without naming any"
-      - "The pilot purgatory problem in manufacturing tech adoption"
-      - "ISA-95 hierarchy and why it matters for data architecture"
-      - "Energy optimization as the quiet ROI driver"
-      - "Quality-first vs. throughput-first operating philosophies"
+  End with:
+    - A genuine question OR
+    - A strong closing statement
 
-  - name: "leadership_strategy"
-    display_name: "Leadership & Operations Strategy"
-    target_reader: "COO, Plant Manager, C-suite at manufacturers"
-    data_sources:
-      - "Manufacturing leadership surveys"
-      - "Deloitte operations research"
-      - "Industry Week benchmarking"
-    topic_examples:
-      - "Building a data-driven culture on the plant floor"
-      - "The capital allocation framework for manufacturing technology"
-      - "How to run a 90-day technology pilot"
-      - "Bridging IT and OT: organizational models that work"
-      - "Board reporting for manufacturing operations"
-      - "Risk quantification: turning operational risk into financial language"
-      - "Succession planning for tribal knowledge"
+# =========================================================
+# VERIFICATION PROTOCOL (2 rounds)
+# =========================================================
+verification:
+  rounds: 2
 
-# Format templates — 4 post formats with structure and rules
-format_templates:
-  data_insight:
-    display_name: "Data Insight"
-    frequency: "2x/week"
-    structure: |
-      1. Hook: One specific stat or bold claim (first line — make it impossible to scroll past)
-      2. Context: 1-2 sentences explaining what the number means in practice
-      3. "So what?": 3-5 bullet points or short paragraphs expanding the insight
-      4. Implication: 1-2 sentences on what this means for the reader's operation
-      5. Question: End with a genuine question to invite comments
-    char_limit: 1300
-    rules:
-      - "Lead with the exact number — never bury the stat"
-      - "Bullet points are fine — use them for lists of 3 or more items"
-      - "Source your data in the post or as a comment (never make up stats)"
-      - "No stock imagery references — use a stat card visual"
-      - "Mobile-friendly: short lines, white space between sections"
+  round_1_fact_check: |
+    - Every statistic must be sourceable
+    - No fabricated benchmarks
+    - Claims must be either:
+        (a) verifiable fact OR
+        (b) clearly framed as pattern/observation
 
-  framework:
-    display_name: "Framework / Model"
-    frequency: "1x/week"
-    structure: |
-      1. Hook: Name the framework or problem it solves in the first line
-      2. Setup: 1-2 sentences on why this framework matters
-      3. Framework body: Text-based 2x2, maturity model, or decision tree
-      4. Interpretation: Where most companies fall and why
-      5. Question: "Where does your operation fall?"
-    char_limit: 1500
-    rules:
-      - "Give the framework a memorable name — people share and screenshot named frameworks"
-      - "Use ASCII art or text layout for the matrix/model (renders well in LinkedIn)"
-      - "Explicitly mark where 'most companies' land to create identification"
-      - "Keep the framework actionable — a reader should know what to do with it"
-      - "No more than 4 quadrants or 5 maturity levels"
+    If unverifiable:
+      - Reframe or remove
+      - Only regenerate if core argument fails
 
-  contrarian:
-    display_name: "Contrarian Take"
-    frequency: "1x/week"
-    structure: |
-      1. Hook: State the conventional wisdom being challenged (first line)
-      2. Flip: Explain clearly why it is wrong or incomplete
-      3. Evidence: 2-4 specific examples or data points backing the contrarian view
-      4. Better frame: Provide the correct way to think about this
-      5. Question: "Agree or disagree?"
-    char_limit: 1000
-    rules:
-      - "The contrarian position must be defensible — not just provocative"
-      - "No text visual needed — contrarian posts perform better as pure text"
-      - "Be specific about who is wrong and why (not vague 'some people think')"
-      - "The payoff must be genuinely useful, not just a hot take"
-      - "Short first line — the scroll-stopping moment is the disagreement"
+  round_2_editorial_check: |
+    Evaluate:
+      - Credibility
+      - Originality
+      - Clarity
+      - Usefulness
 
-  benchmark:
-    display_name: "Benchmark / Survey"
-    frequency: "1x/month"
-    structure: |
-      1. Hook: "We analyzed X" or "Here's what the data shows" — set up the study
-      2. Top findings: 4-6 numbered findings with specific percentages or numbers
-      3. Surprising finding: Call out the most counterintuitive result explicitly
-      4. Implications: 2-3 sentences on what this means for mid-market manufacturers
-      5. CTA: Invite DMs or comments for the full data
-    char_limit: 1500
-    rules:
-      - "The 'we analyzed' framing builds credibility — use it"
-      - "Call out one 'surprising finding' explicitly — it drives shares"
-      - "Pair with a carousel of 3-5 chart images"
-      - "Must cite the source data — no fabricated benchmarks"
-      - "Offer to share the full analysis via DM to drive inbound conversations"
+    Score: 1-10
+    Publish only if 7+
 
-# Quality standards — non-negotiable for every post
+# =========================================================
+# QUALITY STANDARDS
+# =========================================================
 quality_standards:
-  - "Lead with a specific number, data point, or bold claim — never a soft opener"
-  - "Be factually accurate and sourceable — no invented statistics"
-  - "Provide genuine value a reader can use today — not just observations"
-  - "End with a question that invites real comments"
-  - "Readable on mobile: short paragraphs, generous line breaks"
-  - "Must not exceed 1500 characters — LinkedIn truncates at ~1300"
-  - "Every visual must be clean and professional (McKinsey presentation quality)"
-  - "Every visual must include data source attribution in small text"
+  - "Contains at least one original insight or reframing"
+  - "Explains WHY something happens, not just WHAT"
+  - "Readable in one pass"
+  - "Free of fluff or filler"
+  - "Provides practical value or shift in thinking"
 
-# Banned phrases — content validator checks for these
+# =========================================================
+# STRUCTURAL REQUIREMENTS
+# =========================================================
+must_include:
+  - "A sourceable data point OR a grounded pattern/insight"
+  - "At least one content objective fulfilled"
+  - "Mobile-friendly formatting"
+  - "Attribution for any data used"
+
+# =========================================================
+# LENGTH GUIDELINES
+# =========================================================
+length_guidelines: |
+  Target: 800-1200 characters
+
+  Use 1200-1500 only for:
+    - Framework posts
+    - Benchmark posts
+
+  Avoid padding to reach limits.
+
+# =========================================================
+# BANNED PHRASES
+# =========================================================
 banned_phrases:
-  # AI tells
   - "moreover"
   - "furthermore"
-  - "it's worth noting"
+  - "it is worth noting"
   - "needless to say"
   - "at the end of the day"
   - "in today's landscape"
   - "in today's fast-paced"
-  - "in today's world"
-  - "it is important to note"
-  - "I wanted to share"
-  - "I'm excited to share"
-  - "excited to announce"
-  - "I'm thrilled"
-  - "thrilled to share"
-  # LinkedIn cliches
+  - "it is clear that"
+  - "one thing is certain"
+  - "the reality is"
+  - "the truth is"
+  - "here is the thing"
+  - "let me be clear"
+  - "make no mistake"
+  - "the bottom line is"
+  - "at its core"
+  - "when it comes to"
+  - "put simply"
+  - "the future belongs to"
+  - "now more than ever"
   - "thought leader"
-  - "thought leadership"
   - "game-changer"
-  - "game changing"
   - "disrupting"
-  - "disruptive"
-  - "innovative"
   - "cutting-edge"
-  - "state-of-the-art"
   - "best-in-class"
   - "revolutionary"
   - "synergy"
   - "leverage"
   - "paradigm"
-  - "circle back"
   - "move the needle"
   - "low-hanging fruit"
-  - "boil the ocean"
   - "deep dive"
-  # From outreach (also banned in posts)
-  - "I hope this finds you well"
-  - "just wanted to reach out"
-  - "touching base"
-  - "leading provider"
-  - "we help companies like"
-  - "our platform offers"
-  - "our solution provides"
+  - "unlock value"
+  - "north star"
+  - "holistic"
+  - "scalable"
+  - "robust"
+  - "seamless"
+  - "excited to share"
+  - "thrilled to share"
+  - "proud to announce"
+  - "we just launched"
+  - "our platform"
+  - "our solution"
 
-# What to never include in thought leadership posts
+# =========================================================
+# NEVER INCLUDE
+# =========================================================
 never_include:
-  - "Any mention of Digitillis, the platform, or any product"
-  - "Any mention of AI tools, AI platforms, or specific vendors"
-  - "Hashtags of any kind (reduces LinkedIn organic reach in 2026)"
-  - "Stock imagery or clip art references"
-  - "Self-promotional language ('we just launched', 'proud to announce')"
-  - "Multiple exclamation points"
-  - "Em dashes or en dashes"
-  - "Jargon without explanation (if you use it, define it)"
-  - "Unverified or made-up statistics"
-  - "Urgency language ('act now', 'don't miss this')"
+  - "Product promotion"
+  - "Specific vendor mentions unless analytically relevant"
+  - "Hashtags"
+  - "Em dashes"
+  - "Unverified statistics"
+  - "Stock phrasing or filler"
+  - "Urgency language"
 
-# What must be included in thought leadership posts
-must_include:
-  - "A specific, sourceable data point or benchmark"
-  - "Attribution for data sources (either inline or in first comment)"
-  - "A genuine question at the end to invite comments"
-  - "Mobile-friendly line breaks throughout"
+# =========================================================
+# TOPIC VALIDATION
+# =========================================================
+topic_validation:
+  - "Every data point must be validated before use"
+  - "If no source exists, convert to pattern-based insight"
+  - "Avoid repeating similar angles across posts"
 
-# Visual style guide
-visual_style:
-  colors:
-    primary: "#1e293b"    # dark navy
-    accent: "#3b82f6"     # Digitillis blue
-    background: "#ffffff" # always white or light gray
-    secondary_bg: "#f8fafc"
-  fonts:
-    primary: "Inter"
-    fallback: "system-ui, sans-serif"
-    code: "JetBrains Mono, monospace"
-  dimensions:
-    stat_card: "1200x627"
-    square: "1080x1080"
-    carousel_slide: "1200x627"
-  rules:
-    - "Maximum 2 colors (navy + accent blue) — never more"
-    - "White or light gray backgrounds — never dark backgrounds for data visuals"
-    - "Clean, minimal, professional — no gradients, no drop shadows on data"
-    - "Data always sourced: small attribution text in bottom-left or bottom-right"
-    - "No Digitillis logo or company branding on visuals — author name only"
-    - "No stock photos or clip art"
-  visual_types:
-    - name: "stat_card"
-      description: "Single large number + context line + source. Clean white card."
-    - name: "two_by_two_matrix"
-      description: "Named quadrants, thin grid lines, dot showing where most companies are."
-    - name: "maturity_model"
-      description: "4-5 horizontal levels, labeled, with indicator of typical position."
-    - name: "bar_chart"
-      description: "Max 5 bars. Clear labels. No 3D effects. Source noted."
-    - name: "carousel"
-      description: "3-5 slides, consistent template, title + insight + visual per slide."
+# =========================================================
+# FINAL CHECKS
+# =========================================================
+final_checks:
+  - "Would 100 others write this? If yes, rewrite."
+  - "Is there a clear insight or takeaway?"
+  - "Does this strengthen authority?"
+  - "Would a senior operator trust this?"
 
-# 4-week rotating content calendar
-content_calendar:
-  week_1:
-    - day: "Monday"
-      format: "data_insight"
-      pillar: "food_safety_compliance"
-      topic: "FDA 483 observation patterns — what actually triggers citations"
-    - day: "Tuesday"
-      format: "framework"
-      pillar: "predictive_maintenance"
-      topic: "Maintenance Maturity Matrix — where does your plant fall?"
-    - day: "Thursday"
-      format: "contrarian"
-      pillar: "predictive_maintenance"
-      topic: "PdM fails because of work orders, not algorithms"
-    - day: "Friday"
-      format: "data_insight"
-      pillar: "food_safety_compliance"
-      topic: "FSMA compliance costs by sub-sector (meat vs. dairy vs. bakery)"
+# =========================================================
+# CONTENT CALENDAR
+# =========================================================
+content_calendar: |
+  Default cadence: 3x per week (Tuesday / Thursday / Saturday)
 
-  week_2:
-    - day: "Monday"
-      format: "data_insight"
-      pillar: "predictive_maintenance"
-      topic: "OEE benchmarks — what 'good' looks like by industry"
-    - day: "Tuesday"
-      format: "framework"
-      pillar: "food_safety_compliance"
-      topic: "Food Safety Automation Maturity Model (4 levels)"
-    - day: "Thursday"
-      format: "contrarian"
-      pillar: "ops_excellence"
-      topic: "Industry 4.0 is a vendor narrative, not a strategy"
-    - day: "Friday"
-      format: "data_insight"
-      pillar: "predictive_maintenance"
-      topic: "The real cost of one unplanned stop (calculation template)"
+  Tuesday: Core manufacturing intelligence insight (highest B2B engagement day)
+  Thursday: Manufacturing strategy or operations (alternating weeks)
+  Saturday: Food safety or deep manufacturing piece (less competition, longer read time)
 
-  week_3:
-    - day: "Monday"
-      format: "framework"
-      pillar: "predictive_maintenance"
-      topic: "Sensor ROI Framework — which measurements predict failure"
-    - day: "Tuesday"
-      format: "data_insight"
-      pillar: "food_safety_compliance"
-      topic: "Recall costs by category — why prevention beats response"
-    - day: "Thursday"
-      format: "contrarian"
-      pillar: "food_safety_compliance"
-      topic: "Your HACCP plan is a compliance artifact, not a safety tool"
-    - day: "Friday"
-      format: "data_insight"
-      pillar: "leadership_strategy"
-      topic: "Digital transformation spend vs. ROI at mid-market manufacturers"
+  Calendar is a guideline, not a constraint.
+  Prioritize relevance and quality over schedule.
+  Override when a timely industry event demands it.
 
-  week_4:
-    - day: "Monday"
-      format: "benchmark"
-      pillar: "food_safety_compliance"
-      topic: "We analyzed 200 FDA warning letters — here's what we found"
-    - day: "Tuesday"
-      format: "data_insight"
-      pillar: "predictive_maintenance"
-      topic: "The retiring expert problem — quantifying tribal knowledge loss"
-    - day: "Thursday"
-      format: "contrarian"
-      pillar: "ops_excellence"
-      topic: "Start with your work order process, not your sensor strategy"
-    - day: "Friday"
-      format: "framework"
-      pillar: "leadership_strategy"
-      topic: "The 90-Day Technology Pilot Evaluation Framework"
+# =============================================================================
+#
+#  OPERATIONAL REFERENCE
+#  Detailed definitions used by the content generation agent.
+#
+# =============================================================================
 
-# Topics library — 50 pre-loaded topics organized by pillar
+# =========================================================
+# CONTENT PILLARS (detailed)
+# 4 pillars: 3 manufacturing (primary) + 1 F&B (secondary)
+# =========================================================
+content_pillars:
+  - name: "manufacturing_intelligence"
+    display_name: "Manufacturing Intelligence & AI"
+    weight: "primary"
+    schedule: "Tuesday (every week)"
+    target_reader: "VP Operations, VP Engineering, Plant Manager, COO at discrete manufacturers"
+    description: |
+      How AI and data are reshaping manufacturing operations.
+      Not Industry 4.0 hype. Not vendor narratives. The real patterns emerging
+      from plants that are actually using intelligence to make better decisions.
+    data_sources:
+      - "Plant Engineering annual surveys"
+      - "ARC Advisory Group research"
+      - "McKinsey manufacturing operations reports"
+      - "SMRP benchmarking data"
+      - "Deloitte manufacturing competitiveness studies"
+      - "Industry Week Best Plants data"
+
+  - name: "manufacturing_strategy"
+    display_name: "Manufacturing Strategy & Leadership"
+    weight: "primary"
+    schedule: "Thursday (alternating weeks with manufacturing_operations)"
+    target_reader: "COO, VP Operations, Plant Manager, Manufacturing VP, Board members"
+    description: |
+      Strategic and organizational dimensions of manufacturing operations.
+      Capital allocation, technology evaluation, organizational design, workforce
+      planning. Written for the executive making investment decisions with
+      incomplete information.
+    data_sources:
+      - "Deloitte Global Manufacturing Competitiveness Index"
+      - "NAM/Manufacturers Alliance surveys"
+      - "Industry Week CEO surveys"
+      - "Gartner MES/MOM market analysis"
+      - "US Census Annual Survey of Manufacturers"
+
+  - name: "manufacturing_operations"
+    display_name: "Operations Excellence & Performance"
+    weight: "primary"
+    schedule: "Thursday (alternating weeks with manufacturing_strategy)"
+    target_reader: "VP Operations, Reliability Manager, Continuous Improvement, Quality Director"
+    description: |
+      Operational patterns, benchmarks, and frameworks for improving plant
+      performance. Grounded in real data. Focused on what actually moves
+      the needle vs. what consultants say should move the needle.
+    data_sources:
+      - "SMRP Best Practices benchmarks"
+      - "Reliable Plant survey data"
+      - "ASQ quality benchmarks"
+      - "ISA standards and implementation data"
+      - "MESA International MES benchmarks"
+
+  - name: "food_safety_compliance"
+    display_name: "Food Safety & Compliance"
+    weight: "secondary"
+    schedule: "Saturday (every week)"
+    target_reader: "VP Quality, VP Food Safety, Director QA at food manufacturers"
+    description: |
+      FSMA compliance, HACCP effectiveness, audit readiness, and the operational
+      reality of food safety programs. Written for the person who owns food safety
+      at a production facility, not for consultants or auditors.
+    data_sources:
+      - "FDA warning letter database and 483 observations"
+      - "FSIS enforcement reports"
+      - "SQF audit statistics and certification data"
+      - "GFSI benchmarking data"
+      - "CDC foodborne illness surveillance"
+
+# =========================================================
+# FORMAT TEMPLATES (detailed)
+# =========================================================
+format_templates:
+  data_insight:
+    display_name: "Data Insight"
+    structure: |
+      1. Hook: One specific stat or bold claim (first line)
+      2. Context: 1-2 sentences on what the number means in practice
+      3. Expansion: 3-5 short paragraphs or bullets developing the insight
+      4. Implication: What this means for the reader's operation
+      5. Close: Question or strong statement
+    char_limit: 1300
+    rules:
+      - "Lead with the exact number. Never bury the stat."
+      - "Source your data in the post or first comment"
+      - "Mobile-friendly: short lines, white space between sections"
+
+  framework:
+    display_name: "Framework / Model"
+    structure: |
+      1. Hook: Name the framework in the first line
+      2. Setup: Why this framework matters (1-2 sentences)
+      3. Body: Text-based 2x2, maturity model, or decision tree
+      4. Interpretation: Where most companies fall and why
+      5. Close: "Where does your operation fall?" or strong statement
+    char_limit: 1500
+    rules:
+      - "Give the framework a memorable name. Named frameworks get shared."
+      - "Use text layout (renders well on mobile)"
+      - "Mark where 'most companies' land to create identification"
+      - "No more than 4 quadrants or 5 maturity levels"
+
+  contrarian:
+    display_name: "Contrarian Take"
+    structure: |
+      1. Hook: State the conventional wisdom being challenged
+      2. Flip: Why it is wrong or incomplete
+      3. Evidence: 2-4 data points or examples
+      4. Better frame: The correct way to think about this
+      5. Close: "Agree or disagree?" or strong closing
+    char_limit: 1000
+    rules:
+      - "Position must be defensible, not just provocative"
+      - "Pure text. No visual needed."
+      - "Be specific about who is wrong and why"
+      - "Short first line. The scroll-stop is the disagreement."
+
+  benchmark:
+    display_name: "Benchmark / Survey"
+    structure: |
+      1. Hook: "We analyzed X" or "Here is what the data shows"
+      2. Findings: 4-6 numbered findings with specific numbers
+      3. Surprise: Call out the most counterintuitive result
+      4. Implications: What this means for manufacturers
+      5. CTA: Invite DMs for the full analysis
+    char_limit: 1500
+    rules:
+      - "Must cite the source data. No fabricated benchmarks."
+      - "Call out one surprising finding explicitly"
+      - "Use only when credible data is available (not scheduled weekly)"
+
+# =========================================================
+# TOPICS LIBRARY
+# Used by the auto-calendar generator.
+# Every key_data must be validated before use in a post.
+# =========================================================
 topics_library:
+  manufacturing_intelligence:
+    - id: "mi_01"
+      title: "Why 85% of predictive maintenance pilots fail to scale"
+      key_data: "Top reasons: alert fatigue, no CMMS integration, lack of technician trust"
+      format_hint: "contrarian"
+    - id: "mi_02"
+      title: "The maintenance maturity spectrum: where most plants actually sit"
+      key_data: "40% reactive, 45% preventive, 12% predictive, 3% prescriptive (Plant Engineering survey)"
+      format_hint: "framework"
+    - id: "mi_03"
+      title: "OEE benchmarks by sub-sector: what good looks like"
+      key_data: "World-class 85%. Average discrete 65%. Bottom quartile below 50%."
+      format_hint: "data_insight"
+    - id: "mi_04"
+      title: "The real cost of one unplanned stop"
+      key_data: "Ranges from $80K/hour general manufacturing to $260K/hour automotive (ARC Advisory)"
+      format_hint: "data_insight"
+    - id: "mi_05"
+      title: "Sensor ROI: which measurements predict failure vs. noise"
+      key_data: "Vibration predicts 70% of mechanical failures; temperature alone catches 30%"
+      format_hint: "framework"
+    - id: "mi_06"
+      title: "CMMS utilization: expensive spreadsheets in 60% of plants"
+      key_data: "60% of implementations have less than 40% data completeness after 2 years"
+      format_hint: "contrarian"
+    - id: "mi_07"
+      title: "The retiring expert problem"
+      key_data: "25% of skilled maintenance workforce retires by 2028 (Bureau of Labor Statistics)"
+      format_hint: "data_insight"
+    - id: "mi_08"
+      title: "Why MTTR reduction beats MTBF improvement"
+      key_data: "Reducing MTTR by 50% has more uptime impact than doubling MTBF in most operations"
+      format_hint: "contrarian"
+    - id: "mi_09"
+      title: "Work order completion rate: the metric nobody tracks"
+      key_data: "Plants with >90% WO completion have 40% lower unplanned downtime"
+      format_hint: "data_insight"
+    - id: "mi_10"
+      title: "Reactive maintenance costs 3-10x more"
+      key_data: "SMRP benchmarking data on reactive vs. planned cost ratios"
+      format_hint: "data_insight"
+    - id: "mi_11"
+      title: "Bearing failure: what vibration data actually tells you"
+      key_data: "80% of rotating equipment failures start as bearing issues; 4-12 week detection window"
+      format_hint: "data_insight"
+    - id: "mi_12"
+      title: "Energy consumption as a maintenance signal"
+      key_data: "Motor current anomalies precede mechanical failure by 7-21 days"
+      format_hint: "data_insight"
+    - id: "mi_13"
+      title: "Spare parts: the hidden $2-8M capital trap"
+      key_data: "Average manufacturer carries 35% excess MRO inventory"
+      format_hint: "data_insight"
+    - id: "mi_14"
+      title: "The maintenance-production scheduling conflict"
+      key_data: "Plants sharing maintenance windows with production see 15% higher OEE"
+      format_hint: "contrarian"
+
+  manufacturing_strategy:
+    - id: "ms_01"
+      title: "The capital allocation framework for manufacturing technology"
+      key_data: "How to evaluate competing investments on a common ROI basis"
+      format_hint: "framework"
+    - id: "ms_02"
+      title: "How to run a 90-day technology pilot that produces a decision"
+      key_data: "The 5 metrics every pilot must track from day one"
+      format_hint: "framework"
+    - id: "ms_03"
+      title: "Bridging IT and OT: three organizational models"
+      key_data: "Centralized, federated, and embedded models with trade-offs"
+      format_hint: "framework"
+    - id: "ms_04"
+      title: "Board reporting for operations: the 6 metrics that matter"
+      key_data: "The metrics board members and CFOs actually use for decisions"
+      format_hint: "data_insight"
+    - id: "ms_05"
+      title: "Turning operational risk into CFO language"
+      key_data: "Expected value calculation for downtime, quality failures, compliance gaps"
+      format_hint: "framework"
+    - id: "ms_06"
+      title: "Succession planning for tribal knowledge"
+      key_data: "25% of maintenance experts retire by 2028 (BLS)"
+      format_hint: "data_insight"
+    - id: "ms_07"
+      title: "The 'good enough' trap: why plants settle for 65% OEE"
+      key_data: "Incentive structures that prevent improvement"
+      format_hint: "contrarian"
+    - id: "ms_08"
+      title: "Total cost of ownership for manufacturing software"
+      key_data: "Integration, training, maintenance add 40-60% to license price"
+      format_hint: "data_insight"
+    - id: "ms_09"
+      title: "The plant manager's impossible job"
+      key_data: "Quality, throughput, safety, cost: competing objectives under resource constraints"
+      format_hint: "contrarian"
+    - id: "ms_10"
+      title: "Building a data culture on the plant floor"
+      key_data: "Top barrier is operator trust, not technology"
+      format_hint: "contrarian"
+    - id: "ms_11"
+      title: "Pilot purgatory: why 70% of manufacturing tech pilots never scale"
+      key_data: "No executive sponsor, undefined success metrics, integration complexity"
+      format_hint: "contrarian"
+    - id: "ms_12"
+      title: "The data infrastructure gap: sensors installed, insights missing"
+      key_data: "80% have OT sensors; fewer than 20% act on the data"
+      format_hint: "data_insight"
+    - id: "ms_13"
+      title: "Digital transformation ROI: 35% never reach breakeven"
+      key_data: "Average ROI timeline 3.2 years (McKinsey)"
+      format_hint: "data_insight"
+
+  manufacturing_operations:
+    - id: "mo_01"
+      title: "Quality-first vs. throughput-first"
+      key_data: "Plants optimizing quality first achieve 12% higher throughput over 3 years"
+      format_hint: "contrarian"
+    - id: "mo_02"
+      title: "ISA-95: why skipping it causes integration failures"
+      key_data: "ISA-95 levels and why the model matters for data architecture"
+      format_hint: "framework"
+    - id: "mo_03"
+      title: "OT cybersecurity: the risk nobody budgets for"
+      key_data: "OT security budget is 3% of IT security budget despite equal risk exposure"
+      format_hint: "data_insight"
+    - id: "mo_04"
+      title: "The condition monitoring stack"
+      key_data: "Vibration, temperature, current, acoustic: cost vs. predictive value"
+      format_hint: "framework"
+    - id: "mo_05"
+      title: "Why continuous improvement programs plateau after 18 months"
+      key_data: "Organizational dynamics that cause CI fatigue"
+      format_hint: "contrarian"
+    - id: "mo_06"
+      title: "The real bottleneck is not the machine you think"
+      key_data: "Theory of Constraints applied to manufacturing data"
+      format_hint: "contrarian"
+    - id: "mo_07"
+      title: "Shift handoff: the 15 minutes that determine your next 8 hours"
+      key_data: "Impact of structured vs. informal handoffs on OEE and safety"
+      format_hint: "data_insight"
+    - id: "mo_08"
+      title: "Alarm rationalization: why 80% of alerts are noise"
+      key_data: "ISA-18.2 benchmarks vs. typical plant performance"
+      format_hint: "contrarian"
+    - id: "mo_09"
+      title: "The manufacturing data lake myth"
+      key_data: "70% of data lake projects produce no operational decisions"
+      format_hint: "contrarian"
+
   food_safety_compliance:
     - id: "fb_01"
-      title: "FDA 483 observation patterns — what actually triggers citations"
-      key_data: "67% of FDA 483 observations cite inadequate monitoring of critical control points"
+      title: "FDA 483 patterns: what actually triggers citations"
+      key_data: "67% cite inadequate monitoring of critical control points (FDA CFSAN)"
       format_hint: "data_insight"
     - id: "fb_02"
-      title: "FSMA compliance cost benchmarks by food category"
+      title: "FSMA compliance costs by food category"
       key_data: "Meat processors spend 23% more on compliance than bakeries"
       format_hint: "data_insight"
     - id: "fb_03"
-      title: "The CCP documentation gap: paper vs. digital audit trail"
-      key_data: "62% of FDA citations are documentation problems, not actual food safety failures"
+      title: "The CCP documentation gap: paper vs. digital"
+      key_data: "62% of FDA citations are documentation problems, not safety failures"
       format_hint: "data_insight"
     - id: "fb_04"
-      title: "Temperature excursion response: the 4-hour rule nobody follows"
-      key_data: "Average response time to a cold chain excursion at paper-based facilities"
+      title: "Temperature excursion: the 4-hour rule nobody follows"
+      key_data: "Average response time at paper-based facilities"
       format_hint: "contrarian"
     - id: "fb_05"
-      title: "Allergen control maturity model (4 levels)"
-      key_data: "Big-9 allergen controls, VITAL 2.0 compliance rates by facility size"
+      title: "Allergen control maturity model"
+      key_data: "Big-9 allergen controls, VITAL 2.0 compliance by facility size"
       format_hint: "framework"
     - id: "fb_06"
-      title: "SQF vs. BRC vs. FSSC 22000 — which standard actually improves safety"
-      key_data: "Certification correlation with actual FDA citation rates"
-      format_hint: "contrarian"
-    - id: "fb_07"
-      title: "Recall cost anatomy: direct costs vs. brand damage vs. legal"
-      key_data: "Average recall costs $10M direct + $30M brand damage for mid-market food manufacturers"
+      title: "Recall cost anatomy"
+      key_data: "$10M direct + $30M brand damage on average"
       format_hint: "data_insight"
-    - id: "fb_08"
-      title: "HACCP plan vs. reality: why most plans don't survive contact with the floor"
-      key_data: "Gap between written HACCP plans and actual CCP monitoring compliance"
+    - id: "fb_07"
+      title: "HACCP plan vs. reality"
+      key_data: "Gap between written plans and actual CCP monitoring compliance"
       format_hint: "contrarian"
+    - id: "fb_08"
+      title: "Why 80% of CAPAs repeat within 12 months"
+      key_data: "Corrective action recurrence rates from SQF audit data"
+      format_hint: "data_insight"
     - id: "fb_09"
-      title: "The food safety VP's dilemma: compliance spend vs. operational budget"
-      key_data: "Food safety budgets as % of revenue by company size"
+      title: "Traceability: FDA expects 4 hours, average takes 18"
+      key_data: "Mock recall timing benchmarks by facility size"
       format_hint: "data_insight"
     - id: "fb_10"
-      title: "Corrective action effectiveness: why 80% of CAPAs repeat within 12 months"
-      key_data: "CAPA recurrence rates from SQF audit data"
-      format_hint: "data_insight"
-    - id: "fb_11"
-      title: "Foreign material detection: technology maturity by sub-sector"
-      key_data: "X-ray vs. metal detection adoption rates by food category"
-      format_hint: "framework"
-    - id: "fb_12"
-      title: "Supplier verification under FSMA: the weakest link in most programs"
-      key_data: "% of FDA citations involving supplier verification failures"
-      format_hint: "data_insight"
-    - id: "fb_13"
-      title: "Sanitation validation: ATP testing benchmarks by facility type"
-      key_data: "ATP pass/fail rates by facility type and sanitation frequency"
-      format_hint: "benchmark"
-    - id: "fb_14"
-      title: "Traceability readiness: how fast can you do a mock recall?"
-      key_data: "FDA expects lot traceability within 4 hours; average mid-market takes 18 hours"
-      format_hint: "data_insight"
-    - id: "fb_15"
-      title: "The next FDA enforcement wave: what 2026-2027 looks like"
-      key_data: "FDA FSMA enforcement priorities and inspection frequency trends"
-      format_hint: "data_insight"
+      title: "Your HACCP plan is a compliance artifact, not a safety tool"
+      key_data: "How HACCP became a documentation exercise"
+      format_hint: "contrarian"
 
-  predictive_maintenance:
-    - id: "pm_01"
-      title: "OEE benchmarks by manufacturing sub-sector (with data)"
-      key_data: "World-class OEE is 85%. Average discrete manufacturer runs at 65%. Bottom quartile below 50%."
-      format_hint: "data_insight"
-    - id: "pm_02"
-      title: "The real cost of one unplanned stop (calculation framework)"
-      key_data: "Average unplanned downtime costs $260K/hour in automotive; $80K/hour in general manufacturing"
-      format_hint: "data_insight"
-    - id: "pm_03"
-      title: "Maintenance maturity matrix: where does your plant fall?"
-      key_data: "40% of plants are reactive, 45% preventive, 12% predictive, 3% prescriptive"
-      format_hint: "framework"
-    - id: "pm_04"
-      title: "Sensor ROI framework: which measurements actually predict failure"
-      key_data: "Vibration predicts 70% of mechanical failures; temperature alone catches only 30%"
-      format_hint: "framework"
-    - id: "pm_05"
-      title: "Why 85% of PdM pilots don't make it past year one"
-      key_data: "Top reasons PdM programs fail: alert fatigue, no CMMS integration, lack of technician trust"
-      format_hint: "contrarian"
-    - id: "pm_06"
-      title: "MTBF vs. MTTR: which metric actually drives availability"
-      key_data: "Reducing MTTR by 50% has more impact on uptime than doubling MTBF in most operations"
-      format_hint: "contrarian"
-    - id: "pm_07"
-      title: "The condition monitoring stack: vibration, temperature, current, acoustic"
-      key_data: "Cost vs. predictive value comparison for each sensor type"
-      format_hint: "framework"
-    - id: "pm_08"
-      title: "Spare parts optimization: the hidden cost of 'just in case' inventory"
-      key_data: "Average manufacturer carries 35% excess MRO inventory; ties up $2-8M in capital"
-      format_hint: "data_insight"
-    - id: "pm_09"
-      title: "Work order completion rate: the metric nobody tracks but should"
-      key_data: "Plants with >90% WO completion rate have 40% lower unplanned downtime"
-      format_hint: "data_insight"
-    - id: "pm_10"
-      title: "The retiring expert problem: quantifying tribal knowledge loss"
-      key_data: "25% of skilled maintenance workforce retires by 2028; average expert carries 20+ years of undocumented knowledge"
-      format_hint: "data_insight"
-    - id: "pm_11"
-      title: "Reactive maintenance economics: why run-to-failure costs 3-10x more"
-      key_data: "Reactive vs. planned maintenance cost ratios from SMRP benchmarking data"
-      format_hint: "data_insight"
-    - id: "pm_12"
-      title: "Bearing failure patterns: what vibration signatures actually tell you"
-      key_data: "80% of rotating equipment failures start as bearing issues; early detection window is 4-12 weeks"
-      format_hint: "data_insight"
-    - id: "pm_13"
-      title: "The maintenance-production conflict: scheduling downtime without losing throughput"
-      key_data: "Plants that share maintenance windows with production scheduling see 15% higher OEE"
-      format_hint: "contrarian"
-    - id: "pm_14"
-      title: "CMMS utilization reality: why your maintenance software is an expensive spreadsheet"
-      key_data: "60% of CMMS implementations have less than 40% data completeness after 2 years"
-      format_hint: "contrarian"
-    - id: "pm_15"
-      title: "Energy-as-a-maintenance-signal: power consumption patterns that predict failure"
-      key_data: "Motor current anomalies precede mechanical failure by 7-21 days on average"
-      format_hint: "data_insight"
-
-  ops_excellence:
-    - id: "ops_01"
-      title: "Industry 4.0 maturity: where mid-market manufacturing actually is (vs. the hype)"
-      key_data: "Only 16% of mid-market manufacturers have moved beyond pilot stage on Industry 4.0 initiatives"
-      format_hint: "data_insight"
-    - id: "ops_02"
-      title: "The data infrastructure gap: sensors installed, insights missing"
-      key_data: "80% of manufacturers have OT sensors; fewer than 20% act on the data in real time"
-      format_hint: "data_insight"
-    - id: "ops_03"
-      title: "Digital transformation ROI reality check for mid-market manufacturers"
-      key_data: "Average ROI timeline for manufacturing digitization is 3.2 years; 35% never reach breakeven"
-      format_hint: "data_insight"
-    - id: "ops_04"
-      title: "How to evaluate manufacturing AI vendors (10-question framework)"
-      key_data: "Questions to ask AI vendors without naming any specific companies"
-      format_hint: "framework"
-    - id: "ops_05"
-      title: "Pilot purgatory: why 70% of manufacturing tech pilots never scale"
-      key_data: "Top reasons pilots fail to scale: no executive sponsor, success metrics undefined, integration complexity"
-      format_hint: "contrarian"
-    - id: "ops_06"
-      title: "The ISA-95 hierarchy and why it matters for your data strategy"
-      key_data: "ISA-95 levels and why skipping the model causes integration failures later"
-      format_hint: "framework"
-    - id: "ops_07"
-      title: "Quality vs. throughput: the operating philosophy that defines your culture"
-      key_data: "Plants that optimize for quality first achieve 12% higher throughput over 3 years"
-      format_hint: "contrarian"
-    - id: "ops_08"
-      title: "The manufacturing data lake myth: why most fail"
-      key_data: "70% of manufacturing data lake projects are abandoned or produce no operational decisions"
-      format_hint: "contrarian"
-    - id: "ops_09"
-      title: "Edge vs. cloud for manufacturing: a decision framework"
-      key_data: "Latency, bandwidth, and cost tradeoffs across edge/hybrid/cloud architectures"
-      format_hint: "framework"
-    - id: "ops_10"
-      title: "OT cybersecurity: the risk nobody budgets for"
-      key_data: "Average OT security budget is 3% of IT security budget despite equal risk exposure"
-      format_hint: "data_insight"
-
-  leadership_strategy:
-    - id: "lead_01"
-      title: "Building a data-driven culture on the plant floor (it's not about the data)"
-      key_data: "The top barrier to manufacturing data adoption is not technology — it's operator trust"
-      format_hint: "contrarian"
-    - id: "lead_02"
-      title: "The capital allocation framework for manufacturing technology"
-      key_data: "How to evaluate competing manufacturing technology investments on a common ROI basis"
-      format_hint: "framework"
-    - id: "lead_03"
-      title: "How to run a 90-day technology pilot (evaluation scorecard)"
-      key_data: "The 5 metrics every manufacturing tech pilot must track from day one"
-      format_hint: "framework"
-    - id: "lead_04"
-      title: "Bridging IT and OT: 3 organizational models that work"
-      key_data: "Centralized, federated, and embedded IT/OT models with trade-off analysis"
-      format_hint: "framework"
-    - id: "lead_05"
-      title: "Board reporting for manufacturing operations: what metrics matter"
-      key_data: "The 6 operational metrics that board members and CFOs actually care about"
-      format_hint: "data_insight"
-    - id: "lead_06"
-      title: "Risk quantification: turning operational risk into financial language the CFO understands"
-      key_data: "How to calculate expected value of downtime, quality failures, and compliance gaps"
-      format_hint: "framework"
-    - id: "lead_07"
-      title: "Succession planning for tribal knowledge (before it's too late)"
-      key_data: "25% of maintenance experts retire by 2028; most companies have no knowledge capture plan"
-      format_hint: "data_insight"
-    - id: "lead_08"
-      title: "The 'good enough' trap: why manufacturers settle for 65% OEE"
-      key_data: "The organizational and incentive structures that keep plants from pursuing OEE improvement"
-      format_hint: "contrarian"
-    - id: "lead_09"
-      title: "Total Cost of Ownership for manufacturing software: beyond the license fee"
-      key_data: "Integration, training, and maintenance costs typically add 40-60% to the license price"
-      format_hint: "data_insight"
-    - id: "lead_10"
-      title: "The plant manager's impossible job: quality, throughput, safety, cost — pick three"
-      key_data: "Survey data on how plant managers prioritize competing objectives under resource constraints"
-      format_hint: "contrarian"
+# =========================================================
+# VISUAL STYLE (for accompanying images)
+# =========================================================
+visual_style:
+  colors:
+    primary: "#1e293b"
+    accent: "#3b82f6"
+    background: "#ffffff"
+  rules:
+    - "Maximum 2 colors"
+    - "White or light gray backgrounds only"
+    - "No company branding on visuals"
+    - "Data source attribution in small text"
+    - "No stock photos"

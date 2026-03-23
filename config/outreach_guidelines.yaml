@@ -53,6 +53,13 @@ voice_and_tone: |
   - Write like you'd text a colleague you respect but aren't close friends with.
   - If a sentence sounds like it could appear in a LinkedIn post, delete it.
 
+product_mention_rule: >
+  Mention what you are building in ONE sentence, framed as context for your expertise.
+  Never lead with it. Never list features. The signature contains the company name
+  and URL. Let the prospect discover the product on their own.
+  Example: "I have been building predictive models specifically for glass manufacturing."
+  NOT: "Digitillis is an AI platform with 32 agents that predicts failures..."
+
 # Email structure — every email must follow this order
 email_structure: |
   1. Opening: One line referencing something specific about THEIR company (not about Digitillis)
@@ -60,6 +67,19 @@ email_structure: |
   3. Value: One concrete, specific claim about what Digitillis does (with a number if possible)
   4. CTA: Single low-friction ask (15-min call, not a demo or commitment)
   5. Sign-off: Always use the exact signature block from the sender config
+
+first_email_rules:
+  - "ZERO links in the email body. No website URLs, no calendar links, no Loom videos."
+  - "The ONLY URL allowed is in the signature block (www.digitillis.com)."
+  - "Links in first cold email trigger spam filters. Save links for steps 3+."
+  - "No images or attachments in any cold email."
+
+cta_rules:
+  - "Steps 1-2: NEVER ask for a meeting. Offer value instead."
+  - "Good early CTAs: 'Happy to share the framework if useful.' or 'I can send the benchmark data if relevant.'"
+  - "Bad early CTAs: 'Would you be open to a call?' or 'Can I get 15 minutes?'"
+  - "Steps 3-4: Can suggest a conversation, but frame as optional. 'Would a 15-minute walkthrough be worth your time?' is acceptable only in step 3+."
+  - "The prospect should never feel pressured to commit."
 
 # What to include in every email
 must_include:

@@ -163,19 +163,19 @@ function HowItWorksGuide() {
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-5">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
             How ProspectIQ Works
           </h3>
-          <p className="mt-0.5 text-xs text-gray-500">
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
             Your AI-powered prospecting pipeline in 7 steps
           </p>
         </div>
         <button
           onClick={dismiss}
-          className="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="rounded-md px-2 py-1 text-xs text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300"
         >
           Dismiss
         </button>
@@ -206,8 +206,8 @@ function HowItWorksGuide() {
                 </p>
               </div>
               {/* Hover tooltip with details */}
-              <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-52 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-                <p className="text-xs text-gray-700 leading-relaxed">{step.details}</p>
+              <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-52 -translate-x-1/2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">{step.details}</p>
                 <p className="mt-2 text-[10px] font-medium text-digitillis-accent">{step.action}</p>
               </div>
             </div>
@@ -222,15 +222,15 @@ function HowItWorksGuide() {
       </div>
 
       {/* Quick links */}
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3">
-        <span className="text-[10px] font-medium uppercase tracking-widest text-gray-400">Quick start:</span>
-        <Link href="/actions" className="rounded bg-gray-900 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-gray-800">
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-3">
+        <span className="text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">Quick start:</span>
+        <Link href="/actions" className="rounded bg-gray-900 dark:bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
           Run Pipeline →
         </Link>
-        <Link href="/settings" className="rounded bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
+        <Link href="/settings" className="rounded bg-gray-100 dark:bg-gray-800 px-2.5 py-1 text-[10px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">
           Configure ICP
         </Link>
-        <Link href="/approvals" className="rounded bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200">
+        <Link href="/approvals" className="rounded bg-gray-100 dark:bg-gray-800 px-2.5 py-1 text-[10px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">
           Review Drafts
         </Link>
       </div>
@@ -430,8 +430,8 @@ export default function PipelinePage() {
       {/* Page header with approval badge */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pipeline</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Pipeline</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Overview of your prospect pipeline
           </p>
         </div>
@@ -439,7 +439,7 @@ export default function PipelinePage() {
           {approvalCount > 0 && (
             <Link
               href="/approvals"
-              className="flex items-center gap-2 rounded-md bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
+              className="flex items-center gap-2 rounded-md bg-gray-100 dark:bg-gray-800 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
             >
               <AlertCircle className="h-4 w-4" />
               {approvalCount} Pending Approval{approvalCount !== 1 ? "s" : ""}
@@ -448,7 +448,7 @@ export default function PipelinePage() {
           <button
             onClick={fetchData}
             disabled={loading}
-            className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
           >
             <RefreshCw
               className={cn("h-4 w-4", loading && "animate-spin")}
@@ -495,7 +495,7 @@ export default function PipelinePage() {
 
       {/* Error state */}
       {error && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">
           {error}
         </div>
       )}
@@ -544,12 +544,12 @@ function MetricCard({
   const inner = (
     <>
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-500">{label}</p>
+        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
         <div className={cn("rounded-lg p-2", color)}>
           <Icon className="h-5 w-5" />
         </div>
       </div>
-      <p className="mt-2 text-2xl font-semibold text-gray-900">{value}</p>
+      <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{value}</p>
     </>
   );
 
@@ -557,7 +557,7 @@ function MetricCard({
     return (
       <Link
         href={href}
-        className="block rounded-lg border border-gray-200 bg-white p-5 transition-colors hover:bg-gray-50"
+        className="block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
       >
         {inner}
       </Link>
@@ -565,7 +565,7 @@ function MetricCard({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-5">{inner}</div>
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">{inner}</div>
   );
 }
 
@@ -581,11 +581,11 @@ function PipelineColumn({
   count: number;
 }) {
   return (
-    <div className="flex flex-col rounded-lg border border-gray-200 bg-white">
+    <div className="flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
       {/* Column header */}
-      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-        <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400">{label}</h3>
-        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+      <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-4 py-3">
+        <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">{label}</h3>
+        <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400">
           {count}
         </span>
       </div>
@@ -593,7 +593,7 @@ function PipelineColumn({
       {/* Company cards */}
       <div className="flex flex-col p-2">
         {companies.length === 0 ? (
-          <p className="py-4 text-center text-xs text-gray-400">
+          <p className="py-4 text-center text-xs text-gray-400 dark:text-gray-500">
             No prospects
           </p>
         ) : (
@@ -604,7 +604,7 @@ function PipelineColumn({
         {count > 5 && (
           <Link
             href={`/prospects?status=${status}`}
-            className="mt-1 text-center text-xs font-medium text-gray-500 hover:text-gray-900"
+            className="mt-1 text-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
           >
             View all {count} &rarr;
           </Link>
@@ -618,7 +618,7 @@ function CompanyCard({ company }: { company: Company }) {
   return (
     <Link
       href={`/prospects/${company.id}`}
-      className="block border-b border-gray-100 last:border-0 px-2 py-2.5 transition-colors hover:bg-gray-50"
+      className="block border-b border-gray-100 dark:border-gray-800 last:border-0 px-2 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -631,21 +631,21 @@ function CompanyCard({ company }: { company: Company }) {
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
           )}
-          <p className="text-sm font-medium text-gray-900 leading-tight truncate">
+          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-tight truncate">
             {company.name}
           </p>
         </div>
         {company.tier && (
-          <span className="ml-1 shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+          <span className="ml-1 shrink-0 rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400">
             {TIER_LABELS[company.tier] ?? company.tier}
           </span>
         )}
       </div>
       <div className="mt-1.5 flex items-center justify-between">
-        <span className="text-xs font-mono text-gray-400">
+        <span className="text-xs font-mono text-gray-400 dark:text-gray-500">
           PQS {company.pqs_total}
         </span>
-        <span className="flex items-center gap-1 text-[11px] text-gray-400">
+        <span className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
           <Clock className="h-3 w-3" />
           {formatTimeAgo(company.updated_at)}
         </span>

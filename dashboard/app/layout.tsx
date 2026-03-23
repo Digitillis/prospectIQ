@@ -26,25 +26,47 @@ export default function RootLayout({
 
   if (isLogin) {
     return (
-      <html lang="en">
+      <html lang="en" suppressHydrationWarning>
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: `
+            try {
+              if (localStorage.getItem('prospectiq-theme') === 'dark' ||
+                  (!localStorage.getItem('prospectiq-theme') &&
+                   window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+              }
+            } catch(e) {}
+          `}} />
+        </head>
         <body className={inter.className}>{children}</body>
       </html>
     );
   }
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            if (localStorage.getItem('prospectiq-theme') === 'dark' ||
+                (!localStorage.getItem('prospectiq-theme') &&
+                 window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+              document.documentElement.classList.add('dark');
+            }
+          } catch(e) {}
+        `}} />
+      </head>
       <body className={inter.className}>
-        <div className="flex h-screen overflow-hidden">
+        <div className="flex h-screen overflow-hidden bg-white dark:bg-gray-950">
           <Sidebar />
           <SearchModal />
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* Top bar */}
-            <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-6">
-              <h1 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">ProspectIQ</h1>
+            <header className="flex h-14 items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-6">
+              <h1 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">ProspectIQ</h1>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
                 title="Sign out"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -52,7 +74,7 @@ export default function RootLayout({
               </button>
             </header>
             {/* Main content */}
-            <main className="flex-1 overflow-y-auto bg-white p-6">
+            <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-950 p-6">
               {children}
             </main>
           </div>

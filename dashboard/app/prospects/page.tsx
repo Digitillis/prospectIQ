@@ -199,7 +199,7 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium text-gray-600">{label}</label>
+      <label className="text-xs font-medium text-gray-600 dark:text-gray-500">{label}</label>
       {children}
     </div>
   );
@@ -257,13 +257,13 @@ function AddCompanyModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/30 sm:items-center sm:justify-center">
-      <div className="w-full max-w-lg rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
+      <div className="w-full max-w-lg rounded-t-2xl bg-white dark:bg-gray-900 shadow-2xl sm:rounded-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">Add Company Manually</h2>
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Add Company Manually</h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="rounded-md p-1 text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:text-gray-500"
           >
             <X className="h-5 w-5" />
           </button>
@@ -273,13 +273,13 @@ function AddCompanyModal({
         <form onSubmit={handleSubmit} className="max-h-[80vh] overflow-y-auto">
           <div className="space-y-4 px-6 py-5">
             {error && (
-              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 {error}
               </div>
             )}
 
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               Company Details
             </p>
 
@@ -364,8 +364,8 @@ function AddCompanyModal({
               </Field>
             </div>
 
-            <div className="border-t border-gray-100 pt-2">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-2">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
                 Primary Contact (optional)
               </p>
               <div className="space-y-3">
@@ -396,12 +396,12 @@ function AddCompanyModal({
                     className={inputCls}
                   />
                 </Field>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                   <input
                     type="checkbox"
                     checked={form.contact_is_dm}
                     onChange={(e) => set("contact_is_dm", e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-gray-900"
+                    className="h-4 w-4 rounded border-gray-300 text-gray-900 dark:text-gray-100"
                   />
                   Mark as decision maker
                 </label>
@@ -410,11 +410,11 @@ function AddCompanyModal({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
+          <div className="flex items-center justify-end gap-3 border-t border-gray-200 dark:border-gray-700 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-lg border border-gray-300 bg-white dark:bg-gray-900 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
               Cancel
             </button>
@@ -476,7 +476,7 @@ function RowActions({
       <button
         onClick={() => { setOpen((o) => !o); setConfirmDisqualify(false); }}
         disabled={loading}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 dark:text-gray-500 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:text-gray-300 disabled:opacity-40"
       >
         {loading ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -486,18 +486,18 @@ function RowActions({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-8 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+        <div className="absolute right-0 top-8 z-20 w-44 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 shadow-lg">
           {/* Flag priority */}
           <button
             onClick={() => { onFlagToggle(company); setOpen(false); }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <Flag
               className={cn(
                 "h-4 w-4",
                 company.priority_flag
-                  ? "fill-gray-600 text-gray-600"
-                  : "text-gray-400"
+                  ? "fill-gray-600 text-gray-600 dark:text-gray-500"
+                  : "text-gray-400 dark:text-gray-500"
               )}
             />
             {company.priority_flag ? "Remove flag" : "Flag priority"}
@@ -506,19 +506,19 @@ function RowActions({
           {/* Quick Note */}
           <button
             onClick={() => { onQuickNote(company); setOpen(false); }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
-            <MessageSquare className="h-4 w-4 text-gray-400" />
+            <MessageSquare className="h-4 w-4 text-gray-400 dark:text-gray-500" />
             Quick Note
           </button>
 
-          <div className="my-1 border-t border-gray-100" />
+          <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
 
           {/* Disqualify */}
           {company.status !== "disqualified" && (
             confirmDisqualify ? (
               <div className="px-3 py-2">
-                <p className="mb-2 text-xs text-gray-500">Disqualify this company?</p>
+                <p className="mb-2 text-xs text-gray-500 dark:text-gray-500">Disqualify this company?</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => { onDisqualify(company); setOpen(false); setConfirmDisqualify(false); }}
@@ -528,7 +528,7 @@ function RowActions({
                   </button>
                   <button
                     onClick={() => setConfirmDisqualify(false)}
-                    className="flex-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                    className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
                   >
                     Cancel
                   </button>
@@ -537,7 +537,7 @@ function RowActions({
             ) : (
               <button
                 onClick={() => setConfirmDisqualify(true)}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 <Ban className="h-4 w-4" />
                 Disqualify
@@ -549,7 +549,7 @@ function RowActions({
           {company.status === "disqualified" && (
             <button
               onClick={() => { onFlagToggle(company); setOpen(false); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
               Restore to discovered
             </button>
@@ -729,12 +729,12 @@ export default function ProspectsPage() {
 
   const SortIcon = ({ column }: { column: SortKey }) => {
     if (sortKey !== column) {
-      return <ChevronsUpDown className="ml-1 inline h-3.5 w-3.5 text-gray-400" />;
+      return <ChevronsUpDown className="ml-1 inline h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />;
     }
     return sortDir === "asc" ? (
-      <ChevronUp className="ml-1 inline h-3.5 w-3.5 text-gray-700" />
+      <ChevronUp className="ml-1 inline h-3.5 w-3.5 text-gray-700 dark:text-gray-300" />
     ) : (
-      <ChevronDown className="ml-1 inline h-3.5 w-3.5 text-gray-700" />
+      <ChevronDown className="ml-1 inline h-3.5 w-3.5 text-gray-700 dark:text-gray-300" />
     );
   };
 
@@ -883,15 +883,15 @@ export default function ProspectsPage() {
     <div className="space-y-4">
       {/* Page heading */}
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Prospects</h2>
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Prospects</h2>
         <div className="flex items-center gap-2">
-          <span className="shrink-0 text-sm text-gray-500">
+          <span className="shrink-0 text-sm text-gray-500 dark:text-gray-500">
             {totalCount} {totalCount === 1 ? "company" : "companies"}
           </span>
           <button
             onClick={handleExport}
             disabled={exporting || loading}
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
           >
             {exporting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -919,8 +919,8 @@ export default function ProspectsPage() {
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               isViewActive(view)
-                ? "border-gray-900 bg-gray-100 text-gray-900"
-                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                ? "border-gray-900 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"
             )}
           >
             <Bookmark className="h-3 w-3" />
@@ -928,7 +928,7 @@ export default function ProspectsPage() {
             <span
               role="button"
               onClick={(e) => { e.stopPropagation(); deleteView(view.id); }}
-              className="ml-1 hover:text-gray-900 cursor-pointer"
+              className="ml-1 hover:text-gray-900 dark:text-gray-100 cursor-pointer"
             >
               <X className="h-3 w-3" />
             </span>
@@ -957,7 +957,7 @@ export default function ProspectsPage() {
             </button>
             <button
               onClick={() => { setShowSaveView(false); setViewName(""); }}
-              className="text-xs text-gray-400 hover:text-gray-600"
+              className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:text-gray-500"
             >
               Cancel
             </button>
@@ -965,7 +965,7 @@ export default function ProspectsPage() {
         ) : (
           <button
             onClick={() => setShowSaveView(true)}
-            className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-3 py-1 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700"
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-3 py-1 text-xs text-gray-500 dark:text-gray-500 hover:border-gray-400 hover:text-gray-700 dark:text-gray-300"
           >
             <Plus className="h-3 w-3" />
             Save view
@@ -975,8 +975,8 @@ export default function ProspectsPage() {
 
       {/* ---- Bulk action bar ---- */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-0 z-10 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <span className="text-sm font-medium text-gray-700">
+        <div className="sticky top-0 z-10 flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {selectedIds.size} selected
           </span>
           <button
@@ -990,7 +990,7 @@ export default function ProspectsPage() {
           <button
             onClick={handleBulkQualify}
             disabled={bulkLoading}
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {bulkLoading && <Loader2 className="h-3 w-3 animate-spin" />}
             Qualify Selected
@@ -998,7 +998,7 @@ export default function ProspectsPage() {
           <button
             onClick={handleBulkDisqualify}
             disabled={bulkLoading}
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {bulkLoading && <Loader2 className="h-3 w-3 animate-spin" />}
             Disqualify Selected
@@ -1006,7 +1006,7 @@ export default function ProspectsPage() {
           <button
             onClick={clearSelection}
             disabled={bulkLoading}
-            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-50"
+            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 disabled:opacity-50"
           >
             <X className="h-3.5 w-3.5" />
             Clear
@@ -1015,10 +1015,10 @@ export default function ProspectsPage() {
       )}
 
       {/* ---- Filter bar ---- */}
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
         {/* Search */}
         <div className="relative min-w-[220px] flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
           <input
             type="text"
             placeholder="Search by company name..."
@@ -1058,7 +1058,7 @@ export default function ProspectsPage() {
 
         {/* PQS min */}
         <div className="flex items-center gap-1.5">
-          <label htmlFor="pqs-min" className="text-xs font-medium text-gray-600">
+          <label htmlFor="pqs-min" className="text-xs font-medium text-gray-600 dark:text-gray-500">
             Min PQS
           </label>
           <input
@@ -1075,32 +1075,32 @@ export default function ProspectsPage() {
       </div>
 
       {/* ---- Table ---- */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-            <span className="ml-2 text-sm text-gray-500">Loading prospects...</span>
+            <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-gray-500" />
+            <span className="ml-2 text-sm text-gray-500 dark:text-gray-500">Loading prospects...</span>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center gap-2 py-20 text-gray-700">
+          <div className="flex items-center justify-center gap-2 py-20 text-gray-700 dark:text-gray-300">
             <AlertCircle className="h-5 w-5" />
             <span className="text-sm">{error}</span>
           </div>
         ) : companies.length === 0 ? (
-          <div className="py-20 text-center text-sm text-gray-500">
+          <div className="py-20 text-center text-sm text-gray-500 dark:text-gray-500">
             No prospects found matching your filters.
           </div>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs font-medium uppercase tracking-wider text-gray-500">
+              <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-500">
                 {/* Select-all checkbox */}
                 <th className="w-10 px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
                     onChange={toggleSelectAll}
-                    className="h-4 w-4 rounded border-gray-300 text-gray-900"
+                    className="h-4 w-4 rounded border-gray-300 text-gray-900 dark:text-gray-100"
                   />
                 </th>
                 {(
@@ -1116,7 +1116,7 @@ export default function ProspectsPage() {
                 ).map(([key, label]) => (
                   <th
                     key={key}
-                    className="cursor-pointer select-none whitespace-nowrap px-4 py-3 hover:text-gray-700"
+                    className="cursor-pointer select-none whitespace-nowrap px-4 py-3 hover:text-gray-700 dark:text-gray-300"
                     onClick={() => handleSort(key)}
                   >
                     {label}
@@ -1132,9 +1132,9 @@ export default function ProspectsPage() {
                   key={c.id}
                   onClick={() => router.push(`/prospects/${c.id}`)}
                   className={cn(
-                    "cursor-pointer transition-colors hover:bg-gray-50",
+                    "cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-800",
                     c.status === "disqualified" && "opacity-50",
-                    selectedIds.has(c.id) && "bg-gray-50"
+                    selectedIds.has(c.id) && "bg-gray-50 dark:bg-gray-800"
                   )}
                 >
                   {/* Row checkbox */}
@@ -1150,15 +1150,15 @@ export default function ProspectsPage() {
                       checked={selectedIds.has(c.id)}
                       onChange={() => toggleSelectOne(c.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="h-4 w-4 rounded border-gray-300 text-gray-900"
+                      className="h-4 w-4 rounded border-gray-300 text-gray-900 dark:text-gray-100"
                     />
                   </td>
 
                   {/* Name */}
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                     <div className="flex items-center gap-1.5">
                       {c.priority_flag && (
-                        <Flag className="h-3.5 w-3.5 fill-gray-600 text-gray-600" />
+                        <Flag className="h-3.5 w-3.5 fill-gray-600 text-gray-600 dark:text-gray-500" />
                       )}
                       {c.domain && (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -1172,7 +1172,7 @@ export default function ProspectsPage() {
                       <div>
                         <div className="whitespace-nowrap">{c.name}</div>
                         {(c.employee_count != null || c.revenue_range) && (
-                          <div className="mt-0.5 flex items-center gap-2 text-xs font-normal text-gray-400">
+                          <div className="mt-0.5 flex items-center gap-2 text-xs font-normal text-gray-400 dark:text-gray-500">
                             {c.employee_count != null && (
                               <span>{c.employee_count.toLocaleString()} emp</span>
                             )}
@@ -1187,41 +1187,41 @@ export default function ProspectsPage() {
                   </td>
 
                   {/* Tier */}
-                  <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-gray-500">
                     {c.tier ? (
-                      <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium">
+                      <span className="rounded bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs font-medium">
                         {c.tier}
                       </span>
                     ) : (
-                      <span className="text-gray-400">&mdash;</span>
+                      <span className="text-gray-400 dark:text-gray-500">&mdash;</span>
                     )}
                   </td>
 
                   {/* PQS Score */}
                   <td className="whitespace-nowrap px-4 py-3">
                     <div className="group relative inline-block">
-                      <span className="cursor-help font-semibold text-gray-900">
+                      <span className="cursor-help font-semibold text-gray-900 dark:text-gray-100">
                         {c.pqs_total}
                       </span>
-                      <span className="text-gray-400">/100</span>
+                      <span className="text-gray-400 dark:text-gray-500">/100</span>
                       {/* Breakdown tooltip */}
-                      <div className="invisible absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:visible">
+                      <div className="invisible absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 shadow-lg group-hover:visible">
                         <div className="space-y-1.5 text-xs whitespace-nowrap">
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-gray-500">Firmographic</span>
-                            <span className="font-semibold text-gray-900">{c.pqs_firmographic}</span>
+                            <span className="text-gray-500 dark:text-gray-500">Firmographic</span>
+                            <span className="font-semibold text-gray-900 dark:text-gray-100">{c.pqs_firmographic}</span>
                           </div>
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-gray-500">Technographic</span>
-                            <span className="font-semibold text-gray-900">{c.pqs_technographic}</span>
+                            <span className="text-gray-500 dark:text-gray-500">Technographic</span>
+                            <span className="font-semibold text-gray-900 dark:text-gray-100">{c.pqs_technographic}</span>
                           </div>
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-gray-500">Timing</span>
-                            <span className="font-semibold text-gray-900">{c.pqs_timing}</span>
+                            <span className="text-gray-500 dark:text-gray-500">Timing</span>
+                            <span className="font-semibold text-gray-900 dark:text-gray-100">{c.pqs_timing}</span>
                           </div>
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-gray-500">Engagement</span>
-                            <span className="font-semibold text-gray-900">{c.pqs_engagement}</span>
+                            <span className="text-gray-500 dark:text-gray-500">Engagement</span>
+                            <span className="font-semibold text-gray-900 dark:text-gray-100">{c.pqs_engagement}</span>
                           </div>
                         </div>
                         {/* Arrow */}
@@ -1233,24 +1233,24 @@ export default function ProspectsPage() {
                   {/* Status */}
                   <td className="whitespace-nowrap px-4 py-3">
                     <span
-                      className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium capitalize bg-gray-100 text-gray-600"
+                      className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium capitalize bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500"
                     >
                       {c.status.replace(/_/g, " ")}
                     </span>
                   </td>
 
                   {/* Sub-Sector */}
-                  <td className="whitespace-nowrap px-4 py-3 text-gray-600">
-                    {c.sub_sector || <span className="text-gray-400">&mdash;</span>}
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-gray-500">
+                    {c.sub_sector || <span className="text-gray-400 dark:text-gray-500">&mdash;</span>}
                   </td>
 
                   {/* State */}
-                  <td className="whitespace-nowrap px-4 py-3 text-gray-600">
-                    {c.state || <span className="text-gray-400">&mdash;</span>}
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-gray-500">
+                    {c.state || <span className="text-gray-400 dark:text-gray-500">&mdash;</span>}
                   </td>
 
                   {/* Last Activity */}
-                  <td className="whitespace-nowrap px-4 py-3 text-gray-500">
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-500 dark:text-gray-500">
                     {c.updated_at ? formatTimeAgo(c.updated_at) : "\u2014"}
                   </td>
 
@@ -1273,8 +1273,8 @@ export default function ProspectsPage() {
 
       {/* ---- Pagination ---- */}
       {!loading && companies.length > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
-          <span className="text-sm text-gray-600">
+        <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3">
+          <span className="text-sm text-gray-600 dark:text-gray-500">
             Showing {offset + 1}&ndash;{Math.min(offset + PAGE_SIZE, totalCount)} of{" "}
             {totalCount}
           </span>
@@ -1282,7 +1282,7 @@ export default function ProspectsPage() {
             <button
               disabled={!hasPrev}
               onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white dark:bg-gray-900 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ChevronLeft className="h-4 w-4" />
               Previous
@@ -1290,7 +1290,7 @@ export default function ProspectsPage() {
             <button
               disabled={!hasNext}
               onClick={() => setOffset((o) => o + PAGE_SIZE)}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white dark:bg-gray-900 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
               <ChevronRight className="h-4 w-4" />
@@ -1310,20 +1310,20 @@ export default function ProspectsPage() {
       {/* ---- Quick Note Modal ---- */}
       {quickNoteCompany && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-full max-w-md rounded-lg bg-white border border-gray-200 p-6 shadow-lg">
-            <h3 className="text-base font-semibold text-gray-900">{quickNoteCompany.name}</h3>
+          <div className="w-full max-w-md rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-6 shadow-lg">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{quickNoteCompany.name}</h3>
             <textarea
               value={quickNoteText}
               onChange={(e) => setQuickNoteText(e.target.value)}
               placeholder="Add a note..."
               rows={3}
-              className="mt-3 w-full rounded-md border border-gray-300 p-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+              className="mt-3 w-full rounded-md border border-gray-300 p-3 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:text-gray-500 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
               autoFocus
             />
             <div className="mt-3 flex justify-end gap-2">
               <button
                 onClick={() => { setQuickNoteCompany(null); setQuickNoteText(""); }}
-                className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 Cancel
               </button>
