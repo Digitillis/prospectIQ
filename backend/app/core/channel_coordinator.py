@@ -5,7 +5,7 @@ Rule: One channel at a time per contact, with cooldown between switches.
 Channel priority:
 1. If contact has LinkedIn URL + no email → LinkedIn only
 2. If contact has email + no LinkedIn → Email only
-3. If both: Start with LinkedIn → fallback to email after cooldown
+3. If both: Email preferred (higher response rate for mfg ops ICP)
 
 Cooldown rules:
 - LinkedIn connection sent → no email for 7 days
@@ -22,7 +22,7 @@ from backend.app.core.database import Database
 
 logger = logging.getLogger(__name__)
 
-LINKEDIN_TO_EMAIL_COOLDOWN_DAYS = 7
+LINKEDIN_TO_EMAIL_COOLDOWN_DAYS = 0  # Email allowed immediately alongside LinkedIn
 DM_COMPLETE_TO_EMAIL_COOLDOWN_DAYS = 14
 COMPANY_LOCK_DAYS = 14
 ACTIVITY_COOLDOWN_HOURS = 48
@@ -120,10 +120,11 @@ def get_active_channel(db: Database, contact_id: str) -> tuple[str, str | None]:
         if days_since < DM_COMPLETE_TO_EMAIL_COOLDOWN_DAYS:
             return ("email", "email_active_linkedin_blocked")
 
-    # No recent activity on either channel — default to LinkedIn (warmer)
-    if has_linkedin:
-        return ("linkedin", "both_available_linkedin_preferred")
-    return ("email", "both_available_email_fallback")
+    # No recent activity on either channel — default to email (higher response
+    # rate for manufacturing ops ICP; LinkedIn is supplementary)
+    if has_email:
+        return ("email", "both_available_email_preferred")
+    return ("linkedin", "both_available_linkedin_fallback")
 
 
 def can_use_channel(
@@ -218,7 +219,7 @@ def assign_channel(
     if headcount_growth < -0.05:
         return ("email", "shrinking_company")
 
-    return ("linkedin", "default_linkedin_warmer_channel")
+    return ("email", "default_email_higher_response_rate")
 
 
 def is_company_locked(
