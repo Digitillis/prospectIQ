@@ -5,14 +5,52 @@ companies, approvals, pipeline agents, analytics, and webhooks.
 """
 
 import logging
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from time import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, contacts, today, content, events
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting middleware
+# ---------------------------------------------------------------------------
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Simple in-memory rate limiter. 100 requests per minute per IP."""
+
+    def __init__(self, app, requests_per_minute: int = 100):
+        super().__init__(app)
+        self.rpm = requests_per_minute
+        self._hits: dict[str, list[float]] = defaultdict(list)
+
+    async def dispatch(self, request, call_next):
+        # Skip health checks
+        if request.url.path in ("/health", "/healthz"):
+            return await call_next(request)
+
+        ip = request.client.host if request.client else "unknown"
+        now = time()
+        window = now - 60
+
+        # Prune old entries
+        self._hits[ip] = [t for t in self._hits[ip] if t > window]
+
+        if len(self._hits[ip]) >= self.rpm:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded. Try again in 60 seconds."},
+            )
+
+        self._hits[ip].append(now)
+        return await call_next(request)
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +120,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting — added after CORS so preflight requests are not rate-limited
+app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
 
 # Mount route modules
 app.include_router(companies.router)
