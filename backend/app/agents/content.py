@@ -364,7 +364,7 @@ class ContentAgent(BaseAgent):
                 console.print(f"  [dim]Generating: {job_topic[:60]}...[/dim]")
 
                 response = client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-6",
                     max_tokens=800,
                     system=system_prompt,
                     messages=[{"role": "user", "content": user_prompt}],
@@ -374,7 +374,7 @@ class ContentAgent(BaseAgent):
                 usage = response.usage
                 self.track_cost(
                     provider="anthropic",
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-6",
                     endpoint="/messages",
                     company_id=None,
                     input_tokens=usage.input_tokens,
@@ -465,7 +465,7 @@ class ContentAgent(BaseAgent):
                     )
 
                     intel_response = client.messages.create(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         max_tokens=1200,
                         system="You are a rigorous fact-checking editor. Flag anything that cannot be independently verified. No leniency.",
                         messages=[{"role": "user", "content": intel_prompt}],
@@ -476,7 +476,7 @@ class ContentAgent(BaseAgent):
                     # Track cost for verification call
                     self.track_cost(
                         provider="anthropic",
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         endpoint="/messages",
                         company_id=None,
                         input_tokens=intel_response.usage.input_tokens,
@@ -596,7 +596,7 @@ FLAGS: None"""
                         )
 
                         quality_response = client.messages.create(
-                            model="claude-sonnet-4-20250514",
+                            model="claude-sonnet-4-6",
                             max_tokens=1000,
                             system="You are a rigorous quality reviewer. Evaluate posts honestly against all criteria. Be specific with flags.",
                             messages=[{"role": "user", "content": quality_prompt}],
@@ -604,7 +604,7 @@ FLAGS: None"""
 
                         self.track_cost(
                             provider="anthropic",
-                            model="claude-sonnet-4-20250514",
+                            model="claude-sonnet-4-6",
                             endpoint="/messages",
                             company_id=None,
                             input_tokens=quality_response.usage.input_tokens,

@@ -377,7 +377,7 @@ class LinkedInAgent(BaseAgent):
                     console.print(f"  [dim]{company_name} → {contact_name}...[/dim]")
 
                     response = client.messages.create(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         max_tokens=1200,
                         system=system_prompt,
                         messages=[{"role": "user", "content": prompt}],
@@ -387,7 +387,7 @@ class LinkedInAgent(BaseAgent):
                     usage = response.usage
                     self.track_cost(
                         provider="anthropic",
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         endpoint="/messages",
                         company_id=company_id,
                         input_tokens=usage.input_tokens,

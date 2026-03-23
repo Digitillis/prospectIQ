@@ -275,7 +275,7 @@ class ResearchAgent(BaseAgent):
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=2000,
                 system=CLAUDE_ANALYSIS_SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
@@ -285,7 +285,7 @@ class ResearchAgent(BaseAgent):
             usage = response.usage
             self.track_cost(
                 provider="anthropic",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 endpoint="/messages",
                 company_id=company.get("id"),
                 input_tokens=usage.input_tokens,

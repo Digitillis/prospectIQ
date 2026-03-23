@@ -356,7 +356,7 @@ class OutreachAgent(BaseAgent):
                     console.print(f"  [dim]{company_name} → {contact.get('full_name', 'Unknown')}...[/dim]")
 
                     response = client.messages.create(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         max_tokens=1000,
                         system=_build_system_prompt(),
                         messages=[{"role": "user", "content": prompt}],
@@ -366,7 +366,7 @@ class OutreachAgent(BaseAgent):
                     usage = response.usage
                     self.track_cost(
                         provider="anthropic",
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         endpoint="/messages",
                         company_id=company_id,
                         input_tokens=usage.input_tokens,

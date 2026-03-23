@@ -368,7 +368,7 @@ class LearningAgent(BaseAgent):
 
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=2000,
             system=LEARNING_ANALYSIS_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
@@ -378,7 +378,7 @@ class LearningAgent(BaseAgent):
         usage = response.usage
         self.track_cost(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             endpoint="/messages",
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
