@@ -235,10 +235,15 @@ def is_company_locked(
     cutoff = (now - timedelta(days=COMPANY_LOCK_DAYS)).isoformat()
 
     try:
+        # Only count actual outreach touches — not status changes or system notes
         interactions = (
             db.client.table("interactions")
             .select("contact_id, type, created_at")
             .eq("company_id", company_id)
+            .in_("type", [
+                "linkedin_connection", "linkedin_message",
+                "email_sent", "email_replied",
+            ])
             .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(5)
@@ -275,10 +280,15 @@ def has_recent_activity(
     cutoff = (now - timedelta(hours=hours)).isoformat()
 
     try:
+        # Only count actual outreach touches — not status changes or system notes
         interactions = (
             db.client.table("interactions")
             .select("type, created_at")
             .eq("contact_id", contact_id)
+            .in_("type", [
+                "linkedin_connection", "linkedin_message",
+                "email_sent", "email_replied",
+            ])
             .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(1)
