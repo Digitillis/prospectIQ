@@ -168,7 +168,9 @@ async def get_linkedin_messages(
         db.client.table("contacts")
         .select(
             "id, company_id, full_name, first_name, last_name, title, persona_type, "
-            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at"
+            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
+            "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
+            "linkedin_responded_at, linkedin_meeting_booked_at"
         )
         .in_("id", contact_ids)
         .execute()
@@ -286,10 +288,24 @@ async def update_linkedin_status(contact_id: str, body: dict):
     # Extract notes before updating
     notes = body.get("notes", "")
 
-    # Update the contact linkedin_status and notes
+    # Update the contact linkedin_status, notes, and timestamp for this transition
+    from datetime import datetime, timezone
     update_data: dict = {"linkedin_status": new_status}
     if notes:
         update_data["linkedin_notes"] = notes
+
+    # Record when this status transition happened
+    _STATUS_TO_TIMESTAMP_COL = {
+        "connection_sent": "linkedin_connection_sent_at",
+        "accepted": "linkedin_accepted_at",
+        "dm_sent": "linkedin_dm_sent_at",
+        "responded": "linkedin_responded_at",
+        "meeting_booked": "linkedin_meeting_booked_at",
+    }
+    ts_col = _STATUS_TO_TIMESTAMP_COL.get(new_status)
+    if ts_col:
+        update_data[ts_col] = datetime.now(timezone.utc).isoformat()
+
     db.client.table("contacts").update(update_data).eq("id", contact_id).execute()
 
     # Log an interaction so activity feed reflects the LinkedIn touch

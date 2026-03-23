@@ -416,6 +416,35 @@ function ContactCard({ item }: { item: LinkedInContact }) {
           </div>
         </div>
 
+        {/* Event Timeline */}
+        {(() => {
+          const events = [
+            { label: "Connection Sent", ts: contact.linkedin_connection_sent_at },
+            { label: "Accepted", ts: contact.linkedin_accepted_at },
+            { label: "DM Sent", ts: contact.linkedin_dm_sent_at },
+            { label: "Responded", ts: contact.linkedin_responded_at },
+            { label: "Meeting Booked", ts: contact.linkedin_meeting_booked_at },
+          ].filter((e) => e.ts);
+          if (events.length === 0) return null;
+          return (
+            <div className="mb-3">
+              <div className="mb-1.5 text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                Timeline
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {events.map((e) => (
+                  <div key={e.label} className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-gray-400 dark:bg-gray-500 shrink-0" />
+                    <span className="font-medium text-gray-600 dark:text-gray-300">{e.label}</span>
+                    <span className="tabular-nums">{new Date(e.ts!).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                    <span className="text-gray-400 dark:text-gray-600 tabular-nums">{new Date(e.ts!).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Notes */}
         <div>
           <div className="mb-1 text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">

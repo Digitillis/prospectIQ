@@ -916,6 +916,11 @@ export interface Contact {
   linkedin_url?: string;
   linkedin_status?: string; // not_sent | connection_sent | accepted | dm_sent | responded | meeting_booked
   linkedin_notes?: string;
+  linkedin_connection_sent_at?: string;
+  linkedin_accepted_at?: string;
+  linkedin_dm_sent_at?: string;
+  linkedin_responded_at?: string;
+  linkedin_meeting_booked_at?: string;
   status?: string;
   relationship_strength?: number; // 0-100
   last_interaction_note?: string;
