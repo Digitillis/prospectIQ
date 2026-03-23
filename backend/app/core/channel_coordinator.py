@@ -139,6 +139,22 @@ def can_use_channel(
     Returns:
         Tuple of (allowed, reason_if_blocked).
     """
+    # Warm intro collision detection — never send cold outreach to a contact
+    # with an active warm intro in progress.
+    try:
+        contact_result = (
+            db.client.table("contacts")
+            .select("linkedin_status")
+            .eq("id", contact_id)
+            .execute()
+        )
+        if contact_result.data:
+            linkedin_status = contact_result.data[0].get("linkedin_status", "") or ""
+            if "warm" in linkedin_status.lower():
+                return (False, f"warm_intro_in_progress:{linkedin_status}")
+    except Exception:
+        pass  # Graceful degradation — don't block on DB errors
+
     active, reason = get_active_channel(db, contact_id)
 
     if active == "none":

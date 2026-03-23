@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 
 from rich.console import Console
 
@@ -310,6 +311,16 @@ class OutreachAgent(BaseAgent):
 
                 # Generate drafts for each valid contact
                 for contact in valid_contacts:
+                    # Warm intro collision detection — skip cold outreach if a warm
+                    # intro is in progress for this contact
+                    contact_status = contact.get("linkedin_status", "") or ""
+                    if "warm" in contact_status.lower():
+                        console.print(
+                            f"  [dim]{company_name}: {contact.get('full_name', '?')} "
+                            f"— warm intro in progress ({contact_status}). Skipping cold outreach.[/dim]"
+                        )
+                        continue
+
                     # Cross-channel check — block email if LinkedIn is active
                     from backend.app.core.channel_coordinator import can_use_channel
                     channel_ok, channel_reason = can_use_channel(self.db, contact["id"], "email")
@@ -372,6 +383,10 @@ class OutreachAgent(BaseAgent):
 
                     parsed = json.loads(content)
 
+                    # Add jitter to prevent all approved drafts from sending at the same time.
+                    # Instantly.ai uses this field to stagger sends when drafts are queued.
+                    suggested_delay_minutes = random.randint(0, 30)
+
                     # Create outreach draft
                     draft_data = {
                         "company_id": company_id,
@@ -383,6 +398,7 @@ class OutreachAgent(BaseAgent):
                         "body": parsed.get("body", ""),
                         "personalization_notes": parsed.get("personalization_notes", ""),
                         "approval_status": "pending",
+                        "suggested_delay_minutes": suggested_delay_minutes,
                     }
 
                     self.db.insert_outreach_draft(draft_data)
