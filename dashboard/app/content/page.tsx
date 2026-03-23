@@ -1783,9 +1783,9 @@ export default function ContentPage() {
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Auto-Generate 4-Week Calendar</h2>
         </div>
         <p className="text-sm text-gray-500 dark:text-gray-500 mb-4">
-          16 posts across all themes. Balanced rotation: Food Safety, Predictive Maintenance,
-          Operations Excellence, Leadership. Mix of data insights, frameworks, contrarian takes,
-          and benchmarks. Estimated cost: ~$0.80.
+          12 posts across all themes. Balanced rotation: Manufacturing Intelligence,
+          Manufacturing Strategy, Operations Excellence, Food Safety. Tue/Thu/Sat cadence.
+          Mix of data insights, frameworks, contrarian takes, and benchmarks. Estimated cost: ~$0.60.
         </p>
 
         <div className="flex items-end gap-4 flex-wrap">

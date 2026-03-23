@@ -26,25 +26,22 @@ router = APIRouter(prefix="/api/content", tags=["content"])
 
 # Pillar name normalisation: the agent uses short keys but the YAML uses
 # longer display names. Map both conventions to the short canonical form.
-_PILLAR_ALIAS: dict[str, str] = {
-    "food_safety_compliance": "food_safety",
-    "leadership_strategy": "leadership",
-}
+_PILLAR_ALIAS: dict[str, str] = {}
 
 # How many posts each time_horizon maps to (4 posts/week = 1 week baseline)
 _TIME_HORIZON_COUNTS: dict[str, int] = {
-    "1_week": 4,
-    "30_days": 16,
-    "60_days": 32,
+    "1_week": 3,
+    "30_days": 12,
+    "60_days": 24,
 }
 
-_ALL_PILLARS = ["food_safety", "predictive_maintenance", "ops_excellence", "leadership"]
+_ALL_PILLARS = ["manufacturing_intelligence", "manufacturing_strategy", "manufacturing_operations", "food_safety_compliance"]
 _ALL_FORMATS = ["data_insight", "framework", "contrarian", "benchmark"]
 
 
 class ContentRequest(BaseModel):
     topic: Optional[str] = None
-    pillar: Optional[str] = None          # food_safety | predictive_maintenance | ops_excellence | leadership
+    pillar: Optional[str] = None          # manufacturing_intelligence | manufacturing_strategy | manufacturing_operations | food_safety_compliance
     format_type: Optional[str] = None     # data_insight | framework | contrarian | benchmark
     # Batch generation fields
     time_horizon: Optional[str] = None    # "1_week" (4 posts) | "30_days" (16) | "60_days" (32)
@@ -328,51 +325,46 @@ async def get_content_drafts():
 # Auto-calendar helpers
 # ---------------------------------------------------------------------------
 
-# 4-week rotation matrix: [pillar, format] per slot (Mon/Tue/Thu/Fri)
-# Design: Manufacturing-heavy rotation. PdM gets 6/16 posts, Ops Excellence 4,
-#         Food Safety 4, Leadership 2. Never same pillar two days in a row.
-#         Mix of all 4 formats across the month.
+# 4-week rotation matrix: [pillar, format] per slot (Tue/Thu/Sat)
+# Design: Tue = manufacturing_intelligence, Thu = alternating strategy/operations,
+#         Sat = food_safety_compliance. 3 posts/week.
 _ROTATION_MATRIX: list[list[tuple[str, str]]] = [
-    # Week 1: Mon, Tue, Thu, Fri — PdM x2, F&B x1, Ops x1
+    # Week 1: Tue, Thu, Sat
     [
-        ("predictive_maintenance", "data_insight"),
-        ("food_safety", "framework"),
-        ("predictive_maintenance", "contrarian"),
-        ("ops_excellence", "data_insight"),
+        ("manufacturing_intelligence", "contrarian"),
+        ("manufacturing_strategy", "framework"),
+        ("food_safety_compliance", "data_insight"),
     ],
-    # Week 2 — PdM x1, F&B x1, Ops x1, Leadership x1
+    # Week 2
     [
-        ("food_safety", "data_insight"),
-        ("predictive_maintenance", "framework"),
-        ("leadership", "data_insight"),
-        ("ops_excellence", "contrarian"),
+        ("manufacturing_intelligence", "framework"),
+        ("manufacturing_operations", "contrarian"),
+        ("food_safety_compliance", "data_insight"),
     ],
-    # Week 3 — PdM x2, F&B x1, Ops x1
+    # Week 3
     [
-        ("ops_excellence", "framework"),
-        ("predictive_maintenance", "data_insight"),
-        ("food_safety", "contrarian"),
-        ("predictive_maintenance", "benchmark"),
+        ("manufacturing_intelligence", "data_insight"),
+        ("manufacturing_strategy", "framework"),
+        ("food_safety_compliance", "contrarian"),
     ],
-    # Week 4 — PdM x1, F&B x1, Ops x1, Leadership x1
+    # Week 4
     [
-        ("predictive_maintenance", "data_insight"),
-        ("ops_excellence", "data_insight"),
-        ("food_safety", "benchmark"),
-        ("leadership", "framework"),
+        ("manufacturing_intelligence", "data_insight"),
+        ("manufacturing_operations", "contrarian"),
+        ("food_safety_compliance", "benchmark"),
     ],
 ]
 
 # Posting days within a week (Mon=0, Tue=1, Thu=3, Fri=4) as weekday offsets
-_POSTING_WEEKDAY_OFFSETS = [0, 1, 3, 4]  # Mon, Tue, Thu, Fri
+_POSTING_WEEKDAY_OFFSETS = [1, 3, 5]  # Tue, Thu, Sat
 _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 # Pillar display names
 _PILLAR_DISPLAY: dict[str, str] = {
-    "food_safety": "Food Safety & Compliance",
-    "predictive_maintenance": "Predictive Maintenance",
-    "ops_excellence": "Operations Excellence",
-    "leadership": "Leadership Strategy",
+    "manufacturing_intelligence": "Manufacturing Intelligence & AI",
+    "manufacturing_strategy": "Manufacturing Strategy & Leadership",
+    "manufacturing_operations": "Operations Excellence & Performance",
+    "food_safety_compliance": "Food Safety & Compliance",
 }
 
 # Format display names
@@ -385,10 +377,10 @@ _FORMAT_DISPLAY: dict[str, str] = {
 
 # Canonical pillar key used in content_guidelines.yaml topics_library
 _PILLAR_TO_YAML_KEY: dict[str, str] = {
-    "food_safety": "food_safety_compliance",
-    "predictive_maintenance": "predictive_maintenance",
-    "ops_excellence": "ops_excellence",
-    "leadership": "leadership_strategy",
+    "manufacturing_intelligence": "manufacturing_intelligence",
+    "manufacturing_strategy": "manufacturing_strategy",
+    "manufacturing_operations": "manufacturing_operations",
+    "food_safety_compliance": "food_safety_compliance",
 }
 
 
@@ -424,11 +416,11 @@ class AutoCalendarRequest(BaseModel):
 
 @router.post("/auto-calendar")
 async def auto_generate_calendar(req: AutoCalendarRequest):
-    """Generate a complete 4-week content calendar with balanced pillar/format rotation.
+    """Generate a content calendar with balanced pillar/format rotation.
 
-    Generates 4 posts per week (Mon/Tue/Thu/Fri) for the requested number of weeks.
+    Generates 3 posts per week (Tue/Thu/Sat) for the requested number of weeks.
     Each post is stored as an outreach_draft and returned in week-by-week order.
-    Estimated runtime: ~2-3 minutes for 16 posts (16 sequential Claude calls).
+    Estimated runtime: ~2-3 minutes for 12 posts (12 sequential Claude calls).
     """
     # ── Resolve start date ────────────────────────────────────────────────────
     if req.start_date:
