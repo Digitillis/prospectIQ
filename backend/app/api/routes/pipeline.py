@@ -54,9 +54,10 @@ class EnrichmentRequest(BaseModel):
 
 class OutreachRequest(BaseModel):
     company_ids: Optional[list[str]] = None
-    sequence_name: str = "initial_outreach"
+    sequence_name: str = "email_value_first"
     step: int = 1
     limit: int = 20
+    tiers: Optional[list[str]] = None
 
 
 class FullPipelineRequest(BaseModel):
@@ -172,6 +173,7 @@ async def run_outreach(body: OutreachRequest):
         sequence_name=body.sequence_name,
         sequence_step=body.step,
         limit=body.limit,
+        tiers=body.tiers,
     )
 
     if result.processed > 0:

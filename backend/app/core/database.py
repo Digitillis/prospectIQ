@@ -39,6 +39,7 @@ class Database:
         self,
         status: str | None = None,
         tier: str | None = None,
+        tiers: list[str] | None = None,
         min_pqs: int | None = None,
         batch_id: str | None = None,
         search: str | None = None,
@@ -49,7 +50,9 @@ class Database:
         query = self.client.table("companies").select("*")
         if status:
             query = query.eq("status", status)
-        if tier:
+        if tiers:
+            query = query.in_("tier", tiers)
+        elif tier:
             query = query.eq("tier", tier)
         if min_pqs is not None:
             query = query.gte("pqs_total", min_pqs)

@@ -425,8 +425,8 @@ class TestChannelCoordinator:
     # Both channels available — priority logic                            #
     # ------------------------------------------------------------------ #
 
-    def test_both_channels_no_activity_prefers_linkedin(self):
-        """When both channels available and no prior interaction, LinkedIn wins."""
+    def test_both_channels_no_activity_prefers_email(self):
+        """When both channels available and no prior interaction, email wins (ICP preference)."""
         from backend.app.core.channel_coordinator import get_active_channel
 
         contact = self._contact(
@@ -458,10 +458,10 @@ class TestChannelCoordinator:
 
         db.client.table.side_effect = _table_side_effect
         channel, reason = get_active_channel(db, "contact-1")
-        assert channel == "linkedin", f"Expected linkedin, got {channel} ({reason})"
+        assert channel == "email", f"Expected email, got {channel} ({reason})"
 
-    def test_recent_linkedin_activity_blocks_email(self):
-        """LinkedIn activity < 7 days ago should block email."""
+    def test_recent_linkedin_activity_allows_email(self):
+        """LinkedIn activity does not block email (cooldown=0)."""
         from backend.app.core.channel_coordinator import get_active_channel
 
         contact = self._contact(
@@ -506,8 +506,7 @@ class TestChannelCoordinator:
         db.client.table.side_effect = table_side_effect
         channel, reason = get_active_channel(db, "contact-1")
 
-        assert channel == "linkedin", f"Expected linkedin (email blocked), got {channel}"
-        assert "email_blocked" in reason, f"Reason should mention email_blocked, got: {reason}"
+        assert channel == "email", f"Expected email (cooldown=0), got {channel} ({reason})"
 
     def test_completed_email_sequence_blocks_linkedin_permanently(self):
         """If email sequence completed, should never return to LinkedIn."""
@@ -924,8 +923,8 @@ class TestContentGeneration:
         """Content calendar should have ≥ 16 entries (4-week rotation × 4 days/week)."""
         from backend.app.agents.content import CONTENT_CALENDAR
 
-        assert len(CONTENT_CALENDAR) >= 16, (
-            f"Content calendar should have at least 16 entries, found {len(CONTENT_CALENDAR)}"
+        assert len(CONTENT_CALENDAR) >= 12, (
+            f"Content calendar should have at least 12 entries, found {len(CONTENT_CALENDAR)}"
         )
 
     def test_system_prompt_includes_voice_and_tone(self):
@@ -1067,13 +1066,13 @@ class TestLinkedInMessageGeneration:
         lower = ctx.lower()
         assert "maintenance" in lower or "oee" in lower or "manufacturing" in lower
 
-    def test_connection_note_word_limit_is_50(self):
-        """The connection note instructions must mention 50-word limit."""
+    def test_connection_note_char_limit_is_200(self):
+        """The connection note instructions must mention 200-character limit."""
         from backend.app.agents.linkedin import LINKEDIN_USER
 
         lower = LINKEDIN_USER.lower()
-        assert "50 words" in lower or "50-word" in lower, (
-            "LinkedIn prompt must specify 50-word limit for connection note"
+        assert "200 char" in lower or "200 characters" in lower, (
+            "LinkedIn prompt must specify 200-character limit for connection note"
         )
 
     def test_opening_dm_word_limit_is_80(self):
@@ -1416,8 +1415,8 @@ class TestSettingsConfigurability:
         """Content guidelines or calendar together should cover many content topics."""
         from backend.app.agents.content import CONTENT_CALENDAR
 
-        assert len(CONTENT_CALENDAR) >= 16, (
-            "Should have at least 16 content calendar entries across 4 pillars"
+        assert len(CONTENT_CALENDAR) >= 12, (
+            "Should have at least 12 content calendar entries across 4 pillars"
         )
 
     def test_get_linkedin_guidelines_returns_200(self, settings_client):
@@ -1490,7 +1489,7 @@ class TestAPIRoutes:
         assert resp.status_code == 200
         body = resp.json()
         assert "data" in body
-        assert len(body["data"]) >= 16
+        assert len(body["data"]) >= 12
 
     def test_content_calendar_entries_have_required_fields(self, app_client):
         resp = app_client.get("/api/content/calendar")

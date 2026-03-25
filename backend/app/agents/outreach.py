@@ -186,11 +186,12 @@ class OutreachAgent(BaseAgent):
     def run(
         self,
         company_ids: list[str] | None = None,
-        sequence_name: str = "initial_outreach",
+        sequence_name: str = "email_value_first",
         sequence_step: int = 1,
         limit: int = 20,
         multi_thread: bool = True,
         max_contacts_per_company: int = 2,
+        tiers: list[str] | None = None,
     ) -> AgentResult:
         """Generate outreach drafts for qualified companies.
 
@@ -231,7 +232,7 @@ class OutreachAgent(BaseAgent):
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         else:
-            companies = self.db.get_companies(status="qualified", limit=limit)
+            companies = self.db.get_companies(status="qualified", tiers=tiers, limit=limit)
 
         if not companies:
             console.print("[yellow]No companies ready for outreach.[/yellow]")

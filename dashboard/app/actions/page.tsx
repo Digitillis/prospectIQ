@@ -284,13 +284,16 @@ function FilterPanel({ agentName, filters: f, onChange }: FilterPanelProps) {
         <>
           <div className="flex items-center gap-2">
             <label className="w-16 shrink-0 font-medium text-gray-600 dark:text-gray-500">Sequence</label>
-            <input
-              type="text"
+            <select
               value={f.sequence_name as string}
               onChange={(e) => onChange("sequence_name", e.target.value)}
-              placeholder="e.g. initial_outreach"
-              className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 focus:border-gray-300 focus:outline-none"
-            />
+              className="flex-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 focus:border-gray-300 focus:outline-none"
+            >
+              <option value="email_value_first">email_value_first</option>
+              <option value="linkedin_to_email_fallback">linkedin_to_email_fallback</option>
+              <option value="warm_follow_up">warm_follow_up</option>
+              <option value="reply_positive">reply_positive</option>
+            </select>
           </div>
           <div className="flex items-center gap-2">
             <label className="w-16 shrink-0 font-medium text-gray-600 dark:text-gray-500">Step</label>
@@ -376,7 +379,7 @@ export default function ActionsPage() {
     research: { tiers: [], limit: 10, min_score: 0, status: "" },
     qualification: { tiers: [], limit: 100 },
     enrichment: { tiers: [], limit: 25, include_phone: false },
-    outreach: { tiers: [], limit: 20, sequence_name: "initial_outreach", step: 1 },
+    outreach: { tiers: [], limit: 20, sequence_name: "email_value_first", step: 1 },
     reengagement: { tiers: [], limit: 50, cooldown_days: 90 },
     full: {},
   });
