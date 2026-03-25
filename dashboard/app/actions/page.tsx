@@ -55,6 +55,7 @@ interface AgentRunDetails {
   total_cost_usd: number;
   summary?: string;
   batch_id?: string;
+  error_details?: Array<{ company: string; status: string; message: string }>;
 }
 
 interface AgentFilters {
@@ -338,6 +339,15 @@ function RunDetails({ details }: { details: AgentRunDetails }) {
       {details.summary && (
         <p className="col-span-2 mt-0.5 leading-relaxed text-gray-500 dark:text-gray-500">{details.summary}</p>
       )}
+      {details.errors > 0 && details.error_details && details.error_details.length > 0 && (
+        <div className="col-span-2 mt-1 space-y-0.5">
+          {details.error_details.map((d, i) => (
+            <p key={i} className="text-red-500 truncate" title={d.message}>
+              {d.company}: {d.message}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -595,6 +605,7 @@ export default function ActionsPage() {
             total_cost_usd: d.total_cost_usd ?? 0,
             summary: d.summary,
             batch_id: d.batch_id,
+            error_details: (d as any).details?.filter((x: any) => x.status === 'error')?.slice(0, 3),
           }
         : null;
 
