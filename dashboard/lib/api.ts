@@ -409,7 +409,13 @@ export const importCompaniesCSV = async (file: File): Promise<{ data: ImportResu
 // Enrichment (Apollo — consumes credits)
 export const enrichCompany = (companyId: string) =>
   fetchAPI<{
-    data: { contacts_enriched: number; contacts_skipped: number; errors: number };
+    data: {
+      contacts_enriched: number;
+      contacts_skipped: number;
+      errors: number;
+      error_message?: string;
+      details?: Array<{ company: string; status: string; message: string }>;
+    };
   }>(`/api/companies/${companyId}/enrich`, { method: "POST" });
 
 // Custom tags

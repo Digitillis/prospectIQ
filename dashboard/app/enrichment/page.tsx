@@ -37,7 +37,7 @@ const TIER_LABELS: Record<string, string> = {
 type EnrichStatus =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "done"; contacts_enriched: number; contacts_skipped: number; errors: number }
+  | { kind: "done"; contacts_enriched: number; contacts_skipped: number; errors: number; detail_message?: string }
   | { kind: "error"; message: string };
 
 interface EnrichableCompany extends Company {
@@ -96,9 +96,18 @@ export default function EnrichmentQueuePage() {
     setEnrichStatuses((prev) => ({ ...prev, [companyId]: { kind: "loading" } }));
     try {
       const res = await enrichCompany(companyId);
+      // Extract the most useful detail message for display
+      const details = res.data.details ?? [];
+      const detail_message = details.length > 0 ? details[0].message : undefined;
       setEnrichStatuses((prev) => ({
         ...prev,
-        [companyId]: { kind: "done", ...res.data },
+        [companyId]: {
+          kind: "done",
+          contacts_enriched: res.data.contacts_enriched,
+          contacts_skipped: res.data.contacts_skipped,
+          errors: res.data.errors,
+          detail_message,
+        },
       }));
     } catch (err) {
       setEnrichStatuses((prev) => ({
@@ -296,20 +305,38 @@ export default function EnrichmentQueuePage() {
                     )}
 
                     {status.kind === "done" && (
-                      <div className="flex items-center gap-1.5 text-xs text-digitillis-success">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span>
-                          {status.contacts_enriched} found
-                          {status.contacts_skipped > 0 && `, ${status.contacts_skipped} skipped`}
-                        </span>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        {status.contacts_enriched > 0 ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 text-digitillis-success" />
+                            <span className="text-digitillis-success">
+                              {status.contacts_enriched} found
+                              {status.contacts_skipped > 0 && `, ${status.contacts_skipped} skipped`}
+                            </span>
+                          </>
+                        ) : status.errors > 0 ? (
+                          <>
+                            <AlertCircle className="h-4 w-4 text-red-500" />
+                            <span className="text-red-500 max-w-[250px] truncate" title={status.detail_message}>
+                              {status.detail_message || "Enrichment error"}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 text-amber-500" />
+                            <span className="text-amber-600 max-w-[250px] truncate" title={status.detail_message}>
+                              {status.detail_message || `${status.contacts_skipped} skipped`}
+                            </span>
+                          </>
+                        )}
                       </div>
                     )}
 
                     {status.kind === "error" && (
                       <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1.5 text-xs text-red-500" title={status.message}>
-                          <AlertCircle className="h-4 w-4" />
-                          Failed
+                        <div className="flex items-center gap-1.5 text-xs text-red-500 max-w-[250px]">
+                          <AlertCircle className="h-4 w-4 shrink-0" />
+                          <span className="truncate" title={status.message}>{status.message}</span>
                         </div>
                         <button
                           onClick={() => handleEnrich(company.id)}

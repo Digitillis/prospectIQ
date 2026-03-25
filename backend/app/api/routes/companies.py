@@ -497,65 +497,32 @@ async def create_interaction(company_id: str, body: dict):
 async def enrich_company(company_id: str):
     """Enrich contact emails via Apollo.io (consumes credits — use selectively).
 
-    Iterates contacts that have no email but have an apollo_id or linkedin_url,
-    calls Apollo People enrichment, and persists any discovered email addresses.
+    Delegates to the EnrichmentAgent which handles auto-discovery of contacts
+    when none exist, proper persona-based contact selection, domain verification,
+    and richer data extraction (phone, name, LinkedIn URL).
     """
-    from backend.app.integrations.apollo import ApolloClient
+    from backend.app.agents.enrichment import EnrichmentAgent
 
     db = get_db()
     company = db.get_company(company_id)
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
 
-    contacts = db.get_contacts_for_company(company_id)
-    enriched = 0
-    skipped = 0
-    errors = 0
-
     try:
-        with ApolloClient() as apollo:
-            for contact in contacts:
-                if contact.get("email"):
-                    skipped += 1
-                    continue
-
-                apollo_id = contact.get("apollo_id")
-                linkedin_url = contact.get("linkedin_url")
-
-                if not apollo_id and not linkedin_url:
-                    skipped += 1
-                    continue
-
-                try:
-                    result = apollo.enrich_person(
-                        person_id=apollo_id if apollo_id else None,
-                        linkedin_url=linkedin_url if not apollo_id else None,
-                        reveal_personal_emails=True,
-                    )
-                    person = result.get("person", {}) or {}
-                    email = person.get("email")
-
-                    if email:
-                        db.update_contact(contact["id"], {
-                            "email": email,
-                            "status": "enriched",
-                        })
-                        enriched += 1
-                    else:
-                        skipped += 1
-
-                except Exception as e:
-                    logger.error(f"Apollo enrichment failed for contact {contact['id']}: {e}")
-                    errors += 1
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        agent = EnrichmentAgent()
+        result = agent.execute(company_ids=[company_id], limit=1)
+    except Exception as e:
+        logger.error(f"Enrichment agent failed for {company_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     return {
         "data": {
             "company_id": company_id,
-            "contacts_enriched": enriched,
-            "contacts_skipped": skipped,
-            "errors": errors,
+            "contacts_enriched": result.processed,
+            "contacts_skipped": result.skipped,
+            "errors": result.errors,
+            "details": result.details,
+            "error_message": result.details[0].get("message", "") if result.errors > 0 and result.details else "",
         }
     }
 
