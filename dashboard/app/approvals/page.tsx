@@ -20,7 +20,7 @@ import {
   Inbox,
   Shuffle,
 } from "lucide-react";
-import { getPendingDrafts, approveDraft, rejectDraft, testSendDraft, OutreachDraft } from "@/lib/api";
+import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, OutreachDraft } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 
 export default function ApprovalsPage() {
@@ -89,16 +89,20 @@ export default function ApprovalsPage() {
     }
   };
 
-  const handleEditApprove = async (id: string) => {
+  const handleSaveEdit = async (id: string) => {
     setActionLoading(id);
     try {
-      await approveDraft(id, editBody);
-      setDrafts((prev) => prev.filter((d) => d.id !== id));
+      await saveDraftEdit(id, editBody);
+      // Update the draft in-place with the edited body (stays in queue)
+      setDrafts((prev) =>
+        prev.map((d) =>
+          d.id === id ? { ...d, edited_body: editBody, body: editBody } : d
+        )
+      );
       setEditingId(null);
       setEditBody("");
-      setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to approve");
+      setError(err instanceof Error ? err.message : "Failed to save edit");
     } finally {
       setActionLoading(null);
     }
@@ -442,7 +446,7 @@ export default function ApprovalsPage() {
                 {editingId === draft.id ? (
                   <>
                     <button
-                      onClick={() => handleEditApprove(draft.id)}
+                      onClick={() => handleSaveEdit(draft.id)}
                       disabled={actionLoading === draft.id}
                       className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                     >
@@ -451,7 +455,7 @@ export default function ApprovalsPage() {
                       ) : (
                         <CheckCircle2 className="h-4 w-4" />
                       )}
-                      Save & Approve
+                      Save
                     </button>
                     <button
                       onClick={() => {
@@ -482,7 +486,7 @@ export default function ApprovalsPage() {
                       className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                     >
                       <Pencil className="h-4 w-4" />
-                      Edit & Approve
+                      Edit
                     </button>
                     <button
                       onClick={() => startRejecting(draft.id)}

@@ -99,6 +99,27 @@ async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
     return {"data": draft, "message": "Draft approved"}
 
 
+class EditRequest(BaseModel):
+    edited_body: str
+
+
+@router.patch("/{draft_id}/edit")
+async def edit_draft(draft_id: str, body: EditRequest):
+    """Save edits to a draft without approving it.
+
+    The draft remains in the pending queue so it can be reviewed
+    and approved as a separate step.
+    """
+    db = get_db()
+
+    update_data = {"edited_body": body.edited_body}
+    draft = db.update_outreach_draft(draft_id, update_data)
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    return {"data": draft, "message": "Draft updated"}
+
+
 @router.post("/{draft_id}/reject")
 async def reject_draft(draft_id: str, body: RejectRequest):
     """Reject an outreach draft with a reason."""

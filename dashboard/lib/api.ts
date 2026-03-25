@@ -126,6 +126,12 @@ export const approveDraft = (id: string, editedBody?: string) =>
     body: JSON.stringify(editedBody ? { edited_body: editedBody } : {}),
   });
 
+export const saveDraftEdit = (id: string, editedBody: string) =>
+  fetchAPI(`/api/approvals/${id}/edit`, {
+    method: "PATCH",
+    body: JSON.stringify({ edited_body: editedBody }),
+  });
+
 export const rejectDraft = (id: string, reason: string) =>
   fetchAPI(`/api/approvals/${id}/reject`, {
     method: "POST",
