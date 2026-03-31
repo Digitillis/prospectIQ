@@ -581,6 +581,130 @@ class Database:
             counts[status] = counts.get(status, 0) + 1
         return [{"status": s, "count": c} for s, c in sorted(counts.items())]
 
+    # ------------------------------------------------------------------
+    # Outreach state machine
+    # ------------------------------------------------------------------
+
+    def update_contact_state(
+        self,
+        contact_id: str,
+        new_state: str,
+        from_state: str | None = None,
+        channel: str | None = None,
+        instantly_event: str | None = None,
+        metadata: dict | None = None,
+        extra_updates: dict | None = None,
+    ) -> None:
+        """Transition a contact to a new outreach state and log the transition.
+
+        Updates outreach_state and outreach_state_updated_at on the contact,
+        merges any extra_updates fields, then appends a row to outreach_state_log
+        for a complete audit trail.
+        """
+        from datetime import datetime, timezone
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        updates: dict = {
+            "outreach_state": new_state,
+            "outreach_state_updated_at": now_iso,
+        }
+        if extra_updates:
+            updates.update(extra_updates)
+
+        self.client.table("contacts").update(updates).eq("id", contact_id).execute()
+
+        self.client.table("outreach_state_log").insert({
+            "contact_id": contact_id,
+            "from_state": from_state,
+            "to_state": new_state,
+            "channel": channel,
+            "instantly_event": instantly_event,
+            "metadata": metadata or {},
+        }).execute()
+
+    def get_contact_by_email(self, email: str) -> dict | None:
+        """Look up a contact by email address.
+
+        Returns the first matching contact or None if not found.
+        """
+        result = (
+            self.client.table("contacts")
+            .select(
+                "id, email, outreach_state, open_count, click_count, "
+                "company_id, priority_score"
+            )
+            .eq("email", email)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    def add_to_dnc(
+        self,
+        email: str,
+        reason: str = "bounced",
+        added_by: str = "instantly_webhook",
+    ) -> None:
+        """Add an email address to the do_not_contact registry.
+
+        Uses upsert so repeated bounces or unsubscribes for the same
+        address are idempotent.
+        """
+        self.client.table("do_not_contact").upsert(
+            {
+                "email": email,
+                "reason": reason,
+                "added_by": added_by,
+            },
+            on_conflict="email",
+        ).execute()
+
+    def is_company_in_active_outreach(self, company_id: str) -> bool:
+        """Return True if this company already has an active outreach thread.
+
+        An active thread is any contact in an in-progress send state.
+        Used as a deduplication guard before launching a new sequence.
+        """
+        active_states = [
+            "sequenced",
+            "touch_1_sent",
+            "touch_2_sent",
+            "touch_3_sent",
+            "touch_4_sent",
+            "touch_5_sent",
+        ]
+        result = (
+            self.client.table("contacts")
+            .select("id")
+            .eq("company_id", company_id)
+            .in_("outreach_state", active_states)
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+
+    def set_company_outreach_active(
+        self,
+        company_id: str,
+        contact_id: str,
+    ) -> None:
+        """Mark a company as having an active outreach thread.
+
+        Records the primary contact and the start timestamp so the
+        dashboard can surface companies currently in sequence.
+        """
+        from datetime import datetime, timezone
+
+        self.client.table("companies").update({
+            "outreach_active": True,
+            "primary_contact_id": contact_id,
+            "outreach_started_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", company_id).execute()
+
+    # ------------------------------------------------------------------
+    # API costs summary (existing method continues below)
+    # ------------------------------------------------------------------
+
     def get_api_costs_summary(self, batch_id: str | None = None) -> list[dict]:
         """Get API cost summary."""
         query = self.client.table("api_costs").select("*")
