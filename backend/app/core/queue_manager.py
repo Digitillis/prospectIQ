@@ -101,7 +101,7 @@ def compute_priority_score(contact: dict, company: dict | None = None) -> int:
     comp = _completeness_points(contact.get("completeness_score"))
     persona = _persona_points(contact.get("persona_type"))
     tier = _tier_points((company or {}).get("tier") if company else contact.get("_tier"))
-    penalty = _recency_penalty(contact.get("last_contacted_at"))
+    penalty = _recency_penalty(contact.get("last_contacted_at") or contact.get("updated_at"))
     raw = comp + persona + tier - penalty
     return max(0, min(100, raw))
 
@@ -209,7 +209,7 @@ class QueueManager:
         # Fetch all enriched contacts
         query = (
             self.db.client.table("contacts")
-            .select("id, completeness_score, persona_type, last_contacted_at, companies(tier, campaign_name)")
+            .select("id, completeness_score, persona_type, updated_at, companies(tier, campaign_name)")
             .eq("enrichment_status", "enriched")
         )
         rows = query.execute().data or []
