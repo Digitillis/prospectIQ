@@ -2,6 +2,11 @@
 
 Checks for due follow-ups, pending approvals, and surfacing
 high-priority items that need founder attention.
+
+Options:
+    --poll / --no-poll   Poll Instantly for new opens/replies/bounces before
+                         showing the action list (default: True).
+    --queue              Show today's prioritised send queue.
 """
 
 import typer
@@ -15,9 +20,26 @@ app = typer.Typer(help="Generate the daily action list for ProspectIQ.")
 
 
 @app.command()
-def main():
+def main(
+    poll: bool = typer.Option(True, help="Poll Instantly for new events first"),
+    queue: bool = typer.Option(False, help="Show today's prioritised send queue"),
+):
     """Generate today's daily action list."""
     db = Database()
+
+    # ------------------------------------------------------------------
+    # Step 0: Poll Instantly for new engagement events
+    # ------------------------------------------------------------------
+    if poll:
+        console.print("[cyan]Polling Instantly for new events...[/cyan]")
+        try:
+            from backend.app.agents.engagement import EngagementAgent
+            agent = EngagementAgent()
+            poll_result = agent.execute(action="poll_events")
+            console.print(f"  [dim]Poll complete: {poll_result.summary()}[/dim]")
+        except Exception as exc:
+            console.print(f"  [yellow]⚠ Poll failed (continuing): {exc}[/yellow]")
+        console.print()
 
     console.print("\n[bold blue]{'='*60}[/bold blue]")
     console.print("[bold blue]ProspectIQ — Daily Actions[/bold blue]")
@@ -118,6 +140,23 @@ def main():
                 c.get("state", "-"),
             )
         console.print(table)
+
+    # ------------------------------------------------------------------
+    # Priority send queue (optional)
+    # ------------------------------------------------------------------
+    if queue:
+        console.print("[cyan]Today's Send Queue (priority order):[/cyan]")
+        try:
+            from backend.app.core.queue_manager import QueueManager
+            qm = QueueManager()
+            contacts_to_send = qm.get_send_queue(limit=20)
+            if contacts_to_send:
+                qm.print_queue(contacts_to_send)
+            else:
+                console.print("  [dim]No contacts ready to send today[/dim]")
+        except Exception as exc:
+            console.print(f"  [yellow]⚠ Queue unavailable: {exc}[/yellow]")
+        console.print()
 
     # Summary
     console.print(f"\n[bold green]{'-'*60}[/bold green]")

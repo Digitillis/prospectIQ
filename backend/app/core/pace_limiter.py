@@ -21,9 +21,19 @@ from datetime import date
 from rich.console import Console
 
 from backend.app.core.database import Database
+from backend.app.core.dnc_registry import DNCRegistry
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+_dnc: DNCRegistry | None = None
+
+
+def _get_dnc() -> DNCRegistry:
+    global _dnc
+    if _dnc is None:
+        _dnc = DNCRegistry()
+    return _dnc
 
 # Default daily send limits per campaign type
 CAMPAIGN_DEFAULTS: dict[str, int] = {
@@ -57,12 +67,13 @@ class PaceLimiter:
     def is_limit_reached(self) -> bool:
         return self.sends_today >= self.daily_limit
 
-    def can_send(self, contact_id: str) -> bool:
+    def can_send(self, contact_id: str, email: str | None = None) -> bool:
         """Return True if this contact can be sent to today.
 
-        Checks both:
+        Checks:
         1. Daily campaign limit not reached
         2. This specific contact has not already been sent today
+        3. Contact email/domain is not on the DNC list
         """
         if self.is_limit_reached:
             logger.info(
@@ -74,6 +85,12 @@ class PaceLimiter:
         if self.db.is_contact_sent_today(contact_id):
             logger.info(f"[pace] Contact {contact_id[:8]}... already sent today")
             return False
+
+        if email:
+            blocked, reason = _get_dnc().is_blocked(email=email)
+            if blocked:
+                logger.info(f"[pace] Contact {contact_id[:8]}... {reason}")
+                return False
 
         return True
 
