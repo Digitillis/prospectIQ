@@ -284,6 +284,7 @@ class Database:
 
     
     # ------------------------------------------------------------------
+<<<<<<< HEAD
     # Action Queue
     # ------------------------------------------------------------------
 
@@ -346,7 +347,165 @@ class Database:
         result = self.client.table("daily_targets").upsert(data, on_conflict="action_type,effective_date,day_of_week").execute()
         return result.data[0] if result.data else {}
 
-# ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Enrichment lifecycle
+    # ------------------------------------------------------------------
+
+    def get_contacts_needing_enrichment(
+        self,
+        campaign_name: str | None = None,
+        tier: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return contacts with enrichment_status = 'needs_enrichment' or 'stale'."""
+        query = (
+            self.client.table("contacts")
+            .select("*, companies(name, domain, tier, campaign_name)")
+            .in_("enrichment_status", ["needs_enrichment", "stale"])
+        )
+        if campaign_name or tier:
+            # Filter via join — fetch all then filter in Python (Supabase limitation)
+            rows = query.order("created_at").limit(500).execute().data
+            if campaign_name:
+                rows = [r for r in rows if (r.get("companies") or {}).get("campaign_name") == campaign_name]
+            if tier:
+                rows = [r for r in rows if (r.get("companies") or {}).get("tier") == tier]
+            return rows[:limit]
+        return query.order("created_at").limit(limit).execute().data
+
+    def get_stale_contacts(self, stale_days: int = 90, limit: int = 200) -> list[dict]:
+        """Return enriched contacts whose enriched_at is older than stale_days."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
+        result = (
+            self.client.table("contacts")
+            .select("id, first_name, last_name, title, apollo_id, enriched_at, company_id")
+            .eq("enrichment_status", "enriched")
+            .lt("enriched_at", cutoff)
+            .order("enriched_at")
+            .limit(limit)
+            .execute()
+        )
+        return result.data
+
+    def mark_contact_enriched(
+        self,
+        contact_id: str,
+        email: str | None = None,
+        phone: str | None = None,
+        source: str = "apollo",
+    ) -> dict:
+        """Mark a contact as successfully enriched and stamp enriched_at."""
+        from datetime import datetime, timezone
+        data: dict = {
+            "enrichment_status": "enriched",
+            "enriched_at": datetime.now(timezone.utc).isoformat(),
+            "enrichment_source": source,
+        }
+        if email:
+            data["email"] = email
+        if phone:
+            data["phone"] = phone
+        return self.update_contact(contact_id, data)
+
+    def mark_contact_enrichment_failed(self, contact_id: str, notes: str = "") -> dict:
+        """Mark a contact's enrichment attempt as failed."""
+        return self.update_contact(contact_id, {
+            "enrichment_status": "failed",
+            "enrichment_source": None,
+        })
+
+    def mark_contacts_stale(self, stale_days: int = 90) -> int:
+        """Flip enriched contacts older than stale_days to 'stale'. Returns count updated."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
+        result = (
+            self.client.table("contacts")
+            .update({"enrichment_status": "stale"})
+            .eq("enrichment_status", "enriched")
+            .lt("enriched_at", cutoff)
+            .execute()
+        )
+        return len(result.data)
+
+    # ------------------------------------------------------------------
+    # Apollo credit events
+    # ------------------------------------------------------------------
+
+    def log_apollo_credit(self, data: dict) -> dict:
+        """Record one Apollo credit spend event."""
+        result = self.client.table("apollo_credit_events").insert(data).execute()
+        return result.data[0] if result.data else {}
+
+    def get_apollo_credits_used(
+        self,
+        campaign_name: str | None = None,
+        since_days: int = 30,
+    ) -> dict:
+        """Summarise Apollo credit usage over the last N days."""
+        from datetime import datetime, timedelta, timezone
+        since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+        query = (
+            self.client.table("apollo_credit_events")
+            .select("operation, credits_used, response_status")
+            .gte("created_at", since)
+        )
+        if campaign_name:
+            query = query.eq("campaign_name", campaign_name)
+        rows = query.execute().data
+        total = sum(r.get("credits_used", 1) for r in rows)
+        by_op: dict[str, int] = {}
+        for r in rows:
+            op = r.get("operation", "unknown")
+            by_op[op] = by_op.get(op, 0) + r.get("credits_used", 1)
+        return {"total_credits": total, "by_operation": by_op, "events": len(rows)}
+
+    # ------------------------------------------------------------------
+    # Seed audit events
+    # ------------------------------------------------------------------
+
+    def log_audit_event(self, data: dict) -> dict:
+        """Record one seed/import audit event."""
+        result = self.client.table("seed_audit_events").insert(data).execute()
+        return result.data[0] if result.data else {}
+
+    # ------------------------------------------------------------------
+    # Outreach pace limiting
+    # ------------------------------------------------------------------
+
+    def count_sends_today(self, campaign_name: str) -> int:
+        """Count emails sent today for a given campaign."""
+        from datetime import date
+        today = date.today().isoformat()
+        result = (
+            self.client.table("outreach_pace_log")
+            .select("id", count="exact")
+            .eq("send_date", today)
+            .eq("campaign_name", campaign_name)
+            .eq("status", "sent")
+            .execute()
+        )
+        return result.count or 0
+
+    def log_outreach_send(self, data: dict) -> dict:
+        """Record one outreach send in the pace log."""
+        result = self.client.table("outreach_pace_log").insert(data).execute()
+        return result.data[0] if result.data else {}
+
+    def is_contact_sent_today(self, contact_id: str) -> bool:
+        """Return True if this contact has already been sent to today."""
+        from datetime import date
+        today = date.today().isoformat()
+        result = (
+            self.client.table("outreach_pace_log")
+            .select("id", count="exact")
+            .eq("contact_id", contact_id)
+            .eq("send_date", today)
+            .execute()
+        )
+        return (result.count or 0) > 0
+
+    # ------------------------------------------------------------------
     # Analytics helpers
     # ------------------------------------------------------------------
 

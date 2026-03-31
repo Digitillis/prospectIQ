@@ -12,6 +12,7 @@ from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import get_icp_config
+from backend.app.core.icp_validator import validate_and_exit_on_error
 from backend.app.integrations.apollo import ApolloClient
 from backend.app.utils.territory import get_territory, is_midwest
 from backend.app.utils.naics import classify_sub_sector
@@ -102,6 +103,7 @@ class DiscoveryAgent(BaseAgent):
         max_pages: int | None = None,
         campaign_name: str | None = None,
         tiers: list[str] | None = None,
+        dry_run: bool = False,
     ) -> AgentResult:
         """Run the discovery pipeline.
 
@@ -109,12 +111,19 @@ class DiscoveryAgent(BaseAgent):
             max_pages: Max pages per tier to fetch from Apollo (default from config).
             campaign_name: Campaign name to tag records with.
             tiers: Specific tiers to search (default: all tiers from ICP).
+            dry_run: If True, fetch from Apollo but do not write to database.
 
         Returns:
             AgentResult with processing stats.
         """
         result = AgentResult()
         icp = get_icp_config()
+
+        # Validate ICP config against GTM ground truth — exits on hard errors
+        validate_and_exit_on_error(icp)
+
+        if dry_run:
+            console.print("[yellow][DRY-RUN] No database writes will occur.[/yellow]")
 
         campaign = campaign_name or icp.get("discovery", {}).get("default_campaign_name", "prospectiq")
         pages = max_pages or icp.get("discovery", {}).get("pages_per_tier", 5)
@@ -249,19 +258,33 @@ class DiscoveryAgent(BaseAgent):
                                     "batch_id": self.batch_id,
                                 }
 
-                                new_company = self.db.insert_company(insert_data)
-                                company_id = new_company.get("id")
-                                result.processed += 1
-                                result.add_detail(
-                                    company_data["name"],
-                                    "created",
-                                    f"Tier {classification.get('tier') or tier}, PQS_firm={firmographic_score}",
-                                )
+                                if dry_run:
+                                    company_id = f"dry-run-{company_data['name']}"
+                                    result.processed += 1
+                                    result.add_detail(
+                                        company_data["name"],
+                                        "would-create",
+                                        f"Tier {classification.get('tier') or tier}, PQS_firm={firmographic_score}",
+                                    )
+                                    console.print(
+                                        f"  [DRY-RUN] Would insert company: {company_data['name']} "
+                                        f"(Tier {classification.get('tier') or tier})"
+                                    )
+                                else:
+                                    new_company = self.db.insert_company(insert_data)
+                                    company_id = new_company.get("id")
+                                    result.processed += 1
+                                    result.add_detail(
+                                        company_data["name"],
+                                        "created",
+                                        f"Tier {classification.get('tier') or tier}, PQS_firm={firmographic_score}",
+                                    )
 
                         # --- Contact deduplication and insertion ---
                         if company_id and contact_data.get("apollo_id"):
-                            existing_contact = self.db.get_contact_by_apollo_id(
-                                contact_data["apollo_id"]
+                            existing_contact = (
+                                None if dry_run
+                                else self.db.get_contact_by_apollo_id(contact_data["apollo_id"])
                             )
                             if not existing_contact:
                                 persona_type, is_dm = classify_persona(contact_data.get("title"))
@@ -271,7 +294,13 @@ class DiscoveryAgent(BaseAgent):
                                     "persona_type": persona_type,
                                     "is_decision_maker": is_dm,
                                 }
-                                self.db.insert_contact(contact_insert)
+                                if dry_run:
+                                    console.print(
+                                        f"    [DRY-RUN] Would insert contact: "
+                                        f"{contact_data.get('full_name', '?')} ({contact_data.get('title', '?')})"
+                                    )
+                                else:
+                                    self.db.insert_contact(contact_insert)
 
                     except Exception as e:
                         result.errors += 1

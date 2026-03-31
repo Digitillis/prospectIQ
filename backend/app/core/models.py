@@ -7,12 +7,20 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ============================================================
 # Enums (matching database enums)
 # ============================================================
+
+class EnrichmentStatus(str, Enum):
+    NEEDS_ENRICHMENT = "needs_enrichment"
+    PENDING = "pending"
+    ENRICHED = "enriched"
+    FAILED = "failed"
+    STALE = "stale"
+
 
 class CompanyStatus(str, Enum):
     DISCOVERED = "discovered"
@@ -134,6 +142,68 @@ class ContactCreate(BaseModel):
     country: Optional[str] = None
     is_decision_maker: bool = False
     persona_type: Optional[str] = None
+    role: Optional[str] = None
+    enrichment_status: EnrichmentStatus = EnrichmentStatus.NEEDS_ENRICHMENT
+    enrichment_source: Optional[str] = None
+
+    @field_validator("apollo_id")
+    @classmethod
+    def apollo_id_must_be_full(cls, v: Optional[str]) -> Optional[str]:
+        """Reject truncated Apollo IDs — must be at least 24 chars."""
+        if v is not None and len(v) < 24:
+            raise ValueError(
+                f"apollo_id '{v}' is only {len(v)} chars — must be the full 24-char Apollo person ID. "
+                "Truncated IDs cause enrichment failures."
+            )
+        return v
+
+
+# ============================================================
+# Enrichment & Credit Models
+# ============================================================
+
+class ApolloEnrichmentJob(BaseModel):
+    """Batch of contacts queued for Apollo bulk match enrichment."""
+    contact_ids: list[str]
+    campaign_name: Optional[str] = None
+    batch_id: Optional[str] = None
+    dry_run: bool = False
+
+
+class ApolloCreditEvent(BaseModel):
+    """One Apollo API credit spend event."""
+    operation: str          # people_match | people_bulk_match | org_enrich | people_search
+    credits_used: int = 1
+    contact_id: Optional[str] = None
+    company_id: Optional[str] = None
+    batch_id: Optional[str] = None
+    campaign_name: Optional[str] = None
+    response_status: str = "success"   # success | failed | no_match
+    notes: Optional[str] = None
+
+
+class SeedAuditEvent(BaseModel):
+    """One record from an idempotent seed / import script."""
+    script_name: str
+    entity_type: str        # company | contact
+    entity_id: Optional[str] = None
+    entity_name: Optional[str] = None
+    action: str             # created | skipped | updated | deleted | failed
+    source: Optional[str] = None  # apollo_mcp | csv | manual | api
+    details: Optional[str] = None
+
+
+class ReadinessCheck(BaseModel):
+    """Result of a campaign readiness gate evaluation for one company."""
+    company_id: str
+    company_name: str
+    campaign_name: str
+    is_ready: bool
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    enriched_contacts: int = 0
+    total_contacts: int = 0
+    has_domain: bool = False
 
 
 # ============================================================
