@@ -705,6 +705,55 @@ class Database:
     # API costs summary (existing method continues below)
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Intent signals
+    # ------------------------------------------------------------------
+
+    def get_companies_for_intent_scan(self, campaign_name: str | None = None) -> list[dict]:
+        """Fetch companies with their Apollo org ID for intent scanning."""
+        query = self.client.table("companies").select(
+            "id, name, domain, apollo_id, campaign_name, intent_score"
+        )
+        if campaign_name:
+            query = query.eq("campaign_name", campaign_name)
+        result = query.execute()
+        return result.data or []
+
+    def upsert_intent_signal(self, signal: dict) -> dict:
+        """Insert an intent signal record.
+
+        Note: deduplication is handled upstream in IntentEngine before calling
+        this method, so we do a plain insert here.
+        """
+        result = self.client.table("company_intent_signals").insert(signal).execute()
+        return result.data[0] if result.data else {}
+
+    def get_active_intent_signals(self, company_id: str) -> list[dict]:
+        """Get all active (non-expired) intent signals for a company."""
+        result = (
+            self.client.table("company_intent_signals")
+            .select("*")
+            .eq("company_id", company_id)
+            .eq("is_active", True)
+            .order("detected_at", desc=True)
+            .execute()
+        )
+        return result.data or []
+
+    def update_company_intent_score(self, company_id: str, score: int) -> None:
+        """Update the cached intent score on the company record."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        self.client.table("companies").update({
+            "intent_score": score,
+            "intent_score_updated_at": now,
+            "last_intent_signal_at": now,
+        }).eq("id", company_id).execute()
+
+    # ------------------------------------------------------------------
+    # API costs summary (existing method continues below)
+    # ------------------------------------------------------------------
+
     def get_api_costs_summary(self, batch_id: str | None = None) -> list[dict]:
         """Get API cost summary."""
         query = self.client.table("api_costs").select("*")

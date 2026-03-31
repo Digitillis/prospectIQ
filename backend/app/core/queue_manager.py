@@ -7,6 +7,8 @@ Priority score (0–100) is a weighted composite of:
   - Completeness (40 pts)  — how complete the contact record is
   - Persona priority (35 pts) — how valuable the decision-maker role is
   - Company tier (15 pts)  — Tier 0 > Tier 1 > Tier 2
+  - Intent boost (15 pts max) — company-level buying signals (job postings,
+    FDA letters, OSHA citations, funding events, LinkedIn activity)
   - Recency penalty (-10 pts max) — penalises contacts we have already tried
     recently (prevents hammering the same people)
 
@@ -102,7 +104,8 @@ def compute_priority_score(contact: dict, company: dict | None = None) -> int:
     persona = _persona_points(contact.get("persona_type"))
     tier = _tier_points((company or {}).get("tier") if company else contact.get("_tier"))
     penalty = _recency_penalty(contact.get("last_contacted_at") or contact.get("updated_at"))
-    raw = comp + persona + tier - penalty
+    intent = min((company or {}).get("intent_score", 0), 15)  # cap intent contribution at 15
+    raw = comp + persona + tier + intent - penalty
     return max(0, min(100, raw))
 
 
