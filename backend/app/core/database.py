@@ -136,7 +136,23 @@ class Database:
         return result.data[0] if result.data else None
 
     def insert_contact(self, data: dict) -> dict:
-        """Insert a new contact record."""
+        """Insert a new contact record.
+
+        Auto-classifies persona_type from title if not already set,
+        and computes initial priority_score.
+        """
+        from backend.app.agents.discovery import classify_persona
+        from backend.app.core.queue_manager import compute_priority_score
+
+        if not data.get("persona_type"):
+            persona_type, is_dm = classify_persona(data.get("title"))
+            data["persona_type"] = persona_type
+            data["is_decision_maker"] = is_dm
+
+        # Compute initial priority score (no company context yet — will be
+        # recomputed with full context on first update-scores run)
+        data.setdefault("priority_score", compute_priority_score(data, {}))
+
         result = self.client.table("contacts").insert(data).execute()
         return result.data[0] if result.data else {}
 
@@ -394,8 +410,14 @@ class Database:
         phone: str | None = None,
         source: str = "apollo",
     ) -> dict:
-        """Mark a contact as successfully enriched and stamp enriched_at."""
+        """Mark a contact as successfully enriched and stamp enriched_at.
+
+        Also ensures persona_type is classified and priority_score is current.
+        """
         from datetime import datetime, timezone
+        from backend.app.agents.discovery import classify_persona
+        from backend.app.core.queue_manager import compute_priority_score
+
         data: dict = {
             "enrichment_status": "enriched",
             "enriched_at": datetime.now(timezone.utc).isoformat(),
@@ -405,6 +427,21 @@ class Database:
             data["email"] = email
         if phone:
             data["phone"] = phone
+
+        # Fetch current contact to check persona and recompute score
+        existing = self.client.table("contacts").select(
+            "title, persona_type, completeness_score, companies(tier)"
+        ).eq("id", contact_id).execute().data
+        if existing:
+            row = existing[0]
+            if not row.get("persona_type"):
+                persona_type, is_dm = classify_persona(row.get("title"))
+                data["persona_type"] = persona_type
+                data["is_decision_maker"] = is_dm
+            company = row.get("companies") or {}
+            merged = {**row, **data}
+            data["priority_score"] = compute_priority_score(merged, company)
+
         return self.update_contact(contact_id, data)
 
     def mark_contact_enrichment_failed(self, contact_id: str, notes: str = "") -> dict:
