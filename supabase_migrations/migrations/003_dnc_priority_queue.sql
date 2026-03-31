@@ -32,5 +32,4 @@ ALTER TABLE contacts
     ADD COLUMN IF NOT EXISTS priority_score INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_contacts_priority
-    ON contacts (priority_score DESC)
-    WHERE enrichment_status = 'enriched';
+    ON contacts (priority_score DESC);
