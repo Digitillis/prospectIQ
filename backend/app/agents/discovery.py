@@ -385,3 +385,35 @@ class DiscoveryAgent(BaseAgent):
         # Apollo doesn't always provide this; skip if unknown
 
         return min(score, 25)  # Cap at dimension max
+
+
+if __name__ == "__main__":
+    import argparse
+    import logging as _logging
+
+    _logging.basicConfig(
+        level=_logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    parser = argparse.ArgumentParser(description="Run ProspectIQ discovery")
+    parser.add_argument("--campaign", required=True, help="Campaign name")
+    parser.add_argument(
+        "--tiers",
+        help="Comma-separated tier list e.g. mfg1,mfg2,mfg3",
+    )
+    parser.add_argument("--max-pages", type=int, help="Max pages per tier")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    tiers = args.tiers.split(",") if args.tiers else None
+    agent = DiscoveryAgent()
+    result = agent.execute(
+        campaign_name=args.campaign,
+        tiers=tiers,
+        max_pages=args.max_pages,
+        dry_run=args.dry_run,
+    )
+
+    from rich.console import Console as _Console
+    _Console().print(result.summary())

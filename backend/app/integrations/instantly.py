@@ -203,6 +203,89 @@ class InstantlyClient:
         )
         return self._post("/leads", {"leads": prepared_leads})
 
+    def add_lead_to_campaign(self, campaign_id: str, lead: dict) -> dict:
+        """Add a single contact as a lead to an Instantly campaign/sequence.
+
+        Convenience wrapper around add_leads_to_campaign for single-lead pushes.
+
+        Expected lead keys:
+            email (str): Required.
+            firstName / first_name (str): First name.
+            lastName / last_name (str): Last name.
+            companyName / company_name (str): Company name.
+            personalization (str): First line of email (custom intro copy).
+            website (str): Company website URL.
+
+        Args:
+            campaign_id: Instantly campaign ID.
+            lead: Lead dict with contact details.
+
+        Returns:
+            Created lead object from Instantly.
+
+        Raises:
+            httpx.HTTPStatusError: On non-2xx response after retries.
+        """
+        # Normalise camelCase / snake_case keys into what Instantly expects
+        normalised: dict = {
+            "email": lead.get("email", lead.get("email_address", "")),
+            "first_name": lead.get("firstName") or lead.get("first_name", ""),
+            "last_name": lead.get("lastName") or lead.get("last_name", ""),
+            "company_name": lead.get("companyName") or lead.get("company_name", ""),
+            "website": lead.get("website", ""),
+        }
+        if lead.get("personalization"):
+            normalised["custom_variables"] = {
+                "personalization": lead["personalization"]
+            }
+
+        # Simple retry loop (3 attempts, 2 s backoff) around add_leads_to_campaign
+        import time as _time
+
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                result = self.add_leads_to_campaign(campaign_id, [normalised])
+                # add_leads_to_campaign returns the full response; surface the
+                # first lead record so callers get a consistent dict back.
+                if isinstance(result, dict):
+                    leads_list = result.get("leads", result.get("data", []))
+                    if leads_list:
+                        return leads_list[0] if isinstance(leads_list, list) else leads_list
+                return result
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt < 2:
+                    logger.warning(
+                        f"add_lead_to_campaign attempt {attempt + 1} failed: {exc}. "
+                        "Retrying in 2 s…"
+                    )
+                    _time.sleep(2)
+        raise RuntimeError(
+            f"add_lead_to_campaign failed after 3 attempts"
+        ) from last_exc
+
+    def remove_lead_from_campaign(self, campaign_id: str, email: str) -> bool:
+        """Remove / pause a lead from an Instantly campaign.
+
+        Args:
+            campaign_id: Instantly campaign ID.
+            email: Lead email address.
+
+        Returns:
+            True if the request succeeded.
+        """
+        logger.info(f"Removing lead {email} from campaign {campaign_id}")
+        try:
+            self._post(
+                f"/campaigns/{campaign_id}/leads/pause",
+                payload={"emails": [email]},
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Failed to remove lead {email} from {campaign_id}: {exc}")
+            return False
+
     def get_lead(self, email: str) -> dict:
         """Look up a lead by email address.
 
@@ -213,6 +296,28 @@ class InstantlyClient:
             Lead data dict.
         """
         return self._get("/leads", params={"email": email})
+
+    def get_lead_status(self, email: str) -> dict | None:
+        """Get the current status of a lead across campaigns.
+
+        Args:
+            email: Lead email address to look up.
+
+        Returns:
+            Lead status dict, or None if the lead is not found.
+        """
+        try:
+            result = self._get("/leads", params={"email": email})
+            if isinstance(result, list):
+                return result[0] if result else None
+            # Response shape varies by Instantly version
+            items = result.get("items", result.get("leads", []))
+            if isinstance(items, list):
+                return items[0] if items else None
+            return result or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"get_lead_status lookup failed for {email}: {exc}")
+            return None
 
     def list_campaign_leads(
         self,
