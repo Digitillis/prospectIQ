@@ -32,6 +32,44 @@ class TestEmailRequest(BaseModel):
     test_email: str  # Your email address to receive the test
 
 
+@router.get("/sent")
+async def list_sent_emails(
+    limit: int = 200,
+    offset: int = 0,
+    company_id: Optional[str] = None,
+    contact_id: Optional[str] = None,
+):
+    """Return all sent outreach emails, newest first.
+
+    Records are never deleted once sent_at is set (enforced by DB trigger).
+    Supports pagination and filtering by company or contact.
+    """
+    db = get_db()
+    query = (
+        db._filter_ws(
+            db.client.table("outreach_drafts")
+            .select(
+                "id, company_id, contact_id, subject, body, edited_body, "
+                "sent_at, approved_at, sequence_name, sequence_step, channel, "
+                "instantly_campaign_id, "
+                "companies(name, tier, campaign_cluster), "
+                "contacts(full_name, title, email, persona_type)"
+            )
+        )
+        .not_.is_("sent_at", "null")
+        .order("sent_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+    )
+    if company_id:
+        query = query.eq("company_id", company_id)
+    if contact_id:
+        query = query.eq("contact_id", contact_id)
+
+    data = query.execute().data or []
+    return {"data": data, "count": len(data)}
+
+
 @router.get("/")
 async def list_pending_drafts(limit: int = 50):
     """Get pending outreach drafts with company/contact info and quality scores."""

@@ -440,52 +440,120 @@ function InFlightTab() {
 function SentHistoryTab() {
   const [sent, setSent] = useState<OutreachDraft[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/approvals?status=sent&limit=100`)
+    fetch(`${API_BASE}/api/approvals/sent?limit=200`)
       .then((r) => r.ok ? r.json() : { data: [] })
       .then((json) => setSent(json.data || []))
       .catch(() => setSent([]))
       .finally(() => setLoading(false));
   }, []);
 
+  const filtered = search.trim()
+    ? sent.filter((d) => {
+        const q = search.toLowerCase();
+        return (
+          d.companies?.name?.toLowerCase().includes(q) ||
+          d.subject?.toLowerCase().includes(q) ||
+          (d.contacts as Record<string, string> | undefined)?.full_name?.toLowerCase().includes(q)
+        );
+      })
+    : sent;
+
   return (
-    <div>
-      {loading ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full mb-2" />) :
-        sent.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 py-16 text-gray-400">
-            <Mail className="h-10 w-10 mb-2" />
-            <p className="text-sm">No sent emails yet</p>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-                  {["Company", "Subject", "Sent", "Opened", "Clicked", "Replied"].map((h) => (
-                    <th key={h} className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {sent.map((d) => {
-                  const meta = d as Record<string, unknown>;
-                  return (
-                    <tr key={d.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                      <td className="px-4 py-2 font-medium text-gray-900 dark:text-gray-100">{d.companies?.name ?? "—"}</td>
-                      <td className="px-4 py-2 text-gray-600 dark:text-gray-400 max-w-xs truncate">{d.subject}</td>
-                      <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}</td>
-                      <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{(meta.open_count as number | undefined) ?? "—"}</td>
-                      <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{(meta.click_count as number | undefined) ?? "—"}</td>
-                      <td className="px-4 py-2">{(meta.replied as boolean | undefined) ? <span className="text-green-600 font-medium">Yes</span> : <span className="text-gray-400">No</span>}</td>
+    <div className="space-y-3">
+      {/* Search bar */}
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="Search by company, contact, or subject…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <span className="text-xs text-gray-400 whitespace-nowrap">
+          {filtered.length} of {sent.length} sent
+        </span>
+      </div>
+
+      {loading ? (
+        Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 py-16 text-gray-400">
+          <Mail className="h-10 w-10 mb-2" />
+          <p className="text-sm">{sent.length === 0 ? "No sent emails yet" : "No results for your search"}</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+                {["Company", "Contact", "Subject", "Sent At", "Step", ""].map((h) => (
+                  <th key={h} className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              {filtered.map((d) => {
+                const contact = d.contacts as Record<string, string> | undefined;
+                const sentAt = (d as Record<string, string>).sent_at;
+                const isExpanded = expandedId === d.id;
+                const bodyText = (d as Record<string, string>).edited_body || d.body || "";
+                return (
+                  <>
+                    <tr
+                      key={d.id}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer"
+                      onClick={() => setExpandedId(isExpanded ? null : d.id)}
+                    >
+                      <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                        {d.companies?.name ?? "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                        {contact?.full_name ?? "—"}
+                        {contact?.title && (
+                          <span className="ml-1 text-gray-400 dark:text-gray-500">· {contact.title}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 max-w-xs truncate">
+                        {d.subject}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        {sentAt
+                          ? new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                          + " " + new Date(sentAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">
+                        {d.sequence_name
+                          ? `${d.sequence_name} · step ${d.sequence_step ?? 1}`
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-blue-500">
+                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
-      }
+                    {isExpanded && (
+                      <tr key={`${d.id}-body`} className="bg-gray-50 dark:bg-gray-800/40">
+                        <td colSpan={6} className="px-6 py-4">
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+                            Email Body
+                          </div>
+                          <pre className="whitespace-pre-wrap font-sans text-sm text-gray-800 dark:text-gray-200 leading-relaxed bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                            {bodyText}
+                          </pre>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
