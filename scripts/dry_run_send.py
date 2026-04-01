@@ -50,12 +50,15 @@ def main():
     query = (
         db.client.table("outreach_drafts")
         .select(
-            "id, subject, body, edited_body, sequence_name, sequence_step, "
+            "id, subject, body, edited_body, sequence_name, sequence_step, channel, "
             "companies(name, campaign_cluster), "
             "contacts(full_name, first_name, last_name, persona_type, title)"
         )
         .eq("approval_status", "approved")
         .is_("sent_at", "null")
+        .eq("channel", "email")           # email drafts only — LinkedIn drafts have no subject
+        .not_.is_("subject", "null")
+        .neq("subject", "")
         .order("created_at")
         .limit(args.count * 5)  # fetch more, filter below
     )
