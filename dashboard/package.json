@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@platform/billing-ui": "file:../../digitillis-platform/packages/billing-ui",
+    "@platform/billing-ui": "file:../packages/billing-ui",
     "next": "^15.5.14",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
