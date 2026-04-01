@@ -118,7 +118,10 @@ def _build_system_prompt() -> str:
         "- Reference a benchmark from their sub-sector (not generic 'manufacturing')",
         "- Ask a question so specific it proves you understand their daily work",
         "",
-        "SIGNATURE (use exactly this, on every email):",
+        "GREETING & SIGNATURE (mandatory on every email):",
+        "- The email body MUST start with: Hi [first_name],",
+        "- The email body MUST end with the exact signature block below — no paraphrasing.",
+        "SIGNATURE BLOCK (copy exactly):",
         signature,
     ]
 
@@ -189,7 +192,7 @@ GLOBAL ANTI-PATTERNS:
 OUTPUT FORMAT (JSON):
 {{
     "subject": "Short, specific subject line referencing their company or situation (under 50 chars, no generic subjects)",
-    "body": "The email body. {max_words} words max. Must end with the exact signature block from the system prompt.",
+    "body": "The email body. MUST start with 'Hi [first_name],' (use actual first name). {max_words} words max. MUST end with the exact signature block from the system prompt.",
     "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect"
 }}
 
@@ -430,7 +433,7 @@ class OutreachAgent(BaseAgent):
                     result.add_detail(
                         company_name,
                         "draft_created",
-                        f"Contact: {contact.get('full_name')}, Channel: {step_config['channel']}",
+                        f"Contact: {contact.get('full_name')}, Channel: {step_config.get('channel', 'email')}",
                     )
 
                 # Update company status (once per company, after all contacts processed)

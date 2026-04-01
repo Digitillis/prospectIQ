@@ -77,7 +77,7 @@ class EngagementAgent(BaseAgent):
         # Get approved drafts that haven't been sent yet
         drafts = (
             self.db.client.table("outreach_drafts")
-            .select("*, companies(name, tier), contacts(full_name, email, first_name, last_name, company_id)")
+            .select("*, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
             .order("created_at")
@@ -91,32 +91,63 @@ class EngagementAgent(BaseAgent):
 
         console.print(f"[cyan]Sending {len(drafts)} approved drafts via Instantly.ai...[/cyan]")
 
+        # Mapping of (cluster, persona) → Instantly campaign name.
+        # These are the 7 pre-configured template campaigns — NEVER attach leads via Instantly UI.
+        # ProspectIQ routes here programmatically; Instantly is the delivery rail only.
+        _CAMPAIGN_ROUTE: dict[tuple[str, str], str] = {
+            ("machinery", "vp_ops"):        "mfg-vp-ops",
+            ("machinery", "plant_manager"): "mfg-plant-manager",
+            ("machinery", "director_ops"):  "mfg-director-ops",
+            ("auto", "vp_ops"):             "mfg-vp-ops",
+            ("auto", "plant_manager"):      "mfg-plant-manager",
+            ("metals", "vp_ops"):           "mfg-vp-ops",
+            ("metals", "plant_manager"):    "mfg-plant-manager",
+            ("process", "vp_ops"):          "mfg-vp-ops",
+            ("process", "plant_manager"):   "mfg-plant-manager",
+            ("chemicals", "vp_ops"):        "mfg-vp-ops",
+            ("chemicals", "plant_manager"): "mfg-plant-manager",
+            ("fb", "vp_ops"):               "fb-vp-ops",
+            ("fb", "plant_manager"):        "fb-maintenance",
+            ("fb", "maintenance_leader"):   "fb-maintenance",
+        }
+        _FALLBACK_CAMPAIGN = "mfg-general"
+
         with InstantlyClient() as instantly:
-            # Get or create campaign
-            campaign_label = campaign_name or f"ProspectIQ_{datetime.now().strftime('%Y%m')}"
-
+            # Cache campaign name → id to avoid repeated list calls
             campaigns = instantly.list_campaigns()
-            campaign_id = None
-            for c in campaigns:
-                if c.get("name") == campaign_label:
-                    campaign_id = c.get("id")
-                    break
+            campaign_name_to_id: dict[str, str] = {
+                c.get("name"): c.get("id") for c in campaigns if c.get("name") and c.get("id")
+            }
 
-            if not campaign_id:
-                console.print(f"  [dim]Creating campaign: {campaign_label}[/dim]")
-                campaign = instantly.create_campaign(name=campaign_label)
-                campaign_id = campaign.get("id")
-
-            if not campaign_id:
-                console.print("[red]Failed to get/create Instantly campaign.[/red]")
-                result.success = False
-                return result
+            default_campaign_id: str | None = None
+            if campaign_name:
+                default_campaign_id = campaign_name_to_id.get(campaign_name)
 
             for draft in drafts:
-                contact = draft.get("contacts", {})
-                company = draft.get("companies", {})
+                contact = draft.get("contacts", {}) or {}
+                company = draft.get("companies", {}) or {}
                 company_name = company.get("name", "Unknown")
                 contact_email = contact.get("email")
+
+                # Resolve which Instantly campaign this draft belongs to
+                cluster = (company.get("campaign_cluster") or "other").lower()
+                persona = (contact.get("persona_type") or "").lower()
+                route_key = (cluster, persona)
+                resolved_campaign = (
+                    campaign_name
+                    or _CAMPAIGN_ROUTE.get(route_key)
+                    or _CAMPAIGN_ROUTE.get((cluster, "vp_ops"))  # persona fallback
+                    or _FALLBACK_CAMPAIGN
+                )
+                campaign_id = default_campaign_id or campaign_name_to_id.get(resolved_campaign)
+
+                if not campaign_id:
+                    console.print(
+                        f"  [yellow]{company_name}: No Instantly campaign found for "
+                        f"cluster={cluster} persona={persona} (tried '{resolved_campaign}'). Skipping.[/yellow]"
+                    )
+                    result.skipped += 1
+                    continue
 
                 if not contact_email:
                     console.print(f"  [yellow]{company_name}: No email for contact. Skipping.[/yellow]")
