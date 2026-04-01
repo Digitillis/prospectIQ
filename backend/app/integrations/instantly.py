@@ -90,14 +90,18 @@ class InstantlyClient:
     # Campaigns
     # ------------------------------------------------------------------
 
-    def list_campaigns(self) -> dict:
+    def list_campaigns(self) -> list[dict]:
         """List all campaigns.
 
         Returns:
-            Dict with campaign list from GET /campaigns.
+            List of campaign dicts from GET /campaigns.
         """
         logger.info("Listing Instantly campaigns")
-        return self._get("/campaigns")
+        result = self._get("/campaigns")
+        # API returns {"items": [...], "next_starting_after": ...}
+        if isinstance(result, dict):
+            return result.get("items", [])
+        return result or []
 
     def create_campaign(
         self,
@@ -192,16 +196,22 @@ class InstantlyClient:
         Returns:
             Response confirming lead creation.
         """
-        # Ensure each lead has the campaign_id set
-        prepared_leads = []
+        # Instantly v2 API accepts one lead per POST /leads call (flat object,
+        # camelCase fields). Loop and collect results.
+        logger.info(f"Adding {len(leads)} leads to Instantly campaign {campaign_id}")
+        results = []
         for lead in leads:
-            lead_data = {**lead, "campaign_id": campaign_id}
-            prepared_leads.append(lead_data)
-
-        logger.info(
-            f"Adding {len(prepared_leads)} leads to Instantly campaign {campaign_id}"
-        )
-        return self._post("/leads", {"leads": prepared_leads})
+            payload = {
+                "email": lead.get("email") or lead.get("Email", ""),
+                "firstName": lead.get("first_name") or lead.get("firstName", ""),
+                "lastName": lead.get("last_name") or lead.get("lastName", ""),
+                "companyName": lead.get("company_name") or lead.get("companyName", ""),
+                "campaignId": campaign_id,
+                "variables": lead.get("custom_variables", {}),
+            }
+            result = self._post("/leads", payload)
+            results.append(result)
+        return results[0] if len(results) == 1 else {"results": results}
 
     def add_lead_to_campaign(self, campaign_id: str, lead: dict) -> dict:
         """Add a single contact as a lead to an Instantly campaign/sequence.
