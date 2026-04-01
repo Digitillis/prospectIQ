@@ -1,12 +1,32 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://prospectiq-production-4848.up.railway.app";
 
+async function getAuthHeader(): Promise<string | null> {
+  try {
+    // Dynamic import to avoid SSR issues — supabase client is browser-only
+    const { supabase } = await import("@/lib/supabase");
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ? `Bearer ${session.access_token}` : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchAPI<T = unknown>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
+  const authHeader = await getAuthHeader();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
+    headers,
   });
   if (!res.ok) {
     const error = await res.text();
@@ -1008,14 +1028,6 @@ export interface LinkedInTask {
   contacts?: { full_name?: string; title?: string; linkedin_url?: string };
 }
 
-export interface SequenceStep {
-  step: number;
-  channel: string;
-  delay_days: number;
-  template: string;
-  instructions?: Record<string, unknown>;
-}
-
 export interface Sequence {
   name: string;
   description: string;
@@ -1235,3 +1247,296 @@ export const getQueueSummary = (date?: string) =>
   fetchAPI<{ data: QueueSummary }>(
     "/api/action-queue/summary" + (date ? "?date=" + date : "")
   );
+
+// ---------------------------------------------------------------------------
+// Threads — campaign reply thread management
+// ---------------------------------------------------------------------------
+
+export interface ThreadMessage {
+  id: string;
+  thread_id: string;
+  direction: "inbound" | "outbound";
+  subject?: string;
+  body?: string;
+  sent_at: string;
+  classification?: string;
+  classification_confidence?: number;
+  classification_reasoning?: string;
+  classification_confirmed_by?: string;
+  outreach_draft_id?: string;
+  source?: string;
+}
+
+export interface CampaignThread {
+  id: string;
+  company_id: string;
+  contact_id: string;
+  sequence_name?: string;
+  status: string; // active | paused | closed | unsubscribed | bounced | converted
+  current_step?: number;
+  next_step?: number;
+  paused_reason?: string;
+  last_sent_at?: string;
+  last_replied_at?: string;
+  updated_at: string;
+  created_at: string;
+  // Joined
+  companies?: {
+    id: string;
+    name: string;
+    tier?: string;
+    pqs_total: number;
+    campaign_cluster?: string;
+    status: string;
+    research_summary?: string;
+    pain_signals?: string[];
+    intent_score?: number;
+    personalization_hooks?: string[];
+  };
+  contacts?: {
+    id: string;
+    full_name?: string;
+    title?: string;
+    email?: string;
+    persona_type?: string;
+  };
+  // Enriched by API
+  last_message?: ThreadMessage | null;
+  messages?: ThreadMessage[];
+  pending_draft?: OutreachDraft | null;
+  needs_action?: boolean;
+  step_display?: string;
+}
+
+export const listThreads = (params?: {
+  status?: string;
+  needs_action?: boolean;
+  limit?: number;
+}) => {
+  const qs = params ? "?" + new URLSearchParams(
+    Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => [k, String(v)])
+  ).toString() : "";
+  return fetchAPI<{ data: CampaignThread[]; count: number; needs_action_count: number }>(`/api/threads${qs}`);
+};
+
+export const getThread = (id: string) =>
+  fetchAPI<{ data: CampaignThread & { messages: ThreadMessage[]; pending_draft: OutreachDraft | null; research: Record<string, unknown> | null } }>(`/api/threads/${id}`);
+
+export const confirmThreadClassification = (
+  threadId: string,
+  data: { message_id: string; classification: string; override?: boolean }
+) =>
+  fetchAPI<{ message: string; draft_id?: string; draft_queued: boolean }>(
+    `/api/threads/${threadId}/confirm`,
+    { method: "POST", body: JSON.stringify(data) }
+  );
+
+export const sendThreadDraft = (
+  threadId: string,
+  data: { draft_id: string; edited_body?: string }
+) =>
+  fetchAPI<{ message: string; sent_immediately: boolean; draft_id: string }>(
+    `/api/threads/${threadId}/send`,
+    { method: "POST", body: JSON.stringify(data) }
+  );
+
+export const regenerateThreadDraft = (
+  threadId: string,
+  data?: { instruction?: string }
+) =>
+  fetchAPI<{ message: string; draft_id: string; subject: string; body: string; strategy_used: string }>(
+    `/api/threads/${threadId}/regenerate`,
+    { method: "POST", body: JSON.stringify(data || {}) }
+  );
+
+// ---------------------------------------------------------------------------
+// Sequences — templates and routing
+// ---------------------------------------------------------------------------
+
+export interface SequenceTemplate {
+  name: string;
+  display_name: string;
+  description?: string;
+  channel: string;
+  total_steps: number;
+  steps: SequenceStep[];
+  source: "yaml" | "custom";
+  is_active: boolean;
+  id?: string;
+  created_at?: string;
+}
+
+export interface SequenceStep {
+  step: number;
+  name: string;
+  channel: string;
+  delay_days: number;
+  subject_template?: string;
+  template?: string;
+  instructions: Record<string, unknown>;
+}
+
+export interface RoutingEntry {
+  cluster: string;
+  persona: string;
+  env_var: string;
+  campaign_id?: string;
+  linked: boolean;
+}
+
+export const getSequenceTemplates = () =>
+  fetchAPI<{ built_in: SequenceTemplate[]; custom: SequenceTemplate[]; total: number }>(
+    "/api/sequences/templates"
+  );
+
+export const saveSequenceTemplate = (data: {
+  name: string;
+  display_name: string;
+  description?: string;
+  channel: string;
+  steps: SequenceStep[];
+  cluster?: string;
+  personas?: string[];
+  value_prop_angle?: string;
+}) =>
+  fetchAPI<{ data: SequenceTemplate; message: string }>("/api/sequences/templates", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const getSequenceRouting = () =>
+  fetchAPI<{ data: RoutingEntry[]; total: number; linked_count: number; unlinked_count: number }>(
+    "/api/sequences/routing"
+  );
+
+export const updateRoutingEntry = (data: {
+  cluster: string;
+  persona?: string;
+  campaign_id: string;
+}) =>
+  fetchAPI<{ message: string; env_var: string; campaign_id: string }>(
+    "/api/sequences/routing",
+    { method: "PUT", body: JSON.stringify(data) }
+  );
+
+export const provisionInstantlyCampaigns = (data?: { cluster?: string; dry_run?: boolean }) =>
+  fetchAPI<{ results: unknown[]; provisioned: number; pending: number }>(
+    "/api/sequences/routing/provision",
+    { method: "POST", body: JSON.stringify(data || {}) }
+  );
+
+export const listActiveEnrollments = (limit = 100) =>
+  fetchAPI<{ data: unknown[]; count: number }>(
+    `/api/sequences/active-enrollments?limit=${limit}`
+  );
+
+// ---------------------------------------------------------------------------
+// Intelligence — signals, funnel, velocity, costs, goals, command center
+// ---------------------------------------------------------------------------
+
+export interface IntentSignal {
+  company_id: string;
+  company_name: string;
+  tier?: string;
+  pqs_total: number;
+  cluster?: string;
+  status?: string;
+  intent_score: number;
+  intent_level: "hot" | "warm" | "warming" | "cold";
+  pain_signals: string[];
+  research_summary: string;
+}
+
+export interface BuyingSignal {
+  contact_id: string;
+  contact_name?: string;
+  title?: string;
+  persona_type?: string;
+  company_id?: string;
+  company_name?: string;
+  tier?: string;
+  pqs_total: number;
+  cluster?: string;
+  open_count: number;
+  click_count: number;
+  signal_description: string;
+  intent_level: "hot" | "warm" | "warming";
+  outreach_state?: string;
+}
+
+export interface CommandCenterData {
+  attention_items: Array<{ type: string; count: number; label: string; href: string }>;
+  kpis: {
+    pipeline_total: number;
+    researched: number;
+    researched_pct: number;
+    active_outreach: number;
+    replies_this_week: number;
+    meetings_booked: number;
+    ai_cost_month: number;
+    ai_cost_cap: number;
+    ai_cost_pct: number;
+  };
+  reply_queue: CampaignThread[];
+  draft_queue: OutreachDraft[];
+  hot_signals: IntentSignal[];
+  funnel_summary: Record<string, unknown>;
+  weekly_goals: {
+    targets: { researched_target: number; emails_sent_target: number; replies_target: number; meetings_target: number };
+    actuals: { researched: number; emails_sent: number; replies: number; meetings: number };
+  };
+  billing_status: {
+    tier: string;
+    companies_this_month: number;
+    companies_limit: number;
+    usage_pct: number;
+    over_limit: boolean;
+    approaching_limit: boolean;
+  };
+}
+
+export const getCommandCenter = () =>
+  fetchAPI<CommandCenterData>("/api/command-center");
+
+export const getIntelligenceSignals = () =>
+  fetchAPI<{ intent_signals: IntentSignal[]; buying_signals: BuyingSignal[]; total_hot: number; total_warm: number }>(
+    "/api/intelligence/signals"
+  );
+
+export const getIntelligenceFunnel = (days = 30) =>
+  fetchAPI<{ funnel: Record<string, unknown>; by_vertical: unknown[]; by_persona: unknown[] }>(
+    `/api/intelligence/funnel?days=${days}`
+  );
+
+export const getIntelligenceVelocity = () =>
+  fetchAPI<{ data: { enriched_to_sequenced_days: number; sequenced_to_replied_days: number; overall_discovery_to_reply_days: number; contacts_with_reply: number } }>(
+    "/api/intelligence/velocity"
+  );
+
+export const getIntelligenceCosts = () =>
+  fetchAPI<{ data: { total_usd: number; research_usd: number; drafts_usd: number; by_agent: Record<string, number>; monthly_cap_usd: number; pct_of_cap: number }; anthropic_balance_usd: number | null; weekly_trend: unknown[] }>(
+    "/api/intelligence/costs"
+  );
+
+export const getIntelligenceWeekly = (weeks = 8) =>
+  fetchAPI<{ data: Array<{ week_start: string; contacts_added: number; sequenced: number; replied: number }> }>(
+    `/api/intelligence/weekly?weeks=${weeks}`
+  );
+
+export const getIntelligenceGoals = () =>
+  fetchAPI<{ targets: Record<string, number>; actuals: Record<string, number>; week_start: string }>(
+    "/api/intelligence/goals"
+  );
+
+export const updateIntelligenceGoals = (data: {
+  researched_target?: number;
+  emails_sent_target?: number;
+  replies_target?: number;
+  meetings_target?: number;
+}) =>
+  fetchAPI<{ data: Record<string, number>; message: string }>("/api/intelligence/goals", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });

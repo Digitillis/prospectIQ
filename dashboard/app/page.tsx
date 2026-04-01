@@ -1,655 +1,388 @@
 "use client";
 
 /**
- * Pipeline Overview — Bird's-eye view of the entire prospecting pipeline
- *
- * Expected actions:
- * Monitor pipeline health, click into any stage to drill down, trigger discovery/research/qualification runs
+ * Command Center — Primary operational dashboard.
  */
-
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  Users,
-  Target,
-  Send,
-  TrendingUp,
-  Clock,
-  AlertCircle,
-  RefreshCw,
-  ArrowRight,
-  Ban,
-  Search,
-  Filter,
-  Mail,
   AlertTriangle,
+  CheckCircle2,
+  ArrowRight,
+  MessageSquare,
+  FileText,
   Zap,
-  Bell,
+  TrendingUp,
+  RefreshCw,
 } from "lucide-react";
-import { getCompanies, getPendingDrafts } from "@/lib/api";
-import { useReminders } from "@/lib/use-reminders";
-import type { Company } from "@/lib/api";
-import {
-  cn,
-  formatTimeAgo,
-  getPQSColor,
-  TIER_LABELS,
-  STATUS_COLORS,
-} from "@/lib/utils";
+import { getCommandCenter, updateIntelligenceGoals, type CommandCenterData } from "@/lib/api";
+import { cn, getPQSColor } from "@/lib/utils";
 
-const PIPELINE_COLUMNS = [
-  "discovered",
-  "researched",
-  "qualified",
-  "outreach_pending",
-  "contacted",
-  "engaged",
-  "meeting_scheduled",
-] as const;
-
-const COLUMN_LABELS: Record<string, string> = {
-  discovered: "Discovered",
-  researched: "Researched",
-  qualified: "Qualified",
-  outreach_pending: "Outreach Pending",
-  contacted: "Contacted",
-  engaged: "Engaged",
-  meeting_scheduled: "Meeting",
+const CLASSIFICATION_COLORS: Record<string, string> = {
+  interested: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  objection: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  out_of_office: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  soft_no: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+  unsubscribe: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+  referral: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
 };
 
-interface PipelineData {
-  [status: string]: { companies: Company[]; count: number };
+function classificationLabel(c?: string) {
+  const labels: Record<string, string> = {
+    interested: "Interested", objection: "Objection", out_of_office: "OOO",
+    soft_no: "Soft No", unsubscribe: "Unsub", referral: "Referral", bounce: "Bounce", other: "Other",
+  };
+  return c ? (labels[c] ?? c) : "Unclassified";
 }
 
-// ---------------------------------------------------------------------------
-// How It Works — collapsible visual guide
-// ---------------------------------------------------------------------------
+function timeSince(iso?: string): string {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
-const FLOW_STEPS = [
-  {
-    step: 1,
-    title: "Discovery",
-    description: "Search Apollo for decision-makers matching your ICP",
-    details: "Finds VP/Directors at F&B and manufacturing companies by title, revenue, and industry. Free, no credits.",
-    action: "Actions → Run Discovery",
-    color: "bg-gray-500",
-    status: "discovered",
-  },
-  {
-    step: 2,
-    title: "Research",
-    description: "Deep-dive each company with Perplexity + Claude",
-    details: "Web research extracts tech stack, pain signals, IoT maturity, personalization hooks. ~$0.05/company.",
-    action: "Actions → Run Research",
-    color: "bg-gray-500",
-    status: "researched",
-  },
-  {
-    step: 3,
-    title: "Qualification",
-    description: "Score prospects 0-100 across 4 dimensions (PQS)",
-    details: "Firmographic fit + technographic readiness + timing signals + engagement. Companies scoring 15+ qualify.",
-    action: "Actions → Run Qualification",
-    color: "bg-gray-600",
-    status: "qualified",
-  },
-  {
-    step: 4,
-    title: "Enrichment",
-    description: "Get verified emails and phone numbers",
-    details: "Apollo People Match reveals contact details. Domain MX verification prevents bounces. Uses Apollo credits.",
-    action: "Actions → Run Enrichment",
-    color: "bg-gray-700",
-    status: "enriched",
-  },
-  {
-    step: 5,
-    title: "Outreach",
-    description: "Claude generates personalized email drafts",
-    details: "Uses your Outreach Guidelines (Settings tab) for tone, structure, and signature. ~$0.02/draft.",
-    action: "Actions → Run Outreach",
-    color: "bg-gray-700",
-    status: "outreach_pending",
-  },
-  {
-    step: 6,
-    title: "Review & Approve",
-    description: "Read each draft, edit if needed, send test to yourself",
-    details: "Quality score shown per draft. 'Send Test to Me' delivers to your inbox. Nothing sends without your approval.",
-    action: "Approvals page",
-    color: "bg-gray-800",
-    status: "approved",
-  },
-  {
-    step: 7,
-    title: "Send & Engage",
-    description: "Approved drafts sent via Instantly.ai, track opens/replies",
-    details: "Multi-step sequences with follow-ups. Buying signals auto-detected. Hot replies trigger Slack alerts.",
-    action: "Actions → Run Engagement",
-    color: "bg-gray-900",
-    status: "contacted",
-  },
-];
+function qualityBadgeClass(score?: number): string {
+  if (!score) return "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400";
+  if (score >= 80) return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300";
+  if (score >= 60) return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
+  return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
+}
 
-function HowItWorksGuide() {
-  const [open, setOpen] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("prospectiq_guide_dismissed") !== "true";
-    }
-    return true;
-  });
+function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("animate-pulse rounded bg-gray-100 dark:bg-gray-800", className)} />;
+}
 
-  const dismiss = () => {
-    setOpen(false);
-    localStorage.setItem("prospectiq_guide_dismissed", "true");
-  };
-
-  const show = () => {
-    setOpen(true);
-    localStorage.removeItem("prospectiq_guide_dismissed");
-  };
-
-  if (!open) {
-    return (
-      <button
-        onClick={show}
-        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-digitillis-accent"
-      >
-        <AlertCircle className="h-3 w-3" />
-        Show pipeline guide
-      </button>
-    );
-  }
-
+function KPICard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            How ProspectIQ Works
-          </h3>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            Your AI-powered prospecting pipeline in 7 steps
-          </p>
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+      <p className="text-xs font-medium text-gray-500 dark:text-gray-500 uppercase tracking-wide mb-1">{label}</p>
+      <p className={cn("text-2xl font-bold text-gray-900 dark:text-gray-100", color)}>{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{sub}</p>}
+    </div>
+  );
+}
+
+function WeeklyBar({ label, actual, target, onEdit }: { label: string; actual: number; target: number; onEdit: () => void }) {
+  const pct = target > 0 ? Math.min((actual / target) * 100, 100) : 0;
+  const dayOfWeek = new Date().getDay();
+  const daysIn = Math.max(dayOfWeek === 0 ? 7 : dayOfWeek, 1);
+  const pace = (actual / daysIn) * 7;
+  const barColor = pace >= target ? "bg-green-500" : pace >= target * 0.8 ? "bg-amber-400" : "bg-red-500";
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">{actual}</span>
+          <span className="text-xs text-gray-400">/</span>
+          <button onClick={onEdit} className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:underline underline-offset-2" title="Click to edit target">{target}</button>
         </div>
-        <button
-          onClick={dismiss}
-          className="rounded-md px-2 py-1 text-xs text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300"
-        >
-          Dismiss
-        </button>
       </div>
-
-      {/* Flowchart */}
-      <div className="flex items-start gap-0 overflow-x-auto pb-2">
-        {FLOW_STEPS.map((step, idx) => (
-          <div key={step.step} className="flex items-start shrink-0">
-            {/* Step card */}
-            <div className="group relative w-36">
-              {/* Step number circle */}
-              <div className="flex justify-center mb-2">
-                <div
-                  className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm",
-                    step.color
-                  )}
-                >
-                  {step.step}
-                </div>
-              </div>
-              {/* Title + description */}
-              <div className="text-center px-1">
-                <p className="text-xs font-semibold text-gray-900">{step.title}</p>
-                <p className="mt-0.5 text-[10px] leading-tight text-gray-500">
-                  {step.description}
-                </p>
-              </div>
-              {/* Hover tooltip with details */}
-              <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-52 -translate-x-1/2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-                <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">{step.details}</p>
-                <p className="mt-2 text-[10px] font-medium text-digitillis-accent">{step.action}</p>
-              </div>
-            </div>
-            {/* Arrow connector */}
-            {idx < FLOW_STEPS.length - 1 && (
-              <div className="flex items-center pt-3 px-0.5 shrink-0">
-                <ArrowRight className="h-3.5 w-3.5 text-gray-300" />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Quick links */}
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-3">
-        <span className="text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">Quick start:</span>
-        <Link href="/actions" className="rounded bg-gray-900 dark:bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200">
-          Run Pipeline →
-        </Link>
-        <Link href="/settings" className="rounded bg-gray-100 dark:bg-gray-800 px-2.5 py-1 text-[10px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">
-          Configure ICP
-        </Link>
-        <Link href="/approvals" className="rounded bg-gray-100 dark:bg-gray-800 px-2.5 py-1 text-[10px] font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">
-          Review Drafts
-        </Link>
+      <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800">
+        <div className={cn("h-1.5 rounded-full transition-all", barColor)} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
 }
 
-export default function PipelinePage() {
-  const [pipeline, setPipeline] = useState<PipelineData>({});
-  const [approvalCount, setApprovalCount] = useState(0);
-  const [disqualifiedCount, setDisqualifiedCount] = useState(0);
+export default function CommandCenterPage() {
+  const [data, setData] = useState<CommandCenterData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { dueReminders } = useReminders();
+  const [editingGoal, setEditingGoal] = useState<string | null>(null);
+  const [goalInput, setGoalInput] = useState("");
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const doFetch = useCallback(async () => {
     try {
-      // Fetch companies for each pipeline stage in parallel
-      const [results, approvalsRes, disqualifiedRes] = await Promise.all([
-        Promise.all(
-          PIPELINE_COLUMNS.map(async (status) => {
-            const json = await getCompanies({ status, limit: "5" });
-            return {
-              status,
-              companies: json.data,
-              count: json.count,
-            };
-          })
-        ),
-        getPendingDrafts().catch(() => ({ data: [], count: 0 })),
-        getCompanies({ status: "disqualified", limit: "1" }).catch(() => ({ data: [], count: 0 })),
-      ]);
-
-      const data: PipelineData = {};
-      for (const r of results) {
-        data[r.status] = { companies: r.companies, count: r.count };
-      }
-      setPipeline(data);
-      setApprovalCount(approvalsRes.count ?? 0);
-      setDisqualifiedCount(disqualifiedRes.count ?? 0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      setLoading(true);
+      const res = await getCommandCenter();
+      setData(res);
+    } catch {
+      // graceful empty state
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { doFetch(); }, [doFetch]);
 
-  // Compute summary metrics
-  const totalProspects = Object.values(pipeline).reduce(
-    (sum, col) => sum + col.count,
-    0
-  );
-  const qualifiedCount = pipeline["qualified"]?.count ?? 0;
-  const contactedCount = pipeline["contacted"]?.count ?? 0;
-  const engagedCount = pipeline["engaged"]?.count ?? 0;
-  const responseRate =
-    contactedCount > 0
-      ? Math.round((engagedCount / contactedCount) * 100)
-      : 0;
-
-  const discoveredCount = pipeline["discovered"]?.count ?? 0;
-  const researchedCount = pipeline["researched"]?.count ?? 0;
-
-  type Nudge = {
-    id: string;
-    label: string;
-    href: string;
-    color: string;
-    dot: string;
-    icon: React.ComponentType<{ className?: string }>;
-    priority: number;
+  const saveGoal = async (key: string, value: number) => {
+    if (!data) return;
+    try {
+      await updateIntelligenceGoals({ [key]: value } as Parameters<typeof updateIntelligenceGoals>[0]);
+      setData((prev) => prev ? {
+        ...prev,
+        weekly_goals: { ...prev.weekly_goals, targets: { ...prev.weekly_goals.targets, [key]: value } }
+      } : prev);
+    } catch { /* noop */ }
+    setEditingGoal(null);
   };
 
-  const nudges: Nudge[] = [];
-  if (!loading) {
-    // Priority 0: Due follow-up reminders — highest priority
-    if (dueReminders.length > 0)
-      nudges.push({
-        id: "reminders",
-        icon: Bell,
-        label: `${dueReminders.length} follow-up reminder${dueReminders.length !== 1 ? "s" : ""} due`,
-        href: "/prospects",
-        color: "border-gray-200 bg-gray-50 text-gray-900",
-        dot: "bg-gray-900",
-        priority: 0,
-      });
-
-    // Priority 1: Engaged replies — urgent, follow up now
-    if (engagedCount > 0)
-      nudges.push({
-        id: "engaged",
-        label: `${engagedCount} prospect${engagedCount !== 1 ? "s" : ""} replied — follow up now!`,
-        href: "/prospects?status=engaged",
-        color: "border-gray-200 bg-gray-50 text-gray-900",
-        dot: "bg-gray-900",
-        icon: Zap,
-        priority: 1,
-      });
-
-    // Priority 2: Pending approvals
-    if (approvalCount > 0)
-      nudges.push({
-        id: "approvals",
-        label: `${approvalCount} draft${approvalCount !== 1 ? "s" : ""} pending your approval`,
-        href: "/approvals",
-        color: "border-gray-200 bg-gray-50 text-gray-900",
-        dot: "bg-gray-700",
-        icon: AlertCircle,
-        priority: 2,
-      });
-
-    // Priority 3: Pipeline bottleneck
-    if (discoveredCount > 100 && researchedCount < 10)
-      nudges.push({
-        id: "bottleneck",
-        label: `Pipeline bottleneck: ${discoveredCount} discovered but only ${researchedCount} researched. Run Research to move them forward.`,
-        href: "/actions",
-        color: "border-gray-200 bg-gray-50 text-gray-900",
-        dot: "bg-gray-500",
-        icon: AlertTriangle,
-        priority: 3,
-      });
-
-    // Priority 4: Qualified prospects ready for outreach
-    if (qualifiedCount > 5)
-      nudges.push({
-        id: "outreach",
-        label: `${qualifiedCount} qualified prospects — generate outreach drafts?`,
-        href: "/actions",
-        color: "border-gray-200 bg-gray-50 text-gray-900",
-        dot: "bg-gray-900",
-        icon: Mail,
-        priority: 4,
-      });
-
-    // Priority 5: Researched companies ready for qualification
-    if (researchedCount > 10)
-      nudges.push({
-        id: "qualify",
-        label: `${researchedCount} researched companies ready for qualification scoring.`,
-        href: "/actions",
-        color: "border-gray-200 bg-gray-50 text-gray-900",
-        dot: "bg-gray-500",
-        icon: Filter,
-        priority: 5,
-      });
-
-    // Priority 6: Discovered companies waiting for research
-    if (discoveredCount > 20 && !(discoveredCount > 100 && researchedCount < 10))
-      nudges.push({
-        id: "research",
-        label: `You have ${discoveredCount} discovered companies waiting for research. Run Research →`,
-        href: "/actions",
-        color: "border-gray-200 bg-gray-50 text-gray-700",
-        dot: "bg-gray-400",
-        icon: Search,
-        priority: 6,
-      });
-  }
-
-  // Sort by priority and cap at 3
-  const visibleNudges = nudges
-    .sort((a, b) => a.priority - b.priority)
-    .slice(0, 3);
+  const kpis = data?.kpis;
+  const goals = data?.weekly_goals;
+  const billing = data?.billing_status;
 
   return (
     <div className="space-y-6">
-      {/* Smart Suggestions Banner */}
-      {visibleNudges.length > 0 && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {visibleNudges.map((n) => (
-            <Link
-              key={n.id}
-              href={n.href}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-opacity hover:opacity-80",
-                n.color
-              )}
-            >
-              <n.icon className="h-4 w-4 shrink-0" />
-              {n.label}
-              <ArrowRight className="ml-auto h-3.5 w-3.5 shrink-0" />
-            </Link>
-          ))}
-        </div>
-      )}
 
-      {/* How It Works — collapsible flowchart guide */}
-      <HowItWorksGuide />
-
-      {/* Page header with approval badge */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Pipeline</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Overview of your prospect pipeline
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {approvalCount > 0 && (
-            <Link
-              href="/approvals"
-              className="flex items-center gap-2 rounded-md bg-gray-100 dark:bg-gray-800 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
-            >
-              <AlertCircle className="h-4 w-4" />
-              {approvalCount} Pending Approval{approvalCount !== 1 ? "s" : ""}
-            </Link>
-          )}
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
-          >
-            <RefreshCw
-              className={cn("h-4 w-4", loading && "animate-spin")}
-            />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Summary metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <MetricCard
-          label="Total Prospects"
-          value={totalProspects}
-          icon={Users}
-          color="bg-gray-100 text-gray-600"
-        />
-        <MetricCard
-          label="Qualified"
-          value={qualifiedCount}
-          icon={Target}
-          color="bg-gray-100 text-gray-600"
-        />
-        <MetricCard
-          label="Contacted"
-          value={contactedCount}
-          icon={Send}
-          color="bg-gray-100 text-gray-600"
-        />
-        <MetricCard
-          label="Response Rate"
-          value={`${responseRate}%`}
-          icon={TrendingUp}
-          color="bg-gray-100 text-gray-600"
-        />
-        <MetricCard
-          label="Disqualified"
-          value={disqualifiedCount}
-          icon={Ban}
-          color="bg-gray-100 text-gray-600"
-          href="/prospects?status=disqualified"
-        />
-      </div>
-
-      {/* Error state */}
-      {error && (
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">
-          {error}
-        </div>
-      )}
-
-      {/* Pipeline columns */}
-      {loading && Object.keys(pipeline).length === 0 ? (
-        <div className="flex items-center justify-center py-20">
-          <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
-          <span className="ml-2 text-gray-500">Loading pipeline...</span>
+      {/* ── Section A: Attention Bar ── */}
+      {loading ? (
+        <Skeleton className="h-12 w-full rounded-lg" />
+      ) : data?.attention_items && data.attention_items.length > 0 ? (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            {data.attention_items.map((item, i) => (
+              <span key={i} className="text-sm text-amber-800 dark:text-amber-300">
+                <Link href={item.href} className="font-medium hover:underline">{item.label}</Link>
+                {i < data.attention_items.length - 1 && <span className="ml-4 text-amber-400">·</span>}
+              </span>
+            ))}
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          {PIPELINE_COLUMNS.map((status) => {
-            const col = pipeline[status];
-            return (
-              <PipelineColumn
-                key={status}
-                status={status}
-                label={COLUMN_LABELS[status]}
-                companies={col?.companies ?? []}
-                count={col?.count ?? 0}
-              />
-            );
-          })}
+        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 px-4 py-3 flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+          <span className="text-sm font-medium text-green-700 dark:text-green-400">All clear — no pending actions</span>
         </div>
       )}
-    </div>
-  );
-}
 
-// --- Sub-components ---
-
-function MetricCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  href,
-}: {
-  label: string;
-  value: number | string;
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-  href?: string;
-}) {
-  const inner = (
-    <>
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
-        <div className={cn("rounded-lg p-2", color)}>
-          <Icon className="h-5 w-5" />
+      {/* ── Section B: KPI Cards ── */}
+      {loading ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+              <Skeleton className="h-3 w-24 mb-3" /><Skeleton className="h-8 w-16" />
+            </div>
+          ))}
         </div>
-      </div>
-      <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{value}</p>
-    </>
-  );
-
-  if (href) {
-    return (
-      <Link
-        href={href}
-        className="block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-      >
-        {inner}
-      </Link>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">{inner}</div>
-  );
-}
-
-function PipelineColumn({
-  status,
-  label,
-  companies,
-  count,
-}: {
-  status: string;
-  label: string;
-  companies: Company[];
-  count: number;
-}) {
-  return (
-    <div className="flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-      {/* Column header */}
-      <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-4 py-3">
-        <h3 className="text-[10px] font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">{label}</h3>
-        <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400">
-          {count}
-        </span>
-      </div>
-
-      {/* Company cards */}
-      <div className="flex flex-col p-2">
-        {companies.length === 0 ? (
-          <p className="py-4 text-center text-xs text-gray-400 dark:text-gray-500">
-            No prospects
-          </p>
-        ) : (
-          companies.map((company) => (
-            <CompanyCard key={company.id} company={company} />
-          ))
-        )}
-        {count > 5 && (
-          <Link
-            href={`/prospects?status=${status}`}
-            className="mt-1 text-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-          >
-            View all {count} &rarr;
-          </Link>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CompanyCard({ company }: { company: Company }) {
-  return (
-    <Link
-      href={`/prospects/${company.id}`}
-      className="block border-b border-gray-100 dark:border-gray-800 last:border-0 px-2 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-    >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {company.domain && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`https://logo.clearbit.com/${company.domain}`}
-              alt=""
-              className="h-4 w-4 shrink-0 rounded"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
-          )}
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-tight truncate">
-            {company.name}
-          </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <KPICard label="Pipeline" value={kpis?.pipeline_total ?? 0} sub="total companies" />
+          <KPICard label="Researched" value={kpis?.researched ?? 0} sub={`${kpis?.researched_pct ?? 0}% of pipeline`} />
+          <KPICard label="Active Outreach" value={kpis?.active_outreach ?? 0} sub="in sequence" />
+          <KPICard label="Replies This Week" value={kpis?.replies_this_week ?? 0} color={(kpis?.replies_this_week ?? 0) > 0 ? "text-green-600 dark:text-green-400" : undefined} />
+          <KPICard label="Meetings Booked" value={kpis?.meetings_booked ?? 0} color={(kpis?.meetings_booked ?? 0) > 0 ? "text-green-600 dark:text-green-400" : undefined} />
+          <KPICard label="AI Cost / Month" value={`$${(kpis?.ai_cost_month ?? 0).toFixed(2)}`} sub={`${kpis?.ai_cost_pct ?? 0}% of $${kpis?.ai_cost_cap ?? 200} cap`} color={(kpis?.ai_cost_pct ?? 0) >= 90 ? "text-red-600 dark:text-red-400" : undefined} />
         </div>
-        {company.tier && (
-          <span className="ml-1 shrink-0 rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400">
-            {TIER_LABELS[company.tier] ?? company.tier}
+      )}
+
+      {/* Billing warning */}
+      {!loading && billing && (billing.approaching_limit || billing.over_limit) && (
+        <div className={cn("rounded-lg border px-4 py-3 flex items-center justify-between",
+          billing.over_limit
+            ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20"
+            : "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20"
+        )}>
+          <span className="text-sm text-gray-800 dark:text-gray-200">
+            You&apos;ve used <strong>{billing.companies_this_month.toLocaleString()} / {billing.companies_limit.toLocaleString()}</strong> companies this month ({billing.usage_pct}%).
           </span>
-        )}
+          <Link href="/settings/billing" className="ml-4 shrink-0 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100">Upgrade →</Link>
+        </div>
+      )}
+
+      {/* ── Section C: Weekly Cadence ── */}
+      {!loading && goals && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-5 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Weekly Cadence</h3>
+            <span className="text-xs text-gray-400 dark:text-gray-500">Click a target to edit</span>
+          </div>
+          <div className="flex flex-wrap gap-6">
+            {([
+              { key: "researched_target", actKey: "researched", label: "Researched" },
+              { key: "emails_sent_target", actKey: "emails_sent", label: "Emails Sent" },
+              { key: "replies_target", actKey: "replies", label: "Replies" },
+              { key: "meetings_target", actKey: "meetings", label: "Meetings" },
+            ] as const).map(({ key, actKey, label }) => (
+              <div key={key} className="flex-1 min-w-[140px]">
+                {editingGoal === key ? (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</span>
+                    <input
+                      type="number" value={goalInput} onChange={(e) => setGoalInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveGoal(key, parseInt(goalInput) || 0); if (e.key === "Escape") setEditingGoal(null); }}
+                      className="w-16 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-gray-400"
+                      autoFocus
+                    />
+                    <button onClick={() => saveGoal(key, parseInt(goalInput) || 0)} className="text-xs text-gray-600 hover:text-gray-900">✓</button>
+                    <button onClick={() => setEditingGoal(null)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                  </div>
+                ) : (
+                  <WeeklyBar
+                    label={label}
+                    actual={goals.actuals[actKey] ?? 0}
+                    target={goals.targets[key] ?? 0}
+                    onEdit={() => { setEditingGoal(key); setGoalInput(String(goals.targets[key] ?? 0)); }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Section D: Three-column operational surface ── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+
+        {/* Reply Queue */}
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Reply Queue</h3>
+              {data?.reply_queue && data.reply_queue.length > 0 && (
+                <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">{data.reply_queue.length}</span>
+              )}
+            </div>
+            <Link href="/threads" className="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100">See all →</Link>
+          </div>
+          <div className="divide-y divide-gray-50 dark:divide-gray-800">
+            {loading
+              ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="p-4"><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-3 w-48" /></div>)
+              : !data?.reply_queue || data.reply_queue.length === 0
+                ? (<div className="flex flex-col items-center justify-center py-10 text-gray-400"><CheckCircle2 className="h-8 w-8 mb-2" /><p className="text-sm">No replies pending</p></div>)
+                : data.reply_queue.slice(0, 5).map((thread) => {
+                  const classification = thread.last_message?.classification;
+                  return (
+                    <div key={thread.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{thread.companies?.name ?? "Unknown"}</span>
+                          <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", CLASSIFICATION_COLORS[classification ?? ""] ?? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400")}>{classificationLabel(classification)}</span>
+                        </div>
+                        <p className="truncate text-xs text-gray-500 dark:text-gray-500">{thread.contacts?.full_name} · {timeSince(thread.last_message?.sent_at)}</p>
+                      </div>
+                      <Link href={`/threads?selected=${thread.id}`} className="shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Review →</Link>
+                    </div>
+                  );
+                })
+            }
+          </div>
+        </div>
+
+        {/* Draft Approvals */}
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Draft Approvals</h3>
+              {data?.draft_queue && data.draft_queue.length > 0 && (
+                <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">{data.draft_queue.length}</span>
+              )}
+            </div>
+            <Link href="/outreach" className="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100">See all →</Link>
+          </div>
+          <div className="divide-y divide-gray-50 dark:divide-gray-800">
+            {loading
+              ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="p-4"><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-3 w-48" /></div>)
+              : !data?.draft_queue || data.draft_queue.length === 0
+                ? (<div className="flex flex-col items-center justify-center py-10 text-gray-400"><CheckCircle2 className="h-8 w-8 mb-2" /><p className="text-sm">No drafts pending</p></div>)
+                : data.draft_queue.slice(0, 5).map((draft) => {
+                  const pqs = draft.companies?.pqs_total ?? 0;
+                  const qs = (draft as Record<string, unknown>).quality_score as number | undefined;
+                  return (
+                    <div key={draft.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{draft.companies?.name ?? "Unknown"}</span>
+                          <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold", getPQSColor(pqs))}>PQS {pqs}</span>
+                        </div>
+                        <p className="truncate text-xs text-gray-500 dark:text-gray-500">{draft.subject}</p>
+                        {qs !== undefined && <span className={cn("mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium", qualityBadgeClass(qs))}>Q:{qs}</span>}
+                      </div>
+                      <Link href="/outreach" className="shrink-0 rounded-md bg-gray-900 dark:bg-white px-2.5 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100">Approve</Link>
+                    </div>
+                  );
+                })
+            }
+          </div>
+        </div>
+
+        {/* Hot Signals */}
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-400" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Hot Signals</h3>
+            </div>
+            <Link href="/signals" className="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100">See all →</Link>
+          </div>
+          <div className="divide-y divide-gray-50 dark:divide-gray-800">
+            {loading
+              ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="p-4"><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-3 w-48" /></div>)
+              : !data?.hot_signals || data.hot_signals.length === 0
+                ? (<div className="flex flex-col items-center justify-center py-10 text-gray-400"><Zap className="h-8 w-8 mb-2" /><p className="text-sm">No hot signals yet</p></div>)
+                : data.hot_signals.slice(0, 5).map((sig) => (
+                  <div key={sig.company_id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{sig.company_name}</span>
+                        <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", sig.intent_level === "hot" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300")}>{sig.intent_level}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-500">Intent {sig.intent_score} pts · PQS {sig.pqs_total}</p>
+                    </div>
+                    <Link href="/sequences" className="shrink-0 rounded-md bg-gray-100 dark:bg-gray-800 px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 whitespace-nowrap">Sequence →</Link>
+                  </div>
+                ))
+            }
+          </div>
+        </div>
+
       </div>
-      <div className="mt-1.5 flex items-center justify-between">
-        <span className="text-xs font-mono text-gray-400 dark:text-gray-500">
-          PQS {company.pqs_total}
-        </span>
-        <span className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
-          <Clock className="h-3 w-3" />
-          {formatTimeAgo(company.updated_at)}
-        </span>
+
+      {/* ── Section E: Pipeline Funnel ── */}
+      {!loading && data?.funnel_summary && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-5 py-4">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="h-4 w-4 text-gray-400" />
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Pipeline Funnel (30 days)</h3>
+          </div>
+          <div className="flex items-stretch gap-1 overflow-x-auto pb-2">
+            {([
+              { key: "discovered", label: "Discovered" },
+              { key: "enriched", label: "Enriched" },
+              { key: "sequenced", label: "Sequenced" },
+              { key: "touch_1_sent", label: "Touch 1" },
+              { key: "replied", label: "Replied" },
+              { key: "demo_scheduled", label: "Demo" },
+              { key: "closed_won", label: "Won" },
+            ] as const).map((stage, i, arr) => {
+              const funnel = data.funnel_summary as Record<string, unknown>;
+              const count = (funnel[stage.key] as number) ?? 0;
+              const rates = (funnel.conversion_rates as Record<string, number>) ?? {};
+              const prevKey = i > 0 ? arr[i - 1].key : null;
+              const rate = prevKey ? rates[`${prevKey}_to_${stage.key}`] : null;
+              return (
+                <div key={stage.key} className="flex items-center gap-1 shrink-0">
+                  <Link href={`/pipeline?status=${stage.key}`} className="flex flex-col items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors min-w-[90px]">
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{stage.label}</span>
+                    <span className="text-xl font-bold text-gray-900 dark:text-gray-100">{count}</span>
+                  </Link>
+                  {i < arr.length - 1 && (
+                    <div className="flex flex-col items-center shrink-0">
+                      <ArrowRight className="h-4 w-4 text-gray-300 dark:text-gray-600" />
+                      {rate !== null && rate !== undefined && <span className="text-[9px] text-gray-400 dark:text-gray-500">{rate}%</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Refresh */}
+      <div className="flex justify-end">
+        <button onClick={doFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors">
+          <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
+          Refresh
+        </button>
       </div>
-    </Link>
+    </div>
   );
 }
