@@ -15,8 +15,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
+from pathlib import Path
 from typing import Optional
+
+# Load .env before any module that reads os.environ (sequence_router, etc.)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+except ImportError:
+    pass
 
 from rich.console import Console
 from rich.table import Table
@@ -116,7 +125,7 @@ def push_contacts_to_sequences(
 
     query = (
         db.client.table("contacts")
-        .select("*, companies(id, name, domain, tier, naics_code, campaign_name, outreach_active)")
+        .select("*, companies!contacts_company_id_fkey(id, name, domain, tier, naics_code, campaign_name, outreach_active)")
         .eq("enrichment_status", "enriched")
         .not_.is_("email", "null")
         .not_.eq("email", "")
