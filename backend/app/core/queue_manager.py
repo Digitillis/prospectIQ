@@ -35,22 +35,50 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 # Points awarded per persona type (out of 35 max)
+# Digitillis is manufacturing intelligence — operations/maintenance personas
+# are PRIMARY buyers. F&B quality/food safety personas are SECONDARY.
 _PERSONA_POINTS: dict[str, int] = {
-    "vp_ops": 35,
-    "coo": 33,
-    "plant_manager": 30,
-    "digital_transformation": 28,
-    "vp_supply_chain": 25,
-    "director_ops": 22,
-    "cio": 20,
+    # PRIMARY — manufacturing/industrial buyers
+    "vp_ops": 35,           # VP Operations, VP Manufacturing, VP Engineering
+    "coo": 33,              # COO / Chief Operating Officer
+    "maintenance_leader": 32,  # Director of Maintenance, Reliability Manager — high urgency
+    "plant_manager": 30,    # Plant Manager, General Manager, Site Manager
+    "director_ops": 24,     # Director of Operations, Director of Manufacturing
+    "digital_transformation": 20,
+    "vp_supply_chain": 18,
+    "cio": 15,
+    # SECONDARY — F&B compliance personas (door-opener, not core buyer)
+    "vp_quality_food_safety": 16,
+    "director_quality_food_safety": 13,
 }
-_PERSONA_DEFAULT = 10  # unknown / uncategorised persona
+_PERSONA_DEFAULT = 8  # unknown / uncategorised persona
 
 # Points awarded per tier (out of 15 max)
+# mfg tiers are primary (score higher), fb tiers are secondary (score lower)
 _TIER_POINTS: dict[str, int] = {
-    "0": 15,
-    "1": 10,
-    "2": 5,
+    # Discrete manufacturing (primary)
+    "mfg1": 15,   # Industrial Machinery & Heavy Equipment
+    "mfg2": 14,   # Metal Fabrication & Precision Machining
+    "mfg3": 14,   # Automotive Parts & Transportation Equipment
+    "mfg6": 13,   # Aerospace & Defense
+    "mfg7": 12,   # Primary Metals (steel, aluminum)
+    "mfg4": 12,   # Electrical Equipment
+    "mfg8": 11,   # Plastics & Rubber
+    "mfg5": 11,   # Electronics / Semiconductor
+    # Process manufacturing (primary)
+    "pmfg1": 14,  # Chemical Manufacturing
+    "pmfg2": 13,  # Oil & Gas Extraction
+    "pmfg3": 13,  # Petroleum Refining
+    "pmfg6": 13,  # Pharmaceutical & Biotech
+    "pmfg4": 12,  # Mining & Quarrying
+    "pmfg5": 11,  # Utilities / Power
+    "pmfg7": 10,  # Paper & Pulp
+    "pmfg8": 10,  # Non-Metallic Mineral (cement, glass)
+    # Food & Beverage (secondary)
+    "fb1": 6,     # Food Manufacturing
+    "fb2": 5,     # Beverage
+    "fb3": 4,     # Meat & Poultry
+    "fb4": 4,     # Dairy
 }
 _TIER_DEFAULT = 3
 
@@ -112,9 +140,9 @@ def compute_priority_score(contact: dict, company: dict | None = None) -> int:
 class QueueManager:
     """Ranks contacts ready for outreach by priority score."""
 
-    def __init__(self, campaign_name: str | None = None):
+    def __init__(self, campaign_name: str | None = None, workspace_id: str | None = None):
         self.campaign_name = campaign_name
-        self.db = Database()
+        self.db = Database(workspace_id=workspace_id)
 
     # ------------------------------------------------------------------
     # Main API

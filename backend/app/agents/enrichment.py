@@ -292,6 +292,8 @@ class EnrichmentAgent(BaseAgent):
                     logger.error(f"Error enriching {company_name}: {e}", exc_info=True)
                     result.errors += 1
                     result.add_detail(company_name, "error", str(e)[:200])
+                    if self._monitor:
+                        self._monitor.log_error(str(e), company_id=company_id, error_type="enrichment_error", exc=e)
 
         try:
             from backend.app.utils.notifications import notify_slack

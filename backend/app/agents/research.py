@@ -66,6 +66,18 @@ RESEARCH QUESTIONS TO ANSWER:
 9. What operational challenges or pain points are likely? (quality, workforce, downtime, supply chain)
 10. What specific opportunities exist for an AI manufacturing intelligence platform?
 
+TRIGGER EVENT DETECTION (critical — affects outreach timing and messaging):
+Look specifically for each of the following in the LAST 12 MONTHS:
+A. Leadership change — new VP Operations, COO, Plant Manager, CDO, or CTO hired or promoted
+B. M&A / PE activity — acquisition completed or announced, PE firm investment, plant purchase
+C. ESG / sustainability commitment — net-zero pledge, carbon reduction target, green energy announcement
+D. Operational incident — press-reported equipment failure, unplanned shutdown, product recall, safety incident
+E. CapEx investment — new production line, facility expansion, major equipment purchase, MES/ERP upgrade announced
+F. Growth signal — new customer win, revenue growth announcement, headcount expansion (hiring surge on LinkedIn)
+G. Competitor displacement — stated dissatisfaction with or removal of a competing vendor
+
+For each trigger found, record: what happened, when (approximate date or quarter), and why it matters for Digitillis outreach.
+
 OUTPUT THIS EXACT JSON SCHEMA:
 {{
     "company_description": "2-3 sentence description of what they manufacture and their market position",
@@ -80,15 +92,29 @@ OUTPUT THIS EXACT JSON SCHEMA:
     "existing_solutions": ["list", "of", "AI/ML", "or", "predictive", "platforms", "already", "in", "use"],
     "funding_status": "recent funding info or 'Not found'",
     "funding_details": "specific details or empty string",
+    "trigger_events": [
+        {{
+            "type": "leadership_change" or "ma_pe" or "esg_commitment" or "operational_incident" or "capex_investment" or "growth_signal" or "competitor_displacement",
+            "description": "specific factual description of what happened",
+            "date_approx": "YYYY-QQ or YYYY-MM or 'Unknown'",
+            "outreach_relevance": "one sentence on why this creates an opening for Digitillis"
+        }}
+    ],
+    "trigger_score": 0-10,
     "personalization_hooks": [
         "3-5 specific, concrete facts that can be used to personalize outreach",
         "e.g., 'Operates 3 plants across the Midwest with 500+ employees'",
-        "e.g., 'Uses SAP ERP and Rockwell automation — direct integration path for Digitillis'"
+        "e.g., 'Uses SAP ERP and Rockwell automation — direct integration path for Digitillis'",
+        "e.g., 'New VP Ops joined from Honeywell in Q1 2025 — likely evaluating new tools'"
     ],
     "confidence_level": "high" or "medium" or "low"
 }}
 
-Output ONLY valid JSON. No markdown formatting, no explanation, no preamble."""
+Rules:
+- trigger_events must be an array (empty [] if none found — do NOT omit the field)
+- trigger_score: 0=no triggers, 1-3=weak signals, 4-6=moderate, 7-10=strong/multiple triggers
+- Do not fabricate events — only include triggers with factual basis
+- Output ONLY valid JSON. No markdown, no explanation, no preamble."""
 
 
 class ResearchAgent(BaseAgent):
@@ -174,6 +200,12 @@ class ResearchAgent(BaseAgent):
                     console.print("    [red]Research failed. Skipping.[/red]")
                     result.errors += 1
                     result.add_detail(company_name, "error", "Claude research returned no valid JSON")
+                    if self._monitor:
+                        self._monitor.log_error(
+                            "Claude research returned no valid JSON",
+                            company_id=company_id,
+                            error_type="parse_error",
+                        )
                     continue
 
                 # Upsert research_intelligence
@@ -194,9 +226,29 @@ class ResearchAgent(BaseAgent):
                     "funding_status": structured.get("funding_status", ""),
                     "funding_details": structured.get("funding_details", ""),
                     "confidence_level": structured.get("confidence_level", "low"),
+                    # trigger_events + trigger_score are stored in claude_analysis JSONB above.
+                    # Dedicated columns require migration 014 to be run in Supabase dashboard first.
                 })
 
                 # Update company record with key intelligence fields
+                trigger_events = structured.get("trigger_events", [])
+                trigger_score = structured.get("trigger_score", 0)
+
+                # Promote high-trigger companies in custom_tags for prioritization
+                existing_tags = company.get("custom_tags") or {}
+                if isinstance(existing_tags, str):
+                    try:
+                        existing_tags = json.loads(existing_tags)
+                    except (json.JSONDecodeError, TypeError):
+                        existing_tags = {}
+
+                updated_tags = {
+                    **existing_tags,
+                    "trigger_score": trigger_score,
+                    "trigger_count": len(trigger_events),
+                    **({"trigger_types": [e.get("type") for e in trigger_events]} if trigger_events else {}),
+                }
+
                 self.db.update_company(company_id, {
                     "research_summary": structured.get("company_description", ""),
                     "technology_stack": structured.get("known_systems", []),
@@ -208,6 +260,7 @@ class ResearchAgent(BaseAgent):
                         "maintenance_approach": structured.get("maintenance_approach", "unknown"),
                     },
                     "personalization_hooks": structured.get("personalization_hooks", []),
+                    "custom_tags": updated_tags,
                     "status": "researched",
                 })
 
@@ -220,6 +273,8 @@ class ResearchAgent(BaseAgent):
                 logger.error(f"Error researching {company_name}: {e}", exc_info=True)
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
+                if self._monitor:
+                    self._monitor.log_error(str(e), company_id=company_id, error_type="research_error", exc=e)
 
         try:
             from backend.app.utils.notifications import notify_slack

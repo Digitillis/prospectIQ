@@ -50,6 +50,21 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     batch_size: int = 10
 
+    # Outreach gating — set SEND_ENABLED=true in .env once mailbox warm-up completes.
+    # When false, approved drafts are staged but never pushed to Instantly.
+    send_enabled: bool = False
+
+    # Auth — Supabase JWT secret (from Project Settings → API → JWT Secret)
+    supabase_jwt_secret: str = ""
+
+    # Default workspace for single-tenant / dev use
+    default_workspace_id: str = "00000000-0000-0000-0000-000000000001"
+
+    # Stripe billing
+    stripe_secret_key: str = ""         # sk_live_... or sk_test_...
+    stripe_webhook_secret: str = ""     # whsec_...
+    app_base_url: str = "https://app.prospectiq.ai"
+
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",

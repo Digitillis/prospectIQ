@@ -89,12 +89,13 @@ def infer_missing_domains(
     dry_run: bool = False,
     campaign_name: str | None = None,
     limit: int = 200,
+    workspace_id: str | None = None,
 ) -> dict:
     """Find all companies missing a domain and try to infer it via Apollo.
 
     Returns a summary dict with counts.
     """
-    db = Database()
+    db = Database(workspace_id=workspace_id)
     settings = get_settings()
 
     if not settings.apollo_api_key and not dry_run:

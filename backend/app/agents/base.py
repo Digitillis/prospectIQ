@@ -7,6 +7,7 @@ Provides common functionality: logging, cost tracking, error handling.
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -17,6 +18,10 @@ from rich.console import Console
 
 from backend.app.core.database import Database
 from backend.app.core.cost_tracker import log_cost
+
+# Pipeline scripts set WORKSPACE_ID so all records are scoped to the right workspace.
+# Falls back to the default Digitillis workspace if not set.
+_DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -55,11 +60,16 @@ class BaseAgent(ABC):
 
     agent_name: str = "base"
 
-    def __init__(self, batch_id: str | None = None):
-        self.db = Database()
+    def __init__(self, batch_id: str | None = None, workspace_id: str | None = None):
+        ws_id = workspace_id or os.environ.get("WORKSPACE_ID") or _DEFAULT_WORKSPACE_ID
+        # workspace_id column does not exist in the current schema (single-tenant deployment)
+        # Pass None so Database._filter_ws is a no-op
+        self.db = Database(workspace_id=None)
+        self.workspace_id = ws_id
         self.batch_id = batch_id or f"{self.agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         self.logger = logging.getLogger(f"prospectiq.{self.agent_name}")
         self._cost_accumulator: float = 0.0
+        self._monitor = None  # Set by execute() — available to run() for per-company log_error()
 
     @abstractmethod
     def run(self, **kwargs) -> AgentResult:
@@ -105,29 +115,40 @@ class BaseAgent(ABC):
             batch_id=self.batch_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            workspace_id=self.workspace_id,
         )
 
         return cost
 
     def execute(self, **kwargs) -> AgentResult:
-        """Execute the agent with timing, logging, and error handling.
+        """Execute the agent with timing, logging, error handling, and pipeline monitoring.
 
         This is the public entry point. It wraps `run()` with:
         - Timing
         - Top-level error handling
         - Summary logging
+        - PipelineMonitor start/finish/fail (writes to pipeline_runs table)
         """
+        from backend.app.agents.monitoring import PipelineMonitor
+
         console.print(f"\n[bold blue]{'='*60}[/bold blue]")
         console.print(f"[bold blue]Agent: {self.agent_name}[/bold blue]")
         console.print(f"[bold blue]Batch: {self.batch_id}[/bold blue]")
         console.print(f"[bold blue]{'='*60}[/bold blue]\n")
 
+        monitor = PipelineMonitor(agent=self.agent_name, batch_id=self.batch_id, workspace_id=self.workspace_id)
+        self._monitor = monitor
+        monitor.start(meta={"batch_id": self.batch_id, "kwargs": {k: str(v)[:100] for k, v in kwargs.items()}})
+
         start_time = time.time()
+        catastrophic = False
 
         try:
             result = self.run(**kwargs)
         except Exception as e:
             self.logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
+            monitor.fail(str(e)[:2000])
+            catastrophic = True
             result = AgentResult()
             result.success = False
             result.errors = 1
@@ -136,6 +157,14 @@ class BaseAgent(ABC):
         result.duration_seconds = round(time.time() - start_time, 2)
         result.batch_id = self.batch_id
         result.total_cost_usd = round(self._cost_accumulator, 4)
+
+        if not catastrophic:
+            monitor.finish(
+                processed=result.processed,
+                skipped=result.skipped,
+                errors=result.errors,
+                cost_usd=result.total_cost_usd if result.total_cost_usd else None,
+            )
 
         # Print summary
         status_color = "green" if result.success else "red"

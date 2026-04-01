@@ -354,8 +354,8 @@ class ApolloClient:
             "state": person.get("state"),
             "country": person.get("country"),
             # Extended Apollo fields
-            "has_email": person.get("has_email", False),
-            "has_direct_phone": person.get("has_direct_phone", False),
+            "has_email": bool(person.get("has_email")) if isinstance(person.get("has_email"), bool) else (str(person.get("has_email", "")).lower() in ("true", "1", "yes")),
+            "has_direct_phone": bool(person.get("has_direct_phone")) if isinstance(person.get("has_direct_phone"), bool) else (str(person.get("has_direct_phone", "")).lower() in ("true", "1", "yes")),
             "last_refreshed_at": person.get("last_refreshed_at"),
         }
 

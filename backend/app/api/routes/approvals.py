@@ -11,12 +11,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 
 
 def get_db() -> Database:
-    return Database()
+    return Database(workspace_id=get_workspace_id())
 
 
 class ApproveRequest(BaseModel):
@@ -152,8 +153,10 @@ async def test_send_draft(draft_id: str, body: TestEmailRequest):
 
     # Fetch the draft with company/contact info
     result = (
-        db.client.table("outreach_drafts")
-        .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email)")
+        db._filter_ws(
+            db.client.table("outreach_drafts")
+            .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email)")
+        )
         .eq("id", draft_id)
         .execute()
     )

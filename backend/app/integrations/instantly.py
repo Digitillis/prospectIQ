@@ -23,7 +23,7 @@ RATE_LIMIT_DELAY = 1.0  # seconds between requests
 class InstantlyClient:
     """Instantly.ai REST API v2 client.
 
-    Authentication is via `api_key` query parameter appended to every request.
+    Authentication is via Bearer token in the Authorization header.
     """
 
     def __init__(self):
@@ -35,8 +35,8 @@ class InstantlyClient:
             base_url=INSTANTLY_BASE_URL,
             headers={
                 "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
             },
-            params={"api_key": self.api_key},
             timeout=30.0,
         )
         self._last_request_time = 0.0
@@ -327,8 +327,9 @@ class InstantlyClient:
     ) -> list[dict]:
         """List leads in a campaign with their activity status.
 
-        Used by the polling mechanism to detect opens, replies, and bounces
-        without requiring webhook support.
+        Uses the Instantly v2 /leads endpoint with a campaign_id filter.
+        The v2 API does NOT support /campaigns/{id}/leads — leads are a
+        top-level resource filtered by campaign_id.
 
         Args:
             campaign_id: Instantly campaign ID.
@@ -355,6 +356,103 @@ class InstantlyClient:
         if isinstance(result, list):
             return result
         return result.get("items", result.get("leads", []))
+
+    # ------------------------------------------------------------------
+    # Phase 2: Sequence control on reply
+    # ------------------------------------------------------------------
+
+    def pause_lead_sequence(self, campaign_id: str, email: str) -> bool:
+        """Pause a lead's sequence in a campaign (call on reply to stop follow-ups).
+
+        Args:
+            campaign_id: The Instantly campaign ID.
+            email: The lead's email address.
+
+        Returns:
+            True if the lead was paused successfully.
+        """
+        logger.info(f"Pausing sequence for {email} in campaign {campaign_id}")
+        try:
+            self._post(
+                f"/campaigns/{campaign_id}/leads/pause",
+                payload={"emails": [email]},
+            )
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to pause lead {email} in campaign {campaign_id}: {exc}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Phase 3: Direct email reply (thread reply, not new sequence step)
+    # ------------------------------------------------------------------
+
+    def reply_to_email(
+        self,
+        reply_to_email_id: str,
+        subject: str,
+        body_html: str,
+        body_text: str,
+        from_sending_account_id: str | None = None,
+    ) -> dict:
+        """Send a direct reply to a specific email thread via Instantly.
+
+        Uses Instantly's /reply endpoint to reply in-thread (preserves
+        email thread headers so it lands as a true reply, not a new email).
+
+        Args:
+            reply_to_email_id: The Instantly email ID of the message to reply to.
+            subject: Subject line (should be "Re: <original subject>").
+            body_html: HTML body of the reply.
+            body_text: Plain-text body of the reply.
+            from_sending_account_id: Optional sending account override.
+
+        Returns:
+            Instantly API response dict.
+        """
+        payload: dict = {
+            "reply_to_uuid": reply_to_email_id,
+            "subject": subject,
+            "body": {"html": body_html, "text": body_text},
+        }
+        if from_sending_account_id:
+            payload["sending_account_id"] = from_sending_account_id
+
+        logger.info(f"Sending thread reply to email ID {reply_to_email_id}")
+        return self._post("/emails/reply", payload)
+
+    def get_email_by_lead(self, lead_email: str, campaign_id: str | None = None) -> dict | None:
+        """Look up the most recent sent email for a lead (used to get the email ID for replies).
+
+        Args:
+            lead_email: The lead's email address.
+            campaign_id: Optional campaign ID to scope the lookup.
+
+        Returns:
+            Email record dict with 'id' field, or None if not found.
+        """
+        params: dict = {"lead_email": lead_email, "limit": 1}
+        if campaign_id:
+            params["campaign_id"] = campaign_id
+        try:
+            result = self._get("/emails", params=params)
+            items = result.get("items") or result.get("emails") or (result if isinstance(result, list) else [])
+            return items[0] if items else None
+        except Exception as exc:
+            logger.warning(f"get_email_by_lead failed for {lead_email}: {exc}")
+            return None
+
+    def list_sending_accounts(self) -> list[dict]:
+        """List all connected sending accounts (email inboxes).
+
+        Returns:
+            List of sending account dicts (id, email, status).
+        """
+        try:
+            result = self._get("/accounts")
+            return result.get("items", result.get("accounts", [])) if isinstance(result, dict) else result
+        except Exception as exc:
+            logger.warning(f"list_sending_accounts failed: {exc}")
+            return []
 
     # ------------------------------------------------------------------
     # Lifecycle

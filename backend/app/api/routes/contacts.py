@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
 
 def get_db() -> Database:
-    return Database()
+    return Database(workspace_id=get_workspace_id())
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +70,8 @@ async def relationship_summary():
     """
     db = get_db()
     contacts_result = (
-        db.client.table("contacts")
-        .select("id, full_name, relationship_strength, is_decision_maker, company_id, companies(name, tier)")
+        db._filter_ws(db.client.table("contacts")
+        .select("id, full_name, relationship_strength, is_decision_maker, company_id, companies(name, tier)"))
         .not_.is_("relationship_strength", "null")
         .execute()
     )
@@ -103,9 +104,9 @@ async def list_contacts(
 ):
     """List all contacts across companies with optional filters."""
     db = get_db()
-    query = db.client.table("contacts").select(
+    query = db._filter_ws(db.client.table("contacts").select(
         "*, companies(id, name, tier, status, pqs_total, domain)"
-    )
+    ))
     if persona_type:
         query = query.eq("persona_type", persona_type)
     if seniority:
@@ -132,8 +133,8 @@ async def get_contact(contact_id: str):
     """Get a single contact with company details and recent company interactions."""
     db = get_db()
     contact_result = (
-        db.client.table("contacts")
-        .select("*, companies(id, name, tier, status, pqs_total, domain)")
+        db._filter_ws(db.client.table("contacts")
+        .select("*, companies(id, name, tier, status, pqs_total, domain)"))
         .eq("id", contact_id)
         .execute()
     )
@@ -147,8 +148,8 @@ async def get_contact(contact_id: str):
     interactions: list = []
     if company_id:
         interactions_result = (
-            db.client.table("interactions")
-            .select("*")
+            db._filter_ws(db.client.table("interactions")
+            .select("*"))
             .eq("company_id", company_id)
             .order("created_at", desc=True)
             .limit(20)
@@ -171,7 +172,7 @@ async def update_contact(contact_id: str, body: ContactUpdate):
 
     # Validate contact exists first
     existing_result = (
-        db.client.table("contacts").select("id").eq("id", contact_id).execute()
+        db._filter_ws(db.client.table("contacts").select("id")).eq("id", contact_id).execute()
     )
     if not existing_result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -203,8 +204,8 @@ async def get_pending_actions(contact_id: Optional[str] = None):
     db = get_db()
     try:
         query = (
-            db.client.table("contact_events")
-            .select("*")
+            db._filter_ws(db.client.table("contact_events")
+            .select("*"))
             .eq("next_action_status", "pending")
             .not_.is_("next_action", "null")
         )
@@ -225,8 +226,8 @@ async def update_next_action(event_id: str, body: NextActionUpdate):
     db = get_db()
     try:
         result = (
-            db.client.table("contact_events")
-            .update({"next_action_status": body.status, "updated_at": datetime.now(timezone.utc).isoformat()})
+            db._filter_ws(db.client.table("contact_events")
+            .update({"next_action_status": body.status, "updated_at": datetime.now(timezone.utc).isoformat()}))
             .eq("id", event_id)
             .execute()
         )
@@ -246,15 +247,15 @@ async def list_contact_events(contact_id: str):
     db = get_db()
     # Verify contact exists
     contact_result = (
-        db.client.table("contacts").select("id").eq("id", contact_id).execute()
+        db._filter_ws(db.client.table("contacts").select("id")).eq("id", contact_id).execute()
     )
     if not contact_result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
 
     try:
         result = (
-            db.client.table("contact_events")
-            .select("*")
+            db._filter_ws(db.client.table("contact_events")
+            .select("*"))
             .eq("contact_id", contact_id)
             .order("created_at", desc=True)
             .limit(100)
@@ -279,8 +280,8 @@ async def create_contact_event(contact_id: str, body: ContactEventCreate):
 
     # Validate contact + get company_id
     contact_result = (
-        db.client.table("contacts")
-        .select("id, company_id, full_name, title")
+        db._filter_ws(db.client.table("contacts")
+        .select("id, company_id, full_name, title"))
         .eq("id", contact_id)
         .execute()
     )
@@ -342,7 +343,7 @@ async def create_contact_event(contact_id: str, body: ContactEventCreate):
             logger.warning("AI analysis failed — saving event without enrichment: %s", exc)
 
     try:
-        result = db.client.table("contact_events").insert(event_row).execute()
+        result = db.client.table("contact_events").insert(db._inject_ws(event_row)).execute()
         saved = result.data[0] if result.data else event_row
     except Exception as exc:
         logger.error("Failed to insert contact event: %s", exc)

@@ -59,8 +59,20 @@ class EngagementAgent(BaseAgent):
             return result
 
     def _send_approved_drafts(self, campaign_name: str | None = None) -> AgentResult:
-        """Send all approved but unsent outreach drafts via Instantly.ai."""
+        """Send all approved but unsent outreach drafts via Instantly.ai.
+
+        Gated by SEND_ENABLED env flag. Set SEND_ENABLED=true once mailbox
+        warm-up is complete and you are ready to begin sending.
+        """
         result = AgentResult()
+
+        settings = get_settings()
+        if not settings.send_enabled:
+            console.print(
+                "[yellow]SEND_ENABLED is false — drafts staged but not sent. "
+                "Set SEND_ENABLED=true in .env when warm-up completes.[/yellow]"
+            )
+            return result
 
         # Get approved drafts that haven't been sent yet
         drafts = (
@@ -382,11 +394,10 @@ class EngagementAgent(BaseAgent):
     def _poll_instantly_events(self) -> AgentResult:
         """Poll Instantly.ai for lead-level activity and sync to database.
 
-        Replacement for webhook-based event tracking when webhooks are not
-        available (e.g. lower-tier Instantly plan). Fetches every lead across
-        all active campaigns and compares their activity flags against
-        interactions already stored in the DB, then fires the same logic as
-        process_webhook_event for any newly-detected events.
+        The Instantly v2 API does not support bulk lead listing. Instead we
+        poll individually: query our DB for contacts with sent drafts, then
+        call get_lead_status(email) for each one to detect new opens/clicks/
+        replies/bounces.
 
         Idempotent: checks existing interactions before creating new ones so
         repeated polls never produce duplicate records.
@@ -394,126 +405,118 @@ class EngagementAgent(BaseAgent):
         Returns:
             AgentResult summarising new events detected.
         """
+        import time as _time
+
         result = AgentResult()
 
+        # Find all contacts that have at least one sent draft
+        sent_rows = (
+            self.db.client.table("outreach_drafts")
+            .select("contact_id, contacts(id, email, company_id)")
+            .not_.is_("sent_at", "null")
+            .execute()
+            .data
+        )
+
+        # Deduplicate by contact_id
+        seen: set[str] = set()
+        contacts_to_poll: list[dict] = []
+        for row in sent_rows:
+            contact = row.get("contacts") or {}
+            contact_id = contact.get("id") or row.get("contact_id")
+            email = (contact.get("email") or "").lower().strip()
+            if not email or not contact_id or contact_id in seen:
+                continue
+            seen.add(contact_id)
+            contacts_to_poll.append({
+                "contact_id": contact_id,
+                "email": email,
+                "company_id": contact.get("company_id"),
+            })
+
+        if not contacts_to_poll:
+            console.print("[yellow]No sent drafts found — nothing to poll.[/yellow]")
+            return result
+
+        console.print(
+            f"[cyan]Polling Instantly for {len(contacts_to_poll)} contacts with sent drafts...[/cyan]"
+        )
+
         with InstantlyClient() as instantly:
-            campaigns = instantly.list_campaigns()
-            if not campaigns:
-                console.print("[yellow]No Instantly campaigns to poll.[/yellow]")
-                return result
+            for contact in contacts_to_poll:
+                email = contact["email"]
+                contact_id = contact["contact_id"]
+                company_id = contact["company_id"]
 
-            # list_campaigns may return a dict wrapper or a plain list
-            if isinstance(campaigns, dict):
-                campaigns = campaigns.get("items", campaigns.get("campaigns", []))
+                _time.sleep(0.5)  # respect rate limit
 
-            console.print(f"[cyan]Polling {len(campaigns)} Instantly campaigns for new events...[/cyan]")
-
-            for campaign in campaigns:
-                campaign_id = campaign.get("id")
-                campaign_name = campaign.get("name", "Unknown")
-                if not campaign_id:
+                try:
+                    lead = instantly.get_lead_status(email)
+                except Exception as e:
+                    logger.error(f"Error looking up {email} in Instantly: {e}")
+                    result.errors += 1
                     continue
 
-                # Paginate through all leads in this campaign
-                skip = 0
-                page_size = 100
-                while True:
+                if not lead:
+                    continue
+
+                # Fetch which interaction types we already have for this contact
+                stored = (
+                    self.db.client.table("interactions")
+                    .select("type")
+                    .eq("contact_id", contact_id)
+                    .in_("type", ["email_opened", "email_clicked", "email_replied", "email_bounced"])
+                    .execute()
+                    .data
+                )
+                stored_types = {row["type"] for row in stored}
+
+                # Map Instantly activity flags → event types
+                event_checks = [
+                    (
+                        lead.get("is_opened") or lead.get("opened") or lead.get("times_opened", 0),
+                        "email_opened",
+                        "email_opened",
+                    ),
+                    (
+                        lead.get("is_clicked") or lead.get("clicked") or lead.get("times_clicked", 0),
+                        "email_clicked",
+                        "email_clicked",
+                    ),
+                    (
+                        lead.get("is_replied") or lead.get("replied"),
+                        "reply_received",
+                        "email_replied",
+                    ),
+                    (
+                        lead.get("is_bounced") or lead.get("bounced"),
+                        "email_bounced",
+                        "email_bounced",
+                    ),
+                ]
+
+                for activity_flag, instantly_event, interaction_type in event_checks:
+                    if not activity_flag:
+                        continue
+                    if interaction_type in stored_types:
+                        continue  # already recorded
+
+                    event_data = {
+                        "email": email,
+                        "event_id": f"poll_{email}_{instantly_event}",
+                    }
                     try:
-                        leads = instantly.list_campaign_leads(
-                            campaign_id, limit=page_size, skip=skip
+                        self.process_webhook_event(instantly_event, event_data)
+                        console.print(
+                            f"  [green]{email}: new {instantly_event} detected[/green]"
                         )
+                        result.processed += 1
+                        result.add_detail(email, instantly_event, "polled")
                     except Exception as e:
-                        logger.error(f"Error listing leads for campaign {campaign_name}: {e}")
+                        logger.error(
+                            f"Error processing polled event {instantly_event} for {email}: {e}"
+                        )
                         result.errors += 1
-                        break
-
-                    if not leads:
-                        break
-
-                    for lead in leads:
-                        email = lead.get("email", "")
-                        if not email:
-                            continue
-
-                        # Resolve contact in our DB
-                        contacts = (
-                            self.db.client.table("contacts")
-                            .select("id, company_id")
-                            .eq("email", email)
-                            .execute()
-                            .data
-                        )
-                        if not contacts:
-                            continue
-
-                        contact_id = contacts[0]["id"]
-                        company_id = contacts[0]["company_id"]
-
-                        # Fetch which interaction types we already have for this contact
-                        stored = (
-                            self.db.client.table("interactions")
-                            .select("type")
-                            .eq("contact_id", contact_id)
-                            .in_("type", ["email_opened", "email_clicked", "email_replied", "email_bounced"])
-                            .execute()
-                            .data
-                        )
-                        stored_types = {row["type"] for row in stored}
-
-                        # Map Instantly lead fields → event types to check.
-                        # Instantly v2 uses various field names; cover the common ones.
-                        event_checks = [
-                            (
-                                lead.get("is_opened") or lead.get("opened") or lead.get("times_opened", 0),
-                                "email_opened",
-                                "email_opened",
-                            ),
-                            (
-                                lead.get("is_clicked") or lead.get("clicked") or lead.get("times_clicked", 0),
-                                "email_clicked",
-                                "email_clicked",
-                            ),
-                            (
-                                lead.get("is_replied") or lead.get("replied"),
-                                "reply_received",
-                                "email_replied",
-                            ),
-                            (
-                                lead.get("is_bounced") or lead.get("bounced"),
-                                "email_bounced",
-                                "email_bounced",
-                            ),
-                        ]
-
-                        for activity_flag, instantly_event, interaction_type in event_checks:
-                            if not activity_flag:
-                                continue
-                            if interaction_type in stored_types:
-                                continue  # already recorded
-
-                            # New event detected — reuse webhook processing logic
-                            event_data = {
-                                "email": email,
-                                "campaign_id": campaign_id,
-                                "event_id": f"poll_{campaign_id}_{email}_{instantly_event}",
-                            }
-                            try:
-                                self.process_webhook_event(instantly_event, event_data)
-                                console.print(
-                                    f"  [green]{email}: new {instantly_event} detected[/green]"
-                                )
-                                result.processed += 1
-                                result.add_detail(email, instantly_event, f"campaign={campaign_name}")
-                            except Exception as e:
-                                logger.error(
-                                    f"Error processing polled event {instantly_event} "
-                                    f"for {email}: {e}"
-                                )
-                                result.errors += 1
-
-                    if len(leads) < page_size:
-                        break
-                    skip += page_size
 
         console.print(
             f"[cyan]Poll complete: {result.processed} new events, {result.errors} errors[/cyan]"
@@ -535,16 +538,18 @@ class EngagementAgent(BaseAgent):
         """
         from backend.app.core.database import Database
 
-        db = Database()
+        # Use unscoped DB for initial lookup — webhooks arrive without auth context.
+        # We discover the workspace_id from the contact record, then re-scope all writes.
+        _lookup_db = Database()
         email = event_data.get("email") or event_data.get("lead_email", "")
 
         if not email:
             return {"status": "skipped", "reason": "No email in event"}
 
-        # Find the contact by email
+        # Find the contact by email (cross-workspace lookup — email is unique globally)
         contacts = (
-            db.client.table("contacts")
-            .select("id, company_id")
+            _lookup_db.client.table("contacts")
+            .select("id, company_id, workspace_id")
             .eq("email", email)
             .execute()
             .data
@@ -557,6 +562,8 @@ class EngagementAgent(BaseAgent):
         contact = contacts[0]
         company_id = contact["company_id"]
         contact_id = contact["id"]
+        # Re-scope all subsequent DB operations to the contact's workspace
+        db = Database(workspace_id=contact.get("workspace_id"))
 
         # Map event type to interaction type
         interaction_map = {

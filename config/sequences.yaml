@@ -132,6 +132,8 @@ sequences:
             - "No meeting request in step 1 -- end with a question"
             - "Insight must be sub-sector specific, not generic"
             - "No feature lists"
+            - "Opening sentence MUST use one of the PERSONALIZATION HOOKS directly -- not a generic sub-sector trend. The hook goes first, not in the middle."
+            - "Do not soften the hook with a preamble. Wrong: 'In talking to companies like yours, I noticed that Plex users often...' Right: 'MEC runs Plex -- most Plex shops still track work orders in Excel.'"
 
       - step: 2
         name: case_relevance

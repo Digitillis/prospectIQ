@@ -10,11 +10,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/action-queue", tags=["action-queue"])
 
-def get_db(): return Database()
+def get_db(): return Database(workspace_id=get_workspace_id())
 def _today_str(): return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 class ActionRequestBody(BaseModel):
@@ -50,7 +51,7 @@ def _resolve_prospects(db, at, count, filt, excl):
     inds, tkw = filt.get("industries",[]), filt.get("title_keywords",[])
     ls = ["not_sent"] if at=="connection" else (["connection_accepted"] if at=="dm" else [])
     try:
-        q=db.client.table("contacts").select("id,full_name,title,linkedin_url,linkedin_status,company_id,email,companies(id,name,domain,tier,pqs_total,status,industry,pain_signals,personalization_hooks)")
+        q=db._filter_ws(db.client.table("contacts").select("id,full_name,title,linkedin_url,linkedin_status,company_id,email,companies(id,name,domain,tier,pqs_total,status,industry,pain_signals,personalization_hooks)"))
         if ls: q=q.in_("linkedin_status",ls)
         if at in("connection","dm"): q=q.not_.is_("linkedin_url","null")
         for r in(q.limit(count*3).execute().data or[]):
@@ -112,7 +113,7 @@ async def skip_action(item_id:str,body:SkipActionBody):
 
 @router.delete("/{item_id}")
 async def remove_action(item_id:str):
-    db=get_db(); db.client.table("action_queue").delete().eq("id",item_id).execute()
+    db=get_db(); db._filter_ws(db.client.table("action_queue").delete()).eq("id",item_id).execute()
     return{"message":"Removed"}
 
 @router.get("/targets")

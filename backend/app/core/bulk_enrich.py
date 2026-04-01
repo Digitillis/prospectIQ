@@ -59,11 +59,12 @@ class BulkEnrichmentJob:
         campaign_name: str | None = None,
         tier: str | None = None,
         stale_days: int = 90,
+        workspace_id: str | None = None,
     ):
         self.campaign_name = campaign_name
         self.tier = tier
         self.stale_days = stale_days
-        self.db = Database()
+        self.db = Database(workspace_id=workspace_id)
         self.settings = get_settings()
 
     def run(self, dry_run: bool = False, limit: int = 500) -> BulkEnrichmentRun:

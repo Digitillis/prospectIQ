@@ -1,8 +1,14 @@
 # ProspectIQ — Prospect Quality Score (PQS) Configuration
 # 4 dimensions, 0-25 points each, total 0-100
 # All weights and keywords editable without code changes
+#
+# ICP alignment (updated 2026-04-01):
+#   Revenue: $100M-$2B (T1: $100M-$400M, T2: $400M-$1B bullseye, T3: $1B-$2B manual)
+#   Employees: 300-3,500
+#   Primary: ALL industrial manufacturing (discrete + process)
+#   Secondary: Food & Beverage (ops/uptime angle only, NOT FSMA)
 
-version: "1.0"
+version: "2.0"
 
 dimensions:
   # =========================================================
@@ -12,57 +18,85 @@ dimensions:
   firmographic:
     max_points: 25
     signals:
-      manufacturing_or_food:
+      industrial_manufacturer:
         points: 5
-        description: "Manufacturing or food production company"
+        description: "Industrial manufacturing company (NAICS 32-33, 211, 212, 221, 322, 324, 325)"
         source: "apollo"
         evaluation: "naics_prefix_match"
-        qualifying_prefixes: ["31", "32", "33"]
+        qualifying_prefixes: ["32", "33", "211", "212", "221", "322", "324", "325", "326", "327"]
 
-      revenue_sweet_spot:
-        points: 5
-        description: "Revenue $50M-$200M (sweet spot: VP signs without committee)"
+      revenue_t2_bullseye:
+        points: 8
+        description: "Revenue $400M-$1B — T2 bullseye, 60% of outreach effort"
         source: "apollo"
         evaluation: "revenue_range"
-        min: 50000000
-        max: 200000000
+        min: 400000000
+        max: 1000000000
 
-      revenue_acceptable:
-        points: 3
-        description: "Revenue $20M-$50M (acceptable but tighter budgets)"
+      revenue_t1:
+        points: 6
+        description: "Revenue $100M-$400M — T1 fast pilots, VP can sign"
         source: "apollo"
         evaluation: "revenue_range"
-        min: 20000000
-        max: 50000000
+        min: 100000000
+        max: 400000000
 
-      us_based:
+      revenue_t3:
         points: 3
-        description: "US-based operations"
+        description: "Revenue $1B-$2B — T3 qualifies but manual outreach only"
         source: "apollo"
-        evaluation: "state_match"
-        qualifying_states: ["IL", "IN", "MI", "OH", "WI", "MN", "IA", "MO", "TX", "CA", "PA", "GA", "NC", "NY", "NJ", "FL", "VA", "TN", "AL", "AR", "KS", "NE", "OK", "OR", "WA", "CO", "MA", "MD"]
+        evaluation: "revenue_range"
+        min: 1000000000
+        max: 2000000000
 
       employee_count:
-        points: 3
-        description: "50-500 employees"
+        points: 4
+        description: "300-3,500 employees (ICP sweet spot)"
         source: "apollo"
         evaluation: "employee_range"
-        min: 50
-        max: 500
+        min: 300
+        max: 3500
 
-      food_production:
-        points: 5
-        description: "Food/beverage production (FSMA compliance = urgent buyer pain)"
+      us_midwest_primary:
+        points: 3
+        description: "Located in Midwest manufacturing belt (primary territory)"
         source: "apollo"
-        evaluation: "naics_prefix_match"
-        qualifying_prefixes: ["311", "312"]
+        evaluation: "state_match"
+        qualifying_states: ["IL", "IN", "MI", "OH", "WI", "MN", "IA", "MO", "KY", "PA"]
 
-      private_company:
+      multi_plant_operations:
         points: 4
-        description: "Private company (faster decision cycles, no board approval needed)"
+        description: "Multi-plant / multi-site footprint (larger deal, more assets to monitor)"
         source: "apollo"
-        evaluation: "boolean_field"
-        field: "is_private"
+        evaluation: "keyword_match"
+        keywords:
+          - "multiple plants"
+          - "multi-plant"
+          - "multi-site"
+          - "plant network"
+          - "manufacturing network"
+          - "multiple facilities"
+          - "several plants"
+          - "plants across"
+          - "facilities across"
+          - "manufacturing locations"
+
+      continuous_operations:
+        points: 3
+        description: "24/7 continuous process operations — downtime cost is highest"
+        source: "apollo"
+        evaluation: "keyword_match"
+        keywords:
+          - "24/7"
+          - "24 hours"
+          - "continuous production"
+          - "continuous process"
+          - "continuous operations"
+          - "around the clock"
+          - "nonstop production"
+          - "shift operations"
+          - "three shift"
+          - "continuous manufacturing"
 
   # =========================================================
   # DIMENSION 2: Technographic Readiness (0-25 pts)
@@ -73,7 +107,7 @@ dimensions:
     signals:
       legacy_cmms:
         points: 5
-        description: "Uses legacy CMMS/APM system"
+        description: "Uses legacy CMMS/APM system — upgrade candidate"
         source: "research"
         evaluation: "keyword_match"
         keywords:
@@ -110,7 +144,7 @@ dimensions:
 
       erp_in_place:
         points: 4
-        description: "ERP system in use"
+        description: "ERP system in use — integration-ready"
         source: "research"
         evaluation: "keyword_match"
         keywords:
@@ -126,7 +160,7 @@ dimensions:
 
       industrial_protocols:
         points: 4
-        description: "OPC-UA/MQTT/Modbus infrastructure"
+        description: "OPC-UA/MQTT/Modbus/SCADA infrastructure"
         source: "research"
         evaluation: "keyword_match"
         keywords:
@@ -149,9 +183,63 @@ dimensions:
           - "OSIsoft PI"
           - "PI historian"
 
+      rotating_equipment:
+        points: 5
+        description: "Rotating equipment present — pumps, motors, compressors, turbines (primary PdM targets)"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "centrifugal pump"
+          - "positive displacement pump"
+          - "pump station"
+          - "electric motor"
+          - "motor drive"
+          - "VFD"
+          - "variable frequency drive"
+          - "compressor"
+          - "air compressor"
+          - "gas compressor"
+          - "turbine"
+          - "steam turbine"
+          - "gas turbine"
+          - "fan"
+          - "industrial fan"
+          - "blower"
+          - "gearbox"
+          - "gear drive"
+          - "conveyor"
+          - "conveyor belt"
+          - "rotating equipment"
+          - "rotating machinery"
+          - "centrifuge"
+          - "agitator"
+          - "mixer"
+          - "extruder"
+          - "press"
+
+      asset_management_standard:
+        points: 4
+        description: "ISO 55001 / APM / formal asset management program in place"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "ISO 55001"
+          - "asset management"
+          - "asset performance management"
+          - "APM"
+          - "asset integrity"
+          - "reliability centered maintenance"
+          - "RCM"
+          - "total productive maintenance"
+          - "TPM"
+          - "IATF 16949"
+          - "ISO 9001"
+          - "AS9100"
+          - "NADCAP"
+
       no_existing_ai:
         points: 4
-        description: "No existing AI/ML platform for manufacturing"
+        description: "No existing AI/ML predictive maintenance platform"
         source: "research"
         evaluation: "negative_keyword_match"
         negative_keywords:
@@ -189,6 +277,25 @@ dimensions:
   timing:
     max_points: 25
     signals:
+      downtime_mentioned:
+        points: 6
+        description: "Unplanned downtime or equipment failure mentioned"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "downtime"
+          - "unplanned downtime"
+          - "equipment failure"
+          - "production stoppage"
+          - "line down"
+          - "machine breakdown"
+          - "outage"
+          - "reliability issues"
+          - "mean time between failure"
+          - "MTBF"
+          - "OEE"
+          - "overall equipment effectiveness"
+
       new_digital_role:
         points: 5
         description: "Recently hired digital transformation / innovation role"
@@ -205,21 +312,6 @@ dimensions:
           - "Head of Innovation"
           - "Director of Digital"
 
-      downtime_mentioned:
-        points: 5
-        description: "Unplanned downtime or equipment failure mentioned"
-        source: "research"
-        evaluation: "keyword_match"
-        keywords:
-          - "downtime"
-          - "unplanned"
-          - "equipment failure"
-          - "production stoppage"
-          - "line down"
-          - "machine breakdown"
-          - "outage"
-          - "reliability issues"
-
       recent_capex:
         points: 4
         description: "Recent capital expenditure on equipment or expansion"
@@ -235,9 +327,43 @@ dimensions:
           - "capex"
           - "capital expenditure"
           - "modernization"
+          - "retrofit"
+
+      quality_issues:
+        points: 4
+        description: "Quality issues, defects, or scrap driving rework cost"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "quality issue"
+          - "defect rate"
+          - "scrap rate"
+          - "rework"
+          - "non-conformance"
+          - "customer complaint"
+          - "warranty claim"
+          - "yield loss"
+          - "first pass yield"
+          - "process capability"
+
+      workforce_challenges:
+        points: 3
+        description: "Skilled labor shortage driving automation demand"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "labor shortage"
+          - "skilled workers"
+          - "workforce"
+          - "hiring challenge"
+          - "talent gap"
+          - "aging workforce"
+          - "operator shortage"
+          - "technician shortage"
+          - "automation"
 
       sustainability_mandate:
-        points: 3
+        points: 2
         description: "Sustainability / ESG mandates driving efficiency"
         source: "research"
         evaluation: "keyword_match"
@@ -251,76 +377,6 @@ dimensions:
           - "green manufacturing"
           - "net zero"
 
-      quality_issues:
-        points: 3
-        description: "Quality issues, recalls, or customer complaints"
-        source: "research"
-        evaluation: "keyword_match"
-        keywords:
-          - "recall"
-          - "quality issue"
-          - "defect"
-          - "customer complaint"
-          - "non-conformance"
-          - "scrap rate"
-          - "rework"
-          - "warranty claim"
-
-      fsma_compliance_pressure:
-        points: 5
-        description: "FSMA/FDA compliance burden or audit concerns"
-        source: "research"
-        evaluation: "keyword_match"
-        keywords:
-          - "FSMA"
-          - "FDA"
-          - "food safety"
-          - "HACCP"
-          - "preventive controls"
-          - "483 observation"
-          - "FDA inspection"
-          - "food safety audit"
-          - "SQF"
-          - "BRC"
-          - "GFSI"
-          - "FSSC 22000"
-          - "compliance"
-          - "audit readiness"
-          - "corrective action"
-          - "CCP monitoring"
-
-      recall_risk:
-        points: 4
-        description: "Product recall history or risk factors"
-        source: "research"
-        evaluation: "keyword_match"
-        keywords:
-          - "product recall"
-          - "voluntary recall"
-          - "FDA warning"
-          - "warning letter"
-          - "listeria"
-          - "salmonella"
-          - "E. coli"
-          - "contamination"
-          - "allergen"
-          - "undeclared allergen"
-
-      workforce_challenges:
-        points: 3
-        description: "Skilled labor shortage or workforce challenges"
-        source: "research"
-        evaluation: "keyword_match"
-        keywords:
-          - "labor shortage"
-          - "skilled workers"
-          - "workforce"
-          - "hiring challenge"
-          - "talent gap"
-          - "aging workforce"
-          - "operator shortage"
-          - "technician shortage"
-
       recent_ma:
         points: 2
         description: "Recent M&A activity (integrating new plants)"
@@ -333,6 +389,112 @@ dimensions:
           - "merged"
           - "integration"
           - "combined operations"
+
+      regulatory_pressure:
+        points: 2
+        description: "Regulatory or compliance pressure (any sector)"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "OSHA"
+          - "EPA"
+          - "compliance"
+          - "audit"
+          - "regulatory"
+          - "inspection"
+          - "PSM"
+          - "process safety"
+          - "ISO 9001"
+          - "IATF 16949"
+          - "AS9100"
+
+      reliability_program:
+        points: 4
+        description: "Reliability / maintenance program underway — direct PdM pain signal"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "reliability centered maintenance"
+          - "RCM"
+          - "predictive maintenance program"
+          - "PdM"
+          - "condition based maintenance"
+          - "asset reliability"
+          - "reliability engineer"
+          - "reliability program"
+          - "maintenance excellence"
+          - "asset performance"
+          - "proactive maintenance"
+          - "maintenance strategy"
+
+      operational_excellence:
+        points: 3
+        description: "OpEx / continuous improvement initiative — budget and executive buy-in present"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "Six Sigma"
+          - "Lean manufacturing"
+          - "Lean Six Sigma"
+          - "Kaizen"
+          - "continuous improvement"
+          - "operational excellence"
+          - "OEE improvement"
+          - "waste reduction"
+          - "process improvement"
+          - "value stream"
+          - "5S"
+
+      maintenance_hiring:
+        points: 3
+        description: "Hiring reliability or maintenance engineers — staffing up because reactive maintenance is failing"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "reliability engineer"
+          - "maintenance engineer"
+          - "maintenance manager"
+          - "plant engineer"
+          - "asset management engineer"
+          - "maintenance planner"
+          - "maintenance technician"
+          - "predictive maintenance engineer"
+          - "condition monitoring"
+          - "CMRP"
+
+      energy_efficiency_initiative:
+        points: 2
+        description: "Energy / efficiency initiative — often funded alongside equipment upgrades"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "energy audit"
+          - "energy management"
+          - "ISO 50001"
+          - "energy efficiency"
+          - "energy reduction"
+          - "power consumption"
+          - "utility costs"
+          - "compressed air"
+          - "motor efficiency"
+          - "variable speed drive"
+
+      # F&B-specific timing signals (secondary — reduced weight)
+      fsma_compliance_pressure:
+        points: 2
+        description: "FSMA/FDA compliance burden (F&B secondary ICP only)"
+        source: "research"
+        evaluation: "keyword_match"
+        keywords:
+          - "FSMA"
+          - "FDA"
+          - "HACCP"
+          - "preventive controls"
+          - "food safety audit"
+          - "SQF"
+          - "BRC"
+          - "GFSI"
+          - "FSSC 22000"
 
   # =========================================================
   # DIMENSION 4: Engagement Progress (0-25 pts)
@@ -362,7 +524,7 @@ dimensions:
 # Pre-research thresholds (firmographic-only, max 25 pts)
 pre_research_thresholds:
   disqualify:
-    max_score: 4        # Below 5 = clearly outside ICP
+    max_score: 4        # Below 5 = clearly outside ICP (no revenue/employee fit)
     action: "disqualify"
     new_status: "disqualified"
   pass_to_research:

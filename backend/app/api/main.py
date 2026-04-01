@@ -14,8 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence
 from backend.app.webhooks import instantly as instantly_webhooks
+from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 # Background scheduler for engagement sequence processing
 # ---------------------------------------------------------------------------
 
+def _run_health_snapshot() -> None:
+    """Every-15-min job: capture full system health snapshot."""
+    try:
+        from backend.app.agents.monitoring import HealthSnapshotAgent
+        HealthSnapshotAgent().capture()
+    except Exception as e:
+        logger.error(f"Scheduled health_snapshot failed: {e}")
+
+
+def _run_send_approved() -> None:
+    """Every-30-min job: push approved drafts to Instantly (gated by SEND_ENABLED)."""
+    try:
+        from backend.app.core.config import get_settings
+        if not get_settings().send_enabled:
+            return  # Silently skip — warm-up not complete yet
+        from backend.app.agents.engagement import EngagementAgent
+        agent = EngagementAgent()
+        agent.run(action="send_approved")
+    except Exception as e:
+        logger.error(f"Scheduled send_approved failed: {e}")
+
+
 def _run_process_due_sequences() -> None:
     """Hourly job: process engagement sequences with due follow-up actions."""
     try:
@@ -87,10 +110,12 @@ async def lifespan(app: FastAPI):
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler()
+        scheduler.add_job(_run_health_snapshot, "interval", minutes=15, id="health_snapshot")
+        scheduler.add_job(_run_send_approved, "interval", minutes=30, id="send_approved")
         scheduler.add_job(_run_process_due_sequences, "interval", hours=1, id="process_due")
         scheduler.add_job(_run_poll_instantly, "interval", hours=6, id="poll_instantly")
         scheduler.start()
-        logger.info("APScheduler started — process_due every 1h, poll_instantly every 6h")
+        logger.info("APScheduler started — health_snapshot every 15m, send_approved every 30m, process_due every 1h, poll_instantly every 6h")
     except ImportError:
         logger.warning("APScheduler not installed — background jobs disabled")
         scheduler = None
@@ -122,6 +147,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Workspace context — enriches requests with workspace identity when auth present
+app.add_middleware(WorkspaceMiddleware)
+
 # Rate limiting — added after CORS so preflight requests are not rate-limited
 app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
 
@@ -139,6 +167,14 @@ app.include_router(today.router)
 app.include_router(content.router)
 app.include_router(events.router)
 app.include_router(instantly_webhooks.router)
+app.include_router(sequences.router)
+app.include_router(monitoring.router)
+app.include_router(workspaces.router)
+app.include_router(invite.router)
+app.include_router(billing.router)
+app.include_router(signup.router)
+app.include_router(threads.router)
+app.include_router(intelligence.router)
 
 
 @app.get("/health")
