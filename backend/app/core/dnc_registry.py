@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 class DNCRegistry:
     """Checks and manages the do-not-contact list."""
 
-    def __init__(self):
-        self.db = Database()
+    def __init__(self, workspace_id: str | None = None):
+        self.db = Database(workspace_id=workspace_id)
 
     # ------------------------------------------------------------------
     # Core check — used by pace_limiter

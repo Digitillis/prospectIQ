@@ -26,14 +26,8 @@ from backend.app.core.dnc_registry import DNCRegistry
 console = Console()
 logger = logging.getLogger(__name__)
 
-_dnc: DNCRegistry | None = None
-
-
-def _get_dnc() -> DNCRegistry:
-    global _dnc
-    if _dnc is None:
-        _dnc = DNCRegistry()
-    return _dnc
+def _get_dnc(workspace_id: str | None = None) -> DNCRegistry:
+    return DNCRegistry(workspace_id=workspace_id)
 
 # Default daily send limits per campaign type
 CAMPAIGN_DEFAULTS: dict[str, int] = {
@@ -46,10 +40,10 @@ CAMPAIGN_DEFAULTS: dict[str, int] = {
 class PaceLimiter:
     """Enforces daily send caps per campaign."""
 
-    def __init__(self, campaign_name: str, daily_limit: int | None = None):
+    def __init__(self, campaign_name: str, daily_limit: int | None = None, workspace_id: str | None = None):
         self.campaign_name = campaign_name
         self.daily_limit = daily_limit or CAMPAIGN_DEFAULTS.get(campaign_name, CAMPAIGN_DEFAULTS["default"])
-        self.db = Database()
+        self.db = Database(workspace_id=workspace_id)
         self._today_count: int | None = None  # cached for this limiter instance
 
     @property
@@ -87,7 +81,7 @@ class PaceLimiter:
             return False
 
         if email:
-            blocked, reason = _get_dnc().is_blocked(email=email)
+            blocked, reason = _get_dnc(self.db.workspace_id).is_blocked(email=email)
             if blocked:
                 logger.info(f"[pace] Contact {contact_id[:8]}... {reason}")
                 return False
@@ -135,9 +129,9 @@ class PaceLimiter:
         )
 
 
-def check_all_campaigns() -> dict[str, dict]:
+def check_all_campaigns(workspace_id: str | None = None) -> dict[str, dict]:
     """Return today's send count for all known campaigns."""
-    db = Database()
+    db = Database(workspace_id=workspace_id)
     summary = {}
     for campaign, limit in CAMPAIGN_DEFAULTS.items():
         if campaign == "default":

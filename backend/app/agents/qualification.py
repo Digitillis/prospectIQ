@@ -6,6 +6,7 @@ No LLM calls needed — scans research intelligence for keyword matches.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -137,6 +138,31 @@ class QualificationAgent(BaseAgent):
 
                 self.db.update_company(company_id, update_data)
 
+                # Send hot-prospect email notification
+                if pqs.classification in ("hot_prospect", "high_priority") and self.db.workspace_id:
+                    try:
+                        from backend.app.core.notifications import notify_hot_prospect
+                        ws_row = (
+                            self.db.client.table("workspaces")
+                            .select("owner_email")
+                            .eq("id", self.db.workspace_id)
+                            .execute()
+                            .data
+                        )
+                        if ws_row and ws_row[0].get("owner_email"):
+                            hooks = (research or {}).get("personalization_hooks") or []
+                            asyncio.run(notify_hot_prospect(
+                                company_name=company_name,
+                                pqs_score=pqs.total,
+                                personalization_hooks=hooks[:5],
+                                workspace_email=ws_row[0]["owner_email"],
+                            ))
+                    except RuntimeError:
+                        # asyncio.run() fails if an event loop is already running
+                        pass
+                    except Exception as _e:
+                        logger.debug(f"Hot-prospect notification failed for {company_name}: {_e}")
+
                 # Log result
                 status_emoji = {
                     "qualified": "[green]QUALIFIED[/green]",
@@ -163,6 +189,8 @@ class QualificationAgent(BaseAgent):
                 logger.error(f"Error qualifying {company_name}: {e}", exc_info=True)
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
+                if self._monitor:
+                    self._monitor.log_error(str(e), company_id=company_id, error_type="qualification_error", exc=e)
 
         # Count classification outcomes for the Slack summary
         qualified_count = sum(

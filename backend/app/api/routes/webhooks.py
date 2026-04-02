@@ -56,11 +56,11 @@ async def instantly_webhook(
             try:
                 from backend.app.agents.reply import ReplyAgent
                 from backend.app.core.database import Database
+                from backend.app.core.workspace import get_workspace_id
 
-                db = Database()
+                db = Database(workspace_id=get_workspace_id())
                 drafts = (
-                    db.client.table("outreach_drafts")
-                    .select("id")
+                    db._filter_ws(db.client.table("outreach_drafts").select("id"))
                     .eq("company_id", result["company_id"])
                     .eq("contact_id", result["contact_id"])
                     .order("created_at", desc=True)

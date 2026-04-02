@@ -22,14 +22,25 @@ console = Console()
 # These are the actual target market parameters for Digitillis.
 # Any icp.yaml value that deviates from these ranges raises an error.
 
-GTM_EMPLOYEE_MIN = 51
-GTM_EMPLOYEE_MAX = 500
-GTM_REVENUE_MIN_M = 10      # $10M
+GTM_EMPLOYEE_MIN = 200
+GTM_EMPLOYEE_MAX = 2000
+GTM_REVENUE_MIN_M = 50      # $50M
 GTM_REVENUE_MAX_M = 500     # $500M
 
-# DB-level tier names that must match what icp.yaml uses.
-# Key = icp.yaml tier value, Value = set of acceptable DB tier column values.
-VALID_TIER_NAMES = {"mfg1", "fb1", "1a", "1b", "2", "3", "4", "5"}
+# All valid tier names across discrete mfg, process mfg, and F&B (secondary).
+# mfg* = discrete manufacturing (primary)
+# pmfg* = process manufacturing (primary)
+# fb* = food & beverage (secondary)
+VALID_TIER_NAMES = {
+    # Discrete manufacturing (primary)
+    "mfg1", "mfg2", "mfg3", "mfg4", "mfg5", "mfg6", "mfg7", "mfg8",
+    # Process manufacturing (primary)
+    "pmfg1", "pmfg2", "pmfg3", "pmfg4", "pmfg5", "pmfg6", "pmfg7", "pmfg8",
+    # Food & Beverage (secondary)
+    "fb1", "fb2", "fb3", "fb4",
+    # Legacy names (keep for backward compat)
+    "1a", "1b", "2", "3", "4", "5",
+}
 
 REQUIRED_TOP_KEYS = {"company_filters", "contact_filters", "discovery"}
 REQUIRED_COMPANY_FILTER_KEYS = {"industries", "employee_count", "geography"}

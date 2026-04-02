@@ -23,6 +23,7 @@ sender:
     Digitillis | www.digitillis.com
     avi@digitillis.com | 224.355.4500
 
+
 # Voice and tone instructions — injected into every outreach prompt
 voice_and_tone: |
   Write as Avanish (Avi) Mehrotra, a technical founder who deeply understands
@@ -62,6 +63,7 @@ product_mention_rule: >
 
 # Email structure — every email must follow this order
 email_structure: |
+  0. Greeting: Always start with "Hi [first_name]," on its own line
   1. Opening: One line referencing something specific about THEIR company (not about Digitillis)
   2. Bridge: 1-2 sentences connecting their situation to a relevant problem/opportunity
   3. Value: One concrete, specific claim about what Digitillis does (with a number if possible)

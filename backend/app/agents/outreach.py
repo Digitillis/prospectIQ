@@ -118,7 +118,10 @@ def _build_system_prompt() -> str:
         "- Reference a benchmark from their sub-sector (not generic 'manufacturing')",
         "- Ask a question so specific it proves you understand their daily work",
         "",
-        "SIGNATURE (use exactly this, on every email):",
+        "GREETING & SIGNATURE (mandatory on every email):",
+        "- The email body MUST start with: Hi [first_name],",
+        "- The email body MUST end with the exact signature block below — no paraphrasing.",
+        "SIGNATURE BLOCK (copy exactly):",
         signature,
     ]
 
@@ -143,6 +146,24 @@ RESEARCH INTELLIGENCE:
 
 PERSONALIZATION HOOKS:
 {personalization_hooks}
+
+⚠️ HOOK USAGE MANDATE — READ BEFORE WRITING:
+The PERSONALIZATION HOOKS above are your most valuable asset. They are specific,
+verified facts about this company that no generic email could contain.
+
+For Step 1 (initial outreach), you MUST:
+1. Select the single strongest hook — the one most likely to make this specific
+   person stop scrolling. Prefer: known tech stack facts, confirmed pain signals,
+   specific equipment types, or recent company news over generic sub-sector trends.
+2. Open the email body with that hook as the FIRST sentence. Not as background.
+   Not buried in paragraph two. The hook IS the opener.
+3. The hook should read like an observation, not a compliment:
+   ✓ "MEC runs Plex — most plants on Plex still track maintenance in spreadsheets."
+   ✓ "Vaupell's shift to aerospace composites means your failure modes just got more expensive to ignore."
+   ✗ "I noticed you work in the manufacturing space..."
+   ✗ "As a leader in your industry..."
+4. If no hooks are available (list is empty), fall back to the most specific fact
+   from RESEARCH INTELLIGENCE. Never open with a generic sub-sector trend.
 
 TECHNOLOGY STACK:
 {technology_stack}
@@ -171,7 +192,7 @@ GLOBAL ANTI-PATTERNS:
 OUTPUT FORMAT (JSON):
 {{
     "subject": "Short, specific subject line referencing their company or situation (under 50 chars, no generic subjects)",
-    "body": "The email body. {max_words} words max. Must end with the exact signature block from the system prompt.",
+    "body": "The email body. MUST start with 'Hi [first_name],' (use actual first name). {max_words} words max. MUST end with the exact signature block from the system prompt.",
     "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect"
 }}
 
@@ -412,7 +433,7 @@ class OutreachAgent(BaseAgent):
                     result.add_detail(
                         company_name,
                         "draft_created",
-                        f"Contact: {contact.get('full_name')}, Channel: {step_config['channel']}",
+                        f"Contact: {contact.get('full_name')}, Channel: {step_config.get('channel', 'email')}",
                     )
 
                 # Update company status (once per company, after all contacts processed)
@@ -422,10 +443,14 @@ class OutreachAgent(BaseAgent):
                 logger.error(f"Failed to parse Claude response for {company_name}: {e}")
                 result.errors += 1
                 result.add_detail(company_name, "error", f"JSON parse error: {str(e)[:100]}")
+                if self._monitor:
+                    self._monitor.log_error(str(e), company_id=company_id, error_type="parse_error", exc=e)
             except Exception as e:
                 logger.error(f"Error generating outreach for {company_name}: {e}", exc_info=True)
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
+                if self._monitor:
+                    self._monitor.log_error(str(e), company_id=company_id, error_type="outreach_error", exc=e)
 
         return result
 

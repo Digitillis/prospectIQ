@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.app.core.config import get_sequences_config
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/api/actions", tags=["actions"])
 
 
 def get_db() -> Database:
-    return Database()
+    return Database(workspace_id=get_workspace_id())
 
 
 @router.get("/linkedin-tasks")
@@ -30,11 +31,13 @@ async def get_linkedin_tasks():
     now = datetime.now(timezone.utc).isoformat()
 
     rows = (
-        db.client.table("engagement_sequences")
-        .select(
-            "*, "
-            "companies(name, domain, tier, linkedin_url, pqs_total), "
-            "contacts(full_name, title, linkedin_url)"
+        db._filter_ws(
+            db.client.table("engagement_sequences")
+            .select(
+                "*, "
+                "companies(name, domain, tier, linkedin_url, pqs_total), "
+                "contacts(full_name, title, linkedin_url)"
+            )
         )
         .eq("status", "active")
         .lte("next_action_at", now)
@@ -54,8 +57,7 @@ async def complete_linkedin_task(sequence_id: str):
     db = get_db()
 
     seq_result = (
-        db.client.table("engagement_sequences")
-        .select("*")
+        db._filter_ws(db.client.table("engagement_sequences").select("*"))
         .eq("id", sequence_id)
         .execute()
     )
@@ -127,11 +129,13 @@ async def get_hot_replies():
     db = get_db()
 
     drafts = (
-        db.client.table("outreach_drafts")
-        .select(
-            "*, "
-            "companies(name, tier, pqs_total, status), "
-            "contacts(full_name, title, email)"
+        db._filter_ws(
+            db.client.table("outreach_drafts")
+            .select(
+                "*, "
+                "companies(name, tier, pqs_total, status), "
+                "contacts(full_name, title, email)"
+            )
         )
         .eq("approval_status", "pending")
         .eq("sequence_name", "reply_response")

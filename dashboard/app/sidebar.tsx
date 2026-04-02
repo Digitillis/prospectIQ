@@ -5,53 +5,54 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Building2,
-  CheckCircle2,
-  ListTodo,
-  UserPlus,
+  MessageSquare,
+  Zap,
+  Users,
+  Filter,
+  GitBranch,
+  Send,
+  PenTool,
   BarChart3,
   History,
   Settings,
   Search,
   Activity,
-  Upload,
-  FileText,
+  UserPlus,
   Ban,
-  Zap,
-  Users,
-  ListChecks,
-  TextQuote,
-  MessageCircle,
-  Sun,
-  PenTool,
+  CheckCircle2,
   Moon,
+  Sun,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { listThreads } from "@/lib/api";
 
-/**
- * Fetch today's total pending action count for the notification badge.
- * Silently returns 0 on any failure so the sidebar always renders.
- */
-function useTodayBadgeCount(): number {
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://prospectiq-production-4848.up.railway.app";
+
+/** Fetch threads needing action for the badge count. */
+function useThreadsBadge(): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    const API_BASE =
-      process.env.NEXT_PUBLIC_API_URL ||
-      "https://prospectiq-production-4848.up.railway.app";
+    listThreads({ needs_action: true, limit: 200 })
+      .then((res) => setCount(res.needs_action_count ?? 0))
+      .catch(() => {});
+  }, []);
 
-    fetch(`${API_BASE}/api/today`, {
-      headers: { "Content-Type": "application/json" },
-    })
+  return count;
+}
+
+/** Hot signals badge — companies with intent_score > 15. */
+function useSignalsBadge(): number {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/intelligence/signals`)
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
-        if (!json?.data) return;
-        const d = json.data;
-        const total =
-          (d.hot_signals?.length ?? 0) +
-          (d.pending_approvals?.length ?? 0) +
-          (d.linkedin_queue?.length ?? 0);
-        setCount(total);
+        if (json) setCount(json.total_hot ?? 0);
       })
       .catch(() => {});
   }, []);
@@ -59,37 +60,108 @@ function useTodayBadgeCount(): number {
   return count;
 }
 
-const NAV_ITEMS = [
-  // "Today" is intentionally NOT here — it's rendered separately with a badge
-  { label: "Pipeline", href: "/", icon: LayoutDashboard },
-  { label: "Activity", href: "/activity", icon: Activity },
-  { label: "Tasks", href: "/tasks", icon: ListChecks },
-  { label: "Prospects", href: "/prospects", icon: Building2 },
-  { label: "Contacts", href: "/contacts", icon: Users },
-  { label: "LinkedIn", href: "/linkedin", icon: MessageCircle },
-  { label: "Content", href: "/content", icon: PenTool },
-  { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
-  { label: "Actions", href: "/actions", icon: ListTodo },
-  { label: "Automations", href: "/automations", icon: Zap },
-  { label: "Enrichment", href: "/enrichment", icon: UserPlus },
-  { label: "Templates", href: "/templates", icon: FileText },
-  { label: "Snippets", href: "/snippets", icon: TextQuote },
-  { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "History", href: "/history", icon: History },
-  { label: "Import", href: "/import", icon: Upload },
-  { label: "DNC List", href: "/dnc", icon: Ban },
-  { label: "Settings", href: "/settings", icon: Settings },
-];
+// ---------------------------------------------------------------------------
+// Section type
+// ---------------------------------------------------------------------------
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  exactMatch?: boolean;
+  badge?: number;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar component
+// ---------------------------------------------------------------------------
 
 export function Sidebar() {
   const pathname = usePathname();
-  const todayCount = useTodayBadgeCount();
-  const isTodayActive = pathname === "/today";
+  const threadsBadge = useThreadsBadge();
+  const signalsBadge = useSignalsBadge();
+
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("theme");
+    if (stored === "dark") {
+      document.documentElement.classList.add("dark");
+      setDark(true);
+    }
+  }, []);
+
+  const toggleDark = () => {
+    const next = !dark;
+    setDark(next);
+    if (next) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  };
+
+  const sections: NavSection[] = [
+    {
+      title: "OPERATE",
+      items: [
+        { label: "Command Center", href: "/", icon: LayoutDashboard, exactMatch: true },
+        { label: "Pipeline", href: "/pipeline", icon: Activity },
+        { label: "Threads", href: "/threads", icon: MessageSquare, badge: threadsBadge > 0 ? threadsBadge : undefined },
+        { label: "Signals", href: "/signals", icon: Zap, badge: signalsBadge > 0 ? signalsBadge : undefined },
+      ],
+    },
+    {
+      title: "BUILD",
+      items: [
+        { label: "Prospects", href: "/prospects", icon: Building2 },
+        { label: "Contacts", href: "/contacts", icon: Users },
+        { label: "Segments", href: "/segments", icon: Filter },
+      ],
+    },
+    {
+      title: "ENGAGE",
+      items: [
+        { label: "Sequences", href: "/sequences", icon: GitBranch },
+        { label: "Outreach Hub", href: "/outreach", icon: Send },
+        { label: "Content", href: "/content", icon: PenTool },
+      ],
+    },
+    {
+      title: "MEASURE",
+      items: [
+        { label: "Intelligence", href: "/intelligence", icon: BarChart3 },
+        { label: "Analytics", href: "/analytics", icon: BarChart3 },
+        { label: "History", href: "/history", icon: History },
+      ],
+    },
+    {
+      title: "SYSTEM",
+      items: [
+        { label: "Enrichment", href: "/enrichment", icon: UserPlus },
+        { label: "Automations", href: "/automations", icon: Zap },
+        { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
+        { label: "DNC List", href: "/dnc", icon: Ban },
+        { label: "Settings", href: "/settings/workspace", icon: Settings },
+      ],
+    },
+  ];
+
+  const isActive = (item: NavItem) => {
+    if (item.exactMatch) return pathname === item.href;
+    return item.href !== "/" && pathname.startsWith(item.href);
+  };
 
   return (
     <nav className="group flex h-full w-14 flex-col bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 transition-all duration-200 hover:w-52">
-      {/* Logo area */}
-      <div className="flex h-14 items-center justify-center border-b border-gray-200 dark:border-gray-800 px-4">
+      {/* Logo */}
+      <div className="flex h-14 items-center justify-center border-b border-gray-200 dark:border-gray-800 px-4 shrink-0">
         <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">P</span>
         <span className="ml-1 hidden truncate text-sm font-semibold text-gray-900 dark:text-gray-100 group-hover:inline">
           rospectIQ
@@ -103,7 +175,7 @@ export function Sidebar() {
             new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })
           )
         }
-        className="mx-2 mt-3 flex items-center gap-3 rounded-md px-3 py-2 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
+        className="mx-2 mt-3 flex items-center gap-3 rounded-md px-3 py-2 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 shrink-0"
         title="Search (⌘K)"
       >
         <Search className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
@@ -115,78 +187,88 @@ export function Sidebar() {
         </kbd>
       </button>
 
-      {/* Navigation links — scrollable when viewport is short */}
-      <ul className="mt-2 flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 scrollbar-track-transparent">
-
-        {/* TODAY — always first, with notification badge */}
-        <li>
-          <Link
-            href="/today"
-            className={cn(
-              "relative flex items-center gap-3 rounded-md px-3 py-2 text-xs font-medium transition-colors",
-              isTodayActive
-                ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
-            )}
-          >
-            <div className="relative shrink-0">
-              <Sun
-                className={cn(
-                  "h-4 w-4",
-                  isTodayActive ? "text-gray-900 dark:text-gray-100" : "text-gray-400 dark:text-gray-500"
-                )}
-              />
-              {/* Notification badge */}
-              {todayCount > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-900 dark:bg-gray-100 px-1 text-[9px] font-bold text-white dark:text-gray-900 leading-none">
-                  {todayCount > 99 ? "99+" : todayCount}
-                </span>
-              )}
-            </div>
-            <span className="hidden truncate group-hover:inline">Today</span>
-            {/* Badge visible in expanded state */}
-            {todayCount > 0 && (
-              <span className="ml-auto hidden shrink-0 rounded-full bg-gray-900 dark:bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-white dark:text-gray-900 group-hover:inline">
-                {todayCount > 99 ? "99+" : todayCount}
+      {/* Scrollable nav */}
+      <div className="flex flex-1 flex-col gap-0 overflow-y-auto px-2 py-2 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 scrollbar-track-transparent">
+        {sections.map((section) => (
+          <div key={section.title}>
+            {/* Section label — only visible when expanded */}
+            <div className="mb-0.5 mt-3 hidden px-3 group-hover:block">
+              <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-600">
+                {section.title}
               </span>
-            )}
-          </Link>
-        </li>
+            </div>
+            {/* Divider when collapsed */}
+            <div className="mb-1 mt-2 border-t border-gray-100 dark:border-gray-800 group-hover:hidden" />
 
-        {/* Divider */}
-        <li className="mx-2 my-1 border-t border-gray-200 dark:border-gray-700" />
+            <ul className="flex flex-col gap-0.5">
+              {section.items.map((item) => {
+                const active = isActive(item);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "relative flex items-center gap-3 rounded-md px-3 py-2 text-xs transition-colors",
+                        active
+                          ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium"
+                          : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
+                      )}
+                    >
+                      {/* Icon with optional badge dot (collapsed state) */}
+                      <div className="relative shrink-0">
+                        <Icon
+                          className={cn(
+                            "h-4 w-4",
+                            active
+                              ? "text-gray-900 dark:text-gray-100"
+                              : "text-gray-400 dark:text-gray-500"
+                          )}
+                        />
+                        {item.badge !== undefined && item.badge > 0 && (
+                          <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold text-white leading-none group-hover:hidden">
+                            {item.badge > 99 ? "99+" : item.badge}
+                          </span>
+                        )}
+                      </div>
 
-        {/* All other nav items */}
-        {NAV_ITEMS.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-          const Icon = item.icon;
+                      {/* Label (expanded state) */}
+                      <span className="hidden truncate flex-1 group-hover:inline">
+                        {item.label}
+                      </span>
 
-          return (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-xs transition-colors",
-                  isActive
-                    ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
-                )}
-              >
-                <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-gray-900 dark:text-gray-100" : "text-gray-400 dark:text-gray-500")} />
-                <span className="hidden truncate group-hover:inline">
-                  {item.label}
-                </span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+                      {/* Badge pill (expanded state) */}
+                      {item.badge !== undefined && item.badge > 0 && (
+                        <span className="ml-auto hidden shrink-0 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white group-hover:inline">
+                          {item.badge > 99 ? "99+" : item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
 
-      {/* Bottom spacer */}
-      <div className="pb-3" />
+      {/* Dark mode toggle */}
+      <div className="flex shrink-0 items-center justify-center border-t border-gray-200 dark:border-gray-800 p-2">
+        <button
+          onClick={toggleDark}
+          className="flex items-center gap-3 rounded-md px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 w-full transition-colors"
+          title={dark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {dark ? (
+            <Sun className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
+          ) : (
+            <Moon className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
+          )}
+          <span className="hidden group-hover:inline truncate">
+            {dark ? "Light mode" : "Dark mode"}
+          </span>
+        </button>
+      </div>
     </nav>
   );
 }

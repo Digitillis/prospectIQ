@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # These roles have no authority over equipment, operations, or compliance spend.
 NON_BUYER_KEYWORDS = [
     "sales manager", "account manager", "account executive",
+    "sales director", "inside sales", "outside sales",
     "business development", "regional sales", "territory manager",
     "hr manager", "human resources", "talent ", "recruiting",
     "accounting", "finance manager", "controller", "bookkeeper",
@@ -37,6 +38,7 @@ NON_BUYER_KEYWORDS = [
     "aftermarket", "spare parts coordinator",
     "purchasing manager", "procurement coordinator",
     "facilities manager", "office manager",
+    "sec reporting", "revenue management", "project management",
 ]
 
 

@@ -70,6 +70,7 @@ def log_cost(
     batch_id: str | None = None,
     input_tokens: int = 0,
     output_tokens: int = 0,
+    workspace_id: str | None = None,
 ) -> None:
     """Log an API cost to the database.
 
@@ -81,11 +82,12 @@ def log_cost(
         batch_id: Batch identifier
         input_tokens: Input token count
         output_tokens: Output token count
+        workspace_id: Workspace to scope the cost record to
     """
     cost = estimate_cost(provider, model, input_tokens, output_tokens)
 
     try:
-        db = Database()
+        db = Database(workspace_id=workspace_id)
         db.log_api_cost({
             "provider": provider,
             "model": model,
@@ -101,13 +103,13 @@ def log_cost(
         logger.warning(f"Failed to log API cost: {e}")
 
 
-def get_batch_cost_summary(batch_id: str) -> dict:
+def get_batch_cost_summary(batch_id: str, workspace_id: str | None = None) -> dict:
     """Get cost summary for a batch.
 
     Returns:
         Dict with total_cost, by_provider breakdown, and call_count.
     """
-    db = Database()
+    db = Database(workspace_id=workspace_id)
     costs = db.get_api_costs_summary(batch_id=batch_id)
 
     summary = {"total_cost": 0.0, "by_provider": {}, "call_count": len(costs)}

@@ -10,12 +10,13 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
 def get_db() -> Database:
-    return Database()
+    return Database(workspace_id=get_workspace_id())
 
 
 @router.get("/pipeline")
@@ -59,10 +60,10 @@ async def get_performance(limit: int = Query(default=100, ge=1, le=1000)):
 @router.get("/duplicates")
 async def get_potential_duplicates():
     """Find companies with duplicate domains or very similar names."""
-    db = Database()
+    db = get_db()
     # Get all companies with domains
-    result = db.client.table("companies").select(
-        "id, name, domain, tier, status, pqs_total"
+    result = db._filter_ws(
+        db.client.table("companies").select("id, name, domain, tier, status, pqs_total")
     ).not_.is_("domain", "null").order("domain").execute()
 
     companies = result.data
@@ -92,10 +93,10 @@ async def get_potential_duplicates():
 @router.get("/sequence-performance")
 async def get_sequence_performance():
     """Get outreach performance broken down by sequence and step."""
-    db = Database()
+    db = get_db()
 
-    result = db.client.table("outreach_drafts").select(
-        "sequence_name, sequence_step, approval_status, channel"
+    result = db._filter_ws(
+        db.client.table("outreach_drafts").select("sequence_name, sequence_step, approval_status, channel")
     ).execute()
 
     sequences: dict = {}
@@ -131,10 +132,12 @@ async def get_sequence_performance():
 @router.get("/competitive-risks")
 async def get_competitive_risks():
     """Find researched companies that already use AI/ML competitors."""
-    db = Database()
+    db = get_db()
     # Get research_intelligence entries with existing_solutions
-    result = db.client.table("research_intelligence").select(
-        "company_id, existing_solutions, companies(id, name, tier, status, pqs_total)"
+    result = db._filter_ws(
+        db.client.table("research_intelligence").select(
+            "company_id, existing_solutions, companies(id, name, tier, status, pqs_total)"
+        )
     ).not_.is_("existing_solutions", "null").execute()
 
     risks = []
@@ -153,13 +156,13 @@ async def get_competitive_risks():
 @router.get("/activity-feed")
 async def get_activity_feed(limit: int = 50):
     """Get a unified activity feed from recent system events."""
-    db = Database()
+    db = get_db()
 
     activities = []
 
     # Recent status changes (companies updated recently)
-    companies = db.client.table("companies").select(
-        "id, name, status, tier, updated_at"
+    companies = db._filter_ws(
+        db.client.table("companies").select("id, name, status, tier, updated_at")
     ).order("updated_at", desc=True).limit(limit).execute()
 
     for c in companies.data:
@@ -174,8 +177,10 @@ async def get_activity_feed(limit: int = 50):
         })
 
     # Recent outreach drafts
-    drafts = db.client.table("outreach_drafts").select(
-        "id, company_id, approval_status, sequence_name, sequence_step, created_at, companies(name, tier)"
+    drafts = db._filter_ws(
+        db.client.table("outreach_drafts").select(
+            "id, company_id, approval_status, sequence_name, sequence_step, created_at, companies(name, tier)"
+        )
     ).order("created_at", desc=True).limit(limit).execute()
 
     for d in drafts.data:
@@ -190,8 +195,8 @@ async def get_activity_feed(limit: int = 50):
         })
 
     # Recent API costs (agent runs)
-    costs = db.client.table("api_costs").select(
-        "batch_id, provider, model, cost, created_at"
+    costs = db._filter_ws(
+        db.client.table("api_costs").select("batch_id, provider, model, cost, created_at")
     ).order("created_at", desc=True).limit(20).execute()
 
     seen_batches = set()
@@ -220,11 +225,13 @@ async def get_activity_feed(limit: int = 50):
 @router.get("/data-quality")
 async def get_data_quality():
     """Analyze data completeness across companies."""
-    db = Database()
+    db = get_db()
 
     # Get all companies
-    result = db.client.table("companies").select(
-        "id, name, domain, tier, status, state, email, employee_count, revenue_range, industry"
+    result = db._filter_ws(
+        db.client.table("companies").select(
+            "id, name, domain, tier, status, state, email, employee_count, revenue_range, industry"
+        )
     ).execute()
 
     companies = result.data
@@ -241,13 +248,17 @@ async def get_data_quality():
     }
 
     # Get contact counts per company
-    contacts = db.client.table("contacts").select("company_id").execute()
+    contacts = db._filter_ws(
+        db.client.table("contacts").select("company_id")
+    ).execute()
     companies_with_contacts = set(c["company_id"] for c in contacts.data)
     no_contacts = sum(1 for c in companies if c["id"] not in companies_with_contacts)
     missing["contacts"] = no_contacts
 
     # Companies with no email on any contact
-    contacts_with_email = db.client.table("contacts").select("company_id, email").not_.is_("email", "null").execute()
+    contacts_with_email = db._filter_ws(
+        db.client.table("contacts").select("company_id, email")
+    ).not_.is_("email", "null").execute()
     companies_with_email = set(c["company_id"] for c in contacts_with_email.data)
     no_email = sum(1 for c in companies if c["id"] not in companies_with_email)
     missing["contact_email"] = no_email
@@ -288,9 +299,9 @@ async def get_data_quality():
 @router.get("/campaign-performance")
 async def get_campaign_performance():
     """Analyze discovery campaign effectiveness."""
-    db = Database()
-    result = db.client.table("companies").select(
-        "campaign_name, status, pqs_total, tier"
+    db = get_db()
+    result = db._filter_ws(
+        db.client.table("companies").select("campaign_name, status, pqs_total, tier")
     ).not_.is_("campaign_name", "null").execute()
 
     campaigns: dict = {}
@@ -323,8 +334,7 @@ async def get_agent_runs():
     """Get agent run history grouped by batch_id from api_costs."""
     db = get_db()
     result = (
-        db.client.table("api_costs")
-        .select("*")
+        db._filter_ws(db.client.table("api_costs").select("*"))
         .order("created_at", desc=True)
         .limit(500)
         .execute()
@@ -412,9 +422,9 @@ async def get_agent_runs():
 @router.get("/pipeline-velocity")
 async def get_pipeline_velocity():
     """Compute average days companies spend in each pipeline stage."""
-    db = Database()
-    result = db.client.table("companies").select(
-        "status, created_at, updated_at"
+    db = get_db()
+    result = db._filter_ws(
+        db.client.table("companies").select("status, created_at, updated_at")
     ).execute()
 
     stage_durations: dict = {}

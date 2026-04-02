@@ -1,10 +1,15 @@
-"""Engagement Agent — Sequence orchestration + Instantly.ai delivery.
+"""Engagement Agent — Sequence orchestration + Resend delivery.
 
 Handles:
-- Sending approved outreach via Instantly.ai campaigns
+- Sending approved outreach via Resend (from avi@digitillis.com)
 - Managing multi-stage engagement sequences
 - Processing webhook events (opens, clicks, replies, bounces)
 - Generating follow-up drafts when sequences are due
+
+Delivery architecture:
+- FROM: avi@digitillis.com (digitillis.com verified in Resend — sent via Resend infrastructure)
+- Full per-lead custom subject + body — no template variable limitations
+- Replies land directly in avi@digitillis.com inbox
 """
 
 from __future__ import annotations
@@ -59,157 +64,147 @@ class EngagementAgent(BaseAgent):
             return result
 
     def _send_approved_drafts(self, campaign_name: str | None = None) -> AgentResult:
-        """Send all approved but unsent outreach drafts via Instantly.ai."""
+        """Send all approved but unsent outreach drafts via Resend.
+
+        FROM: avanish@digitillis.com (digitillis.com verified in Resend)
+        REPLY-TO: avi@digitillis.com (prospect replies land in primary inbox)
+        Full per-lead custom subject + body — no template variable limitations.
+
+        Gated by SEND_ENABLED env flag.
+        """
         result = AgentResult()
 
-        # Get approved drafts that haven't been sent yet
+        settings = get_settings()
+        if not settings.send_enabled:
+            console.print(
+                "[yellow]SEND_ENABLED is false — drafts staged but not sent. "
+                "Set SEND_ENABLED=true in .env when ready to send.[/yellow]"
+            )
+            return result
+
+        if not settings.resend_api_key:
+            console.print("[red]RESEND_API_KEY not configured. Cannot send.[/red]")
+            result.success = False
+            return result
+
+        import resend
+        resend.api_key = settings.resend_api_key
+
+        # Get approved email drafts that haven't been sent yet
         drafts = (
             self.db.client.table("outreach_drafts")
-            .select("*, companies(name, tier), contacts(full_name, email, first_name, last_name, company_id)")
+            .select("*, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
+            .eq("channel", "email")
+            .not_.is_("subject", "null")
+            .neq("subject", "")
             .order("created_at")
             .execute()
             .data
         )
 
         if not drafts:
-            console.print("[yellow]No approved drafts to send.[/yellow]")
+            console.print("[yellow]No approved email drafts to send.[/yellow]")
             return result
 
-        console.print(f"[cyan]Sending {len(drafts)} approved drafts via Instantly.ai...[/cyan]")
+        console.print(f"[cyan]Sending {len(drafts)} approved drafts via Resend...[/cyan]")
 
-        with InstantlyClient() as instantly:
-            # Get or create campaign
-            campaign_label = campaign_name or f"ProspectIQ_{datetime.now().strftime('%Y%m')}"
+        for draft in drafts:
+            contact = draft.get("contacts", {}) or {}
+            company = draft.get("companies", {}) or {}
+            company_name = company.get("name", "Unknown")
+            contact_email = contact.get("email")
 
-            campaigns = instantly.list_campaigns()
-            campaign_id = None
-            for c in campaigns:
-                if c.get("name") == campaign_label:
-                    campaign_id = c.get("id")
-                    break
+            if not contact_email:
+                console.print(f"  [yellow]{company_name}: No email for contact. Skipping.[/yellow]")
+                result.skipped += 1
+                continue
 
-            if not campaign_id:
-                console.print(f"  [dim]Creating campaign: {campaign_label}[/dim]")
-                campaign = instantly.create_campaign(name=campaign_label)
-                campaign_id = campaign.get("id")
+            # Suppression check before sending
+            from backend.app.core.suppression import is_suppressed
+            suppressed, reason = is_suppressed(
+                self.db, draft["company_id"], draft.get("contact_id")
+            )
+            if suppressed:
+                console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping.[/dim]")
+                result.skipped += 1
+                continue
 
-            if not campaign_id:
-                console.print("[red]Failed to get/create Instantly campaign.[/red]")
-                result.success = False
-                return result
+            subject = draft.get("subject", "")
+            body = draft.get("edited_body") or draft.get("body", "")
 
-            for draft in drafts:
-                contact = draft.get("contacts", {})
-                company = draft.get("companies", {})
-                company_name = company.get("name", "Unknown")
-                contact_email = contact.get("email")
+            try:
+                resend.Emails.send({
+                    "from": "Avanish Mehrotra <avi@digitillis.io>",
+                    "to": [contact_email],
+                    "subject": subject,
+                    "text": body,
+                })
 
-                if not contact_email:
-                    console.print(f"  [yellow]{company_name}: No email for contact. Skipping.[/yellow]")
-                    result.skipped += 1
-                    continue
+                # Mark draft as sent
+                now = datetime.now(timezone.utc).isoformat()
+                self.db.update_outreach_draft(draft["id"], {"sent_at": now})
 
-                # Suppression check before sending
-                from backend.app.core.suppression import is_suppressed
-                suppressed, reason = is_suppressed(
-                    self.db, draft["company_id"], draft.get("contact_id")
-                )
-                if suppressed:
-                    console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping send.[/dim]")
-                    result.skipped += 1
-                    continue
+                # Log interaction
+                self.db.insert_interaction({
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "type": "email_sent",
+                    "channel": "email",
+                    "subject": subject,
+                    "body": body,
+                    "source": "resend",
+                    "metadata": {
+                        "from": "avi@digitillis.io",
+                        "sequence_name": draft.get("sequence_name"),
+                        "sequence_step": draft.get("sequence_step"),
+                    },
+                })
 
-                try:
-                    # Add lead to Instantly campaign
-                    lead = {
-                        "email": contact_email,
-                        "first_name": contact.get("first_name", ""),
-                        "last_name": contact.get("last_name", ""),
-                        "company_name": company_name,
-                        "campaign_id": campaign_id,
-                        "custom_variables": {
-                            "subject": draft.get("subject", ""),
-                            "body": draft.get("edited_body") or draft.get("body", ""),
-                            "prospect_iq_draft_id": draft["id"],
-                        },
-                    }
+                # Update company status
+                self.db.update_company(draft["company_id"], {"status": "contacted"})
 
-                    instantly.add_leads_to_campaign(
-                        campaign_id=campaign_id,
-                        leads=[lead],
-                    )
+                # Create engagement sequence record
+                seq_config = get_sequences_config()
+                sequence = seq_config["sequences"].get(draft.get("sequence_name", "initial_outreach"), {})
+                total_steps = sequence.get("total_steps", 5)
+                current_step = draft.get("sequence_step", 1)
 
-                    # Mark draft as sent
-                    now = datetime.now(timezone.utc).isoformat()
-                    self.db.update_outreach_draft(draft["id"], {
-                        "sent_at": now,
-                        "instantly_lead_id": contact_email,
-                    })
+                next_step = current_step + 1
+                next_action_at = None
+                next_action_type = None
 
-                    # Log interaction
-                    self.db.insert_interaction({
-                        "company_id": draft["company_id"],
-                        "contact_id": draft["contact_id"],
-                        "type": "email_sent",
-                        "channel": "email",
-                        "subject": draft.get("subject", ""),
-                        "body": draft.get("edited_body") or draft.get("body", ""),
-                        "source": "instantly",
-                        "metadata": {
-                            "campaign_id": campaign_id,
-                            "sequence_name": draft.get("sequence_name"),
-                            "sequence_step": draft.get("sequence_step"),
-                        },
-                    })
+                if next_step <= total_steps:
+                    for step in sequence.get("steps", []):
+                        if step["step"] == next_step:
+                            delay = step.get("delay_days", 3)
+                            next_action_at = (
+                                datetime.now(timezone.utc) + timedelta(days=delay)
+                            ).isoformat()
+                            next_action_type = f"send_{step['channel']}"
+                            break
 
-                    # Update company status
-                    self.db.update_company(draft["company_id"], {"status": "contacted"})
+                self.db.insert_engagement_sequence({
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "sequence_name": draft.get("sequence_name", "initial_outreach"),
+                    "current_step": current_step,
+                    "total_steps": total_steps,
+                    "status": "active" if next_step <= total_steps else "completed",
+                    "next_action_at": next_action_at,
+                    "next_action_type": next_action_type,
+                    "started_at": now,
+                })
 
-                    # Create engagement sequence record
-                    seq_config = get_sequences_config()
-                    sequence = seq_config["sequences"].get(draft.get("sequence_name", "initial_outreach"), {})
-                    total_steps = sequence.get("total_steps", 5)
-                    current_step = draft.get("sequence_step", 1)
+                console.print(f"  [green]{company_name} → {contact_email}: Sent[/green]")
+                result.processed += 1
+                result.add_detail(company_name, "sent", f"To: {contact_email}")
 
-                    # Calculate next action
-                    next_step = current_step + 1
-                    next_action_at = None
-                    next_action_type = None
-
-                    if next_step <= total_steps:
-                        for step in sequence.get("steps", []):
-                            if step["step"] == next_step:
-                                delay = step.get("delay_days", 3)
-                                next_action_at = (
-                                    datetime.now(timezone.utc) + timedelta(days=delay)
-                                ).isoformat()
-                                next_action_type = f"send_{step['channel']}"
-                                break
-
-                    self.db.insert_engagement_sequence({
-                        "company_id": draft["company_id"],
-                        "contact_id": draft["contact_id"],
-                        "sequence_name": draft.get("sequence_name", "initial_outreach"),
-                        "current_step": current_step,
-                        "total_steps": total_steps,
-                        "status": "active" if next_step <= total_steps else "completed",
-                        "next_action_at": next_action_at,
-                        "next_action_type": next_action_type,
-                        "started_at": now,
-                    })
-
-                    console.print(
-                        f"  [green]{company_name} → {contact_email}: Sent via Instantly[/green]"
-                    )
-                    result.processed += 1
-                    result.add_detail(company_name, "sent", f"To: {contact_email}")
-
-                except Exception as e:
-                    logger.error(f"Error sending to {company_name}: {e}", exc_info=True)
-                    result.errors += 1
-                    result.add_detail(company_name, "error", str(e)[:200])
+            except Exception as e:
+                logger.error(f"Error sending to {company_name}: {e}", exc_info=True)
+                result.errors += 1
+                result.add_detail(company_name, "error", str(e)[:200])
 
         return result
 
@@ -382,11 +377,10 @@ class EngagementAgent(BaseAgent):
     def _poll_instantly_events(self) -> AgentResult:
         """Poll Instantly.ai for lead-level activity and sync to database.
 
-        Replacement for webhook-based event tracking when webhooks are not
-        available (e.g. lower-tier Instantly plan). Fetches every lead across
-        all active campaigns and compares their activity flags against
-        interactions already stored in the DB, then fires the same logic as
-        process_webhook_event for any newly-detected events.
+        The Instantly v2 API does not support bulk lead listing. Instead we
+        poll individually: query our DB for contacts with sent drafts, then
+        call get_lead_status(email) for each one to detect new opens/clicks/
+        replies/bounces.
 
         Idempotent: checks existing interactions before creating new ones so
         repeated polls never produce duplicate records.
@@ -394,126 +388,118 @@ class EngagementAgent(BaseAgent):
         Returns:
             AgentResult summarising new events detected.
         """
+        import time as _time
+
         result = AgentResult()
 
+        # Find all contacts that have at least one sent draft
+        sent_rows = (
+            self.db.client.table("outreach_drafts")
+            .select("contact_id, contacts(id, email, company_id)")
+            .not_.is_("sent_at", "null")
+            .execute()
+            .data
+        )
+
+        # Deduplicate by contact_id
+        seen: set[str] = set()
+        contacts_to_poll: list[dict] = []
+        for row in sent_rows:
+            contact = row.get("contacts") or {}
+            contact_id = contact.get("id") or row.get("contact_id")
+            email = (contact.get("email") or "").lower().strip()
+            if not email or not contact_id or contact_id in seen:
+                continue
+            seen.add(contact_id)
+            contacts_to_poll.append({
+                "contact_id": contact_id,
+                "email": email,
+                "company_id": contact.get("company_id"),
+            })
+
+        if not contacts_to_poll:
+            console.print("[yellow]No sent drafts found — nothing to poll.[/yellow]")
+            return result
+
+        console.print(
+            f"[cyan]Polling Instantly for {len(contacts_to_poll)} contacts with sent drafts...[/cyan]"
+        )
+
         with InstantlyClient() as instantly:
-            campaigns = instantly.list_campaigns()
-            if not campaigns:
-                console.print("[yellow]No Instantly campaigns to poll.[/yellow]")
-                return result
+            for contact in contacts_to_poll:
+                email = contact["email"]
+                contact_id = contact["contact_id"]
+                company_id = contact["company_id"]
 
-            # list_campaigns may return a dict wrapper or a plain list
-            if isinstance(campaigns, dict):
-                campaigns = campaigns.get("items", campaigns.get("campaigns", []))
+                _time.sleep(0.5)  # respect rate limit
 
-            console.print(f"[cyan]Polling {len(campaigns)} Instantly campaigns for new events...[/cyan]")
-
-            for campaign in campaigns:
-                campaign_id = campaign.get("id")
-                campaign_name = campaign.get("name", "Unknown")
-                if not campaign_id:
+                try:
+                    lead = instantly.get_lead_status(email)
+                except Exception as e:
+                    logger.error(f"Error looking up {email} in Instantly: {e}")
+                    result.errors += 1
                     continue
 
-                # Paginate through all leads in this campaign
-                skip = 0
-                page_size = 100
-                while True:
+                if not lead:
+                    continue
+
+                # Fetch which interaction types we already have for this contact
+                stored = (
+                    self.db.client.table("interactions")
+                    .select("type")
+                    .eq("contact_id", contact_id)
+                    .in_("type", ["email_opened", "email_clicked", "email_replied", "email_bounced"])
+                    .execute()
+                    .data
+                )
+                stored_types = {row["type"] for row in stored}
+
+                # Map Instantly activity flags → event types
+                event_checks = [
+                    (
+                        lead.get("is_opened") or lead.get("opened") or lead.get("times_opened", 0),
+                        "email_opened",
+                        "email_opened",
+                    ),
+                    (
+                        lead.get("is_clicked") or lead.get("clicked") or lead.get("times_clicked", 0),
+                        "email_clicked",
+                        "email_clicked",
+                    ),
+                    (
+                        lead.get("is_replied") or lead.get("replied"),
+                        "reply_received",
+                        "email_replied",
+                    ),
+                    (
+                        lead.get("is_bounced") or lead.get("bounced"),
+                        "email_bounced",
+                        "email_bounced",
+                    ),
+                ]
+
+                for activity_flag, instantly_event, interaction_type in event_checks:
+                    if not activity_flag:
+                        continue
+                    if interaction_type in stored_types:
+                        continue  # already recorded
+
+                    event_data = {
+                        "email": email,
+                        "event_id": f"poll_{email}_{instantly_event}",
+                    }
                     try:
-                        leads = instantly.list_campaign_leads(
-                            campaign_id, limit=page_size, skip=skip
+                        self.process_webhook_event(instantly_event, event_data)
+                        console.print(
+                            f"  [green]{email}: new {instantly_event} detected[/green]"
                         )
+                        result.processed += 1
+                        result.add_detail(email, instantly_event, "polled")
                     except Exception as e:
-                        logger.error(f"Error listing leads for campaign {campaign_name}: {e}")
+                        logger.error(
+                            f"Error processing polled event {instantly_event} for {email}: {e}"
+                        )
                         result.errors += 1
-                        break
-
-                    if not leads:
-                        break
-
-                    for lead in leads:
-                        email = lead.get("email", "")
-                        if not email:
-                            continue
-
-                        # Resolve contact in our DB
-                        contacts = (
-                            self.db.client.table("contacts")
-                            .select("id, company_id")
-                            .eq("email", email)
-                            .execute()
-                            .data
-                        )
-                        if not contacts:
-                            continue
-
-                        contact_id = contacts[0]["id"]
-                        company_id = contacts[0]["company_id"]
-
-                        # Fetch which interaction types we already have for this contact
-                        stored = (
-                            self.db.client.table("interactions")
-                            .select("type")
-                            .eq("contact_id", contact_id)
-                            .in_("type", ["email_opened", "email_clicked", "email_replied", "email_bounced"])
-                            .execute()
-                            .data
-                        )
-                        stored_types = {row["type"] for row in stored}
-
-                        # Map Instantly lead fields → event types to check.
-                        # Instantly v2 uses various field names; cover the common ones.
-                        event_checks = [
-                            (
-                                lead.get("is_opened") or lead.get("opened") or lead.get("times_opened", 0),
-                                "email_opened",
-                                "email_opened",
-                            ),
-                            (
-                                lead.get("is_clicked") or lead.get("clicked") or lead.get("times_clicked", 0),
-                                "email_clicked",
-                                "email_clicked",
-                            ),
-                            (
-                                lead.get("is_replied") or lead.get("replied"),
-                                "reply_received",
-                                "email_replied",
-                            ),
-                            (
-                                lead.get("is_bounced") or lead.get("bounced"),
-                                "email_bounced",
-                                "email_bounced",
-                            ),
-                        ]
-
-                        for activity_flag, instantly_event, interaction_type in event_checks:
-                            if not activity_flag:
-                                continue
-                            if interaction_type in stored_types:
-                                continue  # already recorded
-
-                            # New event detected — reuse webhook processing logic
-                            event_data = {
-                                "email": email,
-                                "campaign_id": campaign_id,
-                                "event_id": f"poll_{campaign_id}_{email}_{instantly_event}",
-                            }
-                            try:
-                                self.process_webhook_event(instantly_event, event_data)
-                                console.print(
-                                    f"  [green]{email}: new {instantly_event} detected[/green]"
-                                )
-                                result.processed += 1
-                                result.add_detail(email, instantly_event, f"campaign={campaign_name}")
-                            except Exception as e:
-                                logger.error(
-                                    f"Error processing polled event {instantly_event} "
-                                    f"for {email}: {e}"
-                                )
-                                result.errors += 1
-
-                    if len(leads) < page_size:
-                        break
-                    skip += page_size
 
         console.print(
             f"[cyan]Poll complete: {result.processed} new events, {result.errors} errors[/cyan]"
@@ -535,16 +521,18 @@ class EngagementAgent(BaseAgent):
         """
         from backend.app.core.database import Database
 
-        db = Database()
+        # Use unscoped DB for initial lookup — webhooks arrive without auth context.
+        # We discover the workspace_id from the contact record, then re-scope all writes.
+        _lookup_db = Database()
         email = event_data.get("email") or event_data.get("lead_email", "")
 
         if not email:
             return {"status": "skipped", "reason": "No email in event"}
 
-        # Find the contact by email
+        # Find the contact by email (cross-workspace lookup — email is unique globally)
         contacts = (
-            db.client.table("contacts")
-            .select("id, company_id")
+            _lookup_db.client.table("contacts")
+            .select("id, company_id, workspace_id")
             .eq("email", email)
             .execute()
             .data
@@ -557,6 +545,8 @@ class EngagementAgent(BaseAgent):
         contact = contacts[0]
         company_id = contact["company_id"]
         contact_id = contact["id"]
+        # Re-scope all subsequent DB operations to the contact's workspace
+        db = Database(workspace_id=contact.get("workspace_id"))
 
         # Map event type to interaction type
         interaction_map = {

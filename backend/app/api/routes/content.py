@@ -15,10 +15,15 @@ from pydantic import BaseModel
 from backend.app.agents.content import CONTENT_CALENDAR, ContentAgent
 from backend.app.core.config import load_yaml_config
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/content", tags=["content"])
+
+
+def get_db() -> Database:
+    return Database(workspace_id=get_workspace_id())
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -151,8 +156,7 @@ def _get_content_drafts(db: Database) -> list[dict]:
     """Fetch all thought_leadership drafts from outreach_drafts."""
     try:
         result = (
-            db.client.table("outreach_drafts")
-            .select("*")
+            db._filter_ws(db.client.table("outreach_drafts").select("*"))
             .eq("sequence_name", "thought_leadership")
             .order("created_at", desc=True)
             .limit(100)
@@ -351,7 +355,7 @@ async def generate_batch(req: ContentRequest, background_tasks: BackgroundTasks)
 @router.get("/drafts")
 async def get_content_drafts():
     """List generated but not-yet-posted content drafts."""
-    db = Database()
+    db = get_db()
     rows = _get_content_drafts(db)
     drafts = [_parse_draft(r) for r in rows if r.get("approval_status") != "approved"]
     return {"data": drafts, "count": len(drafts)}
@@ -557,7 +561,7 @@ async def auto_generate_calendar(req: AutoCalendarRequest):
         # Update the stored draft's personalization_notes to include scheduling info
         # The ContentAgent already stored the draft; we just augment coverage counts
         # (Optionally update the DB row, but notes are stored via agent already)
-        db = Database()
+        db = get_db()
         try:
             db.update_outreach_draft(
                 draft_id,
@@ -619,7 +623,7 @@ async def auto_generate_calendar(req: AutoCalendarRequest):
 @router.post("/{draft_id}/mark-posted")
 async def mark_content_posted(draft_id: str):
     """Mark a content draft as posted (approval_status = 'approved')."""
-    db = Database()
+    db = get_db()
     try:
         updated = db.update_outreach_draft(draft_id, {"approval_status": "approved"})
     except Exception as e:
@@ -661,13 +665,11 @@ async def get_content_archive(
     offset: int = Query(default=0, ge=0),
 ):
     """List all archived (posted) content, ordered by posted_at DESC."""
-    db = Database()
+    db = get_db()
     try:
-        query = (
-            db.client.table("content_archive")
-            .select("*")
-            .order("posted_at", desc=True)
-        )
+        query = db._filter_ws(
+            db.client.table("content_archive").select("*")
+        ).order("posted_at", desc=True)
         if pillar:
             query = query.eq("pillar", pillar)
         if format:
@@ -683,13 +685,12 @@ async def get_content_archive(
 @router.post("/{draft_id}/archive")
 async def archive_content(draft_id: str, req: ArchiveRequest):
     """Archive a posted draft into content_archive and mark it as approved."""
-    db = Database()
+    db = get_db()
 
     # Fetch the source draft
     try:
         drafts_res = (
-            db.client.table("outreach_drafts")
-            .select("*")
+            db._filter_ws(db.client.table("outreach_drafts").select("*"))
             .eq("id", draft_id)
             .limit(1)
             .execute()
@@ -757,7 +758,7 @@ async def archive_content(draft_id: str, req: ArchiveRequest):
         archive_row["publish_ready"] = publish_ready
 
     try:
-        insert_res = db.client.table("content_archive").insert(archive_row).execute()
+        insert_res = db.client.table("content_archive").insert(db._inject_ws(archive_row)).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to archive: {str(e)}")
 
@@ -776,13 +777,14 @@ async def archive_content(draft_id: str, req: ArchiveRequest):
 @router.patch("/archive/{archive_id}/engagement")
 async def update_engagement(archive_id: str, req: EngagementUpdate):
     """Update engagement metrics for an archived post and auto-compute engagement_rate."""
-    db = Database()
+    db = get_db()
 
     # Fetch existing row to merge
     try:
         existing_res = (
-            db.client.table("content_archive")
-            .select("impressions, likes, comments, shares")
+            db._filter_ws(
+                db.client.table("content_archive").select("impressions, likes, comments, shares")
+            )
             .eq("id", archive_id)
             .limit(1)
             .execute()
@@ -819,8 +821,7 @@ async def update_engagement(archive_id: str, req: EngagementUpdate):
 
     try:
         update_res = (
-            db.client.table("content_archive")
-            .update(update_data)
+            db._filter_ws(db.client.table("content_archive").update(update_data))
             .eq("id", archive_id)
             .execute()
         )
@@ -834,9 +835,9 @@ async def update_engagement(archive_id: str, req: EngagementUpdate):
 @router.get("/archive/analytics")
 async def get_archive_analytics():
     """Return engagement analytics across all archived posts."""
-    db = Database()
+    db = get_db()
     try:
-        result = db.client.table("content_archive").select("*").execute()
+        result = db._filter_ws(db.client.table("content_archive").select("*")).execute()
         rows = result.data or []
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch analytics: {str(e)}")
@@ -897,15 +898,15 @@ async def get_archive_analytics():
 @router.delete("/drafts/all")
 async def delete_all_drafts():
     """Delete all thought_leadership drafts (not archived posts)."""
-    db = Database()
+    db = get_db()
     try:
-        result = db.client.table("outreach_drafts").select("id").eq(
-            "draft_type", "thought_leadership"
-        ).execute()
+        result = db._filter_ws(
+            db.client.table("outreach_drafts").select("id")
+        ).eq("draft_type", "thought_leadership").execute()
         ids = [r["id"] for r in (result.data or [])]
         if ids:
             for draft_id in ids:
-                db.client.table("outreach_drafts").delete().eq("id", draft_id).execute()
+                db._filter_ws(db.client.table("outreach_drafts").delete()).eq("id", draft_id).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear drafts: {str(e)}")
     return {"data": {"deleted_count": len(ids)}}
@@ -914,9 +915,9 @@ async def delete_all_drafts():
 @router.delete("/{draft_id}")
 async def delete_draft(draft_id: str):
     """Delete a single content draft."""
-    db = Database()
+    db = get_db()
     try:
-        db.client.table("outreach_drafts").delete().eq("id", draft_id).execute()
+        db._filter_ws(db.client.table("outreach_drafts").delete()).eq("id", draft_id).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete draft: {str(e)}")
     return {"data": {"deleted": draft_id}}
@@ -925,11 +926,11 @@ async def delete_draft(draft_id: str):
 @router.post("/{draft_id}/run-intel")
 async def run_intel_on_draft(draft_id: str):
     """Run the 3-round intel verification on an existing draft that has no intel data."""
-    db = Database()
+    db = get_db()
 
     # Fetch draft
     try:
-        res = db.client.table("outreach_drafts").select("*").eq("id", draft_id).limit(1).execute()
+        res = db._filter_ws(db.client.table("outreach_drafts").select("*")).eq("id", draft_id).limit(1).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
@@ -1039,9 +1040,9 @@ async def run_intel_on_draft(draft_id: str):
         updated_notes += f"|quality_report::{qr_match.group(1)}"
 
     try:
-        db.client.table("outreach_drafts").update({
+        db._filter_ws(db.client.table("outreach_drafts").update({
             "personalization_notes": updated_notes,
-        }).eq("id", draft_id).execute()
+        })).eq("id", draft_id).execute()
     except Exception:
         pass  # Non-critical — intel is still returned
 
@@ -1066,13 +1067,14 @@ async def run_intel_on_draft(draft_id: str):
 @router.get("/archive/dedup-check")
 async def check_dedup(topic: str = Query(..., description="Topic to check for duplicate posts")):
     """Check whether a topic was recently posted (within 60 days)."""
-    db = Database()
+    db = get_db()
     th = _topic_hash(topic)
 
     try:
         result = (
-            db.client.table("content_archive")
-            .select("id, posted_at, topic")
+            db._filter_ws(
+                db.client.table("content_archive").select("id, posted_at, topic")
+            )
             .eq("topic_hash", th)
             .order("posted_at", desc=True)
             .limit(1)

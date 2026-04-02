@@ -20,6 +20,59 @@ from backend.app.utils.naics import classify_sub_sector
 console = Console()
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Tier → campaign cluster mapping (mirrors the icp.yaml segment structure)
+# ---------------------------------------------------------------------------
+_TIER_TO_CLUSTER: dict[str, str] = {
+    # Discrete manufacturing — machinery cluster
+    "mfg1": "machinery",  # Industrial Machinery
+    "mfg2": "machinery",  # Metal Fabrication
+    "mfg4": "machinery",  # Electrical Equipment
+    "mfg5": "machinery",  # Electronics / Semiconductor
+    "mfg8": "machinery",  # Plastics & Rubber
+    # Discrete manufacturing — specific clusters
+    "mfg3": "auto",       # Automotive Parts
+    "mfg7": "metals",     # Primary Metals (steel, aluminum)
+    "mfg6": "watchlist",  # Aerospace — vendor qual wall
+    # Process manufacturing
+    "pmfg1": "chemicals",  # Chemical Manufacturing
+    "pmfg3": "process",    # Petroleum Refining
+    "pmfg4": "process",    # Mining
+    "pmfg7": "process",    # Paper & Pulp
+    "pmfg8": "process",    # Cement, Glass, Ceramics
+    "pmfg2": "watchlist",  # Oil & Gas — enterprise procurement
+    "pmfg5": "watchlist",  # Utilities — regulated monopoly
+    "pmfg6": "watchlist",  # Pharma — vendor qual wall
+    # Food & Beverage
+    "fb1": "fb",
+    "fb2": "fb",
+    "fb3": "fb",
+    "fb4": "fb",
+    "fb5": "fb",
+}
+
+# Employee count → tranche proxy (used when revenue data is unavailable)
+# T1: $100M–$400M ≈ 300–1,000 employees
+# T2: $400M–$1B   ≈ 1,001–3,000 employees
+# T3: $1B–$2B     ≈ 3,001–5,000 employees
+def _assign_tranche(employee_count: int | None, revenue: float | None = None) -> str | None:
+    """Assign revenue tranche based on employee count (proxy) or revenue."""
+    if revenue:
+        if revenue < 400_000_000:
+            return "T1"
+        elif revenue < 1_000_000_000:
+            return "T2"
+        else:
+            return "T3"
+    if employee_count:
+        if employee_count <= 1000:
+            return "T1"
+        elif employee_count <= 3000:
+            return "T2"
+        else:
+            return "T3"
+    return None  # Not enough data — will be set by research backfill
+
 
 def classify_persona(title: str | None) -> tuple[str | None, bool]:
     """Classify a contact's persona type from their title.
@@ -81,15 +134,17 @@ def classify_persona(title: str | None) -> tuple[str | None, bool]:
         (["chief technology", "cto"], "cio", True),
         # VP Operations / Manufacturing
         (["vp operations", "vice president operations", "vp of operations",
-          "vice president of operations"], "vp_ops", True),
+          "vice president of operations", "vp, operations", "vp - operations",
+          "vice president, operations"], "vp_ops", True),
         (["vp manufacturing", "vice president manufacturing", "vp of manufacturing",
           "vice president of manufacturing", "vice president, manufacturing",
           "vp, manufacturing", "vp - manufacturing", "vp manufacturing operations",
           "vp, manufacturing operations", "vice president manufacturing operations"], "vp_ops", True),
         (["vp engineering", "vice president engineering", "vp of engineering",
-          "vice president of engineering"], "vp_ops", True),
+          "vice president of engineering", "vp, engineering", "vp - engineering",
+          "vice president, engineering"], "vp_ops", True),
         (["vp supply chain", "vice president supply chain",
-          "vice president of supply chain"], "vp_supply_chain", True),
+          "vice president of supply chain", "vp, supply chain"], "vp_supply_chain", True),
         # Plant / General Manager
         (["plant manager", "factory manager", "general manager",
           "site manager", "operations manager", "machine shop operations manager",
@@ -279,16 +334,32 @@ class DiscoveryAgent(BaseAgent):
                                     company_data, classification, icp
                                 )
 
+                                effective_tier = classification.get("tier") or tier
+                                cluster = _TIER_TO_CLUSTER.get(effective_tier, "other")
+                                tranche = _assign_tranche(
+                                    company_data.get("employee_count"),
+                                    company_data.get("estimated_revenue"),
+                                )
+                                # outreach_mode: watchlist tiers go manual; all others auto
+                                outreach_mode = "manual" if cluster == "watchlist" else "auto"
+
                                 insert_data = {
                                     **company_data,
                                     "sub_sector": classification.get("label"),
-                                    "tier": classification.get("tier") or tier,
+                                    "tier": effective_tier,
                                     "territory": territory,
                                     "pqs_firmographic": firmographic_score,
                                     "pqs_total": firmographic_score,
                                     "status": "discovered",
                                     "campaign_name": campaign,
                                     "batch_id": self.batch_id,
+                                    # Routing metadata — stored in custom_tags until
+                                    # migration 014 adds dedicated columns
+                                    "custom_tags": {
+                                        "campaign_cluster": cluster,
+                                        "outreach_mode": outreach_mode,
+                                        **({"tranche": tranche} if tranche else {}),
+                                    },
                                 }
 
                                 if dry_run:
@@ -356,9 +427,12 @@ class DiscoveryAgent(BaseAgent):
         score = 0
         scoring = icp.get("company_filters", {})
 
-        # Discrete manufacturing (NAICS 31-33)
-        if classification.get("tier"):
-            score += 5
+        # Tier bonus — primary mfg tiers score higher than secondary F&B tiers
+        tier = classification.get("tier") or ""
+        if tier.startswith("mfg"):
+            score += 7   # Primary vertical — discrete manufacturing
+        elif tier.startswith("fb"):
+            score += 3   # Secondary vertical — F&B
 
         # Revenue range
         revenue = company_data.get("estimated_revenue")
@@ -368,12 +442,15 @@ class DiscoveryAgent(BaseAgent):
             if rev_min <= revenue <= rev_max:
                 score += 5
 
-        # Midwest US
+        # Manufacturing belt states — higher density of target companies
         state = company_data.get("state")
         if state and is_midwest(state):
             score += 5
+        elif state in {"Pennsylvania", "Kentucky", "Tennessee", "North Carolina",
+                       "Alabama", "Texas", "Georgia", "South Carolina", "Virginia"}:
+            score += 2  # Secondary manufacturing states still valuable
 
-        # Employee count
+        # Employee count in sweet spot
         employees = company_data.get("employee_count")
         if employees:
             emp_min = scoring.get("employee_count", {}).get("min", 0)

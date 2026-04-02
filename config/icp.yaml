@@ -1,97 +1,244 @@
 # ProspectIQ — Ideal Customer Profile (ICP)
 # Defines the target market filters for Apollo.io discovery
 #
-# Strategy: F&B is primary (FSMA compliance = urgent pain), Discrete Mfg is secondary (PdM = cost savings)
-# Sweet spot: $50M-$150M revenue, 50-500 employees — one decision maker can sign without a committee
+# STRATEGIC POSITIONING:
+# Digitillis is manufacturing intelligence — predictive maintenance, OEE,
+# anomaly detection, equipment health across ALL industrial sectors.
+#
+# PRIMARY: All discrete and process manufacturing — industrial machinery,
+# automotive, aerospace, chemical, oil & gas, mining, plastics, metals,
+# pharma, HVAC/pumps, utilities, paper, and more.
+#
+# SECONDARY: Food & Beverage — FSMA compliance as a door-opener, but not
+# the core product value proposition.
+#
+# REVENUE TRANCHES (updated 2026-04-01):
+#   T1: $100M–$400M  — fast pilots, build logos, VP can sign
+#   T2: $400M–$1B    — bullseye (60% of outreach effort)
+#   T3: $1B–$2B      — manual motion only, not cold email
+#   watchlist        — pharma, aerospace, utilities — vendor qual wall
+#
+# Sweet spot: $100M–$2B revenue, 300–3,500 employees
 
-version: "2.0"
+version: "3.0"
 
 target_market:
-  name: "US Mid-Market Manufacturing & Food Production"
-  description: "Mid-market manufacturers and food producers (200-2000 employees, $50M-$500M revenue) where a VP can sign a $3-5K/mo pilot without procurement"
+  name: "US Mid-Market Industrial Manufacturing — $100M–$2B Revenue"
+  description: >
+    Mid-market manufacturers across ALL industrial sectors (discrete and process),
+    $100M–$2B revenue, 300–3,500 employees. Three tranches: T1 ($100M–$400M, fast pilots),
+    T2 ($400M–$1B, bullseye), T3 ($1B–$2B, manual outreach only).
+    Core value prop: prevent unplanned downtime, improve OEE, detect equipment
+    anomalies before they become failures. F&B is secondary.
 
-# Company-level filters (used for Apollo search)
 company_filters:
   industries:
-    # Food & Beverage (PRIMARY vertical — FSMA compliance angle)
-    - naics_prefix: "311"
-      tier: "fb1"
-      label: "Food Manufacturing"
-      apollo_industry: "food production"
-    - naics_prefix: "3116"
-      tier: "fb2"
-      label: "Meat & Poultry Processing"
-      apollo_industry: "food production"
-    - naics_prefix: "3115"
-      tier: "fb3"
-      label: "Dairy Product Manufacturing"
-      apollo_industry: "dairy"
-    - naics_prefix: "3114"
-      tier: "fb4"
-      label: "Fruit & Vegetable Preserving"
-      apollo_industry: "food production"
-    - naics_prefix: "3121"
-      tier: "fb5"
-      label: "Beverage Manufacturing"
-      apollo_industry: "food & beverages"
-    # Discrete Manufacturing (SECONDARY vertical — PdM angle)
+    # ================================================================
+    # PRIMARY VERTICAL — Discrete Manufacturing
+    # NAICS 332–336, 339, 3364
+    # Value prop: PdM, OEE, equipment health, anomaly detection
+    # ================================================================
     - naics_prefix: "333"
       tier: "mfg1"
       label: "Industrial Machinery & Heavy Equipment"
       apollo_industry: "machinery"
+      priority: "primary"
+      segment: 1
+
     - naics_prefix: "332"
       tier: "mfg2"
       label: "Metal Fabrication & Precision Machining"
       apollo_industry: "fabricated metal products"
+      priority: "primary"
+      segment: 1
+
     - naics_prefix: "336"
       tier: "mfg3"
-      label: "Automotive Parts & Components"
+      label: "Automotive Parts & Transportation Equipment"
       apollo_industry: "automotive"
+      priority: "primary"
+      segment: 1
+
+    - naics_prefix: "335"
+      tier: "mfg4"
+      label: "Electrical Equipment & Components"
+      apollo_industry: "electrical/electronic manufacturing"
+      priority: "primary"
+      segment: 1
+
+    - naics_prefix: "334"
+      tier: "mfg5"
+      label: "Computer & Electronic Manufacturing"
+      apollo_industry: "semiconductors"
+      priority: "primary"
+      segment: 1
+
+    - naics_prefix: "3364"
+      tier: "mfg6"
+      label: "Aerospace & Defense Manufacturing"
+      apollo_industry: "aviation & aerospace"
+      priority: "primary"
+      segment: 4   # watch-list — vendor qualification wall, not in tier_run_order
+
+    - naics_prefix: "331"
+      tier: "mfg7"
+      label: "Primary Metals — Steel, Aluminum, Foundry"
+      apollo_industry: "metals"
+      priority: "primary"
+      segment: 2
+
+    - naics_prefix: "326"
+      tier: "mfg8"
+      label: "Plastics & Rubber Manufacturing"
+      apollo_industry: "plastics"
+      priority: "primary"
+      segment: 1
+
+    # ================================================================
+    # PRIMARY VERTICAL — Process Manufacturing
+    # NAICS 211, 212, 221, 324, 325, 322, 3254
+    # Value prop: asset reliability, process uptime, safety compliance
+    # ================================================================
+    - naics_prefix: "325"
+      tier: "pmfg1"
+      label: "Chemical Manufacturing"
+      apollo_industry: "chemicals"
+      priority: "primary"
+      segment: 2
+
+    - naics_prefix: "211"
+      tier: "pmfg2"
+      label: "Oil & Gas Extraction"
+      apollo_industry: "oil & energy"
+      priority: "primary"
+      segment: 4   # watch-list — enterprise procurement, safety reg complexity
+
+    - naics_prefix: "324"
+      tier: "pmfg3"
+      label: "Petroleum Refining & Coal Products"
+      apollo_industry: "oil & energy"
+      priority: "primary"
+      segment: 2
+
+    - naics_prefix: "212"
+      tier: "pmfg4"
+      label: "Mining & Quarrying"
+      apollo_industry: "mining & metals"
+      priority: "primary"
+      segment: 2   # active but lower volume
+
+    - naics_prefix: "221"
+      tier: "pmfg5"
+      label: "Utilities — Power Generation & Water"
+      apollo_industry: "utilities"
+      priority: "primary"
+      segment: 4   # watch-list — regulated monopolies, govt procurement
+
+    - naics_prefix: "3254"
+      tier: "pmfg6"
+      label: "Pharmaceutical & Biotech Manufacturing"
+      apollo_industry: "pharmaceuticals"
+      priority: "primary"
+      segment: 4   # watch-list — 21 CFR Part 11, vendor qualification wall
+
+    - naics_prefix: "322"
+      tier: "pmfg7"
+      label: "Paper & Pulp Manufacturing"
+      apollo_industry: "paper & forest products"
+      priority: "primary"
+      segment: 2   # activated — large continuous-process plants, high downtime cost
+
+    - naics_prefix: "327"
+      tier: "pmfg8"
+      label: "Non-Metallic Mineral Products — Cement, Glass, Ceramics"
+      apollo_industry: "glass, ceramics & concrete"
+      priority: "primary"
+      segment: 2   # activated — kilns/crushers, 24/7 ops, expensive downtime
+
+    # ================================================================
+    # SECONDARY VERTICAL — Food & Beverage
+    # NAICS 311–312
+    # Door-opener: FSMA compliance urgency. Secondary GTM angle.
+    # ================================================================
+    - naics_prefix: "311"
+      tier: "fb1"
+      label: "Food Manufacturing"
+      apollo_industry: "food production"
+      priority: "secondary"
+      segment: 3   # ops/uptime messaging — target VP Ops, Plant Manager only
+
+    - naics_prefix: "312"
+      tier: "fb2"
+      label: "Beverage Manufacturing"
+      apollo_industry: "food & beverages"
+      priority: "secondary"
+      segment: 3
+
+    - naics_prefix: "3116"
+      tier: "fb3"
+      label: "Meat & Poultry Processing"
+      apollo_industry: "food production"
+      priority: "secondary"
+      segment: 3
+
+    - naics_prefix: "3115"
+      tier: "fb4"
+      label: "Dairy Product Manufacturing"
+      apollo_industry: "dairy"
+      priority: "secondary"
+      segment: 3
 
   revenue:
-    min: 50000000    # $50M — below this, limited budget and no LinkedIn/Apollo presence
-    max: 500000000   # $500M — above this, procurement committees and 12-month sales cycles
+    min: 100000000    # $100M minimum — below this, overhead too high to sell
+    max: 2000000000   # $2B maximum — T3 cap; above $2B is Fortune 100 / different motion
 
   employee_count:
-    min: 200
-    max: 2000
-    # Apollo-specific range buckets
+    min: 300
+    max: 3500
     apollo_ranges:
-      - "201,500"
+      - "201,500"     # 201–500 employees (covers 300+ floor)
       - "501,1000"
       - "1001,2000"
+      - "2001,5000"   # captures T3 upper bound (~3,500)
 
   geography:
-    # All US — F&B is national, not just Midwest
     primary_states:
-      - "Illinois"
-      - "Indiana"
-      - "Michigan"
+      # Manufacturing belt (highest density — highest priority)
       - "Ohio"
+      - "Michigan"
+      - "Indiana"
       - "Wisconsin"
+      - "Illinois"
+      - "Pennsylvania"
       - "Minnesota"
       - "Iowa"
       - "Missouri"
-<<<<<<< HEAD
-      - "Texas"
-      - "California"
-      - "Pennsylvania"
-      - "Georgia"
+      - "Kentucky"
+      # Secondary manufacturing + energy/mining corridors
+      - "Texas"           # petrochemical, oil & gas
+      - "Louisiana"       # refining, chemical
       - "North Carolina"
-      - "New York"
-      - "New Jersey"
-      - "Florida"
-      - "Virginia"
       - "Tennessee"
       - "Alabama"
-      - "Arkansas"
+      - "Georgia"
+      - "South Carolina"
+      - "Virginia"
       - "Kansas"
       - "Nebraska"
-      - "Oklahoma"
+      - "Oklahoma"        # oil & gas
+      - "Wyoming"         # mining
+      - "Colorado"        # mining, aerospace
+      - "West Virginia"   # chemical, mining
+      # West Coast
+      - "California"      # aerospace, electronics, pharma
       - "Oregon"
       - "Washington"
-      - "Colorado"
-      - "Massachusetts"
+      - "Arizona"         # semiconductor, aerospace
+      # Northeast
+      - "New York"
+      - "New Jersey"      # pharma, chemical
+      - "Massachusetts"   # biotech, defense
+      - "Connecticut"     # aerospace, defense
       - "Maryland"
     countries:
       - "United States"
@@ -101,41 +248,63 @@ company_filters:
       - "private"
       - "public"
 
-# Contact-level filters
+# Contact-level filters (titles to target in Apollo search)
 contact_filters:
   titles:
     include:
-      # Operations (both verticals)
+      # ============================================================
+      # PRIMARY — Operations & Maintenance
+      # Core buyers for Digitillis across ALL manufacturing sectors
+      # ============================================================
       - "VP Operations"
       - "Vice President Operations"
       - "VP Manufacturing"
       - "Vice President Manufacturing"
-      - "Plant Manager"
-      - "General Manager"
-      - "Director of Operations"
-      - "Director of Manufacturing"
+      - "VP Engineering"
+      - "Vice President Engineering"
       - "Chief Operating Officer"
       - "COO"
-      # F&B specific — these are the buyers for compliance
+      - "Plant Manager"
+      - "Factory Manager"
+      - "General Manager"
+      - "Site Manager"
+      - "Operations Manager"
+      - "Manufacturing Manager"
+      - "Production Manager"
+      - "Director of Operations"
+      - "Director of Manufacturing"
+      - "Director of Engineering"
+      - "Director of Production"
+      # Maintenance & Reliability — high-urgency buyer in all sectors
+      - "Director of Maintenance"
+      - "VP Maintenance"
+      - "Director of Reliability"
+      - "Reliability Manager"
+      - "Maintenance Manager"
+      - "Director of Asset Management"
+      - "VP Asset Management"
+      # Process Manufacturing specific
+      - "VP Refining"
+      - "Director of Refining"
+      - "Plant Superintendent"
+      - "Production Superintendent"
+      - "Process Engineering Manager"
+      - "Director of Process Engineering"
+      # Digital / Industry 4.0 — often owns the budget for IIoT
+      - "VP Digital Transformation"
+      - "Director of Digital Transformation"
+      - "Director of Industry 4.0"
+      - "Chief Digital Officer"
+      # ============================================================
+      # SECONDARY — F&B Quality/Compliance titles
+      # Use only for F&B tier campaigns
+      # ============================================================
       - "VP Quality"
       - "VP Food Safety"
-      - "Vice President Quality"
-      - "Vice President Food Safety"
       - "Director of Quality"
       - "Director of Food Safety"
       - "Director Quality Assurance"
       - "VP Quality Assurance"
-      - "Director Food Safety & Quality"
-      - "VP Food Safety & Quality"
-      - "Director of Quality Assurance"
-      - "VP Regulatory"
-      - "Director Regulatory Affairs"
-      # Maintenance (discrete mfg buyer)
-      - "Director of Maintenance"
-      - "VP Maintenance"
-      - "Maintenance Manager"
-      - "Reliability Manager"
-      - "Director of Reliability"
     exclude:
       - "Marketing"
       - "Sales"
@@ -144,49 +313,173 @@ contact_filters:
       - "Legal"
       - "Finance"
       - "Accounting"
+      - "IT Manager"
+      - "Software Engineer"
+      - "Product Manager"
+      - "Business Development"
 
   seniority:
     - "vp"
     - "director"
     - "c_suite"
-    - "manager"  # Include managers for smaller companies where Plant Manager is the buyer
+    - "manager"
 
-# Persona classification rules (auto-classify from title)
+# Persona classification (auto-applied to matched contacts)
 persona_classification:
-  vp_quality_food_safety:
-    title_keywords: ["VP Quality", "VP Food Safety", "Vice President Quality", "Vice President Food Safety", "VP Food Safety & Quality", "VP Quality Assurance"]
-  director_quality_food_safety:
-    title_keywords: ["Director of Quality", "Director of Food Safety", "Director Quality Assurance", "Director Food Safety & Quality", "Director Regulatory"]
+  # PRIMARY — core manufacturing buyers (all sectors)
   vp_ops:
-    title_keywords: ["VP Operations", "Vice President Operations", "VP Manufacturing", "Vice President Manufacturing"]
-  plant_manager:
-    title_keywords: ["Plant Manager", "General Manager", "Factory Manager"]
-  coo:
-    title_keywords: ["Chief Operating Officer", "COO"]
-  director_ops:
-    title_keywords: ["Director of Operations", "Director of Manufacturing"]
+    title_keywords:
+      - "VP Operations"
+      - "Vice President Operations"
+      - "VP Manufacturing"
+      - "Vice President Manufacturing"
+      - "VP Engineering"
+      - "Vice President Engineering"
+      - "VP Refining"
+      - "Vice President Refining"
+    priority: "primary"
+
   maintenance_leader:
-    title_keywords: ["Director of Maintenance", "VP Maintenance", "Maintenance Manager", "Reliability Manager", "Director of Reliability"]
+    title_keywords:
+      - "Director of Maintenance"
+      - "VP Maintenance"
+      - "Maintenance Manager"
+      - "Reliability Manager"
+      - "Director of Reliability"
+      - "Director of Asset Management"
+      - "VP Asset Management"
+    priority: "primary"
 
-# Persona priority for primary contact selection (higher = preferred)
+  plant_manager:
+    title_keywords:
+      - "Plant Manager"
+      - "General Manager"
+      - "Factory Manager"
+      - "Site Manager"
+      - "Operations Manager"
+      - "Manufacturing Manager"
+      - "Plant Superintendent"
+      - "Production Superintendent"
+    priority: "primary"
+
+  coo:
+    title_keywords:
+      - "Chief Operating Officer"
+      - "COO"
+    priority: "primary"
+
+  director_ops:
+    title_keywords:
+      - "Director of Operations"
+      - "Director of Manufacturing"
+      - "Director of Engineering"
+      - "Director of Production"
+      - "Director of Process Engineering"
+    priority: "primary"
+
+  digital_transformation:
+    title_keywords:
+      - "Digital Transformation"
+      - "Industry 4.0"
+      - "Smart Factory"
+      - "Chief Digital Officer"
+      - "IIoT"
+    priority: "primary"
+
+  # SECONDARY — F&B specific
+  vp_quality_food_safety:
+    title_keywords:
+      - "VP Quality"
+      - "VP Food Safety"
+      - "Vice President Quality"
+      - "Vice President Food Safety"
+      - "VP Quality Assurance"
+    priority: "secondary"
+
+  director_quality_food_safety:
+    title_keywords:
+      - "Director of Quality"
+      - "Director of Food Safety"
+      - "Director Quality Assurance"
+    priority: "secondary"
+
+# Persona priority scores (see queue_manager.py for point values)
 persona_priority:
-  vp_quality_food_safety: 100    # F&B primary buyer
-  coo: 95
-  vp_ops: 90
-  plant_manager: 85
-  director_quality_food_safety: 80
-  maintenance_leader: 75
-  director_ops: 70
+  vp_ops: 100
+  coo: 98
+  maintenance_leader: 95
+  plant_manager: 88
+  director_ops: 80
+  digital_transformation: 72
+  vp_supply_chain: 60
+  cio: 50
+  vp_quality_food_safety: 45      # secondary — F&B
+  director_quality_food_safety: 40  # secondary — F&B
 
-# Plant qualification criteria (used during research phase)
-plant_qualification:
-  min_employees: 50
-  min_critical_equipment: 5       # Lower bar — F&B plants may have fewer monitored assets
-  required_data_infrastructure: false  # Many F&B targets won't have OT infrastructure yet
-  required_erp_cmms: false             # Don't disqualify F&B companies without CMMS
+# Tier scoring (for queue_manager.py _TIER_POINTS)
+# Primary mfg/pmfg tiers score higher than secondary fb tiers
+tier_scoring:
+  # Discrete manufacturing (primary)
+  mfg1: 15   # Industrial Machinery
+  mfg2: 14   # Metal Fabrication
+  mfg3: 14   # Automotive
+  mfg4: 12   # Electrical Equipment
+  mfg5: 11   # Electronics
+  mfg6: 13   # Aerospace
+  mfg7: 12   # Primary Metals
+  mfg8: 11   # Plastics & Rubber
+  # Process manufacturing (primary)
+  pmfg1: 14  # Chemical
+  pmfg2: 13  # Oil & Gas
+  pmfg3: 13  # Petroleum Refining
+  pmfg4: 12  # Mining
+  pmfg5: 11  # Utilities
+  pmfg6: 13  # Pharma
+  pmfg7: 10  # Paper & Pulp
+  pmfg8: 10  # Non-Metallic Mineral
+  # Food & Beverage (secondary)
+  fb1: 6
+  fb2: 5
+  fb3: 4
+  fb4: 4
 
-# Discovery batch settings
+# Discovery settings
 discovery:
-  max_results_per_run: 200
-  pages_per_tier: 5       # 5 pages x 100 results = 500 per tier
+  max_results_per_run: 500
+  pages_per_tier: 5
   default_campaign_name: "prospectiq_discovery"
+
+  # ── Active discovery order (Segments 1–3 only) ──────────────────────────
+  # Segment 1 (~55% of sends): Discrete manufacturing — clearest PdM ROI,
+  #   shortest sales cycle, correct buyer persona already in market.
+  # Segment 2 (~25% of sends): Process/chemical — strong fit, slightly
+  #   longer cycle due to regulatory overlay.
+  # Segment 3 (~15% of sends): F&B — ops/uptime angle only (NOT FSMA).
+  #   Target VP Ops and Plant Manager, not VP Quality.
+  #
+  # Segment 4 (watchlist — NOT in tier_run_order):
+  #   mfg6  (Aerospace)   — vendor qualification wall, long cycle
+  #   pmfg2 (Oil & Gas)   — enterprise procurement, safety reg complexity
+  #   pmfg5 (Utilities)   — regulated monopolies, govt procurement
+  #   pmfg6 (Pharma)      — 21 CFR Part 11, vendor qualification wall
+  #   campaign_cluster=watchlist, outreach_mode=manual for all segment 4
+  tier_run_order:
+    # Segment 1 — Discrete manufacturing (run first, highest volume)
+    - "mfg1"   # Industrial Machinery & Heavy Equipment
+    - "mfg2"   # Metal Fabrication & Precision Machining
+    - "mfg3"   # Automotive Parts & Transportation Equipment
+    - "mfg8"   # Plastics & Rubber Manufacturing
+    - "mfg4"   # Electrical Equipment & Components
+    - "mfg5"   # Electronics / Semiconductor
+    # Segment 2 — Process manufacturing
+    - "pmfg1"  # Chemical Manufacturing
+    - "mfg7"   # Primary Metals (steel, aluminum)
+    - "pmfg3"  # Petroleum Refining & Coal Products
+    - "pmfg4"  # Mining & Quarrying
+    - "pmfg7"  # Paper & Pulp Manufacturing
+    - "pmfg8"  # Non-Metallic Mineral Products (cement, glass, ceramics)
+    # Segment 3 — Food & Beverage (ops/uptime messaging only)
+    - "fb1"    # Food Manufacturing
+    - "fb2"    # Beverage Manufacturing
+    - "fb3"    # Meat & Poultry Processing
+    - "fb4"    # Dairy Product Manufacturing

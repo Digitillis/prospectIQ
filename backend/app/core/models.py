@@ -210,6 +210,14 @@ class ReadinessCheck(BaseModel):
 # Research Intelligence Models
 # ============================================================
 
+class TriggerEvent(BaseModel):
+    """A buying trigger event detected during company research."""
+    type: str = ""  # leadership_change, ma_pe, esg_commitment, operational_incident, capex_investment, growth_signal, competitor_displacement
+    description: str = ""
+    date_approx: str = ""  # YYYY-QQ or YYYY-MM or 'Unknown'
+    outreach_relevance: str = ""
+
+
 class ResearchResult(BaseModel):
     """Structured output from the Research Agent's Claude analysis."""
     company_description: str = ""
@@ -224,6 +232,8 @@ class ResearchResult(BaseModel):
     existing_solutions: list[str] = Field(default_factory=list)
     funding_status: str = ""
     funding_details: str = ""
+    trigger_events: list[TriggerEvent] = Field(default_factory=list)
+    trigger_score: int = 0  # 0-10; higher = more compelling buying triggers detected
     personalization_hooks: list[str] = Field(default_factory=list)
     confidence_level: str = "low"  # high, medium, low
 

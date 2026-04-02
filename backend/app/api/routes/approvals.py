@@ -11,12 +11,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 
 
 def get_db() -> Database:
-    return Database()
+    return Database(workspace_id=get_workspace_id())
 
 
 class ApproveRequest(BaseModel):
@@ -29,6 +30,44 @@ class RejectRequest(BaseModel):
 
 class TestEmailRequest(BaseModel):
     test_email: str  # Your email address to receive the test
+
+
+@router.get("/sent")
+async def list_sent_emails(
+    limit: int = 200,
+    offset: int = 0,
+    company_id: Optional[str] = None,
+    contact_id: Optional[str] = None,
+):
+    """Return all sent outreach emails, newest first.
+
+    Records are never deleted once sent_at is set (enforced by DB trigger).
+    Supports pagination and filtering by company or contact.
+    """
+    db = get_db()
+    query = (
+        db._filter_ws(
+            db.client.table("outreach_drafts")
+            .select(
+                "id, company_id, contact_id, subject, body, edited_body, "
+                "sent_at, approved_at, sequence_name, sequence_step, channel, "
+                "instantly_campaign_id, "
+                "companies(name, tier, campaign_cluster), "
+                "contacts(full_name, title, email, persona_type)"
+            )
+        )
+        .not_.is_("sent_at", "null")
+        .order("sent_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+    )
+    if company_id:
+        query = query.eq("company_id", company_id)
+    if contact_id:
+        query = query.eq("contact_id", contact_id)
+
+    data = query.execute().data or []
+    return {"data": data, "count": len(data)}
 
 
 @router.get("/")
@@ -152,8 +191,10 @@ async def test_send_draft(draft_id: str, body: TestEmailRequest):
 
     # Fetch the draft with company/contact info
     result = (
-        db.client.table("outreach_drafts")
-        .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email)")
+        db._filter_ws(
+            db.client.table("outreach_drafts")
+            .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email)")
+        )
         .eq("id", draft_id)
         .execute()
     )
@@ -193,7 +234,7 @@ async def test_send_draft(draft_id: str, body: TestEmailRequest):
         resend.api_key = settings.resend_api_key
 
         send_result = resend.Emails.send({
-            "from": "ProspectIQ Test <avi@digitillis.com>",
+            "from": "Avanish Mehrotra <avi@digitillis.io>",
             "to": [body.test_email],
             "subject": test_subject,
             "text": test_body,

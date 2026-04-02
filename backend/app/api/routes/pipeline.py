@@ -263,7 +263,9 @@ async def run_buying_signals():
 async def get_intent_signals(company_id: str):
     """Get intent signal analysis for a specific company."""
     from backend.app.core.intent_signals import analyze_intent
-    db = Database()
+    from backend.app.core.database import Database
+    from backend.app.core.workspace import get_workspace_id
+    db = Database(workspace_id=get_workspace_id())
     report = analyze_intent(db, company_id)
     return {
         "data": {

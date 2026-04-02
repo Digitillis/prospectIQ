@@ -38,6 +38,7 @@ def check_campaign_readiness(
     campaign_name: str,
     tier: str | None = None,
     print_report: bool = True,
+    workspace_id: str | None = None,
 ) -> list[ReadinessCheck]:
     """Run the readiness gate for all companies in a campaign.
 
@@ -45,11 +46,12 @@ def check_campaign_readiness(
         campaign_name: The campaign_name column value to filter on.
         tier: Optional tier filter (e.g. 'mfg1', 'fb1').
         print_report: If True, print a Rich table summary.
+        workspace_id: Optional workspace UUID for multi-tenant scoping.
 
     Returns:
         List of ReadinessCheck results, one per company.
     """
-    db = Database()
+    db = Database(workspace_id=workspace_id)
 
     # Fetch companies
     query = db.client.table("companies").select("id, name, domain, apollo_id, campaign_name, tier, status")

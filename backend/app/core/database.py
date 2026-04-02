@@ -26,10 +26,31 @@ def get_supabase_client() -> Client:
 
 
 class Database:
-    """Convenience wrapper around Supabase client."""
+    """Convenience wrapper around Supabase client.
 
-    def __init__(self):
+    Pass ``workspace_id`` to scope all reads/writes to a single workspace.
+    When omitted, no workspace filter is applied (pipeline/admin use).
+    """
+
+    def __init__(self, workspace_id: str | None = None):
         self.client = get_supabase_client()
+        self.workspace_id = workspace_id
+
+    # ------------------------------------------------------------------
+    # Workspace helpers (internal)
+    # ------------------------------------------------------------------
+
+    def _filter_ws(self, query):
+        """Apply workspace filter to a query when workspace_id is set."""
+        if self.workspace_id:
+            query = query.eq("workspace_id", self.workspace_id)
+        return query
+
+    def _inject_ws(self, data: dict) -> dict:
+        """Add workspace_id to an insert/upsert payload when set."""
+        if self.workspace_id and "workspace_id" not in data:
+            return {**data, "workspace_id": self.workspace_id}
+        return data
 
     # ------------------------------------------------------------------
     # Companies
@@ -47,7 +68,7 @@ class Database:
         offset: int = 0,
     ) -> list[dict]:
         """Query companies with optional filters."""
-        query = self.client.table("companies").select("*")
+        query = self._filter_ws(self.client.table("companies").select("*"))
         if status:
             query = query.eq("status", status)
         if tiers:
@@ -97,7 +118,7 @@ class Database:
 
     def insert_company(self, data: dict) -> dict:
         """Insert a new company record."""
-        result = self.client.table("companies").insert(data).execute()
+        result = self.client.table("companies").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     def update_company(self, company_id: str, data: dict) -> dict:
@@ -116,9 +137,9 @@ class Database:
 
     def get_contacts_for_company(self, company_id: str) -> list[dict]:
         """Get all contacts for a company."""
+        query = self._filter_ws(self.client.table("contacts").select("*"))
         result = (
-            self.client.table("contacts")
-            .select("*")
+            query
             .eq("company_id", company_id)
             .order("is_decision_maker", desc=True)
             .execute()
@@ -153,7 +174,7 @@ class Database:
         # recomputed with full context on first update-scores run)
         data.setdefault("priority_score", compute_priority_score(data, {}))
 
-        result = self.client.table("contacts").insert(data).execute()
+        result = self.client.table("contacts").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     def update_contact(self, contact_id: str, data: dict) -> dict:
@@ -192,9 +213,12 @@ class Database:
 
     def get_pending_drafts(self, limit: int = 50) -> list[dict]:
         """Get outreach drafts pending approval."""
-        result = (
+        query = self._filter_ws(
             self.client.table("outreach_drafts")
             .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email)")
+        )
+        result = (
+            query
             .eq("approval_status", "pending")
             .order("created_at", desc=True)
             .limit(limit)
@@ -204,7 +228,7 @@ class Database:
 
     def insert_outreach_draft(self, data: dict) -> dict:
         """Insert a new outreach draft."""
-        result = self.client.table("outreach_drafts").insert(data).execute()
+        result = self.client.table("outreach_drafts").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     def update_outreach_draft(self, draft_id: str, data: dict) -> dict:
@@ -225,7 +249,7 @@ class Database:
         self, company_id: str | None = None, contact_id: str | None = None, limit: int = 50
     ) -> list[dict]:
         """Get interactions, optionally filtered by company or contact."""
-        query = self.client.table("interactions").select("*")
+        query = self._filter_ws(self.client.table("interactions").select("*"))
         if company_id:
             query = query.eq("company_id", company_id)
         if contact_id:
@@ -235,7 +259,7 @@ class Database:
 
     def insert_interaction(self, data: dict) -> dict:
         """Insert a new interaction record."""
-        result = self.client.table("interactions").insert(data).execute()
+        result = self.client.table("interactions").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -244,11 +268,10 @@ class Database:
 
     def get_active_sequences(self, due_before: str | None = None) -> list[dict]:
         """Get active engagement sequences, optionally filtered by due date."""
-        query = (
+        query = self._filter_ws(
             self.client.table("engagement_sequences")
             .select("*, companies(name), contacts(full_name, email)")
-            .eq("status", "active")
-        )
+        ).eq("status", "active")
         if due_before:
             query = query.lte("next_action_at", due_before)
         query = query.order("next_action_at")
@@ -256,7 +279,7 @@ class Database:
 
     def insert_engagement_sequence(self, data: dict) -> dict:
         """Insert a new engagement sequence."""
-        result = self.client.table("engagement_sequences").insert(data).execute()
+        result = self.client.table("engagement_sequences").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     def update_engagement_sequence(self, sequence_id: str, data: dict) -> dict:
@@ -275,6 +298,7 @@ class Database:
 
     def log_api_cost(self, data: dict) -> dict:
         """Log an API cost record."""
+        # api_costs is not workspace-scoped — do not inject workspace_id
         result = self.client.table("api_costs").insert(data).execute()
         return result.data[0] if result.data else {}
 
@@ -284,14 +308,13 @@ class Database:
 
     def insert_learning_outcome(self, data: dict) -> dict:
         """Insert a learning outcome record."""
-        result = self.client.table("learning_outcomes").insert(data).execute()
+        result = self.client.table("learning_outcomes").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     def get_learning_outcomes(self, limit: int = 500) -> list[dict]:
         """Get learning outcomes for analysis."""
         result = (
-            self.client.table("learning_outcomes")
-            .select("*")
+            self._filter_ws(self.client.table("learning_outcomes").select("*"))
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
@@ -304,10 +327,10 @@ class Database:
     # ------------------------------------------------------------------
 
     def get_action_queue(self, scheduled_date=None, action_type=None, status="pending", limit=100):
-        query = self.client.table("action_queue").select(
+        query = self._filter_ws(self.client.table("action_queue").select(
             "*, companies(id, name, domain, tier, pqs_total, status, industry), "
             "contacts(id, full_name, title, linkedin_url, linkedin_status, email)"
-        )
+        ))
         if scheduled_date:
             query = query.eq("scheduled_date", scheduled_date)
         if action_type:
@@ -316,25 +339,31 @@ class Database:
         return query.limit(limit).execute().data
 
     def insert_action_queue_item(self, data):
-        result = self.client.table("action_queue").insert(data).execute()
+        result = self.client.table("action_queue").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     def insert_action_queue_batch(self, items):
         if not items: return []
-        return self.client.table("action_queue").insert(items).execute().data
+        return self.client.table("action_queue").insert(
+            [self._inject_ws(i) for i in items]
+        ).execute().data
 
     def update_action_queue_item(self, item_id, data):
         result = self.client.table("action_queue").update(data).eq("id", item_id).execute()
         return result.data[0] if result.data else {}
 
     def count_action_queue(self, scheduled_date, action_type=None, status=None):
-        query = self.client.table("action_queue").select("id", count="exact").eq("scheduled_date", scheduled_date)
+        query = self._filter_ws(
+            self.client.table("action_queue").select("id", count="exact")
+        ).eq("scheduled_date", scheduled_date)
         if action_type: query = query.eq("action_type", action_type)
         if status: query = query.eq("status", status)
         return query.execute().count or 0
 
     def get_queued_contact_ids(self, scheduled_date):
-        result = self.client.table("action_queue").select("contact_id").eq("scheduled_date", scheduled_date).in_("status", ["pending", "in_progress"]).execute()
+        result = self._filter_ws(
+            self.client.table("action_queue").select("contact_id")
+        ).eq("scheduled_date", scheduled_date).in_("status", ["pending", "in_progress"]).execute()
         return {r["contact_id"] for r in result.data if r.get("contact_id")}
 
     def insert_action_request(self, data):
@@ -373,11 +402,10 @@ class Database:
         limit: int = 100,
     ) -> list[dict]:
         """Return contacts with enrichment_status = 'needs_enrichment' or 'stale'."""
-        query = (
+        query = self._filter_ws(
             self.client.table("contacts")
             .select("*, companies(name, domain, tier, campaign_name)")
-            .in_("enrichment_status", ["needs_enrichment", "stale"])
-        )
+        ).in_("enrichment_status", ["needs_enrichment", "stale"])
         if campaign_name or tier:
             # Filter via join — fetch all then filter in Python (Supabase limitation)
             rows = query.order("created_at").limit(500).execute().data
@@ -393,8 +421,10 @@ class Database:
         from datetime import datetime, timedelta, timezone
         cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
         result = (
-            self.client.table("contacts")
-            .select("id, first_name, last_name, title, apollo_id, enriched_at, company_id")
+            self._filter_ws(
+                self.client.table("contacts")
+                .select("id, first_name, last_name, title, apollo_id, enriched_at, company_id")
+            )
             .eq("enrichment_status", "enriched")
             .lt("enriched_at", cutoff)
             .order("enriched_at")
@@ -554,7 +584,7 @@ class Database:
         search: str | None = None,
     ) -> int:
         """Return total count of companies matching the given filters."""
-        query = self.client.table("companies").select("id", count="exact")
+        query = self._filter_ws(self.client.table("companies").select("id", count="exact"))
         if status:
             query = query.eq("status", status)
         if tier:
@@ -571,8 +601,7 @@ class Database:
     def count_companies_by_status(self) -> list[dict]:
         """Get company counts grouped by status."""
         result = (
-            self.client.table("companies")
-            .select("status")
+            self._filter_ws(self.client.table("companies").select("status"))
             .execute()
         )
         counts: dict[str, int] = {}
@@ -756,7 +785,7 @@ class Database:
 
     def get_api_costs_summary(self, batch_id: str | None = None) -> list[dict]:
         """Get API cost summary."""
-        query = self.client.table("api_costs").select("*")
+        query = self._filter_ws(self.client.table("api_costs").select("*"))
         if batch_id:
             query = query.eq("batch_id", batch_id)
         query = query.order("created_at", desc=True).limit(500)

@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from backend.app.core.database import Database
+from backend.app.core.workspace import get_workspace_id
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 
 def get_db() -> Database:
-    return Database()
+    return Database(workspace_id=get_workspace_id())
 
 
 @router.post("/")
@@ -98,11 +99,11 @@ async def get_linkedin_messages(
 
     # Source 1: LinkedIn drafts (channel=linkedin, approved)
     all_drafts = (
-        db.client.table("outreach_drafts")
+        db._filter_ws(db.client.table("outreach_drafts")
         .select(
             "id, company_id, contact_id, sequence_name, sequence_step, body, "
             "personalization_notes, approval_status, created_at"
-        )
+        ))
         .eq("channel", "linkedin")
         .eq("approval_status", "approved")
         .order("created_at", desc=True)
@@ -116,13 +117,13 @@ async def get_linkedin_messages(
 
     # Source 2: Contacts with linkedin_status != 'not_sent' (manually reached out)
     active_contacts_query = (
-        db.client.table("contacts")
+        db._filter_ws(db.client.table("contacts")
         .select(
             "id, company_id, full_name, first_name, last_name, title, persona_type, "
             "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
             "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
             "linkedin_responded_at, linkedin_meeting_booked_at"
-        )
+        ))
         .neq("linkedin_status", "not_sent")
         .order("created_at", desc=True)
         .limit(limit * 3)
@@ -155,12 +156,12 @@ async def get_linkedin_messages(
     # Bulk fetch companies
     company_ids = list({cid for cid, _ in pairs})
     companies_result = (
-        db.client.table("companies")
+        db._filter_ws(db.client.table("companies")
         .select(
             "id, name, tier, sub_sector, industry, pqs_total, city, state, domain, "
             "employee_count, revenue_printed, headcount_growth_6m, is_public, "
             "parent_company_name, pain_signals, personalization_hooks, research_summary"
-        )
+        ))
         .in_("id", company_ids)
         .execute()
     )
@@ -171,8 +172,8 @@ async def get_linkedin_messages(
     try:
         for cid in company_ids:
             research_rows = (
-                db.client.table("research")
-                .select("*")
+                db._filter_ws(db.client.table("research")
+                .select("*"))
                 .eq("company_id", cid)
                 .order("created_at", desc=True)
                 .limit(1)
@@ -189,13 +190,13 @@ async def get_linkedin_messages(
     contact_by_id = dict(contact_prefetch)
     if missing_contact_ids:
         contacts_result = (
-            db.client.table("contacts")
+            db._filter_ws(db.client.table("contacts")
             .select(
                 "id, company_id, full_name, first_name, last_name, title, persona_type, "
                 "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
                 "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
                 "linkedin_responded_at, linkedin_meeting_booked_at"
-            )
+            ))
             .in_("id", missing_contact_ids)
             .execute()
         )
@@ -302,8 +303,8 @@ async def update_linkedin_status(contact_id: str, body: dict):
 
     # Verify contact exists
     contact_result = (
-        db.client.table("contacts")
-        .select("id, company_id, full_name")
+        db._filter_ws(db.client.table("contacts")
+        .select("id, company_id, full_name"))
         .eq("id", contact_id)
         .execute()
     )
@@ -334,7 +335,7 @@ async def update_linkedin_status(contact_id: str, body: dict):
     if ts_col:
         update_data[ts_col] = datetime.now(timezone.utc).isoformat()
 
-    db.client.table("contacts").update(update_data).eq("id", contact_id).execute()
+    db._filter_ws(db.client.table("contacts").update(update_data)).eq("id", contact_id).execute()
 
     # Log an interaction so activity feed reflects the LinkedIn touch
     interaction_body = f"LinkedIn status updated to: {new_status}"
@@ -562,7 +563,7 @@ async def import_companies_csv(file: UploadFile):
 
         try:
             employee_raw = row.get("employee_count", "").strip() or row.get("Employee Count", "").strip()
-            db.client.table("companies").insert({
+            db.client.table("companies").insert(db._inject_ws({
                 "name": name,
                 "domain": domain or None,
                 "website": row.get("website", "").strip() or row.get("Website", "").strip() or None,
@@ -577,7 +578,7 @@ async def import_companies_csv(file: UploadFile):
                 "pqs_technographic": 0,
                 "pqs_timing": 0,
                 "pqs_engagement": 0,
-            }).execute()
+            })).execute()
             imported += 1
         except Exception as e:
             errors.append(f"{name}: {str(e)[:100]}")
@@ -597,9 +598,9 @@ async def update_tags(company_id: str, body: dict):
     NOTE: Requires a `custom_tags` JSONB column on the companies table in Supabase.
     Run: ALTER TABLE companies ADD COLUMN IF NOT EXISTS custom_tags JSONB DEFAULT '[]'::jsonb;
     """
-    db = Database()
+    db = Database(workspace_id=get_workspace_id())
     tags = body.get("tags", [])
-    db.client.table("companies").update({"custom_tags": tags}).eq("id", company_id).execute()
+    db._filter_ws(db.client.table("companies").update({"custom_tags": tags})).eq("id", company_id).execute()
     return {"data": {"company_id": company_id, "tags": tags}}
 
 
