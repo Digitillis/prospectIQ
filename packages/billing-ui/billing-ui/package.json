@@ -1,0 +1,16 @@
+{
+  "name": "@platform/billing-ui",
+  "version": "1.0.0",
+  "description": "White-label billing UI components for React / Next.js SaaS apps",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "react": ">=18",
+    "next": ">=14",
+    "lucide-react": ">=0.400"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/react": "^18"
+  }
+}
