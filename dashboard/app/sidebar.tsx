@@ -147,6 +147,7 @@ export function Sidebar() {
         { label: "Sequences", href: "/sequences", icon: GitBranch },
         { label: "Outreach Hub", href: "/outreach", icon: Send },
         { label: "Content", href: "/content", icon: PenTool },
+        { label: "Ghostwriting", href: "/ghostwriting", icon: PenTool },
       ],
     },
     {
