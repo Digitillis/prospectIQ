@@ -20,8 +20,9 @@ import {
   Inbox,
   Shuffle,
 } from "lucide-react";
-import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, OutreachDraft } from "@/lib/api";
+import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, OutreachDraft, type DraftQualityScore } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
+import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
 export default function ApprovalsPage() {
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
@@ -37,6 +38,7 @@ export default function ApprovalsPage() {
   const [abLoading, setAbLoading] = useState<string | null>(null);
   const [testSendingId, setTestSendingId] = useState<string | null>(null);
   const [testSendResult, setTestSendResult] = useState<{ id: string; message: string } | null>(null);
+  const [qualityScores, setQualityScores] = useState<Record<string, DraftQualityScore>>({});
   const TEST_EMAIL = "avi@digitillis.com";
 
   const handleTestSend = async (id: string) => {
@@ -284,6 +286,12 @@ export default function ApprovalsPage() {
                 <span className="text-xs text-gray-400 dark:text-gray-500">
                   {idx + 1} of {drafts.length}
                 </span>
+                {/* Quality badge */}
+                <DraftQualityBadge
+                  draftId={draft.id}
+                  initialScore={qualityScores[draft.id] ?? null}
+                  onScored={(result) => setQualityScores((prev) => ({ ...prev, [draft.id]: result }))}
+                />
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
                     PQS

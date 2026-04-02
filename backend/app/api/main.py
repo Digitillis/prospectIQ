@@ -138,6 +138,7 @@ def _run_personalization_refresh() -> None:
         logger.error(f"Scheduled personalization_refresh failed: {e}")
 
 
+
 def _run_auto_action_low_priority() -> None:
     """Hourly job: auto-archive soft_no items pending for >72 hours."""
     try:
@@ -231,6 +232,7 @@ app.include_router(content.router)
 app.include_router(events.router)
 app.include_router(instantly_webhooks.router)
 app.include_router(sequences.router)
+app.include_router(sequences.v2_router)
 app.include_router(monitoring.router)
 app.include_router(workspaces.router)
 app.include_router(invite.router)
