@@ -23,6 +23,7 @@ import {
   Moon,
   Sun,
   Inbox,
+  Mic2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -150,9 +151,10 @@ export function Sidebar() {
       ],
     },
     {
-      title: "MEASURE",
+      title: "INTELLIGENCE",
       items: [
         { label: "Intelligence", href: "/intelligence", icon: BarChart3 },
+        { label: "Voice of Prospect", href: "/voice-of-prospect", icon: Mic2 },
         { label: "Analytics", href: "/analytics", icon: BarChart3 },
         { label: "History", href: "/history", icon: History },
       ],
