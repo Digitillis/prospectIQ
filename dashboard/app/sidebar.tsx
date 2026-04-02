@@ -145,6 +145,7 @@ export function Sidebar() {
       title: "ENGAGE",
       items: [
         { label: "Sequences", href: "/sequences", icon: GitBranch },
+        { label: "Multi-Thread", href: "/multi-thread", icon: GitBranch },
         { label: "Outreach Hub", href: "/outreach", icon: Send },
         { label: "Content", href: "/content", icon: PenTool },
       ],
