@@ -1449,8 +1449,10 @@ export interface SequenceTemplate {
   steps: SequenceStep[];
   source: "yaml" | "custom";
   is_active: boolean;
+  is_template?: boolean;
   id?: string;
   created_at?: string;
+  tags?: string[];
 }
 
 export interface SequenceStep {
@@ -1516,6 +1518,112 @@ export const listActiveEnrollments = (limit = 100) =>
   fetchAPI<{ data: unknown[]; count: number }>(
     `/api/sequences/active-enrollments?limit=${limit}`
   );
+
+// ---------------------------------------------------------------------------
+// Sequence Builder V2 — CRUD, duplicate, preview, stats
+// ---------------------------------------------------------------------------
+
+export interface SequenceStepV2 {
+  step_id: string;
+  step_type: "email" | "wait" | "condition" | "linkedin" | "task";
+  step_order: number;
+  subject_template?: string;
+  body_template?: string;
+  persona_variants?: Record<string, string>;
+  wait_days?: number;
+  wait_condition?: "no_reply" | "no_open" | "any";
+  condition_type?: "if_opened" | "if_replied" | "if_clicked" | "if_pqs_above";
+  condition_value?: number | string;
+  branch_yes?: string;
+  branch_no?: string;
+  task_description?: string;
+  task_due_offset_days?: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface SequenceDefinitionV2 {
+  id?: string;
+  name: string;
+  description?: string;
+  cluster?: string;
+  persona?: string;
+  steps: SequenceStepV2[];
+  is_template: boolean;
+  tags: string[];
+  source?: "yaml" | "custom" | "builder";
+  is_active?: boolean;
+  display_name?: string;
+  channel?: string;
+  total_steps?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SequenceStats {
+  sequence_id: string;
+  enrolled_count: number;
+  active_count: number;
+  open_rate: number;
+  reply_rate: number;
+  click_rate: number;
+  conversion_rate: number;
+  completed_count: number;
+  bounced_count: number;
+}
+
+export interface RenderedStep {
+  step_id: string;
+  step_type: "email" | "wait" | "condition" | "linkedin" | "task";
+  step_order: number;
+  subject?: string;
+  body?: string;
+  wait_days?: number;
+  wait_condition?: string;
+  condition_type?: string;
+  task_description?: string;
+}
+
+export interface RenderedSequence {
+  sequence_id: string;
+  contact_id: string;
+  company_id: string;
+  contact_name?: string;
+  company_name?: string;
+  steps: RenderedStep[];
+}
+
+export const getSequenceById = (id: string) =>
+  fetchAPI<{ data: SequenceDefinitionV2 }>(`/api/sequences/v2/${id}`);
+
+export const createSequenceV2 = (data: Partial<SequenceDefinitionV2>) =>
+  fetchAPI<{ data: SequenceDefinitionV2; message: string }>("/api/sequences/v2", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const updateSequenceV2 = (id: string, data: Partial<SequenceDefinitionV2>) =>
+  fetchAPI<{ data: SequenceDefinitionV2; message: string }>(`/api/sequences/v2/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+export const deleteSequenceV2 = (id: string) =>
+  fetchAPI<{ message: string }>(`/api/sequences/v2/${id}`, { method: "DELETE" });
+
+export const duplicateSequenceV2 = (id: string) =>
+  fetchAPI<{ data: SequenceDefinitionV2; message: string }>(
+    `/api/sequences/v2/${id}/duplicate`,
+    { method: "POST" }
+  );
+
+export const previewSequenceV2 = (id: string, contactId: string, companyId: string) =>
+  fetchAPI<RenderedSequence>(`/api/sequences/v2/${id}/preview`, {
+    method: "POST",
+    body: JSON.stringify({ contact_id: contactId, company_id: companyId }),
+  });
+
+export const getSequenceStats = (id: string) =>
+  fetchAPI<SequenceStats>(`/api/sequences/v2/${id}/stats`);
 
 // ---------------------------------------------------------------------------
 // Intelligence — signals, funnel, velocity, costs, goals, command center
