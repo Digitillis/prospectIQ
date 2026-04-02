@@ -22,10 +22,11 @@ import {
   CheckCircle2,
   Moon,
   Sun,
+  Inbox,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { listThreads } from "@/lib/api";
+import { listThreads, getHitlStats } from "@/lib/api";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -38,6 +39,19 @@ function useThreadsBadge(): number {
   useEffect(() => {
     listThreads({ needs_action: true, limit: 200 })
       .then((res) => setCount(res.needs_action_count ?? 0))
+      .catch(() => {});
+  }, []);
+
+  return count;
+}
+
+/** HITL queue pending badge count. */
+function useHitlBadge(): number {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    getHitlStats()
+      .then((res) => setCount(res.pending ?? 0))
       .catch(() => {});
   }, []);
 
@@ -83,6 +97,7 @@ interface NavSection {
 export function Sidebar() {
   const pathname = usePathname();
   const threadsBadge = useThreadsBadge();
+  const hitlBadge = useHitlBadge();
   const signalsBadge = useSignalsBadge();
 
   const [dark, setDark] = useState(false);
@@ -113,6 +128,7 @@ export function Sidebar() {
       items: [
         { label: "Command Center", href: "/", icon: LayoutDashboard, exactMatch: true },
         { label: "Pipeline", href: "/pipeline", icon: Activity },
+        { label: "Reply Queue", href: "/hitl", icon: Inbox, badge: hitlBadge > 0 ? hitlBadge : undefined },
         { label: "Threads", href: "/threads", icon: MessageSquare, badge: threadsBadge > 0 ? threadsBadge : undefined },
         { label: "Signals", href: "/signals", icon: Zap, badge: signalsBadge > 0 ? signalsBadge : undefined },
       ],

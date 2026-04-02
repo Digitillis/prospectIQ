@@ -15,8 +15,9 @@ import {
   Zap,
   TrendingUp,
   RefreshCw,
+  Inbox,
 } from "lucide-react";
-import { getCommandCenter, updateIntelligenceGoals, type CommandCenterData } from "@/lib/api";
+import { getCommandCenter, updateIntelligenceGoals, getHitlStats, type CommandCenterData, type HitlStats } from "@/lib/api";
 import { cn, getPQSColor } from "@/lib/utils";
 
 const CLASSIFICATION_COLORS: Record<string, string> = {
@@ -92,6 +93,7 @@ function WeeklyBar({ label, actual, target, onEdit }: { label: string; actual: n
 
 export default function CommandCenterPage() {
   const [data, setData] = useState<CommandCenterData | null>(null);
+  const [hitlStats, setHitlStats] = useState<HitlStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingGoal, setEditingGoal] = useState<string | null>(null);
   const [goalInput, setGoalInput] = useState("");
@@ -99,8 +101,12 @@ export default function CommandCenterPage() {
   const doFetch = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await getCommandCenter();
-      setData(res);
+      const [res, hStats] = await Promise.allSettled([
+        getCommandCenter(),
+        getHitlStats(),
+      ]);
+      if (res.status === "fulfilled") setData(res.value);
+      if (hStats.status === "fulfilled") setHitlStats(hStats.value);
     } catch {
       // graceful empty state
     } finally {
@@ -229,12 +235,82 @@ export default function CommandCenterPage() {
       {/* ── Section D: Three-column operational surface ── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
 
-        {/* Reply Queue */}
+        {/* HITL Reply Queue card */}
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-4 w-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Reply Queue</h3>
+              {hitlStats && hitlStats.pending > 0 && (
+                <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
+                  {hitlStats.pending}
+                </span>
+              )}
+            </div>
+            <Link href="/hitl" className="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100">Review Replies →</Link>
+          </div>
+          <div className="px-4 py-4">
+            {loading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ) : hitlStats ? (
+              <div className="space-y-3">
+                {/* Stats grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Pending</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{hitlStats.pending}</p>
+                  </div>
+                  {hitlStats.avg_response_time_hours > 0 && (
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Avg Response</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                        {hitlStats.avg_response_time_hours}h
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {/* Classification breakdown */}
+                {Object.keys(hitlStats.by_classification).length > 0 && (
+                  <div className="space-y-1.5">
+                    {Object.entries(hitlStats.by_classification)
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 4)
+                      .map(([clf, count]) => (
+                        <div key={clf} className="flex items-center justify-between text-xs">
+                          <span className="capitalize text-gray-600 dark:text-gray-400">
+                            {clf.replace(/_/g, " ")}
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">{count}</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+                {hitlStats.pending === 0 && (
+                  <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span className="text-sm">Queue is clear</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-6 text-gray-400">
+                <CheckCircle2 className="h-6 w-6 mb-1" />
+                <p className="text-sm">No replies pending</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Reply Queue (Threads) */}
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
           <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-4 py-3">
             <div className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4 text-gray-400" />
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Reply Queue</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Threads</h3>
               {data?.reply_queue && data.reply_queue.length > 0 && (
                 <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">{data.reply_queue.length}</span>
               )}

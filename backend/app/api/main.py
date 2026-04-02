@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization
 from backend.app.webhooks import instantly as instantly_webhooks
 from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
@@ -104,6 +104,62 @@ def _run_poll_instantly() -> None:
         logger.error(f"Scheduled poll_instantly failed: {e}")
 
 
+def _run_process_hitl_snoozed() -> None:
+    """Every-15-min job: move snoozed HITL items past their snooze_until back to pending."""
+    try:
+        from backend.app.core.database import Database
+        db = Database()
+        now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        result = (
+            db.client.table("hitl_queue")
+            .update({"status": "pending", "snoozed_until": None})
+            .eq("status", "snoozed")
+            .lte("snoozed_until", now)
+            .execute()
+        )
+        count = len(result.data) if result.data else 0
+        if count:
+            logger.info(f"HITL: re-queued {count} snoozed item(s)")
+    except Exception as e:
+        logger.error(f"Scheduled process_hitl_snoozed failed: {e}")
+
+
+def _run_personalization_refresh() -> None:
+    """Every-24-hour job: refresh personalization for top 100 qualified companies."""
+    try:
+        from backend.app.core.personalization_batch import PersonalizationBatch
+        runner = PersonalizationBatch()
+        result = runner.run_batch(filters={"min_pqs": 50}, max_companies=100)
+        logger.info(
+            f"Personalization refresh: processed={result.processed}, "
+            f"errors={result.errors}, cost=${result.total_cost_usd:.4f}"
+        )
+    except Exception as e:
+        logger.error(f"Scheduled personalization_refresh failed: {e}")
+
+
+def _run_auto_action_low_priority() -> None:
+    """Hourly job: auto-archive soft_no items pending for >72 hours."""
+    try:
+        from backend.app.core.database import Database
+        from datetime import datetime, timezone, timedelta
+        db = Database()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+        result = (
+            db.client.table("hitl_queue")
+            .update({"status": "actioned", "actioned_at": datetime.now(timezone.utc).isoformat()})
+            .eq("status", "pending")
+            .eq("classification", "soft_no")
+            .lte("created_at", cutoff)
+            .execute()
+        )
+        count = len(result.data) if result.data else 0
+        if count:
+            logger.info(f"HITL: auto-archived {count} stale soft_no item(s)")
+    except Exception as e:
+        logger.error(f"Scheduled auto_action_low_priority failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start background scheduler on startup, shut down gracefully."""
@@ -114,8 +170,15 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_send_approved, "interval", minutes=30, id="send_approved")
         scheduler.add_job(_run_process_due_sequences, "interval", hours=1, id="process_due")
         scheduler.add_job(_run_poll_instantly, "interval", hours=6, id="poll_instantly")
+        scheduler.add_job(_run_process_hitl_snoozed, "interval", minutes=15, id="hitl_snoozed")
+        scheduler.add_job(_run_auto_action_low_priority, "interval", hours=1, id="hitl_auto_archive")
+        scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
         scheduler.start()
-        logger.info("APScheduler started — health_snapshot every 15m, send_approved every 30m, process_due every 1h, poll_instantly every 6h")
+        logger.info(
+            "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
+            "send_approved every 30m, process_due/hitl_auto_archive every 1h, "
+            "poll_instantly every 6h, personalization_refresh every 24h"
+        )
     except ImportError:
         logger.warning("APScheduler not installed — background jobs disabled")
         scheduler = None
@@ -175,6 +238,9 @@ app.include_router(billing.router)
 app.include_router(signup.router)
 app.include_router(threads.router)
 app.include_router(intelligence.router)
+app.include_router(outreach_agent.router)
+app.include_router(hitl.router)
+app.include_router(personalization.router)
 
 
 @app.get("/health")
