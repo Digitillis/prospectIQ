@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     unipile_dsn: str = ""               # Unipile DSN (e.g. api4.unipile.com:13453)
     unipile_webhook_secret: str = ""    # Shared secret for validating Unipile webhook calls
 
+    # HubSpot CRM sync (optional)
+    hubspot_api_key: str = ""           # Private app access token
+    hubspot_portal_id: str = ""         # Numeric portal/account ID
+
+    # Salesforce CRM sync (optional)
+    salesforce_username: str = ""
+    salesforce_password: str = ""
+    salesforce_security_token: str = ""
+    salesforce_domain: str = "login"    # "login" for production, "test" for sandbox
+    salesforce_consumer_key: str = ""
+    salesforce_consumer_secret: str = ""
+
     # Sentry — error tracking and performance monitoring
     sentry_dsn: str = ""                # Get from Sentry project settings
     sentry_environment: str = "production"  # production | staging | development

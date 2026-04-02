@@ -232,11 +232,40 @@ STEP INSTRUCTIONS:
 GLOBAL ANTI-PATTERNS:
 {anti_patterns}
 
+## HORMOZI QUALITY CHECK (run this before returning JSON)
+
+Before returning the JSON, silently check your draft against these three questions:
+1. Does the email reference a specific, believable outcome for THIS company?
+   (Not "reduce downtime" — something like "based on their Plex ERP setup, the
+   likely first win is work order prediction, not sensors")
+2. Is there at least one concrete proof point? (a number, a timeline, a specific outcome)
+3. Is the CTA low-friction? (a question or an offer — not "schedule a demo")
+
+If any check fails, rewrite that sentence before returning.
+
+## FORBIDDEN PHRASES (rewrite any of these if they appear)
+
+Never use:
+- "many manufacturers" → name the specific type instead
+- "companies like yours" → say "plants with [their specific setup]"
+- "significant downtime" → use a number or "unplanned stops on [their equipment type]"
+- "improve your operations" → name the specific operation
+- "cutting-edge AI" / "industry-leading" / "state-of-the-art" → delete entirely
+- "we help companies" → show, don't tell
+- "reach out to learn more" → make a specific offer instead
+- "would love to connect" → say what specifically you want to discuss
+- "leverage" / "synergy" / "game-changing" → delete entirely
+
 OUTPUT FORMAT (JSON):
 {{
     "subject": "Short, specific subject line referencing their company or situation (under 50 chars, no generic subjects)",
     "body": "The email body. MUST start with 'Hi [first_name],' (use actual first name). {max_words} words max. MUST end with the exact signature block from the system prompt.",
-    "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect"
+    "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect",
+    "hormozi_check": {{
+        "specific_outcome": true,
+        "proof_point_present": true,
+        "low_friction_cta": true
+    }}
 }}
 
 Output ONLY valid JSON. No markdown, no explanation."""
@@ -466,6 +495,20 @@ class OutreachAgent(BaseAgent):
                     }
 
                     self.db.insert_outreach_draft(draft_data)
+
+                    # A/B variant tracking — stable assignment by contact ID hash
+                    try:
+                        from backend.app.analytics.ab_tracker import ABTracker
+                        _cid = contact["id"].replace("-", "")
+                        ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
+                        ABTracker(self.db).record_send(
+                            contact_id=contact["id"],
+                            variant=ab_variant,
+                            subject_line=parsed.get("subject", ""),
+                            sequence_id=f"{sequence_name}_step_{sequence_step}",
+                        )
+                    except Exception:
+                        pass  # A/B tracking is non-blocking
 
                     console.print(
                         f"  [green]{company_name} → {contact.get('full_name', 'Unknown')}: Draft created. "

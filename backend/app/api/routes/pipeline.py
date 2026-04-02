@@ -19,6 +19,7 @@ from backend.app.agents.reengagement import ReengagementAgent
 from backend.app.agents.linkedin import LinkedInAgent
 from backend.app.agents.learning import LearningAgent
 from backend.app.agents.linkedin_sender import LinkedInSenderAgent
+from backend.app.agents.signal_monitor import SignalMonitorAgent
 from backend.app.orchestrator.pipeline import Pipeline
 from backend.app.billing.quota import require_quota
 from backend.app.core.audit import log_audit_event_from_ctx
@@ -89,6 +90,13 @@ class EngagementRequest(BaseModel):
 class LearningRequest(BaseModel):
     period_days: int = 30
     auto_apply: bool = False
+
+
+class SignalMonitorRequest(BaseModel):
+    company_ids: Optional[list[str]] = None
+    limit: int = 50
+    min_pqs: int = 30
+    tier: Optional[str] = None
 
 
 # ------------------------------------------------------------------
@@ -366,6 +374,124 @@ async def run_linkedin_send(
         dry_run=body.dry_run,
     )
     return {"data": _serialize_result(result)}
+
+
+@router.post("/run/signal-monitor")
+async def run_signal_monitor(
+    body: SignalMonitorRequest,
+    _role=Depends(require_role("member")),
+):
+    """Run the signal monitor agent to detect new buying signals.
+
+    Re-researches tracked companies via Perplexity for 9 manufacturing-specific
+    signals + generic trigger events. Fires when signals are found:
+    - Updates company_intent_signals table
+    - Recalculates PQS timing dimension
+    - Queues stale research for refresh
+    - Sends Slack notification for high-value signals
+    """
+    agent = SignalMonitorAgent()
+    result = agent.execute(
+        company_ids=body.company_ids,
+        limit=body.limit,
+        min_pqs=body.min_pqs,
+        tier=body.tier,
+    )
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/sequence-assign")
+async def run_sequence_assign(
+    company_ids: list[str] | None = None,
+    limit: int = 50,
+):
+    """Auto-assign the optimal sequence for each qualified company.
+
+    Reads cross-channel orchestration rules from sequences.yaml and assigns
+    the best starting sequence based on:
+    - Available contact channels (email vs LinkedIn)
+    - Contact persona type
+    - Current pipeline stage
+    - Whether prior sequences have been attempted
+
+    Returns a report of assignments made. Does NOT start sending — the
+    outreach agent must still be triggered with the assigned sequence_name.
+    """
+    from backend.app.core.config import get_sequences_config
+    from backend.app.core.database import Database
+    from backend.app.core.workspace import get_workspace_id
+
+    db = Database(workspace_id=get_workspace_id())
+    seq_config = get_sequences_config()
+    orchestration = seq_config.get("channel_orchestration", {})
+    persona_overrides = orchestration.get("persona_overrides", {})
+
+    if company_ids:
+        companies = [db.get_company(cid) for cid in company_ids if cid]
+        companies = [c for c in companies if c]
+    else:
+        companies = db.get_companies(status="qualified", limit=limit)
+
+    assignments = []
+    for company in companies:
+        company_id = company["id"]
+        contacts = db.get_contacts_for_company(company_id)
+
+        if not contacts:
+            assignments.append({
+                "company_id": company_id,
+                "company_name": company.get("name"),
+                "assigned_sequence": None,
+                "reason": "no_contacts",
+            })
+            continue
+
+        # Pick best contact
+        primary = next(
+            (c for c in contacts if c.get("email") or c.get("linkedin_url")),
+            contacts[0],
+        )
+        persona = primary.get("persona_type", "")
+        has_email = bool(primary.get("email"))
+        has_linkedin = bool(primary.get("linkedin_url"))
+
+        # Persona override takes priority
+        if persona in persona_overrides:
+            sequence = persona_overrides[persona]
+            reason = f"persona_override:{persona}"
+        elif has_linkedin and persona in ("coo", "vp_ops", "vp_quality_food_safety"):
+            sequence = "linkedin_relationship"
+            reason = "senior_persona_with_linkedin"
+        elif has_linkedin and has_email:
+            sequence = "linkedin_relationship"
+            reason = "linkedin_with_email_fallback_ready"
+        elif has_email:
+            sequence = "email_value_first"
+            reason = "email_only"
+        else:
+            sequence = None
+            reason = "no_reachable_channel"
+
+        assignments.append({
+            "company_id": company_id,
+            "company_name": company.get("name"),
+            "contact_name": primary.get("full_name", ""),
+            "persona": persona,
+            "assigned_sequence": sequence,
+            "has_email": has_email,
+            "has_linkedin": has_linkedin,
+            "reason": reason,
+        })
+
+    assigned_count = sum(1 for a in assignments if a.get("assigned_sequence"))
+    return {
+        "data": {
+            "total_evaluated": len(assignments),
+            "assigned": assigned_count,
+            "unassignable": len(assignments) - assigned_count,
+            "assignments": assignments,
+        }
+    }
 
 
 @router.post("/run/learning")

@@ -46,6 +46,12 @@ class GoalsUpdateRequest(BaseModel):
     meetings_target: Optional[int] = None
 
 
+class AskRequest(BaseModel):
+    question: str
+    company_id: Optional[str] = None   # scope to one company if provided
+    max_context_items: int = 20         # cap context fed to Claude
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -666,4 +672,204 @@ async def get_command_center():
         "funnel_summary": funnel_summary,
         "weekly_goals": {"targets": goals, "actuals": actuals},
         "billing_status": billing,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Ask ProspectIQ — natural language Q&A over your pipeline intelligence
+# ---------------------------------------------------------------------------
+
+@router.post("/ask")
+async def ask_prospectiq(body: AskRequest):
+    """Answer natural-language questions about your pipeline.
+
+    Retrieves relevant context from research intelligence, company records,
+    interactions, and learning outcomes, then uses Claude to synthesize an
+    answer grounded in your actual data.
+
+    Examples:
+        "Which companies have unplanned downtime as their top pain signal?"
+        "What is the average PQS of companies we've contacted this month?"
+        "Which food & beverage companies are using a competitor?"
+        "What sub-sectors have the highest reply rates?"
+
+    If company_id is provided, the question is scoped to that company.
+    """
+    from backend.app.core.config import get_settings
+    import anthropic
+    import json as _json
+
+    db = get_db()
+    settings = get_settings()
+    question = body.question.strip()
+    company_id = body.company_id
+    limit = max(5, min(body.max_context_items, 50))
+
+    if not question:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="question is required")
+
+    # ------------------------------------------------------------------
+    # Gather context — pull relevant records based on the question
+    # ------------------------------------------------------------------
+
+    context_blocks: list[str] = []
+
+    # 1. Company records
+    try:
+        if company_id:
+            company = db.get_company(company_id)
+            companies = [company] if company else []
+        else:
+            companies = (
+                db._filter_ws(
+                    db.client.table("companies").select(
+                        "id, name, industry, tier, status, pqs_total, "
+                        "sub_sector, state, employee_count, pain_signals, "
+                        "technology_stack, updated_at"
+                    )
+                )
+                .order("pqs_total", desc=True)
+                .limit(limit)
+                .execute()
+            ).data or []
+
+        if companies:
+            lines = ["COMPANY RECORDS:"]
+            for c in companies[:limit]:
+                lines.append(
+                    f"  - {c.get('name', '')} | {c.get('sub_sector') or c.get('industry', '')} | "
+                    f"Tier {c.get('tier', '?')} | Status: {c.get('status', '')} | "
+                    f"PQS: {c.get('pqs_total', 0)} | "
+                    f"Pain signals: {c.get('pain_signals') or []} | "
+                    f"Tech stack: {c.get('technology_stack') or []}"
+                )
+            context_blocks.append("\n".join(lines))
+    except Exception as e:
+        logger.warning(f"ask: failed to fetch companies: {e}")
+
+    # 2. Research intelligence summaries
+    try:
+        ri_query = db._filter_ws(
+            db.client.table("research_intelligence").select(
+                "company_id, company_description, pain_points, existing_solutions, "
+                "awareness_level, companies(name)"
+            )
+        )
+        if company_id:
+            ri_query = ri_query.eq("company_id", company_id)
+        ri_rows = ri_query.limit(limit).execute().data or []
+
+        if ri_rows:
+            lines = ["RESEARCH INTELLIGENCE:"]
+            for r in ri_rows:
+                co_name = (r.get("companies") or {}).get("name", r.get("company_id", "?"))
+                lines.append(
+                    f"  - {co_name}: {(r.get('company_description') or '')[:200]} | "
+                    f"Pain: {r.get('pain_points') or []} | "
+                    f"Existing solutions: {r.get('existing_solutions') or []} | "
+                    f"Awareness: {r.get('awareness_level', 'unknown')}"
+                )
+            context_blocks.append("\n".join(lines))
+    except Exception as e:
+        logger.warning(f"ask: failed to fetch research: {e}")
+
+    # 3. Recent interactions
+    try:
+        int_query = db._filter_ws(
+            db.client.table("interactions").select(
+                "type, channel, subject, created_at, company_id, "
+                "companies(name)"
+            )
+        )
+        if company_id:
+            int_query = int_query.eq("company_id", company_id)
+        interactions = (
+            int_query
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        ).data or []
+
+        if interactions:
+            lines = ["RECENT INTERACTIONS:"]
+            for i in interactions:
+                co_name = (i.get("companies") or {}).get("name", "?")
+                lines.append(
+                    f"  - {i.get('created_at', '')[:10]} | {co_name} | "
+                    f"{i.get('type', '')} via {i.get('channel', '')} | "
+                    f"\"{i.get('subject', '')[:80]}\""
+                )
+            context_blocks.append("\n".join(lines))
+    except Exception as e:
+        logger.warning(f"ask: failed to fetch interactions: {e}")
+
+    # 4. Learning outcomes aggregate (reply rates, top sub-sectors)
+    try:
+        outcomes = (
+            db._filter_ws(
+                db.client.table("learning_outcomes").select(
+                    "outcome, sub_sector, persona_type, pqs_at_time"
+                )
+            )
+            .limit(200)
+            .execute()
+        ).data or []
+
+        if outcomes:
+            from collections import Counter
+            outcome_counts = Counter(o.get("outcome", "") for o in outcomes)
+            sector_counts = Counter(o.get("sub_sector", "Unknown") for o in outcomes)
+            lines = [
+                "OUTCOME SUMMARY:",
+                f"  - Outcome distribution: {dict(outcome_counts.most_common(8))}",
+                f"  - Top sub-sectors by volume: {dict(sector_counts.most_common(5))}",
+                f"  - Total outcomes tracked: {len(outcomes)}",
+            ]
+            context_blocks.append("\n".join(lines))
+    except Exception as e:
+        logger.warning(f"ask: failed to fetch outcomes: {e}")
+
+    # ------------------------------------------------------------------
+    # Build prompt and call Claude
+    # ------------------------------------------------------------------
+    context_text = "\n\n".join(context_blocks) if context_blocks else "No data available."
+
+    system = (
+        "You are ProspectIQ's built-in intelligence assistant. "
+        "You answer questions about the user's B2B sales pipeline using only the "
+        "data provided in the context below. Be concise, specific, and cite "
+        "company names or data points when relevant. "
+        "If the context doesn't contain enough information to answer confidently, "
+        "say so clearly rather than speculating. "
+        "Format responses as plain prose — no bullet lists unless the question specifically asks for a list."
+    )
+
+    user_prompt = (
+        f"PIPELINE CONTEXT:\n{context_text}\n\n"
+        f"QUESTION: {question}\n\n"
+        "Answer based only on the context above."
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            system=system,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        answer = response.content[0].text.strip()
+    except Exception as e:
+        logger.error(f"ask: Claude call failed: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"AI call failed: {str(e)[:100]}")
+
+    return {
+        "data": {
+            "question": question,
+            "answer": answer,
+            "context_items_used": sum(len(b.splitlines()) for b in context_blocks),
+            "scoped_to_company": company_id,
+        }
     }

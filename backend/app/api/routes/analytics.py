@@ -526,6 +526,172 @@ async def get_analytics_summary():
     return result.model_dump()
 
 
+@router.get("/benchmarks")
+async def get_benchmarks(days: int = Query(default=30, ge=1, le=365)):
+    """Compare actual outreach metrics vs target benchmarks.
+
+    Targets (industry-calibrated for founder-led cold outreach):
+    - Reply rate:          18%
+    - Open rate:           40%
+    - Meeting rate:         3%
+    - Positive reply rate:  8%
+    - Cost per enriched lead: $0.15
+    """
+    import datetime
+    db = get_db()
+    client = db.client
+    since = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
+
+    TARGETS = {
+        "reply_rate_pct": 18.0,
+        "open_rate_pct": 40.0,
+        "meeting_rate_pct": 3.0,
+        "positive_reply_rate_pct": 8.0,
+        "cost_per_enriched_lead_usd": 0.15,
+    }
+
+    # Approved outreach sent in period
+    sent_result = (
+        db._filter_ws(client.table("outreach_drafts").select("id", count="exact"))
+        .eq("approval_status", "approved")
+        .gte("created_at", since)
+        .execute()
+    )
+    total_sent = sent_result.count or 0
+
+    # Interactions — opens, replies, meetings
+    interactions = (
+        db._filter_ws(client.table("interactions").select("type"))
+        .gte("created_at", since)
+        .execute()
+    ).data or []
+    opens = sum(1 for i in interactions if i.get("type") == "email_opened")
+    replies = sum(1 for i in interactions if i.get("type") == "email_replied")
+    meetings = sum(1 for i in interactions if i.get("type") == "meeting")
+
+    # Positive replies from learning outcomes
+    outcomes = (
+        db._filter_ws(client.table("learning_outcomes").select("outcome"))
+        .gte("created_at", since)
+        .execute()
+    ).data or []
+    positive_replies = sum(1 for o in outcomes if o.get("outcome") == "replied_positive")
+
+    # Enrichment cost
+    costs = (
+        db._filter_ws(client.table("api_costs").select("estimated_cost_usd, endpoint"))
+        .gte("created_at", since)
+        .execute()
+    ).data or []
+    enrichment_cost = sum(
+        r.get("estimated_cost_usd") or 0
+        for r in costs
+        if "enrich" in (r.get("endpoint") or "").lower()
+    )
+
+    enriched_count_result = (
+        db._filter_ws(client.table("contacts").select("id", count="exact"))
+        .not_.is_("email", "null")
+        .gte("created_at", since)
+        .execute()
+    )
+    enriched_count = enriched_count_result.count or 0
+
+    def _pct(n: int, d: int) -> float | None:
+        return round(n / d * 100, 1) if d > 0 else None
+
+    actuals = {
+        "reply_rate_pct": _pct(replies, total_sent),
+        "open_rate_pct": _pct(opens, total_sent),
+        "meeting_rate_pct": _pct(meetings, total_sent),
+        "positive_reply_rate_pct": _pct(positive_replies, total_sent),
+        "cost_per_enriched_lead_usd": (
+            round(enrichment_cost / enriched_count, 4) if enriched_count > 0 else None
+        ),
+    }
+
+    def _status(actual: float | None, target: float, higher_is_better: bool = True) -> str:
+        if actual is None:
+            return "no_data"
+        ratio = actual / target if target else 0
+        if higher_is_better:
+            if ratio >= 1.0:
+                return "on_target"
+            if ratio >= 0.75:
+                return "below_target"
+            return "significantly_below"
+        else:  # lower is better (cost metrics)
+            if ratio <= 1.0:
+                return "on_target"
+            if ratio <= 1.5:
+                return "above_target"
+            return "significantly_above"
+
+    metrics = {}
+    for key, target in TARGETS.items():
+        actual = actuals.get(key)
+        is_cost = "cost" in key
+        metrics[key] = {
+            "target": target,
+            "actual": actual,
+            "status": _status(actual, target, higher_is_better=not is_cost),
+            "delta": round(actual - target, 2) if actual is not None else None,
+        }
+
+    return {
+        "data": {
+            "period_days": days,
+            "total_sent": total_sent,
+            "metrics": metrics,
+            "raw_counts": {
+                "opens": opens,
+                "replies": replies,
+                "meetings": meetings,
+                "positive_replies": positive_replies,
+                "enriched_contacts": enriched_count,
+                "enrichment_cost_usd": round(enrichment_cost, 4),
+            },
+        }
+    }
+
+
+@router.get("/ab-tests")
+async def get_ab_tests():
+    """Get A/B test stats for all tracked sequences."""
+    from backend.app.analytics.ab_tracker import ABTracker
+    db = get_db()
+    tracker = ABTracker(db)
+
+    result = (
+        db._filter_ws(
+            db.client.table("ab_test_events").select("sequence_id")
+        )
+        .execute()
+    )
+    sequence_ids = list({
+        r["sequence_id"] for r in (result.data or []) if r.get("sequence_id")
+    })
+
+    stats = []
+    for seq_id in sorted(sequence_ids):
+        seq_stats = tracker.get_variant_stats(seq_id)
+        winner = tracker.get_winning_variant(seq_id)
+        stats.append({**seq_stats, "winner": winner})
+
+    return {"data": stats, "count": len(stats)}
+
+
+@router.get("/ab-tests/{sequence_id}")
+async def get_ab_test(sequence_id: str):
+    """Get A/B test stats for a specific sequence."""
+    from backend.app.analytics.ab_tracker import ABTracker
+    db = get_db()
+    tracker = ABTracker(db)
+    stats = tracker.get_variant_stats(sequence_id)
+    winner = tracker.get_winning_variant(sequence_id)
+    return {"data": {**stats, "winner": winner}}
+
+
 @router.get("/cost-per-meeting")
 async def get_cost_per_meeting(days: int = Query(default=90, ge=1, le=365)):
     """Return cost-per-meeting breakdown for the last N days.
