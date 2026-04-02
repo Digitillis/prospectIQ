@@ -433,8 +433,8 @@ class LinkedInAgent(BaseAgent):
                             "subject": "",  # LinkedIn messages have no subject
                             "body": body_text,
                             "personalization_notes": personalization_notes,
-                            # Auto-approve — LinkedIn messages are copy-pasted manually
-                            "approval_status": "approved",
+                            # All drafts require explicit human approval before sending
+                            "approval_status": "pending",
                         }
                         self.db.insert_outreach_draft(draft_data)
 
