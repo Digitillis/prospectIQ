@@ -29,8 +29,8 @@ from billing_sdk import BillingSettings, create_billing_router
 from billing_sdk.types import TierPlan as SdkTierPlan
 from backend.app.core.database import get_supabase_client
 from backend.app.core.workspace import get_workspace_id as _get_ws_id
-from backend.billing_core.supabase_adapter import SupabaseBillingAdapter
-from backend.billing_core.tier_plans import TIER_PLANS as _PIQ_PLANS, TIER_ORDER
+from billing_core.supabase_adapter import SupabaseBillingAdapter
+from billing_core.tier_plans import TIER_PLANS as _PIQ_PLANS, TIER_ORDER
 
 
 # ---------------------------------------------------------------------------
