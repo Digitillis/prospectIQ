@@ -347,3 +347,34 @@ global_principles:
     Founder & CEO
     Digitillis | www.digitillis.com
     avi@digitillis.io | 224.355.4500
+
+# ---------------------------------------------------------------------------
+# LinkedIn Automation — Unipile configuration
+# ---------------------------------------------------------------------------
+linkedin_automation:
+  # Set to true to enable automated sending via Unipile.
+  # When false, the LinkedIn page remains copy-paste manual (safe default).
+  auto_send_enabled: false
+
+  # Per-workspace override: operators can toggle from Settings → LinkedIn tab
+  # This global setting acts as a master switch; workspace setting gates further.
+
+  # Daily limits (LinkedIn soft limits — do not exceed)
+  daily_connection_request_limit: 20
+  daily_dm_limit: 50
+
+  # Automatically withdraw pending connection invites older than this many days.
+  # Keeps pending invite count below LinkedIn's ~400 limit.
+  stale_invite_withdraw_days: 21
+
+  # Delay (in hours) after connection accepted before opening DM is eligible.
+  # Gives the prospect time to see the connection before receiving a message.
+  dm_delay_after_acceptance_hours: 24
+
+  # HITL mode: when true, every automated send still requires a final approval
+  # click in the UI. Reduces risk during initial rollout.
+  require_hitl_approval: true
+
+  # Scheduler: how often to run the LinkedIn sender agent (minutes)
+  # Set to 0 to disable scheduled runs (manual trigger only via /run/linkedin-send)
+  scheduler_interval_minutes: 0

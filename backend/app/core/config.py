@@ -65,6 +65,23 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""     # whsec_...
     app_base_url: str = "https://app.prospectiq.ai"
 
+    # Stripe price IDs — set per environment after creating products in Stripe dashboard.
+    # Monthly prices:
+    stripe_price_starter: str = ""      # $1,500/mo
+    stripe_price_growth: str = ""       # $3,500/mo
+    stripe_price_scale: str = ""        # $7,500/mo
+    stripe_price_api: str = ""          # $0.05/company (metered)
+    # Annual prices (15% discount):
+    stripe_price_starter_annual: str = ""
+    stripe_price_growth_annual: str = ""
+    stripe_price_scale_annual: str = ""
+
+    # Unipile — LinkedIn automation
+    unipile_api_key: str = ""
+    unipile_account_id: str = ""        # LinkedIn account ID registered in Unipile
+    unipile_dsn: str = ""               # Unipile DSN (e.g. api4.unipile.com:13453)
+    unipile_webhook_secret: str = ""    # Shared secret for validating Unipile webhook calls
+
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",

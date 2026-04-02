@@ -2,8 +2,11 @@
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from backend.app.core.audit import log_audit_event_from_ctx
+from backend.app.core.auth import require_role
 
 from backend.app.core.config import (
     CONFIG_DIR,
@@ -156,7 +159,7 @@ class GuidelinesPatch(BaseModel):
 
 
 @router.patch("/outreach-guidelines")
-async def patch_guidelines(payload: GuidelinesPatch):
+async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role("admin"))):
     """Update outreach guidelines. Changes take effect on the next outreach run.
 
     Only provided fields are updated. Others are left unchanged.
@@ -211,6 +214,7 @@ async def patch_guidelines(payload: GuidelinesPatch):
     with open(guidelines_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
+    log_audit_event_from_ctx("settings.updated", resource_type="outreach_guidelines")
     return {"data": data, "message": "Outreach guidelines updated. Changes apply to the next outreach run."}
 
 
@@ -272,7 +276,7 @@ async def get_templates():
 
 
 @router.patch("")
-async def patch_settings(payload: SettingsPatch):
+async def patch_settings(payload: SettingsPatch, _role=Depends(require_role("admin"))):
     """Partially update ICP and/or scoring configuration and persist to YAML."""
     import yaml  # local import to keep top-level clean
 
@@ -392,6 +396,11 @@ async def patch_settings(payload: SettingsPatch):
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+    log_audit_event_from_ctx(
+        "settings.updated",
+        resource_type="settings",
+        metadata={"updated_sections": [k for k in ("icp", "scoring") if getattr(payload, k) is not None]},
+    )
     return {"data": data, "message": "Settings saved successfully"}
 
 
@@ -421,7 +430,7 @@ class ContentGuidelinesPatch(BaseModel):
 
 
 @router.patch("/content-guidelines")
-async def patch_content_guidelines(payload: ContentGuidelinesPatch):
+async def patch_content_guidelines(payload: ContentGuidelinesPatch, _role=Depends(require_role("admin"))):
     """Update content guidelines. Changes take effect on the next content generation run.
 
     Only provided fields are updated. Others are left unchanged.
@@ -502,7 +511,7 @@ class LinkedInGuidelinesPatch(BaseModel):
 
 
 @router.patch("/linkedin-guidelines")
-async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch):
+async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch, _role=Depends(require_role("admin"))):
     """Update LinkedIn messages guidelines. Changes take effect on the next LinkedIn DM run.
 
     Only provided fields are updated. Others are left unchanged.

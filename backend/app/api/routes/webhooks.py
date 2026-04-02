@@ -27,6 +27,177 @@ router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
 # ---------------------------------------------------------------------------
+# Unipile (LinkedIn) webhook handler
+# ---------------------------------------------------------------------------
+
+@router.post("/unipile")
+async def unipile_webhook(request: Request):
+    """Receive webhook events from Unipile for LinkedIn automation.
+
+    Handled event types:
+      - connection_accepted  → mark contact linkedin_accepted_at,
+                               opening DM becomes eligible for next send cycle
+      - message_received     → route LinkedIn DM reply to reply classifier (future)
+
+    Unipile sends a shared secret in the X-Unipile-Signature header.
+    Set UNIPILE_WEBHOOK_SECRET in env vars and configure the same value
+    in the Unipile dashboard webhook settings.
+    """
+    settings = get_settings()
+
+    # Validate webhook signature if secret is configured
+    webhook_secret = getattr(settings, "unipile_webhook_secret", "") or ""
+    if webhook_secret:
+        signature = request.headers.get("X-Unipile-Signature", "")
+        if signature != webhook_secret:
+            raise HTTPException(status_code=401, detail="Invalid Unipile webhook signature")
+
+    payload: dict[Any, Any] = await request.json()
+    event_type: str = (payload.get("event_type") or payload.get("type") or "").lower().strip()
+
+    logger.info("Unipile webhook received: event_type=%s", event_type)
+
+    if event_type == "connection_accepted":
+        return await _handle_linkedin_connection_accepted(payload)
+    elif event_type == "message_received":
+        return await _handle_linkedin_message_received(payload)
+    else:
+        return {"status": "ignored", "reason": f"unhandled event_type: {event_type}"}
+
+
+async def _handle_linkedin_connection_accepted(payload: dict) -> dict:
+    """Handle Unipile connection_accepted event.
+
+    Payload expected fields:
+      - account_id: Unipile account ID
+      - profile_url or linkedin_profile_url: prospect's LinkedIn URL
+      - contact_id (optional): if ProspectIQ contact_id stored in Unipile metadata
+    """
+    linkedin_url: str = (
+        payload.get("linkedin_profile_url")
+        or payload.get("profile_url")
+        or ""
+    )
+
+    if not linkedin_url:
+        return {"status": "ignored", "reason": "no linkedin_profile_url in payload"}
+
+    try:
+        from backend.app.core.database import Database
+        from backend.app.core.workspace import get_workspace_id
+        from backend.app.agents.linkedin_sender import LinkedInSenderAgent
+        from datetime import datetime, timezone
+
+        db = Database(workspace_id=get_workspace_id())
+
+        # Find contact by LinkedIn URL
+        result = (
+            db.client.table("contacts")
+            .select("id, full_name, workspace_id")
+            .eq("linkedin_url", linkedin_url)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            logger.warning(
+                "Unipile connection_accepted: no contact found for linkedin_url=%s",
+                linkedin_url,
+            )
+            return {"status": "ignored", "reason": f"no contact found for {linkedin_url}"}
+
+        contact = result.data[0]
+        contact_id = contact["id"]
+
+        # Mark connection accepted
+        db.client.table("contacts").update({
+            "linkedin_accepted_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", contact_id).execute()
+
+        logger.info(
+            "Unipile: connection accepted — contact %s (%s)",
+            contact.get("full_name", contact_id), linkedin_url,
+        )
+
+        return {
+            "status": "processed",
+            "action": "connection_accepted",
+            "contact_id": contact_id,
+            "note": "Opening DM eligible for next LinkedInSenderAgent cycle",
+        }
+
+    except Exception as exc:
+        logger.error("Unipile connection_accepted handling failed: %s", exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
+
+
+async def _handle_linkedin_message_received(payload: dict) -> dict:
+    """Handle inbound LinkedIn DM via Unipile.
+
+    Routes through the reply classifier the same way email replies do.
+    Future: full thread management for LinkedIn DMs.
+    """
+    linkedin_url: str = (
+        payload.get("sender_linkedin_profile_url")
+        or payload.get("profile_url")
+        or ""
+    )
+    message_text: str = payload.get("message_text") or payload.get("body") or ""
+
+    if not linkedin_url or not message_text:
+        return {"status": "ignored", "reason": "missing linkedin_url or message_text"}
+
+    try:
+        from backend.app.core.database import Database
+        from backend.app.core.workspace import get_workspace_id
+
+        db = Database(workspace_id=get_workspace_id())
+
+        result = (
+            db.client.table("contacts")
+            .select("id, company_id, full_name")
+            .eq("linkedin_url", linkedin_url)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            return {"status": "ignored", "reason": f"no contact found for {linkedin_url}"}
+
+        contact = result.data[0]
+
+        # Log the LinkedIn reply as an interaction
+        db.insert_interaction({
+            "company_id": contact["company_id"],
+            "contact_id": contact["id"],
+            "type": "linkedin_message",
+            "channel": "linkedin",
+            "body": message_text,
+            "source": "unipile_webhook",
+            "metadata": {
+                "event_type": "message_received",
+                "linkedin_url": linkedin_url,
+            },
+        })
+
+        # Mark contact as responded
+        from datetime import datetime, timezone
+        db.client.table("contacts").update({
+            "linkedin_responded_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", contact["id"]).execute()
+
+        return {
+            "status": "processed",
+            "action": "linkedin_reply_logged",
+            "contact_id": contact["id"],
+        }
+
+    except Exception as exc:
+        logger.error("Unipile message_received handling failed: %s", exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

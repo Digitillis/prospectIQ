@@ -8,9 +8,11 @@ happen exclusively when email is actually sent via Resend.
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend.app.core.audit import log_audit_event_from_ctx
+from backend.app.core.auth import require_role
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
@@ -100,7 +102,11 @@ async def list_pending_drafts(limit: int = 50):
 
 
 @router.post("/{draft_id}/approve")
-async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
+async def approve_draft(
+    draft_id: str,
+    body: Optional[ApproveRequest] = None,
+    _role=Depends(require_role("member")),
+):
     """Approve an outreach draft.
 
     Optionally provide an edited body. No interaction is logged and no
@@ -121,6 +127,17 @@ async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
+    action = "draft.edited" if (body and body.edited_body) else "draft.approved"
+    log_audit_event_from_ctx(
+        action,
+        resource_type="outreach_draft",
+        resource_id=draft_id,
+        metadata={
+            "sequence_name": draft.get("sequence_name"),
+            "channel": draft.get("channel"),
+        },
+    )
+
     return {"data": draft, "message": "Draft approved"}
 
 
@@ -129,7 +146,11 @@ class EditRequest(BaseModel):
 
 
 @router.patch("/{draft_id}/edit")
-async def edit_draft(draft_id: str, body: EditRequest):
+async def edit_draft(
+    draft_id: str,
+    body: EditRequest,
+    _role=Depends(require_role("member")),
+):
     """Save edits to a draft without approving it.
 
     The draft remains in the pending queue so it can be reviewed
@@ -146,7 +167,11 @@ async def edit_draft(draft_id: str, body: EditRequest):
 
 
 @router.post("/{draft_id}/reject")
-async def reject_draft(draft_id: str, body: RejectRequest):
+async def reject_draft(
+    draft_id: str,
+    body: RejectRequest,
+    _role=Depends(require_role("member")),
+):
     """Reject an outreach draft with a reason."""
     db = get_db()
 
@@ -159,11 +184,22 @@ async def reject_draft(draft_id: str, body: RejectRequest):
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
+    log_audit_event_from_ctx(
+        "draft.rejected",
+        resource_type="outreach_draft",
+        resource_id=draft_id,
+        metadata={"rejection_reason": body.rejection_reason},
+    )
+
     return {"data": draft, "message": "Draft rejected"}
 
 
 @router.post("/{draft_id}/test-send")
-async def test_send_draft(draft_id: str, body: TestEmailRequest):
+async def test_send_draft(
+    draft_id: str,
+    body: TestEmailRequest,
+    _role=Depends(require_role("member")),
+):
     """Send a draft to a test email address (your own inbox).
 
     Does NOT mark the draft as sent or change any status.

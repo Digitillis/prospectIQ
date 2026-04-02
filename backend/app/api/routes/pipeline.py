@@ -6,7 +6,7 @@ and return results synchronously.
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.app.agents.discovery import DiscoveryAgent
@@ -18,7 +18,10 @@ from backend.app.agents.engagement import EngagementAgent
 from backend.app.agents.reengagement import ReengagementAgent
 from backend.app.agents.linkedin import LinkedInAgent
 from backend.app.agents.learning import LearningAgent
+from backend.app.agents.linkedin_sender import LinkedInSenderAgent
 from backend.app.orchestrator.pipeline import Pipeline
+from backend.app.billing.quota import require_quota
+from backend.app.core.audit import log_audit_event_from_ctx
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -112,7 +115,10 @@ def _serialize_result(result) -> dict:
 # ------------------------------------------------------------------
 
 @router.post("/run/discovery")
-async def run_discovery(body: DiscoveryRequest):
+async def run_discovery(
+    body: DiscoveryRequest,
+    _quota: None = Depends(require_quota("discovery")),
+):
     """Trigger the discovery agent to find new companies via Apollo."""
     agent = DiscoveryAgent()
     result = agent.execute(
@@ -120,11 +126,19 @@ async def run_discovery(body: DiscoveryRequest):
         campaign_name=body.campaign,
         tiers=body.tiers,
     )
+    log_audit_event_from_ctx(
+        "pipeline.run",
+        resource_type="agent",
+        metadata={"agent": "discovery", "processed": result.processed, "errors": result.errors},
+    )
     return {"data": _serialize_result(result)}
 
 
 @router.post("/run/research")
-async def run_research(body: ResearchRequest):
+async def run_research(
+    body: ResearchRequest,
+    _quota: None = Depends(require_quota("research")),
+):
     """Trigger the research agent for deep company analysis."""
     agent = ResearchAgent()
     result = agent.execute(
@@ -133,6 +147,11 @@ async def run_research(body: ResearchRequest):
         tier=body.tier,
         tiers=body.tiers,
         limit=body.limit,
+    )
+    log_audit_event_from_ctx(
+        "pipeline.run",
+        resource_type="agent",
+        metadata={"agent": "research", "processed": result.processed, "errors": result.errors, "cost_usd": result.total_cost_usd},
     )
     return {"data": _serialize_result(result)}
 
@@ -149,7 +168,10 @@ async def run_qualification(body: QualificationRequest):
 
 
 @router.post("/run/enrichment")
-async def run_enrichment(body: EnrichmentRequest):
+async def run_enrichment(
+    body: EnrichmentRequest,
+    _quota: None = Depends(require_quota("enrichment")),
+):
     """Trigger the enrichment agent to get emails/phones for qualified contacts.
 
     Consumes Apollo credits — only enriches the top-priority contact per company.
@@ -165,7 +187,10 @@ async def run_enrichment(body: EnrichmentRequest):
 
 
 @router.post("/run/outreach")
-async def run_outreach(body: OutreachRequest):
+async def run_outreach(
+    body: OutreachRequest,
+    _role=Depends(require_role("member")),
+):
     """Trigger the outreach agent to generate personalized drafts."""
     agent = OutreachAgent()
     result = agent.execute(
@@ -174,6 +199,12 @@ async def run_outreach(body: OutreachRequest):
         sequence_step=body.step,
         limit=body.limit,
         tiers=body.tiers,
+    )
+
+    log_audit_event_from_ctx(
+        "pipeline.run",
+        resource_type="agent",
+        metadata={"agent": "outreach", "processed": result.processed, "errors": result.errors, "cost_usd": result.total_cost_usd},
     )
 
     if result.processed > 0:
@@ -191,7 +222,10 @@ async def run_outreach(body: OutreachRequest):
 
 
 @router.post("/run/linkedin")
-async def run_linkedin(body: LinkedInRequest):
+async def run_linkedin(
+    body: LinkedInRequest,
+    _role=Depends(require_role("member")),
+):
     """Generate LinkedIn messages (connection note, opening DM, follow-up DM) for qualified contacts.
 
     All drafts are auto-approved since LinkedIn messages are copy-pasted manually.
@@ -219,7 +253,10 @@ async def run_linkedin(body: LinkedInRequest):
 
 
 @router.post("/run/reengagement")
-async def run_reengagement(body: ReengagementRequest):
+async def run_reengagement(
+    body: ReengagementRequest,
+    _role=Depends(require_role("member")),
+):
     """Re-queue stale prospects whose sequences completed without reply.
 
     Scans for contacts past the cooldown period (default 90 days) and
@@ -231,7 +268,10 @@ async def run_reengagement(body: ReengagementRequest):
 
 
 @router.post("/run/engagement")
-async def run_engagement(body: EngagementRequest):
+async def run_engagement(
+    body: EngagementRequest,
+    _role=Depends(require_role("member")),
+):
     """Trigger an engagement action (send approved drafts, process sequences, poll events).
 
     Actions:
@@ -299,6 +339,35 @@ async def poll_instantly():
     return {"data": _serialize_result(result)}
 
 
+class LinkedInSendRequest(BaseModel):
+    send_connection_requests: bool = True
+    send_dms: bool = True
+    withdraw_stale: bool = True
+    dry_run: bool = False
+
+
+@router.post("/run/linkedin-send")
+async def run_linkedin_send(
+    body: LinkedInSendRequest,
+    _role=Depends(require_role("member")),
+):
+    """Trigger the LinkedIn sender agent to send approved drafts via Unipile.
+
+    - send_connection_requests: send approved connection note drafts (max 20/day)
+    - send_dms: send approved opening DM drafts for accepted connections
+    - withdraw_stale: withdraw pending invites older than 21 days
+    - dry_run: log actions without sending anything
+    """
+    agent = LinkedInSenderAgent()
+    result = agent.execute(
+        send_connection_requests=body.send_connection_requests,
+        send_dms=body.send_dms,
+        withdraw_stale=body.withdraw_stale,
+        dry_run=body.dry_run,
+    )
+    return {"data": _serialize_result(result)}
+
+
 @router.post("/run/learning")
 async def run_learning(body: LearningRequest):
     """Analyze outreach engagement outcomes and generate actionable insights.
@@ -316,7 +385,11 @@ async def run_learning(body: LearningRequest):
 
 
 @router.post("/run/full")
-async def run_full_pipeline(body: FullPipelineRequest):
+async def run_full_pipeline(
+    body: FullPipelineRequest,
+    _role=Depends(require_role("member")),
+    _quota: None = Depends(require_quota("research")),
+):
     """Run the full pipeline: discovery → research → qualification → outreach.
 
     Chains all four agents in sequence. Stops early if any stage fails.
