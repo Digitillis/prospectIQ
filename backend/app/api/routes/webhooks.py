@@ -1,13 +1,20 @@
 """Webhook routes for ProspectIQ API.
 
-Receives events from Instantly.ai (email_sent, email_opened,
-email_clicked, reply_received, email_bounced) and delegates
-processing to the EngagementAgent.
+Handles inbound events from Instantly.ai:
+  email.reply        — prospect replied → classify → thread → HITL queue
+  email.opened       — tracking open event
+  email.clicked      — link click tracking
+  email.bounced      — hard/soft bounce
+  email.unsubscribed — prospect opted out
+
+Also preserves the legacy reply_received / email_opened / email_bounced
+event_type keys that EngagementAgent uses, for backwards compatibility.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -19,6 +26,382 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _get_db_and_workspace():
+    from backend.app.core.database import Database
+    from backend.app.core.workspace import get_workspace_id
+    return Database(workspace_id=get_workspace_id())
+
+
+def _find_thread(db, contact_id: str, company_id: str, instantly_campaign_id: Optional[str] = None):
+    """Find the most recent active/paused/replied thread for a contact."""
+    try:
+        q = (
+            db.client.table("campaign_threads")
+            .select("*")
+            .eq("contact_id", contact_id)
+            .in_("status", ["active", "paused", "replied", "awaiting_review"])
+            .order("updated_at", desc=True)
+            .limit(1)
+        )
+        result = q.execute()
+        return result.data[0] if result.data else None
+    except Exception as exc:
+        logger.warning("_find_thread failed: %s", exc)
+        return None
+
+
+def _find_or_create_thread(db, company_id: str, contact_id: str, instantly_campaign_id: Optional[str] = None) -> dict:
+    """Find existing thread or create a new one for this company/contact pair."""
+    thread = _find_thread(db, contact_id, company_id, instantly_campaign_id)
+    if thread:
+        return thread
+
+    # Create a new thread
+    data: dict = {
+        "company_id": company_id,
+        "contact_id": contact_id,
+        "status": "active",
+        "current_step": 1,
+    }
+    if db.workspace_id:
+        data["workspace_id"] = db.workspace_id
+    if instantly_campaign_id:
+        data["instantly_campaign_id"] = instantly_campaign_id
+
+    result = db.client.table("campaign_threads").insert(data).execute()
+    return result.data[0] if result.data else data
+
+
+def _lookup_company_contact(db, from_email: str, instantly_campaign_id: Optional[str] = None):
+    """Look up company_id and contact_id from an inbound sender email.
+
+    Strategy:
+    1. contacts.email == from_email
+    2. outreach_drafts.instantly_campaign_id (if provided)
+    Returns (company_id, contact_id) or (None, None).
+    """
+    # Strategy 1: direct email match
+    try:
+        result = (
+            db.client.table("contacts")
+            .select("id, company_id")
+            .eq("email", from_email)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            row = result.data[0]
+            return row["company_id"], row["id"]
+    except Exception:
+        pass
+
+    # Strategy 2: outreach_drafts by campaign_id
+    if instantly_campaign_id:
+        try:
+            result = (
+                db.client.table("outreach_drafts")
+                .select("company_id, contact_id")
+                .eq("instantly_campaign_id", instantly_campaign_id)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                row = result.data[0]
+                return row.get("company_id"), row.get("contact_id")
+        except Exception:
+            pass
+
+    return None, None
+
+
+def _create_hitl_queue_entry(
+    db,
+    thread_id: str,
+    message_id: str,
+    workspace_id: str,
+    classification: str,
+    confidence: float,
+    priority: int,
+) -> Optional[dict]:
+    """Insert a row into hitl_queue. Returns the row or None on failure."""
+    try:
+        result = db.client.table("hitl_queue").insert({
+            "thread_id": thread_id,
+            "message_id": message_id,
+            "workspace_id": workspace_id,
+            "classification": classification,
+            "classification_confidence": confidence,
+            "priority": priority,
+            "status": "pending",
+        }).execute()
+        return result.data[0] if result.data else None
+    except Exception as exc:
+        logger.error("Failed to create hitl_queue entry: %s", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Event handlers
+# ---------------------------------------------------------------------------
+
+def _handle_email_reply(db, payload: dict) -> dict:
+    """Process email.reply event — the primary HITL trigger."""
+    from backend.app.core.reply_classifier import ReplyClassifier
+
+    from_email: str = payload.get("from_email") or payload.get("from", "") or ""
+    to_email: str = payload.get("to_email") or payload.get("to", "") or ""
+    subject: str = payload.get("subject", "")
+    body_text: str = payload.get("body_text") or payload.get("body", "")
+    instantly_campaign_id: Optional[str] = payload.get("campaign_id") or payload.get("instantly_campaign_id")
+    lead_id: Optional[str] = payload.get("lead_id")
+    sent_at: str = payload.get("timestamp") or payload.get("sent_at") or _now_iso()
+
+    if not from_email:
+        return {"status": "ignored", "reason": "no from_email in payload"}
+
+    if not body_text:
+        body_text = payload.get("body_html", "") or ""
+
+    # 1. Find company + contact
+    company_id, contact_id = _lookup_company_contact(db, from_email, instantly_campaign_id)
+    if not company_id or not contact_id:
+        logger.warning("email.reply: no company/contact found for %s", from_email)
+        return {"status": "ignored", "reason": f"no contact found for {from_email}"}
+
+    # 2. Find or create thread
+    thread = _find_or_create_thread(db, company_id, contact_id, instantly_campaign_id)
+    thread_id = thread["id"]
+
+    # 3. Gather thread context for classification
+    company = db.get_company(company_id) or {}
+    contacts_list = db.get_contacts_for_company(company_id)
+    contact = next((c for c in contacts_list if c.get("id") == contact_id), {})
+
+    thread_context = {
+        "company_name": company.get("name", "Unknown"),
+        "contact_name": contact.get("full_name", contact.get("first_name", "Unknown")),
+        "sequence_step": thread.get("current_step", 1),
+        "previous_messages": 0,  # filled below
+    }
+
+    # Count existing messages for context
+    try:
+        msg_count_result = (
+            db.client.table("thread_messages")
+            .select("id", count="exact")
+            .eq("thread_id", thread_id)
+            .execute()
+        )
+        thread_context["previous_messages"] = msg_count_result.count or 0
+    except Exception:
+        pass
+
+    # 4. Classify
+    clf = ReplyClassifier()
+    try:
+        classification = clf.classify(body_text, thread_context)
+    except Exception as exc:
+        logger.error("ReplyClassifier failed: %s", exc)
+        # Fallback classification — don't drop the reply
+        from backend.app.core.reply_classifier import ReplyClassification
+        classification = ReplyClassification(
+            intent="other",
+            confidence=0.0,
+            extracted_entities={"competitors": [], "pain_points": [], "timeline": ""},
+            summary="Classification failed — please review manually.",
+            next_action_suggestion="Review reply manually.",
+            auto_actionable=False,
+        )
+
+    # 5. Insert thread_message
+    msg_data = {
+        "thread_id": thread_id,
+        "direction": "inbound",
+        "subject": subject,
+        "body": body_text,
+        "sent_at": sent_at,
+        "classification": classification.intent,
+        "classification_confidence": classification.confidence,
+        "classification_reasoning": classification.summary,
+        "extracted_entities": classification.extracted_entities,
+        "summary": classification.summary,
+        "next_action_suggestion": classification.next_action_suggestion,
+        "source": "instantly_webhook",
+        "raw_webhook_payload": payload,
+    }
+    try:
+        msg_result = db.client.table("thread_messages").insert(msg_data).execute()
+        message_id = msg_result.data[0]["id"] if msg_result.data else None
+    except Exception as exc:
+        logger.error("Failed to insert thread_message: %s", exc)
+        message_id = None
+
+    # 6. Update thread status
+    thread_update = {
+        "status": "replied",
+        "last_replied_at": _now_iso(),
+    }
+    try:
+        db.client.table("campaign_threads").update(thread_update).eq("id", thread_id).execute()
+    except Exception as exc:
+        logger.error("Failed to update thread status: %s", exc)
+
+    # 7. Auto-action or create HITL queue entry
+    hitl_id = None
+    workspace_id = db.workspace_id or "default"
+
+    if classification.auto_actionable:
+        # Auto-handle unsubscribe / bounce without HITL
+        if classification.intent == "unsubscribe":
+            try:
+                db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq("id", thread_id).execute()
+                db.update_contact(contact_id, {"outreach_state": "unsubscribed"})
+                db.add_to_dnc(from_email, reason="unsubscribed", added_by="instantly_webhook")
+            except Exception as exc:
+                logger.error("Unsubscribe auto-action failed: %s", exc)
+        elif classification.intent == "bounce":
+            try:
+                db.client.table("campaign_threads").update({"status": "bounced"}).eq("id", thread_id).execute()
+                db.update_contact(contact_id, {"outreach_state": "bounced"})
+                db.update_company(company_id, {"status": "bounced"})
+            except Exception as exc:
+                logger.error("Bounce auto-action failed: %s", exc)
+    else:
+        # Queue for human review
+        if message_id:
+            priority = clf.priority_for(classification.intent)
+            hitl_entry = _create_hitl_queue_entry(
+                db=db,
+                thread_id=thread_id,
+                message_id=message_id,
+                workspace_id=workspace_id,
+                classification=classification.intent,
+                confidence=classification.confidence,
+                priority=priority,
+            )
+            hitl_id = hitl_entry["id"] if hitl_entry else None
+
+    # 8. Update thread status to awaiting_review if not auto-actioned
+    if not classification.auto_actionable:
+        try:
+            db.client.table("campaign_threads").update(
+                {"status": "awaiting_review"}
+            ).eq("id", thread_id).execute()
+        except Exception:
+            pass
+
+    return {
+        "status": "processed",
+        "thread_id": thread_id,
+        "message_id": message_id,
+        "classification": classification.intent,
+        "confidence": classification.confidence,
+        "auto_actioned": classification.auto_actionable,
+        "hitl_queue_id": hitl_id,
+        "company_id": company_id,
+        "contact_id": contact_id,
+    }
+
+
+def _handle_email_bounced(db, payload: dict) -> dict:
+    """Handle hard/soft bounce events."""
+    from_email: str = payload.get("from_email") or payload.get("to", "") or ""
+    company_id, contact_id = _lookup_company_contact(db, from_email)
+
+    if not company_id or not contact_id:
+        return {"status": "ignored", "reason": f"no contact found for {from_email}"}
+
+    try:
+        db.update_contact(contact_id, {"outreach_state": "bounced"})
+        db.update_company(company_id, {"status": "bounced"})
+        db.add_to_dnc(from_email, reason="bounced", added_by="instantly_webhook")
+
+        # Update thread if one exists
+        thread = _find_thread(db, contact_id, company_id)
+        if thread:
+            db.client.table("campaign_threads").update({"status": "bounced"}).eq("id", thread["id"]).execute()
+    except Exception as exc:
+        logger.error("Bounce handling failed: %s", exc)
+
+    return {"status": "processed", "action": "bounced", "email": from_email}
+
+
+def _handle_email_unsubscribed(db, payload: dict) -> dict:
+    """Handle unsubscribe events."""
+    from_email: str = payload.get("from_email") or payload.get("email", "") or ""
+    company_id, contact_id = _lookup_company_contact(db, from_email)
+
+    if not company_id or not contact_id:
+        return {"status": "ignored", "reason": f"no contact found for {from_email}"}
+
+    try:
+        db.update_contact(contact_id, {"outreach_state": "unsubscribed"})
+        db.add_to_dnc(from_email, reason="unsubscribed", added_by="instantly_webhook")
+
+        thread = _find_thread(db, contact_id, company_id)
+        if thread:
+            db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq("id", thread["id"]).execute()
+    except Exception as exc:
+        logger.error("Unsubscribe handling failed: %s", exc)
+
+    return {"status": "processed", "action": "unsubscribed", "email": from_email}
+
+
+def _handle_email_opened(db, payload: dict) -> dict:
+    """Handle email open events — update engagement signal."""
+    to_email: str = payload.get("to_email") or payload.get("email", "") or ""
+    company_id, contact_id = _lookup_company_contact(db, to_email)
+
+    if not contact_id:
+        return {"status": "ignored", "reason": "contact not found"}
+
+    try:
+        # Increment open_count on contact
+        contact = db.client.table("contacts").select("open_count").eq("id", contact_id).limit(1).execute()
+        current = contact.data[0].get("open_count", 0) if contact.data else 0
+        db.client.table("contacts").update({
+            "open_count": (current or 0) + 1,
+            "last_opened_at": _now_iso(),
+        }).eq("id", contact_id).execute()
+    except Exception as exc:
+        logger.debug("open_count update failed (column may not exist): %s", exc)
+
+    return {"status": "processed", "action": "opened"}
+
+
+def _handle_email_clicked(db, payload: dict) -> dict:
+    """Handle link click events — update engagement signal."""
+    to_email: str = payload.get("to_email") or payload.get("email", "") or ""
+    company_id, contact_id = _lookup_company_contact(db, to_email)
+
+    if not contact_id:
+        return {"status": "ignored", "reason": "contact not found"}
+
+    try:
+        contact = db.client.table("contacts").select("click_count").eq("id", contact_id).limit(1).execute()
+        current = contact.data[0].get("click_count", 0) if contact.data else 0
+        db.client.table("contacts").update({
+            "click_count": (current or 0) + 1,
+            "last_clicked_at": _now_iso(),
+        }).eq("id", contact_id).execute()
+    except Exception as exc:
+        logger.debug("click_count update failed: %s", exc)
+
+    return {"status": "processed", "action": "clicked"}
+
+
+# ---------------------------------------------------------------------------
+# Main webhook endpoint
+# ---------------------------------------------------------------------------
+
 @router.post("/instantly")
 async def instantly_webhook(
     request: Request,
@@ -26,83 +409,93 @@ async def instantly_webhook(
 ):
     """Receive webhook events from Instantly.ai.
 
-    Validates via URL query param ?secret=... (baked into the webhook URL
-    configured in Instantly dashboard). Delegates all processing to
-    EngagementAgent.process_webhook_event which handles:
-    - Interaction logging
-    - PQS engagement score updates
-    - Status transitions (bounced, engaged)
-    - Reply classification (via ReplyAgent)
+    Validates via URL query param ?secret=... (configured in Instantly dashboard).
+
+    Handled event types:
+      - email.reply          → classify → thread → HITL queue
+      - email.bounced        → mark bounced + DNC
+      - email.unsubscribed   → mark unsubscribed + DNC
+      - email.opened         → increment open_count
+      - email.clicked        → increment click_count
+
+    Legacy event_type keys (reply_received, email_bounced, etc.) are mapped
+    to the new handlers for backwards compatibility.
     """
     settings = get_settings()
 
-    # Validate webhook secret passed as query param
     if settings.webhook_secret and secret != settings.webhook_secret:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
     payload: dict[str, Any] = await request.json()
-    event_type = payload.get("event_type", "")
+
+    # Normalise event type — Instantly uses both dot-notation and underscore styles
+    event_type: str = (
+        payload.get("event_type")
+        or payload.get("type")
+        or ""
+    ).lower().strip()
 
     if not event_type:
         return {"status": "ignored", "reason": "no event_type"}
 
+    # Map legacy keys to canonical names
+    _LEGACY_MAP = {
+        "reply_received": "email.reply",
+        "email_reply": "email.reply",
+        "email_opened": "email.opened",
+        "email_open": "email.opened",
+        "email_clicked": "email.clicked",
+        "email_click": "email.clicked",
+        "email_bounced": "email.bounced",
+        "email_bounce": "email.bounced",
+        "email_unsubscribed": "email.unsubscribed",
+        "email_unsubscribe": "email.unsubscribed",
+    }
+    event_type = _LEGACY_MAP.get(event_type, event_type)
+
     try:
-        from backend.app.agents.engagement import EngagementAgent
+        db = _get_db_and_workspace()
 
-        result = EngagementAgent.process_webhook_event(event_type, payload)
-
-        # If it was a reply, also trigger classification and notify Slack
-        if event_type == "reply_received" and result.get("status") == "processed":
+        if event_type == "email.reply":
+            result = _handle_email_reply(db, payload)
+        elif event_type == "email.bounced":
+            result = _handle_email_bounced(db, payload)
+        elif event_type == "email.unsubscribed":
+            result = _handle_email_unsubscribed(db, payload)
+        elif event_type == "email.opened":
+            result = _handle_email_opened(db, payload)
+        elif event_type == "email.clicked":
+            result = _handle_email_clicked(db, payload)
+        else:
+            # Unknown event — pass through to EngagementAgent for legacy handling
             try:
-                from backend.app.agents.reply import ReplyAgent
-                from backend.app.core.database import Database
-                from backend.app.core.workspace import get_workspace_id
+                from backend.app.agents.engagement import EngagementAgent
+                result = EngagementAgent.process_webhook_event(event_type, payload)
+            except Exception:
+                result = {"status": "ignored", "reason": f"unknown event_type: {event_type}"}
 
-                db = Database(workspace_id=get_workspace_id())
-                drafts = (
-                    db._filter_ws(db.client.table("outreach_drafts").select("id"))
-                    .eq("company_id", result["company_id"])
-                    .eq("contact_id", result["contact_id"])
-                    .order("created_at", desc=True)
-                    .limit(1)
-                    .execute()
-                    .data
-                )
-                outreach_draft_id = drafts[0]["id"] if drafts else ""
-
-                reply_agent = ReplyAgent()
-                reply_result = reply_agent.execute(reply_data={
-                    "company_id": result["company_id"],
-                    "contact_id": result["contact_id"],
-                    "subject": payload.get("subject", ""),
-                    "body": payload.get("body", ""),
-                    "outreach_draft_id": outreach_draft_id,
-                })
-
-                # Notify Slack for positive or question replies
+        # Slack notification for high-priority replies
+        if event_type == "email.reply" and result.get("status") == "processed":
+            classification = result.get("classification", "")
+            if classification in ("interested", "referral"):
                 try:
                     from backend.app.utils.notifications import notify_slack
-                    company = db.get_company(result["company_id"])
+                    company_id = result.get("company_id")
+                    company = db.get_company(company_id) if company_id else None
                     company_name = company.get("name", "Unknown") if company else "Unknown"
-
-                    if reply_result and reply_result.details:
-                        detail = reply_result.details[0] if reply_result.details else {}
-                        classification = detail.get("status", "unknown")
-                        if classification in ("positive", "question"):
-                            notify_slack(
-                                f"*Hot reply from {company_name}* — "
-                                f"classified as *{classification}*. "
-                                f"Response draft waiting in Approvals.",
-                                emoji=":fire:",
-                            )
+                    priority_label = "P1 HOT" if classification == "interested" else "P2 REFERRAL"
+                    notify_slack(
+                        f"*[{priority_label}] Reply from {company_name}* — "
+                        f"classified as *{classification}* "
+                        f"(confidence: {result.get('confidence', 0):.0%}). "
+                        "Review in the HITL queue.",
+                        emoji=":fire:" if classification == "interested" else ":handshake:",
+                    )
                 except Exception:
                     pass
 
-            except Exception as e:
-                logger.error(f"Reply classification failed: {e}")
-
         return result
 
-    except Exception as e:
-        logger.error(f"Webhook processing error: {e}", exc_info=True)
-        return {"status": "error", "reason": str(e)[:200]}
+    except Exception as exc:
+        logger.error("Webhook processing error for %s: %s", event_type, exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
