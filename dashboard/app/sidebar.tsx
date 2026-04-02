@@ -23,6 +23,7 @@ import {
   Moon,
   Sun,
   Inbox,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -137,6 +138,7 @@ export function Sidebar() {
       title: "BUILD",
       items: [
         { label: "Prospects", href: "/prospects", icon: Building2 },
+        { label: "Lookalike Discovery", href: "/lookalike", icon: Sparkles },
         { label: "Contacts", href: "/contacts", icon: Users },
         { label: "Segments", href: "/segments", icon: Filter },
       ],

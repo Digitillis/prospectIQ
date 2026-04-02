@@ -1898,3 +1898,102 @@ export const suggestHitlResponse = (hitlId: string) =>
     `/api/hitl/queue/${hitlId}/suggest-response`,
     { method: "POST", body: JSON.stringify({}) }
   );
+
+// ---------------------------------------------------------------------------
+// Lookalike Discovery
+// ---------------------------------------------------------------------------
+
+export interface SeedProfile {
+  seed_company_ids: string[];
+  seed_company_count: number;
+  dominant_cluster: string;
+  dominant_tranche: string;
+  employee_count_range: [number, number];
+  revenue_ranges: string[];
+  top_technologies: string[];
+  top_pain_themes: string[];
+  avg_pqs: number;
+}
+
+export interface LookalikeMatch {
+  company_id: string;
+  company_name: string;
+  domain: string | null;
+  cluster: string | null;
+  tranche: string | null;
+  employee_count: number | null;
+  revenue_range: string | null;
+  similarity_score: number;
+  matching_factors: string[];
+  pqs_total: number;
+  status: string;
+  has_contact: boolean;
+}
+
+export interface LookalikeResult {
+  run_id: string | null;
+  seed_profile: SeedProfile;
+  matches: LookalikeMatch[];
+  total_scored: number;
+  generated_at: string;
+}
+
+export interface LookalikeRunSummary {
+  id: string;
+  created_at: string;
+  match_count: number;
+  seed_count: number;
+  dominant_cluster: string;
+  dominant_tranche: string;
+}
+
+export const runLookalike = (
+  seedIds: string[],
+  limit?: number,
+  excludeContacted?: boolean
+) =>
+  fetchAPI<LookalikeResult>("/api/lookalike/run", {
+    method: "POST",
+    body: JSON.stringify({
+      seed_company_ids: seedIds,
+      limit: limit ?? 50,
+      exclude_contacted: excludeContacted ?? true,
+    }),
+  });
+
+export const runAutoLookalike = () =>
+  fetchAPI<LookalikeResult>("/api/lookalike/auto-run", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+export const getLookalikeRuns = () =>
+  fetchAPI<{ data: LookalikeRunSummary[]; count: number }>("/api/lookalike/runs");
+
+export const getLookalikeRun = (runId: string) =>
+  fetchAPI<{
+    id: string;
+    created_at: string;
+    seed_profile: SeedProfile;
+    matches: LookalikeMatch[];
+    total_scored: number;
+  }>(`/api/lookalike/runs/${runId}`);
+
+export const addLookalikesToPipeline = (
+  runId: string,
+  companyIds: string[],
+  sequenceName?: string
+) =>
+  fetchAPI<{ added: number; already_in_pipeline: number }>(
+    `/api/lookalike/runs/${runId}/add-to-pipeline`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        company_ids: companyIds,
+        sequence_name: sequenceName ?? null,
+      }),
+    }
+  );
+
+export const getSeedProfile = () =>
+  fetchAPI<SeedProfile>("/api/lookalike/seed-profile");
