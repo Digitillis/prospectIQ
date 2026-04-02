@@ -1900,123 +1900,100 @@ export const suggestHitlResponse = (hitlId: string) =>
   );
 
 // ---------------------------------------------------------------------------
-// Revenue Intelligence — Analytics & Revenue Attribution
+// Lookalike Discovery
 // ---------------------------------------------------------------------------
 
-export interface FunnelStageData {
-  stage_name: string;
-  stage_key: string;
-  count: number;
-  conversion_rate: number;
-  avg_days_in_stage: number;
-  drop_off: number;
-  is_bottleneck: boolean;
-}
-
-export interface FunnelData {
-  stages: FunnelStageData[];
-  period_days: number;
-  total_entered: number;
-  total_converted: number;
-  overall_conversion_rate: number;
-  bottleneck_stage: string;
-}
-
-export interface CohortRow {
-  cohort_name: string;
-  count: number;
-  contacted_pct: number;
-  reply_rate: number;
-  interested_pct: number;
-  conversion_rate: number;
+export interface SeedProfile {
+  seed_company_ids: string[];
+  seed_company_count: number;
+  dominant_cluster: string;
+  dominant_tranche: string;
+  employee_count_range: [number, number];
+  revenue_ranges: string[];
+  top_technologies: string[];
+  top_pain_themes: string[];
   avg_pqs: number;
 }
 
-export interface CohortAnalysis {
-  rows: CohortRow[];
-  group_by: string;
-  period_days: number;
+export interface LookalikeMatch {
+  company_id: string;
+  company_name: string;
+  domain: string | null;
+  cluster: string | null;
+  tranche: string | null;
+  employee_count: number | null;
+  revenue_range: string | null;
+  similarity_score: number;
+  matching_factors: string[];
+  pqs_total: number;
+  status: string;
+  has_contact: boolean;
 }
 
-export interface VelocityStage {
-  stage_name: string;
-  avg_days: number;
-  trend: "faster" | "slower" | "stable" | "no_data";
-  trend_delta_days: number;
+export interface LookalikeResult {
+  run_id: string | null;
+  seed_profile: SeedProfile;
+  matches: LookalikeMatch[];
+  total_scored: number;
+  generated_at: string;
 }
 
-export interface VelocityMetrics {
-  stages: VelocityStage[];
-  computed_at: string;
+export interface LookalikeRunSummary {
+  id: string;
+  created_at: string;
+  match_count: number;
+  seed_count: number;
+  dominant_cluster: string;
+  dominant_tranche: string;
 }
 
-export interface DealStageData {
-  stage: string;
-  count: number;
-  est_value_usd: number;
-}
+export const runLookalike = (
+  seedIds: string[],
+  limit?: number,
+  excludeContacted?: boolean
+) =>
+  fetchAPI<LookalikeResult>("/api/lookalike/run", {
+    method: "POST",
+    body: JSON.stringify({
+      seed_company_ids: seedIds,
+      limit: limit ?? 50,
+      exclude_contacted: excludeContacted ?? true,
+    }),
+  });
 
-export interface RevenueAttributionData {
-  pipeline_stages: DealStageData[];
-  projected_arr_90d: number;
-  projected_arr_180d: number;
-  confidence_range: [number, number];
-  best_performing_cluster: string;
-  best_performing_sequence: string;
-  avg_deal_size_assumption: number;
-  weighted_pipeline_value: number;
-}
+export const runAutoLookalike = () =>
+  fetchAPI<LookalikeResult>("/api/lookalike/auto-run", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 
-export interface ChannelROI {
-  channel: string;
-  total_sent: number;
-  total_replied: number;
-  reply_rate_pct: number;
-}
+export const getLookalikeRuns = () =>
+  fetchAPI<{ data: LookalikeRunSummary[]; count: number }>("/api/lookalike/runs");
 
-export interface SequenceROI {
-  sequence_name: string;
-  total_sent: number;
-  total_replied: number;
-  reply_rate_pct: number;
-}
+export const getLookalikeRun = (runId: string) =>
+  fetchAPI<{
+    id: string;
+    created_at: string;
+    seed_profile: SeedProfile;
+    matches: LookalikeMatch[];
+    total_scored: number;
+  }>(`/api/lookalike/runs/${runId}`);
 
-export interface ActivityROIData {
-  by_channel: ChannelROI[];
-  by_sequence: SequenceROI[];
-  by_persona: Array<{ persona_type: string; total_sequenced: number; replied: number; reply_rate_pct: number }>;
-  by_cluster: Array<{ cluster: string; total_sequenced: number; replied: number; reply_rate_pct: number }>;
-}
+export const addLookalikesToPipeline = (
+  runId: string,
+  companyIds: string[],
+  sequenceName?: string
+) =>
+  fetchAPI<{ added: number; already_in_pipeline: number }>(
+    `/api/lookalike/runs/${runId}/add-to-pipeline`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        company_ids: companyIds,
+        sequence_name: sequenceName ?? null,
+      }),
+    }
+  );
 
-export interface AnalyticsSummary {
-  total_pipeline: number;
-  total_contacted: number;
-  total_replied: number;
-  total_interested: number;
-  projected_arr_90d: number;
-  overall_conversion_rate: number;
-  pipeline_health: "green" | "amber" | "red";
-  bottleneck_stage: string;
-  stuck_in_research_14d: number;
-  best_cluster: string;
-}
-
-export const getFunnelData = (days = 90) =>
-  fetchAPI<FunnelData>(`/api/analytics/funnel?days=${days}`);
-
-export const getCohortAnalysis = (groupBy = "cluster", days = 90) =>
-  fetchAPI<CohortAnalysis>(`/api/analytics/cohorts?group_by=${groupBy}&days=${days}`);
-
-export const getVelocityMetrics = () =>
-  fetchAPI<VelocityMetrics>("/api/analytics/velocity");
-
-export const getRevenueAttribution = (dealSize?: number) => {
-  const qs = dealSize ? `?deal_size=${dealSize}` : "";
-  return fetchAPI<RevenueAttributionData>(`/api/analytics/revenue${qs}`);
-};
-
-export const getActivityROI = () =>
-  fetchAPI<ActivityROIData>("/api/analytics/activity-roi");
-
-export const getAnalyticsSummary = () =>
-  fetchAPI<AnalyticsSummary>("/api/analytics/summary");
+export const getSeedProfile = () =>
+  fetchAPI<SeedProfile>("/api/lookalike/seed-profile");
