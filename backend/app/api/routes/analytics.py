@@ -1,6 +1,7 @@
 """Analytics routes for ProspectIQ API.
 
 Pipeline overview, API cost tracking, and outreach performance metrics.
+Includes full Revenue Intelligence endpoints added in feature/analytics-revenue.
 """
 
 from __future__ import annotations
@@ -454,3 +455,72 @@ async def get_pipeline_velocity():
         }
 
     return {"data": velocity}
+
+
+# ---------------------------------------------------------------------------
+# Revenue Intelligence routes (feature/analytics-revenue)
+# ---------------------------------------------------------------------------
+
+@router.get("/funnel")
+async def get_full_funnel(days: int = Query(default=90, ge=1, le=365)):
+    """Full 10-stage funnel with conversion rates, drop-off, and bottleneck detection."""
+    db = get_db()
+    from backend.app.analytics.funnel import FunnelAnalytics
+    fa = FunnelAnalytics(db)
+    result = fa.get_full_funnel(workspace_id=db.workspace_id, days=days)
+    return result.model_dump()
+
+
+@router.get("/cohorts")
+async def get_cohort_analysis(
+    group_by: str = Query(default="cluster", pattern="^(cluster|tranche|persona|sequence_name)$"),
+    days: int = Query(default=90, ge=1, le=365),
+):
+    """Cohort conversion performance grouped by cluster, tranche, persona, or sequence."""
+    db = get_db()
+    from backend.app.analytics.funnel import FunnelAnalytics
+    fa = FunnelAnalytics(db)
+    result = fa.get_cohort_analysis(workspace_id=db.workspace_id, group_by=group_by, days=days)
+    return result.model_dump()
+
+
+@router.get("/velocity")
+async def get_velocity_metrics():
+    """Stage-by-stage velocity in days with trend vs prior 30-day period."""
+    db = get_db()
+    from backend.app.analytics.funnel import FunnelAnalytics
+    fa = FunnelAnalytics(db)
+    result = fa.get_velocity_metrics(workspace_id=db.workspace_id)
+    return result.model_dump()
+
+
+@router.get("/revenue")
+async def get_revenue_attribution(
+    deal_size: float = Query(default=48000.0, ge=1000.0, le=10_000_000.0),
+):
+    """Pipeline-to-revenue attribution with projected ARR and confidence range."""
+    db = get_db()
+    from backend.app.analytics.revenue import RevenueAnalytics
+    ra = RevenueAnalytics(db)
+    result = ra.get_revenue_attribution(workspace_id=db.workspace_id, deal_size_usd=deal_size)
+    return result.model_dump()
+
+
+@router.get("/activity-roi")
+async def get_activity_roi():
+    """Reply rates by channel, sequence, persona, and cluster."""
+    db = get_db()
+    from backend.app.analytics.revenue import RevenueAnalytics
+    ra = RevenueAnalytics(db)
+    result = ra.get_activity_roi(workspace_id=db.workspace_id)
+    return result.model_dump()
+
+
+@router.get("/summary")
+async def get_analytics_summary():
+    """Combined analytics summary: top KPIs, funnel health, top cluster, projected ARR."""
+    db = get_db()
+    from backend.app.analytics.revenue import RevenueAnalytics
+    ra = RevenueAnalytics(db)
+    result = ra.get_analytics_summary(workspace_id=db.workspace_id)
+    return result.model_dump()
