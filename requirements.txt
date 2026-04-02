@@ -1,6 +1,4 @@
 # ProspectIQ Backend Dependencies
-# Billing SDK — local path; publish to private PyPI for production
-billing-sdk @ file:./packages/billing-sdk
 stripe>=8.0
 anthropic>=0.40.0
 httpx>=0.27.0
