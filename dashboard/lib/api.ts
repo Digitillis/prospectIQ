@@ -1540,3 +1540,119 @@ export const updateIntelligenceGoals = (data: {
     method: "PUT",
     body: JSON.stringify(data),
   });
+
+// ---------------------------------------------------------------------------
+// Personalization Engine — /api/personalization
+// ---------------------------------------------------------------------------
+
+export interface TriggerEvent {
+  trigger_type: string;    // growth | pain | tech | timing
+  description: string;
+  urgency: string;         // immediate | near_term | background
+  confidence: number;
+  source_text: string;
+  priority_rank: number;
+}
+
+export interface PersonalizationHook {
+  hook_text: string;
+  persona_target: string;
+  trigger_reference: string;
+  tone: string;            // specific | empathetic | provocative
+  confidence: number;
+}
+
+export interface PersonalizationResult {
+  company_id: string;
+  readiness_score: number;
+  readiness_breakdown: Record<string, number>;
+  triggers: TriggerEvent[];
+  hooks: PersonalizationHook[];
+  personas_found: string[];
+  contacts_updated: number;
+  generated_at: string;
+  cost_usd: number;
+}
+
+export interface BatchResult {
+  processed: number;
+  updated: number;
+  errors: number;
+  total_cost_usd: number;
+  avg_readiness_score: number;
+  error_details: Array<{ company_id: string; error: string }>;
+}
+
+export interface PersonalizationStatus {
+  company_id: string;
+  readiness_score: number;
+  triggers: TriggerEvent[];
+  hooks: PersonalizationHook[];
+  personas_found: string[];
+  last_run_at: string | null;
+  contacts_count: number;
+}
+
+export interface PersonalizationFilters {
+  cluster?: string;
+  tranche?: string;
+  min_pqs?: number;
+}
+
+export interface PersonalizationLeaderboardItem {
+  company_id: string;
+  company_name: string;
+  cluster?: string;
+  tranche?: string;
+  readiness_score: number;
+  trigger_count: number;
+  hook_count: number;
+  contact_count: number;
+  personas_found: string[];
+  last_run_at?: string;
+  pqs_total: number;
+}
+
+export interface ManualTriggerInput {
+  trigger_type: string;
+  description: string;
+  urgency: string;
+  source?: string;
+}
+
+export const runPersonalization = (companyId: string): Promise<PersonalizationResult> =>
+  fetchAPI<PersonalizationResult>(`/api/personalization/run/${companyId}`, {
+    method: "POST",
+  });
+
+export const runPersonalizationBatch = (
+  filters: PersonalizationFilters = {},
+  maxCompanies = 50
+): Promise<BatchResult> =>
+  fetchAPI<BatchResult>("/api/personalization/run-batch", {
+    method: "POST",
+    body: JSON.stringify({ filters, max_companies: maxCompanies }),
+  });
+
+export const getPersonalizationStatus = (companyId: string): Promise<PersonalizationStatus> =>
+  fetchAPI<PersonalizationStatus>(`/api/personalization/status/${companyId}`);
+
+export const getPersonalizationLeaderboard = (params?: {
+  limit?: number;
+  cluster?: string;
+  tranche?: string;
+}): Promise<PersonalizationLeaderboardItem[]> => {
+  const qs = params ? "?" + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
+  ).toString() : "";
+  return fetchAPI<PersonalizationLeaderboardItem[]>(`/api/personalization/leaderboard${qs}`);
+};
+
+export const addManualTrigger = (
+  companyId: string,
+  trigger: ManualTriggerInput
+): Promise<TriggerEvent> =>
+  fetchAPI<TriggerEvent>(`/api/personalization/add-trigger/${companyId}`, {
+    method: "POST",
+    body: JSON.stringify(trigger),
+  });
