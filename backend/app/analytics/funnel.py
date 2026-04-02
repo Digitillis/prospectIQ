@@ -11,6 +11,8 @@ Usage:
     db = Database()
     fa = FunnelAnalytics(db)
     print(fa.get_funnel_counts(days=30))
+    print(fa.get_full_funnel(workspace_id="ws_xxx", days=90))
+    print(fa.get_cohort_analysis(workspace_id="ws_xxx", group_by="cluster"))
 """
 
 from __future__ import annotations
@@ -599,3 +601,353 @@ class FunnelAnalytics:
             "overall_discovery_to_reply_days": 0.0,
             "contacts_with_reply": 0,
         }
+
+    # ------------------------------------------------------------------
+    # NEW: Full funnel with Pydantic models
+    # ------------------------------------------------------------------
+
+    def get_full_funnel(
+        self,
+        workspace_id: str | None = None,
+        days: int = 90,
+    ) -> "FunnelData":
+        """Return full 10-stage funnel as structured FunnelData.
+
+        Stages (in order):
+            discovered → enriched → sequenced → touch_1_sent → touch_2_sent
+            → touch_3_sent → replied → demo_scheduled → closed_won
+
+        Maps the existing contact outreach_state values onto a clean
+        funnel representation with per-stage conversion rates and drop-off.
+        """
+        from backend.app.analytics.models import FunnelData, FunnelStage
+
+        # Pull raw counts from the existing engine
+        counts = self.get_funnel_counts(days=days)
+
+        # Pull velocity data for avg_days_in_stage estimates
+        velocity = self.get_pipeline_velocity()
+
+        # Ordered stage definitions: (stage_key, display_name, velocity_key or None)
+        stage_defs = [
+            ("discovered",      "Discovered",   None),
+            ("enriched",        "Enriched",     "enriched_to_sequenced_days"),
+            ("sequenced",       "Sequenced",    "enriched_to_sequenced_days"),
+            ("touch_1_sent",    "Touch 1 Sent", None),
+            ("touch_2_sent",    "Touch 2 Sent", None),
+            ("touch_3_sent",    "Touch 3 Sent", None),
+            ("replied",         "Replied",      "sequenced_to_replied_days"),
+            ("demo_scheduled",  "Demo Booked",  None),
+            ("closed_won",      "Closed Won",   None),
+        ]
+
+        stage_counts = {k: counts.get(k, 0) for k, _, _ in stage_defs}
+
+        # Build stages list
+        stages: list[FunnelStage] = []
+        prev_count = None
+        max_drop_off = 0
+        bottleneck_key = stage_defs[0][0]
+
+        for stage_key, stage_name, vel_key in stage_defs:
+            count = stage_counts[stage_key]
+            avg_days = velocity.get(vel_key, 0.0) if vel_key else 0.0
+
+            if prev_count is None:
+                conv_rate = 100.0
+                drop_off = 0
+            else:
+                conv_rate = _safe_div(count, prev_count) if prev_count > 0 else 0.0
+                drop_off = max(prev_count - count, 0)
+                if drop_off > max_drop_off:
+                    max_drop_off = drop_off
+                    bottleneck_key = stage_key
+
+            stages.append(FunnelStage(
+                stage_name=stage_name,
+                stage_key=stage_key,
+                count=count,
+                conversion_rate=conv_rate,
+                avg_days_in_stage=avg_days,
+                drop_off=drop_off,
+            ))
+
+            if count > 0:
+                prev_count = count
+            elif prev_count is not None:
+                prev_count = prev_count  # carry forward so next drop-off is relative
+
+        # Mark bottleneck
+        for s in stages:
+            s.is_bottleneck = (s.stage_key == bottleneck_key)
+
+        total_entered = stage_counts["discovered"]
+        total_converted = stage_counts["replied"] + stage_counts["demo_scheduled"] + stage_counts["closed_won"]
+        overall_conv = _safe_div(total_converted, total_entered) if total_entered else 0.0
+
+        return FunnelData(
+            stages=stages,
+            period_days=days,
+            total_entered=total_entered,
+            total_converted=total_converted,
+            overall_conversion_rate=overall_conv,
+            bottleneck_stage=bottleneck_key,
+        )
+
+    # ------------------------------------------------------------------
+    # NEW: Cohort analysis
+    # ------------------------------------------------------------------
+
+    def get_cohort_analysis(
+        self,
+        workspace_id: str | None = None,
+        group_by: str = "cluster",
+        days: int = 90,
+    ) -> "CohortAnalysis":
+        """Return per-cohort conversion metrics grouped by the given dimension.
+
+        group_by options: "cluster" | "tranche" | "persona" | "sequence_name"
+        """
+        from backend.app.analytics.models import CohortAnalysis, CohortRow
+
+        # Map group_by to the correct table/column
+        group_field_map = {
+            "cluster":       ("companies", "campaign_cluster"),
+            "tranche":       ("companies", "tranche"),
+            "persona":       ("contacts",  "persona_type"),
+            "sequence_name": ("outreach_drafts", "sequence_name"),
+        }
+        if group_by not in group_field_map:
+            group_by = "cluster"
+
+        table, field = group_field_map[group_by]
+
+        try:
+            if table == "companies":
+                rows = self.db._filter_ws(
+                    self.db.client.table("contacts").select(
+                        f"outreach_state, intent_score, "
+                        f"companies(id, pqs_total, {field})"
+                    )
+                ).execute().data or []
+
+                buckets: dict[str, dict] = {}
+                for row in rows:
+                    company = row.get("companies") or {}
+                    key = company.get(field) or "Unknown"
+                    state = row.get("outreach_state") or ""
+                    pqs = company.get("pqs_total") or 0
+
+                    if key not in buckets:
+                        buckets[key] = {
+                            "total": 0, "contacted": 0, "replied": 0,
+                            "interested": 0, "pqs_sum": 0,
+                        }
+
+                    b = buckets[key]
+                    b["total"] += 1
+                    b["pqs_sum"] += pqs
+
+                    if state in _TOUCH_STATES or state in _POSITIVE_STATES:
+                        b["contacted"] += 1
+                    if state in ("replied", "demo_scheduled", "closed_won", "nurture"):
+                        b["replied"] += 1
+                    if state in ("demo_scheduled", "closed_won"):
+                        b["interested"] += 1
+
+            elif table == "contacts":
+                rows = self.db._filter_ws(
+                    self.db.client.table("contacts").select(
+                        f"outreach_state, {field}, intent_score, "
+                        f"companies(pqs_total)"
+                    )
+                ).execute().data or []
+
+                buckets = {}
+                for row in rows:
+                    key = row.get(field) or "Unknown"
+                    state = row.get("outreach_state") or ""
+                    pqs = (row.get("companies") or {}).get("pqs_total") or 0
+
+                    if key not in buckets:
+                        buckets[key] = {
+                            "total": 0, "contacted": 0, "replied": 0,
+                            "interested": 0, "pqs_sum": 0,
+                        }
+
+                    b = buckets[key]
+                    b["total"] += 1
+                    b["pqs_sum"] += pqs
+
+                    if state in _TOUCH_STATES or state in _POSITIVE_STATES:
+                        b["contacted"] += 1
+                    if state in ("replied", "demo_scheduled", "closed_won", "nurture"):
+                        b["replied"] += 1
+                    if state in ("demo_scheduled", "closed_won"):
+                        b["interested"] += 1
+
+            else:
+                # sequence_name — join via outreach_drafts
+                rows = self.db._filter_ws(
+                    self.db.client.table("outreach_drafts").select(
+                        "sequence_name, approval_status, sent_at, "
+                        "contacts(outreach_state), companies(pqs_total)"
+                    )
+                ).execute().data or []
+
+                buckets = {}
+                for row in rows:
+                    key = row.get("sequence_name") or "Unknown"
+                    contact = row.get("contacts") or {}
+                    state = contact.get("outreach_state") or ""
+                    pqs = (row.get("companies") or {}).get("pqs_total") or 0
+
+                    if key not in buckets:
+                        buckets[key] = {
+                            "total": 0, "contacted": 0, "replied": 0,
+                            "interested": 0, "pqs_sum": 0,
+                        }
+
+                    b = buckets[key]
+                    b["total"] += 1
+                    b["pqs_sum"] += pqs
+
+                    if row.get("sent_at"):
+                        b["contacted"] += 1
+                    if state in ("replied", "demo_scheduled", "closed_won"):
+                        b["replied"] += 1
+                    if state in ("demo_scheduled", "closed_won"):
+                        b["interested"] += 1
+
+        except Exception as exc:
+            logger.error(f"get_cohort_analysis failed: {exc}")
+            buckets = {}
+
+        cohort_rows: list[CohortRow] = []
+        for name, b in buckets.items():
+            total = b["total"]
+            cohort_rows.append(CohortRow(
+                cohort_name=name,
+                count=total,
+                contacted_pct=_safe_div(b["contacted"], total),
+                reply_rate=_safe_div(b["replied"], b["contacted"] or 1),
+                interested_pct=_safe_div(b["interested"], b["contacted"] or 1),
+                conversion_rate=_safe_div(b["replied"], total),
+                avg_pqs=round(b["pqs_sum"] / max(total, 1), 1),
+            ))
+
+        cohort_rows.sort(key=lambda r: r.conversion_rate, reverse=True)
+
+        return CohortAnalysis(
+            rows=cohort_rows,
+            group_by=group_by,
+            period_days=days,
+        )
+
+    # ------------------------------------------------------------------
+    # NEW: Enhanced velocity metrics with trend
+    # ------------------------------------------------------------------
+
+    def get_velocity_metrics(
+        self,
+        workspace_id: str | None = None,
+    ) -> "VelocityMetrics":
+        """Return stage-by-stage velocity with trend vs prior 30-day period."""
+        from datetime import datetime, timezone
+        from backend.app.analytics.models import VelocityMetrics, VelocityStage
+
+        current = self.get_pipeline_velocity()
+        # Compute trend by comparing recent 15 days vs prior 15 days via state log
+        stages = [
+            VelocityStage(
+                stage_name="Enriched → Sequenced",
+                avg_days=current.get("enriched_to_sequenced_days", 0.0),
+                trend="no_data",
+                trend_delta_days=0.0,
+            ),
+            VelocityStage(
+                stage_name="Sequenced → Replied",
+                avg_days=current.get("sequenced_to_replied_days", 0.0),
+                trend="no_data",
+                trend_delta_days=0.0,
+            ),
+            VelocityStage(
+                stage_name="Overall to Reply",
+                avg_days=current.get("overall_discovery_to_reply_days", 0.0),
+                trend="no_data",
+                trend_delta_days=0.0,
+            ),
+        ]
+
+        # Attempt trend calculation from state log
+        try:
+            since_60 = _since_iso(60)
+            since_30 = _since_iso(30)
+
+            log_rows = (
+                self.db._filter_ws(
+                    self.db.client.table("outreach_state_log")
+                    .select("contact_id, to_state, created_at")
+                )
+                .in_("to_state", ["enriched", "sequenced", "touch_1_sent", "replied"])
+                .gte("created_at", since_60)
+                .order("created_at")
+                .execute().data or []
+            )
+
+            def _split_and_compute(rows: list, cutoff: str) -> tuple[dict, dict]:
+                recent: dict[str, dict[str, str]] = {}
+                prior: dict[str, dict[str, str]] = {}
+                for r in rows:
+                    bucket = recent if r["created_at"] >= cutoff else prior
+                    bucket.setdefault(r["contact_id"], {})[r["to_state"]] = r["created_at"]
+                return recent, prior
+
+            recent_ct, prior_ct = _split_and_compute(log_rows, since_30)
+
+            def _avg_d(contact_map: dict, from_state: str, to_state: str) -> float:
+                deltas = []
+                for ct in contact_map.values():
+                    a = ct.get(from_state)
+                    b = ct.get(to_state)
+                    if a and b:
+                        try:
+                            ta = datetime.fromisoformat(a.replace("Z", "+00:00"))
+                            tb = datetime.fromisoformat(b.replace("Z", "+00:00"))
+                            deltas.append(abs((tb - ta).total_seconds() / 86400))
+                        except Exception:
+                            pass
+                return round(sum(deltas) / len(deltas), 1) if deltas else 0.0
+
+            pairs = [
+                (0, "enriched", "sequenced"),
+                (1, "touch_1_sent", "replied"),
+                (2, "enriched", "replied"),
+            ]
+
+            for idx, from_s, to_s in pairs:
+                r_avg = _avg_d(recent_ct, from_s, to_s)
+                p_avg = _avg_d(prior_ct, from_s, to_s)
+                delta = round(r_avg - p_avg, 1)
+
+                if p_avg == 0:
+                    trend = "no_data"
+                elif abs(delta) < 0.5:
+                    trend = "stable"
+                elif delta > 0:
+                    trend = "slower"
+                else:
+                    trend = "faster"
+
+                if r_avg > 0:
+                    stages[idx].avg_days = r_avg
+                stages[idx].trend = trend
+                stages[idx].trend_delta_days = delta
+
+        except Exception as exc:
+            logger.warning(f"Velocity trend computation failed: {exc}")
+
+        return VelocityMetrics(
+            stages=stages,
+            computed_at=datetime.now(timezone.utc).isoformat(),
+        )

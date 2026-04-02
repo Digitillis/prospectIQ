@@ -1449,10 +1449,8 @@ export interface SequenceTemplate {
   steps: SequenceStep[];
   source: "yaml" | "custom";
   is_active: boolean;
-  is_template?: boolean;
   id?: string;
   created_at?: string;
-  tags?: string[];
 }
 
 export interface SequenceStep {
@@ -1518,112 +1516,6 @@ export const listActiveEnrollments = (limit = 100) =>
   fetchAPI<{ data: unknown[]; count: number }>(
     `/api/sequences/active-enrollments?limit=${limit}`
   );
-
-// ---------------------------------------------------------------------------
-// Sequence Builder V2 — CRUD, duplicate, preview, stats
-// ---------------------------------------------------------------------------
-
-export interface SequenceStepV2 {
-  step_id: string;
-  step_type: "email" | "wait" | "condition" | "linkedin" | "task";
-  step_order: number;
-  subject_template?: string;
-  body_template?: string;
-  persona_variants?: Record<string, string>;
-  wait_days?: number;
-  wait_condition?: "no_reply" | "no_open" | "any";
-  condition_type?: "if_opened" | "if_replied" | "if_clicked" | "if_pqs_above";
-  condition_value?: number | string;
-  branch_yes?: string;
-  branch_no?: string;
-  task_description?: string;
-  task_due_offset_days?: number;
-  metadata: Record<string, unknown>;
-}
-
-export interface SequenceDefinitionV2 {
-  id?: string;
-  name: string;
-  description?: string;
-  cluster?: string;
-  persona?: string;
-  steps: SequenceStepV2[];
-  is_template: boolean;
-  tags: string[];
-  source?: "yaml" | "custom" | "builder";
-  is_active?: boolean;
-  display_name?: string;
-  channel?: string;
-  total_steps?: number;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface SequenceStats {
-  sequence_id: string;
-  enrolled_count: number;
-  active_count: number;
-  open_rate: number;
-  reply_rate: number;
-  click_rate: number;
-  conversion_rate: number;
-  completed_count: number;
-  bounced_count: number;
-}
-
-export interface RenderedStep {
-  step_id: string;
-  step_type: "email" | "wait" | "condition" | "linkedin" | "task";
-  step_order: number;
-  subject?: string;
-  body?: string;
-  wait_days?: number;
-  wait_condition?: string;
-  condition_type?: string;
-  task_description?: string;
-}
-
-export interface RenderedSequence {
-  sequence_id: string;
-  contact_id: string;
-  company_id: string;
-  contact_name?: string;
-  company_name?: string;
-  steps: RenderedStep[];
-}
-
-export const getSequenceById = (id: string) =>
-  fetchAPI<{ data: SequenceDefinitionV2 }>(`/api/sequences/v2/${id}`);
-
-export const createSequenceV2 = (data: Partial<SequenceDefinitionV2>) =>
-  fetchAPI<{ data: SequenceDefinitionV2; message: string }>("/api/sequences/v2", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-
-export const updateSequenceV2 = (id: string, data: Partial<SequenceDefinitionV2>) =>
-  fetchAPI<{ data: SequenceDefinitionV2; message: string }>(`/api/sequences/v2/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-
-export const deleteSequenceV2 = (id: string) =>
-  fetchAPI<{ message: string }>(`/api/sequences/v2/${id}`, { method: "DELETE" });
-
-export const duplicateSequenceV2 = (id: string) =>
-  fetchAPI<{ data: SequenceDefinitionV2; message: string }>(
-    `/api/sequences/v2/${id}/duplicate`,
-    { method: "POST" }
-  );
-
-export const previewSequenceV2 = (id: string, contactId: string, companyId: string) =>
-  fetchAPI<RenderedSequence>(`/api/sequences/v2/${id}/preview`, {
-    method: "POST",
-    body: JSON.stringify({ contact_id: contactId, company_id: companyId }),
-  });
-
-export const getSequenceStats = (id: string) =>
-  fetchAPI<SequenceStats>(`/api/sequences/v2/${id}/stats`);
 
 // ---------------------------------------------------------------------------
 // Intelligence — signals, funnel, velocity, costs, goals, command center
@@ -2006,153 +1898,125 @@ export const suggestHitlResponse = (hitlId: string) =>
     `/api/hitl/queue/${hitlId}/suggest-response`,
     { method: "POST", body: JSON.stringify({}) }
   );
-<<<<<<< Updated upstream
-=======
 
 // ---------------------------------------------------------------------------
-// Lookalike Discovery
+// Revenue Intelligence — Analytics & Revenue Attribution
 // ---------------------------------------------------------------------------
 
-export interface SeedProfile {
-  seed_company_ids: string[];
-  seed_company_count: number;
-  dominant_cluster: string;
-  dominant_tranche: string;
-  employee_count_range: [number, number];
-  revenue_ranges: string[];
-  top_technologies: string[];
-  top_pain_themes: string[];
+export interface FunnelStageData {
+  stage_name: string;
+  stage_key: string;
+  count: number;
+  conversion_rate: number;
+  avg_days_in_stage: number;
+  drop_off: number;
+  is_bottleneck: boolean;
+}
+
+export interface FunnelData {
+  stages: FunnelStageData[];
+  period_days: number;
+  total_entered: number;
+  total_converted: number;
+  overall_conversion_rate: number;
+  bottleneck_stage: string;
+}
+
+export interface CohortRow {
+  cohort_name: string;
+  count: number;
+  contacted_pct: number;
+  reply_rate: number;
+  interested_pct: number;
+  conversion_rate: number;
   avg_pqs: number;
 }
 
-export interface LookalikeMatch {
-  company_id: string;
-  company_name: string;
-  domain: string | null;
-  cluster: string | null;
-  tranche: string | null;
-  employee_count: number | null;
-  revenue_range: string | null;
-  similarity_score: number;
-  matching_factors: string[];
-  pqs_total: number;
-  status: string;
-  has_contact: boolean;
+export interface CohortAnalysis {
+  rows: CohortRow[];
+  group_by: string;
+  period_days: number;
 }
 
-export interface LookalikeResult {
-  run_id: string | null;
-  seed_profile: SeedProfile;
-  matches: LookalikeMatch[];
-  total_scored: number;
-  generated_at: string;
+export interface VelocityStage {
+  stage_name: string;
+  avg_days: number;
+  trend: "faster" | "slower" | "stable" | "no_data";
+  trend_delta_days: number;
 }
 
-export interface LookalikeRunSummary {
-  id: string;
-  created_at: string;
-  match_count: number;
-  seed_count: number;
-  dominant_cluster: string;
-  dominant_tranche: string;
+export interface VelocityMetrics {
+  stages: VelocityStage[];
+  computed_at: string;
 }
 
-export const runLookalike = (
-  seedIds: string[],
-  limit?: number,
-  excludeContacted?: boolean
-) =>
-  fetchAPI<LookalikeResult>("/api/lookalike/run", {
-    method: "POST",
-    body: JSON.stringify({
-      seed_company_ids: seedIds,
-      limit: limit ?? 50,
-      exclude_contacted: excludeContacted ?? true,
-    }),
-  });
-
-export const runAutoLookalike = () =>
-  fetchAPI<LookalikeResult>("/api/lookalike/auto-run", {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-
-export const getLookalikeRuns = () =>
-  fetchAPI<{ data: LookalikeRunSummary[]; count: number }>("/api/lookalike/runs");
-
-export const getLookalikeRun = (runId: string) =>
-  fetchAPI<{
-    id: string;
-    created_at: string;
-    seed_profile: SeedProfile;
-    matches: LookalikeMatch[];
-    total_scored: number;
-  }>(`/api/lookalike/runs/${runId}`);
-
-export const addLookalikesToPipeline = (
-  runId: string,
-  companyIds: string[],
-  sequenceName?: string
-) =>
-  fetchAPI<{ added: number; already_in_pipeline: number }>(
-    `/api/lookalike/runs/${runId}/add-to-pipeline`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        company_ids: companyIds,
-        sequence_name: sequenceName ?? null,
-      }),
-    }
-  );
-
-export const getSeedProfile = () =>
-  fetchAPI<SeedProfile>("/api/lookalike/seed-profile");
-
-// ---------------------------------------------------------------------------
-// Auth — password reset + session management
-// ---------------------------------------------------------------------------
-
-export const forgotPassword = (email: string) =>
-  fetchAPI<{ message: string }>("/api/auth/forgot-password", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
-
-export const resetPassword = (token: string, newPassword: string) =>
-  fetchAPI<{ message: string }>("/api/auth/reset-password", {
-    method: "POST",
-    body: JSON.stringify({ token, new_password: newPassword }),
-  });
-
-export const authLogout = () =>
-  fetchAPI<{ message: string }>("/api/auth/logout", { method: "POST" });
-
-export interface Session {
-  id: string;
-  event_type: string;
-  ip_address: string | null;
-  user_agent: string | null;
-  created_at: string;
-  metadata: Record<string, unknown>;
+export interface DealStageData {
+  stage: string;
+  count: number;
+  est_value_usd: number;
 }
 
-export const getSessions = () =>
-  fetchAPI<{ sessions: Session[] }>("/api/auth/sessions");
-
-export const revokeSession = (id: string) =>
-  fetchAPI<{ message: string }>(`/api/auth/sessions/${id}`, {
-    method: "DELETE",
-  });
-
-export interface AuditEvent {
-  id: string;
-  event_type: string;
-  ip_address: string | null;
-  user_agent: string | null;
-  created_at: string;
-  metadata: Record<string, unknown>;
+export interface RevenueAttributionData {
+  pipeline_stages: DealStageData[];
+  projected_arr_90d: number;
+  projected_arr_180d: number;
+  confidence_range: [number, number];
+  best_performing_cluster: string;
+  best_performing_sequence: string;
+  avg_deal_size_assumption: number;
+  weighted_pipeline_value: number;
 }
 
-export const getAuthAuditLog = () =>
-  fetchAPI<{ events: AuditEvent[] }>("/api/auth/audit-log");
->>>>>>> Stashed changes
+export interface ChannelROI {
+  channel: string;
+  total_sent: number;
+  total_replied: number;
+  reply_rate_pct: number;
+}
+
+export interface SequenceROI {
+  sequence_name: string;
+  total_sent: number;
+  total_replied: number;
+  reply_rate_pct: number;
+}
+
+export interface ActivityROIData {
+  by_channel: ChannelROI[];
+  by_sequence: SequenceROI[];
+  by_persona: Array<{ persona_type: string; total_sequenced: number; replied: number; reply_rate_pct: number }>;
+  by_cluster: Array<{ cluster: string; total_sequenced: number; replied: number; reply_rate_pct: number }>;
+}
+
+export interface AnalyticsSummary {
+  total_pipeline: number;
+  total_contacted: number;
+  total_replied: number;
+  total_interested: number;
+  projected_arr_90d: number;
+  overall_conversion_rate: number;
+  pipeline_health: "green" | "amber" | "red";
+  bottleneck_stage: string;
+  stuck_in_research_14d: number;
+  best_cluster: string;
+}
+
+export const getFunnelData = (days = 90) =>
+  fetchAPI<FunnelData>(`/api/analytics/funnel?days=${days}`);
+
+export const getCohortAnalysis = (groupBy = "cluster", days = 90) =>
+  fetchAPI<CohortAnalysis>(`/api/analytics/cohorts?group_by=${groupBy}&days=${days}`);
+
+export const getVelocityMetrics = () =>
+  fetchAPI<VelocityMetrics>("/api/analytics/velocity");
+
+export const getRevenueAttribution = (dealSize?: number) => {
+  const qs = dealSize ? `?deal_size=${dealSize}` : "";
+  return fetchAPI<RevenueAttributionData>(`/api/analytics/revenue${qs}`);
+};
+
+export const getActivityROI = () =>
+  fetchAPI<ActivityROIData>("/api/analytics/activity-roi");
+
+export const getAnalyticsSummary = () =>
+  fetchAPI<AnalyticsSummary>("/api/analytics/summary");

@@ -23,6 +23,7 @@ import {
   Moon,
   Sun,
   Inbox,
+  DollarSign,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -154,6 +155,7 @@ export function Sidebar() {
       items: [
         { label: "Intelligence", href: "/intelligence", icon: BarChart3 },
         { label: "Analytics", href: "/analytics", icon: BarChart3 },
+        { label: "Revenue Intelligence", href: "/analytics/revenue", icon: DollarSign },
         { label: "History", href: "/history", icon: History },
       ],
     },
