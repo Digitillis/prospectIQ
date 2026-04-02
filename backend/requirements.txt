@@ -1,4 +1,6 @@
 # ProspectIQ Backend Dependencies
+billing-sdk @ file:../packages/billing-sdk
+stripe>=8.0
 anthropic>=0.40.0
 httpx>=0.27.0
 supabase>=2.10.0
