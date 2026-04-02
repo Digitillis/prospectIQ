@@ -1,7 +1,8 @@
 """Approval routes for ProspectIQ API.
 
 Manage outreach draft approvals and rejections.
-Approved drafts log an interaction and update company status.
+Approval only queues drafts — interactions and company status updates
+happen exclusively when email is actually sent via Resend.
 """
 
 from datetime import datetime, timezone
@@ -102,8 +103,9 @@ async def list_pending_drafts(limit: int = 50):
 async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
     """Approve an outreach draft.
 
-    Optionally provide an edited body. Logs an email_sent interaction
-    and updates the company status to 'contacted'.
+    Optionally provide an edited body. No interaction is logged and no
+    company status is changed here — those happen only when the email is
+    actually sent via Resend (in the engagement agent / gtm_send).
     """
     db = get_db()
 
@@ -118,22 +120,6 @@ async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
     draft = db.update_outreach_draft(draft_id, update_data)
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
-
-    # Log an interaction for the sent email (use edited body if available)
-    sent_body = draft.get("edited_body") or draft.get("body", "")
-    db.insert_interaction({
-        "company_id": draft["company_id"],
-        "contact_id": draft.get("contact_id"),
-        "type": "email_sent",
-        "channel": "email",
-        "subject": draft.get("subject", ""),
-        "body": sent_body,
-        "source": "approval",
-        "metadata": {"draft_id": draft_id},
-    })
-
-    # Update company status to contacted
-    db.update_company(draft["company_id"], {"status": "contacted"})
 
     return {"data": draft, "message": "Draft approved"}
 

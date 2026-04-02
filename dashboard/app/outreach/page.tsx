@@ -1,21 +1,24 @@
 "use client";
 
 /**
- * Outreach Hub — Draft Queue, Send Queue, In-Flight, Sent History
+ * Outreach Hub — Draft Queue, Send Queue, In-Flight, Sent History, Generator
  */
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   Send, CheckCircle2, XCircle, Pencil, Loader2, Inbox,
-  RefreshCw, ChevronDown, ChevronUp, Mail, Shuffle,
+  RefreshCw, ChevronDown, ChevronUp, Mail, Shuffle, Sparkles,
 } from "lucide-react";
 import {
   getPendingDrafts, approveDraft, rejectDraft, saveDraftEdit, testSendDraft,
-  getCompanies, listActiveEnrollments,
-  type OutreachDraft,
+  getCompanies, listActiveEnrollments, getOutreachIntelligence, generateOutreachDraft,
+  generateOutreachBatch,
+  type OutreachDraft, type IntelligenceData,
 } from "@/lib/api";
 import { cn, getPQSColor, TIER_LABELS } from "@/lib/utils";
+import IntelligenceCard from "@/components/outreach/IntelligenceCard";
+import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://prospectiq-production-4848.up.railway.app";
 
@@ -559,15 +562,303 @@ function SentHistoryTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Generator Tab — Outreach Generator with IntelligenceCard per company-contact
+// ---------------------------------------------------------------------------
+
+interface CompanyContactRow {
+  companyId: string;
+  companyName: string;
+  tier?: string;
+  pqsTotal: number;
+  campaignCluster?: string;
+  tranche?: string;
+  contactId: string;
+  contactName?: string;
+  contactTitle?: string;
+  personaType?: string;
+  intelligence: IntelligenceData | null;
+  intelligenceLoading: boolean;
+  draftsCount: number;
+}
+
+function GeneratorTab() {
+  const [rows, setRows] = useState<CompanyContactRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterCluster, setFilterCluster] = useState("");
+  const [filterPersona, setFilterPersona] = useState("");
+  const [filterTranche, setFilterTranche] = useState("");
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchResult, setBatchResult] = useState<string | null>(null);
+  const [expandedContactId, setExpandedContactId] = useState<string | null>(null);
+  const [generatedDraftIds, setGeneratedDraftIds] = useState<Set<string>>(new Set());
+
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch companies that have research (pqs_total > 0 as a proxy)
+      const res = await getCompanies({ limit: "100", min_pqs: "30" });
+      const companies = res.data || [];
+
+      const initialRows: CompanyContactRow[] = [];
+      for (const co of companies) {
+        const contacts = (co as Record<string, unknown>).contacts as Array<Record<string, unknown>> | undefined;
+        const primaryContact = contacts?.[0];
+        if (!primaryContact) continue;
+
+        initialRows.push({
+          companyId: String(co.id),
+          companyName: co.name,
+          tier: co.tier,
+          pqsTotal: co.pqs_total ?? 0,
+          campaignCluster: (co as Record<string, unknown>).campaign_cluster as string | undefined,
+          tranche: (co as Record<string, unknown>).tranche as string | undefined,
+          contactId: String(primaryContact.id),
+          contactName: primaryContact.full_name as string | undefined,
+          contactTitle: primaryContact.title as string | undefined,
+          personaType: primaryContact.persona_type as string | undefined,
+          intelligence: null,
+          intelligenceLoading: false,
+          draftsCount: 0,
+        });
+      }
+      setRows(initialRows);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadRows(); }, [loadRows]);
+
+  const loadIntelligence = async (contactId: string) => {
+    setRows((prev) => prev.map((r) =>
+      r.contactId === contactId ? { ...r, intelligenceLoading: true } : r
+    ));
+    try {
+      const intel = await getOutreachIntelligence(contactId);
+      setRows((prev) => prev.map((r) =>
+        r.contactId === contactId
+          ? { ...r, intelligence: intel, intelligenceLoading: false, personaType: intel.persona_type }
+          : r
+      ));
+    } catch {
+      setRows((prev) => prev.map((r) =>
+        r.contactId === contactId ? { ...r, intelligenceLoading: false } : r
+      ));
+    }
+  };
+
+  const handleExpand = (contactId: string, row: CompanyContactRow) => {
+    if (expandedContactId === contactId) {
+      setExpandedContactId(null);
+      return;
+    }
+    setExpandedContactId(contactId);
+    if (!row.intelligence && !row.intelligenceLoading) {
+      loadIntelligence(contactId);
+    }
+  };
+
+  const handleGenerate = async (row: CompanyContactRow) => {
+    try {
+      const res = await generateOutreachDraft(row.companyId, row.contactId, "touch_1");
+      if (res.data?.id) {
+        setGeneratedDraftIds((prev) => new Set(prev).add(row.contactId));
+        setRows((prev) => prev.map((r) =>
+          r.contactId === row.contactId ? { ...r, draftsCount: r.draftsCount + 1 } : r
+        ));
+      }
+    } catch { /* noop */ }
+  };
+
+  const handleBatchGenerate = async () => {
+    const eligibleIds = filteredRows
+      .filter((r) => !generatedDraftIds.has(r.contactId))
+      .map((r) => r.companyId);
+
+    if (!eligibleIds.length) return;
+    setBatchGenerating(true);
+    setBatchResult(null);
+    try {
+      const res = await generateOutreachBatch(eligibleIds, "touch_1");
+      setBatchResult(`${res.created} drafts created`);
+      setGeneratedDraftIds((prev) => {
+        const next = new Set(prev);
+        filteredRows.forEach((r) => next.add(r.contactId));
+        return next;
+      });
+      setTimeout(() => setBatchResult(null), 5000);
+    } catch (e) {
+      setBatchResult(e instanceof Error ? e.message : "Batch failed");
+    } finally {
+      setBatchGenerating(false);
+    }
+  };
+
+  const filteredRows = rows.filter((r) => {
+    if (filterCluster && r.campaignCluster !== filterCluster) return false;
+    if (filterPersona && r.personaType !== filterPersona) return false;
+    if (filterTranche && r.tranche !== filterTranche) return false;
+    return true;
+  });
+
+  const clusters = Array.from(new Set(rows.map((r) => r.campaignCluster).filter(Boolean)));
+  const tranches = Array.from(new Set(rows.map((r) => r.tranche).filter(Boolean)));
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={filterCluster}
+          onChange={(e) => setFilterCluster(e.target.value)}
+          className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none"
+        >
+          <option value="">All Clusters</option>
+          {clusters.map((c) => <option key={c} value={c!}>{c}</option>)}
+        </select>
+        <select
+          value={filterPersona}
+          onChange={(e) => setFilterPersona(e.target.value)}
+          className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none"
+        >
+          <option value="">All Personas</option>
+          {["vp_ops", "plant_manager", "engineer", "procurement", "executive", "default"].map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+        <select
+          value={filterTranche}
+          onChange={(e) => setFilterTranche(e.target.value)}
+          className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none"
+        >
+          <option value="">All Tranches</option>
+          {tranches.map((t) => <option key={t} value={t!}>{t}</option>)}
+        </select>
+        <button onClick={loadRows} className="rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {batchResult && <span className="text-xs text-gray-500 dark:text-gray-400">{batchResult}</span>}
+          <button
+            onClick={handleBatchGenerate}
+            disabled={batchGenerating || filteredRows.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {batchGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Generate All ({filteredRows.length})
+          </button>
+        </div>
+      </div>
+
+      {/* Rows */}
+      {loading ? (
+        Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-14 w-full animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" />
+        ))
+      ) : filteredRows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 py-16">
+          <Inbox className="h-10 w-10 text-gray-300" />
+          <p className="mt-3 text-sm text-gray-500">No companies with research data found</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredRows.map((row) => {
+            const isExpanded = expandedContactId === row.contactId;
+            const hasDraft = generatedDraftIds.has(row.contactId) || row.draftsCount > 0;
+            return (
+              <div key={row.contactId} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+                {/* Row header */}
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{row.companyName}</span>
+                      <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold", getPQSColor(row.pqsTotal))}>
+                        PQS {row.pqsTotal}
+                      </span>
+                      {row.tier && (
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                          {TIER_LABELS[row.tier] ?? row.tier}
+                        </span>
+                      )}
+                      {row.campaignCluster && (
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
+                          {row.campaignCluster}
+                        </span>
+                      )}
+                      {hasDraft && (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                          Draft created
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
+                      {row.contactName && <>{row.contactName} · </>}
+                      {row.contactTitle}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!hasDraft && (
+                      <button
+                        onClick={() => handleGenerate(row)}
+                        className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Generate
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleExpand(row.contactId, row)}
+                      className="rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                    >
+                      {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Intelligence card (expanded) */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-3">
+                    {row.intelligenceLoading ? (
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading intelligence...
+                      </div>
+                    ) : row.intelligence ? (
+                      <IntelligenceCard
+                        contactId={row.contactId}
+                        intelligence={row.intelligence}
+                        compact
+                        onDraftCreated={(draftId) => {
+                          setGeneratedDraftIds((prev) => new Set(prev).add(row.contactId));
+                        }}
+                      />
+                    ) : (
+                      <p className="text-xs text-gray-400">No intelligence available.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
-type TabKey = "drafts" | "queue" | "inflight" | "history";
+type TabKey = "drafts" | "queue" | "inflight" | "history" | "generator";
 
-const TABS: { key: TabKey; label: string }[] = [
+const TABS: { key: TabKey; label: string; icon?: React.ReactNode }[] = [
   { key: "drafts", label: "Draft Queue" },
   { key: "queue", label: "Send Queue" },
   { key: "inflight", label: "In-Flight" },
   { key: "history", label: "Sent History" },
+  { key: "generator", label: "Generator" },
 ];
 
 export default function OutreachHubPage() {
@@ -593,7 +884,12 @@ export default function OutreachHubPage() {
                 : "text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
             )}
           >
-            {tab.label}
+            {tab.key === "generator" ? (
+              <span className="flex items-center gap-1">
+                <Sparkles className="h-3.5 w-3.5" />
+                {tab.label}
+              </span>
+            ) : tab.label}
           </button>
         ))}
       </div>
@@ -602,6 +898,7 @@ export default function OutreachHubPage() {
       {activeTab === "queue" && <SendQueueTab />}
       {activeTab === "inflight" && <InFlightTab />}
       {activeTab === "history" && <SentHistoryTab />}
+      {activeTab === "generator" && <GeneratorTab />}
     </div>
   );
 }

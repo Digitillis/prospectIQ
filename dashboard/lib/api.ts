@@ -167,6 +167,91 @@ export const testSendDraft = (id: string, testEmail: string) =>
     }
   );
 
+// ---------------------------------------------------------------------------
+// Outreach Agent — personalized draft generation and intelligence
+// ---------------------------------------------------------------------------
+
+export interface IntelligenceData {
+  contact: Record<string, unknown>;
+  company: {
+    id: string;
+    name: string;
+    domain?: string;
+    tier?: string;
+    pqs_total?: number;
+    status?: string;
+    campaign_cluster?: string;
+    tranche?: string;
+    research_updated_at?: string;
+  };
+  research_summary: Record<string, unknown>;
+  personalization_hooks: string[];
+  pain_signals: string[];
+  trigger_events: Array<{
+    type?: string;
+    description?: string;
+    date_approx?: string;
+    outreach_relevance?: string;
+  }>;
+  persona_type: string;
+  recommended_hooks: string[];
+}
+
+export interface DraftQualityScore {
+  draft_id: string;
+  scores: {
+    specificity: number;
+    relevance: number;
+    tone_match: number;
+    cta_clarity: number;
+  };
+  overall: number;
+  suggestions: string[];
+}
+
+/** Generate a personalized outreach draft for a company-contact pair. */
+export const generateOutreachDraft = (
+  companyId: string,
+  contactId: string,
+  sequenceStep: string = "touch_1",
+  forceRegenerate: boolean = false,
+) =>
+  fetchAPI<{ data: OutreachDraft & Record<string, unknown>; message: string }>(
+    "/api/outreach/generate",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        company_id: companyId,
+        contact_id: contactId,
+        sequence_step: sequenceStep,
+        force_regenerate: forceRegenerate,
+      }),
+    }
+  );
+
+/** Generate drafts for multiple companies in one batch request. */
+export const generateOutreachBatch = (
+  companyIds: string[],
+  sequenceStep: string = "touch_1",
+) =>
+  fetchAPI<{ created: number; drafts: OutreachDraft[]; message: string }>(
+    "/api/outreach/generate-batch",
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds, sequence_step: sequenceStep }),
+    }
+  );
+
+/** Fetch the full personalization intelligence payload for a contact. */
+export const getOutreachIntelligence = (contactId: string) =>
+  fetchAPI<IntelligenceData>(`/api/outreach/intelligence/${contactId}`);
+
+/** Score a draft across four quality dimensions (specificity, relevance, tone, CTA). */
+export const scoreDraft = (draftId: string) =>
+  fetchAPI<DraftQualityScore>(`/api/outreach/score-draft/${draftId}`, {
+    method: "POST",
+  });
+
 // Pipeline
 export const runAgent = (agent: string, body: Record<string, unknown> = {}) =>
   fetchAPI(`/api/pipeline/run/${agent}`, {
@@ -1656,3 +1741,160 @@ export const addManualTrigger = (
     method: "POST",
     body: JSON.stringify(trigger),
   });
+
+// ---------------------------------------------------------------------------
+// HITL — Human-in-the-Loop reply review queue
+// ---------------------------------------------------------------------------
+
+export interface HitlMessage {
+  id: string;
+  thread_id: string;
+  direction: "inbound" | "outbound";
+  subject?: string | null;
+  body?: string;
+  sent_at?: string;
+  classification?: string | null;
+  classification_confidence?: number | null;
+  classification_reasoning?: string | null;
+  extracted_entities?: Record<string, unknown> | null;
+  summary?: string | null;
+  next_action_suggestion?: string | null;
+  hitl_action?: string | null;
+  hitl_notes?: string | null;
+  hitl_actioned_at?: string | null;
+}
+
+export interface HitlQueueItem {
+  id: string;
+  thread_id: string;
+  message_id?: string | null;
+  workspace_id: string;
+  classification?: string | null;
+  classification_confidence?: number | null;
+  priority: number;
+  status: string; // pending | reviewing | actioned | snoozed
+  assigned_to?: string | null;
+  snoozed_until?: string | null;
+  created_at: string;
+  actioned_at?: string | null;
+  // Enriched
+  message?: HitlMessage | null;
+  company?: {
+    id: string;
+    name: string;
+    tier?: string;
+    pqs_total: number;
+    status?: string;
+    research_summary?: string;
+    personalization_hooks?: string[];
+  } | null;
+  contact?: {
+    id: string;
+    full_name?: string;
+    title?: string;
+    email?: string;
+    persona_type?: string;
+  } | null;
+}
+
+export interface HitlDetailResponse {
+  id: string;
+  thread_id: string;
+  message_id?: string | null;
+  workspace_id: string;
+  classification?: string | null;
+  classification_confidence?: number | null;
+  priority: number;
+  status: string;
+  created_at: string;
+  actioned_at?: string | null;
+  thread?: {
+    id: string;
+    status: string;
+    current_step?: number;
+    company_id: string;
+    contact_id: string;
+    last_replied_at?: string | null;
+  } | null;
+  messages?: HitlMessage[];
+  company?: {
+    id: string;
+    name: string;
+    tier?: string;
+    pqs_total: number;
+    status?: string;
+    research_summary?: string;
+    personalization_hooks?: string[];
+  } | null;
+  contact?: {
+    id: string;
+    full_name?: string;
+    title?: string;
+    email?: string;
+    persona_type?: string;
+  } | null;
+  research?: {
+    company_description?: string;
+    manufacturing_type?: string;
+    maintenance_approach?: string;
+    iot_maturity?: string;
+    personalization_hooks?: string[];
+    pain_points?: string[];
+  } | null;
+}
+
+export interface HitlStats {
+  pending: number;
+  reviewing: number;
+  by_classification: Record<string, number>;
+  avg_response_time_hours: number;
+}
+
+export const getHitlQueue = (params?: {
+  status?: string;
+  priority_max?: number;
+  classification?: string;
+  limit?: number;
+}) => {
+  const qs = params
+    ? "?" +
+      new URLSearchParams(
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => [k, String(v)])
+      ).toString()
+    : "";
+  return fetchAPI<{ data: HitlQueueItem[]; count: number; status_filter: string }>(
+    `/api/hitl/queue${qs}`
+  );
+};
+
+export const getHitlDetail = (hitlId: string) =>
+  fetchAPI<{ data: HitlDetailResponse }>(`/api/hitl/queue/${hitlId}`);
+
+export const actionHitlItem = (
+  hitlId: string,
+  action: string,
+  notes?: string,
+  snoozeUntil?: string
+) =>
+  fetchAPI<{ message: string; hitl_id: string; action: string; thread_id?: string }>(
+    `/api/hitl/queue/${hitlId}/action`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        action,
+        notes: notes ?? null,
+        snooze_until: snoozeUntil ?? null,
+      }),
+    }
+  );
+
+export const getHitlStats = () =>
+  fetchAPI<HitlStats>("/api/hitl/stats");
+
+export const suggestHitlResponse = (hitlId: string) =>
+  fetchAPI<{ subject: string; body: string; tone_notes: string }>(
+    `/api/hitl/queue/${hitlId}/suggest-response`,
+    { method: "POST", body: JSON.stringify({}) }
+  );

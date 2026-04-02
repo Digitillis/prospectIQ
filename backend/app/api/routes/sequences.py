@@ -40,11 +40,12 @@ Each step in `steps` follows this shape:
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.app.core.config import get_sequences_config, get_settings
 from backend.app.core.database import Database
