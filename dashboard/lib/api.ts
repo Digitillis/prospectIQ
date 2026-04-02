@@ -167,91 +167,6 @@ export const testSendDraft = (id: string, testEmail: string) =>
     }
   );
 
-// ---------------------------------------------------------------------------
-// Outreach Agent — personalized draft generation and intelligence
-// ---------------------------------------------------------------------------
-
-export interface IntelligenceData {
-  contact: Record<string, unknown>;
-  company: {
-    id: string;
-    name: string;
-    domain?: string;
-    tier?: string;
-    pqs_total?: number;
-    status?: string;
-    campaign_cluster?: string;
-    tranche?: string;
-    research_updated_at?: string;
-  };
-  research_summary: Record<string, unknown>;
-  personalization_hooks: string[];
-  pain_signals: string[];
-  trigger_events: Array<{
-    type?: string;
-    description?: string;
-    date_approx?: string;
-    outreach_relevance?: string;
-  }>;
-  persona_type: string;
-  recommended_hooks: string[];
-}
-
-export interface DraftQualityScore {
-  draft_id: string;
-  scores: {
-    specificity: number;
-    relevance: number;
-    tone_match: number;
-    cta_clarity: number;
-  };
-  overall: number;
-  suggestions: string[];
-}
-
-/** Generate a personalized outreach draft for a company-contact pair. */
-export const generateOutreachDraft = (
-  companyId: string,
-  contactId: string,
-  sequenceStep: string = "touch_1",
-  forceRegenerate: boolean = false,
-) =>
-  fetchAPI<{ data: OutreachDraft & Record<string, unknown>; message: string }>(
-    "/api/outreach/generate",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        company_id: companyId,
-        contact_id: contactId,
-        sequence_step: sequenceStep,
-        force_regenerate: forceRegenerate,
-      }),
-    }
-  );
-
-/** Generate drafts for multiple companies in one batch request. */
-export const generateOutreachBatch = (
-  companyIds: string[],
-  sequenceStep: string = "touch_1",
-) =>
-  fetchAPI<{ created: number; drafts: OutreachDraft[]; message: string }>(
-    "/api/outreach/generate-batch",
-    {
-      method: "POST",
-      body: JSON.stringify({ company_ids: companyIds, sequence_step: sequenceStep }),
-    }
-  );
-
-/** Fetch the full personalization intelligence payload for a contact. */
-export const getOutreachIntelligence = (contactId: string) =>
-  fetchAPI<IntelligenceData>(`/api/outreach/intelligence/${contactId}`);
-
-/** Score a draft across four quality dimensions (specificity, relevance, tone, CTA). */
-export const scoreDraft = (draftId: string) =>
-  fetchAPI<DraftQualityScore>(`/api/outreach/score-draft/${draftId}`, {
-    method: "POST",
-  });
-
 // Pipeline
 export const runAgent = (agent: string, body: Record<string, unknown> = {}) =>
   fetchAPI(`/api/pipeline/run/${agent}`, {
@@ -1627,234 +1542,75 @@ export const updateIntelligenceGoals = (data: {
   });
 
 // ---------------------------------------------------------------------------
-// Personalization Engine — /api/personalization
+// Signal Monitor — buying signal engine
 // ---------------------------------------------------------------------------
 
-export interface TriggerEvent {
-  trigger_type: string;    // growth | pain | tech | timing
+export interface CompanySignal {
+  id: string;
+  company_id: string;
+  workspace_id: string;
+  signal_type: string;
+  urgency: string;
+  title: string;
   description: string;
-  urgency: string;         // immediate | near_term | background
-  confidence: number;
-  source_text: string;
-  priority_rank: number;
+  source_url?: string | null;
+  source_name: string;
+  signal_score: number;
+  is_read: boolean;
+  is_actioned: boolean;
+  actioned_at?: string | null;
+  detected_at: string;
+  expires_at?: string | null;
 }
 
-export interface PersonalizationHook {
-  hook_text: string;
-  persona_target: string;
-  trigger_reference: string;
-  tone: string;            // specific | empathetic | provocative
-  confidence: number;
-}
-
-export interface PersonalizationResult {
-  company_id: string;
-  readiness_score: number;
-  readiness_breakdown: Record<string, number>;
-  triggers: TriggerEvent[];
-  hooks: PersonalizationHook[];
-  personas_found: string[];
-  contacts_updated: number;
-  generated_at: string;
-  cost_usd: number;
-}
-
-export interface BatchResult {
-  processed: number;
-  updated: number;
-  errors: number;
-  total_cost_usd: number;
-  avg_readiness_score: number;
-  error_details: Array<{ company_id: string; error: string }>;
-}
-
-export interface PersonalizationStatus {
-  company_id: string;
-  readiness_score: number;
-  triggers: TriggerEvent[];
-  hooks: PersonalizationHook[];
-  personas_found: string[];
-  last_run_at: string | null;
-  contacts_count: number;
-}
-
-export interface PersonalizationFilters {
-  cluster?: string;
-  tranche?: string;
-  min_pqs?: number;
-}
-
-export interface PersonalizationLeaderboardItem {
+export interface SignalSummary {
   company_id: string;
   company_name: string;
-  cluster?: string;
-  tranche?: string;
-  readiness_score: number;
-  trigger_count: number;
-  hook_count: number;
-  contact_count: number;
-  personas_found: string[];
-  last_run_at?: string;
-  pqs_total: number;
+  cluster: string;
+  total_signals: number;
+  unread_signals: number;
+  max_urgency: string;
+  composite_score: number;
+  latest_signal_at: string;
+  signals: CompanySignal[];
 }
 
-export interface ManualTriggerInput {
-  trigger_type: string;
+export interface SignalStats {
+  total_unread: number;
+  by_urgency: { immediate: number; near_term: number; background: number };
+  by_type: Record<string, number>;
+  hot_companies: number;
+}
+
+export interface BatchScanResult {
+  companies_scanned: number;
+  signals_created: number;
+  signals_skipped: number;
+  cost_usd: number;
+  batch_id: string;
+  duration_seconds: number;
+  errors: number;
+}
+
+export interface ManualSignalInput {
+  company_id: string;
+  signal_type: string;
+  title: string;
   description: string;
-  urgency: string;
-  source?: string;
+  urgency?: string;
+  source_url?: string;
+  source_name?: string;
+  signal_score?: number;
 }
 
-export const runPersonalization = (companyId: string): Promise<PersonalizationResult> =>
-  fetchAPI<PersonalizationResult>(`/api/personalization/run/${companyId}`, {
-    method: "POST",
-  });
-
-export const runPersonalizationBatch = (
-  filters: PersonalizationFilters = {},
-  maxCompanies = 50
-): Promise<BatchResult> =>
-  fetchAPI<BatchResult>("/api/personalization/run-batch", {
-    method: "POST",
-    body: JSON.stringify({ filters, max_companies: maxCompanies }),
-  });
-
-export const getPersonalizationStatus = (companyId: string): Promise<PersonalizationStatus> =>
-  fetchAPI<PersonalizationStatus>(`/api/personalization/status/${companyId}`);
-
-export const getPersonalizationLeaderboard = (params?: {
-  limit?: number;
+/** List signals with optional filters. */
+export const getSignals = (params?: {
+  urgency?: string;
+  signal_type?: string;
+  is_read?: boolean;
   cluster?: string;
-  tranche?: string;
-}): Promise<PersonalizationLeaderboardItem[]> => {
-  const qs = params ? "?" + new URLSearchParams(
-    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
-  ).toString() : "";
-  return fetchAPI<PersonalizationLeaderboardItem[]>(`/api/personalization/leaderboard${qs}`);
-};
-
-export const addManualTrigger = (
-  companyId: string,
-  trigger: ManualTriggerInput
-): Promise<TriggerEvent> =>
-  fetchAPI<TriggerEvent>(`/api/personalization/add-trigger/${companyId}`, {
-    method: "POST",
-    body: JSON.stringify(trigger),
-  });
-
-// ---------------------------------------------------------------------------
-// HITL — Human-in-the-Loop reply review queue
-// ---------------------------------------------------------------------------
-
-export interface HitlMessage {
-  id: string;
-  thread_id: string;
-  direction: "inbound" | "outbound";
-  subject?: string | null;
-  body?: string;
-  sent_at?: string;
-  classification?: string | null;
-  classification_confidence?: number | null;
-  classification_reasoning?: string | null;
-  extracted_entities?: Record<string, unknown> | null;
-  summary?: string | null;
-  next_action_suggestion?: string | null;
-  hitl_action?: string | null;
-  hitl_notes?: string | null;
-  hitl_actioned_at?: string | null;
-}
-
-export interface HitlQueueItem {
-  id: string;
-  thread_id: string;
-  message_id?: string | null;
-  workspace_id: string;
-  classification?: string | null;
-  classification_confidence?: number | null;
-  priority: number;
-  status: string; // pending | reviewing | actioned | snoozed
-  assigned_to?: string | null;
-  snoozed_until?: string | null;
-  created_at: string;
-  actioned_at?: string | null;
-  // Enriched
-  message?: HitlMessage | null;
-  company?: {
-    id: string;
-    name: string;
-    tier?: string;
-    pqs_total: number;
-    status?: string;
-    research_summary?: string;
-    personalization_hooks?: string[];
-  } | null;
-  contact?: {
-    id: string;
-    full_name?: string;
-    title?: string;
-    email?: string;
-    persona_type?: string;
-  } | null;
-}
-
-export interface HitlDetailResponse {
-  id: string;
-  thread_id: string;
-  message_id?: string | null;
-  workspace_id: string;
-  classification?: string | null;
-  classification_confidence?: number | null;
-  priority: number;
-  status: string;
-  created_at: string;
-  actioned_at?: string | null;
-  thread?: {
-    id: string;
-    status: string;
-    current_step?: number;
-    company_id: string;
-    contact_id: string;
-    last_replied_at?: string | null;
-  } | null;
-  messages?: HitlMessage[];
-  company?: {
-    id: string;
-    name: string;
-    tier?: string;
-    pqs_total: number;
-    status?: string;
-    research_summary?: string;
-    personalization_hooks?: string[];
-  } | null;
-  contact?: {
-    id: string;
-    full_name?: string;
-    title?: string;
-    email?: string;
-    persona_type?: string;
-  } | null;
-  research?: {
-    company_description?: string;
-    manufacturing_type?: string;
-    maintenance_approach?: string;
-    iot_maturity?: string;
-    personalization_hooks?: string[];
-    pain_points?: string[];
-  } | null;
-}
-
-export interface HitlStats {
-  pending: number;
-  reviewing: number;
-  by_classification: Record<string, number>;
-  avg_response_time_hours: number;
-}
-
-export const getHitlQueue = (params?: {
-  status?: string;
-  priority_max?: number;
-  classification?: string;
   limit?: number;
+  offset?: number;
 }) => {
   const qs = params
     ? "?" +
@@ -1864,37 +1620,56 @@ export const getHitlQueue = (params?: {
           .map(([k, v]) => [k, String(v)])
       ).toString()
     : "";
-  return fetchAPI<{ data: HitlQueueItem[]; count: number; status_filter: string }>(
-    `/api/hitl/queue${qs}`
-  );
+  return fetchAPI<{ data: CompanySignal[]; count: number }>(`/api/signals${qs}`);
 };
 
-export const getHitlDetail = (hitlId: string) =>
-  fetchAPI<{ data: HitlDetailResponse }>(`/api/hitl/queue/${hitlId}`);
-
-export const actionHitlItem = (
-  hitlId: string,
-  action: string,
-  notes?: string,
-  snoozeUntil?: string
-) =>
-  fetchAPI<{ message: string; hitl_id: string; action: string; thread_id?: string }>(
-    `/api/hitl/queue/${hitlId}/action`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        action,
-        notes: notes ?? null,
-        snooze_until: snoozeUntil ?? null,
-      }),
-    }
+/** Get companies ranked by composite signal score. */
+export const getHotProspects = (limit = 20) =>
+  fetchAPI<{ data: SignalSummary[]; count: number }>(
+    `/api/signals/hot-prospects?limit=${limit}`
   );
 
-export const getHitlStats = () =>
-  fetchAPI<HitlStats>("/api/hitl/stats");
-
-export const suggestHitlResponse = (hitlId: string) =>
-  fetchAPI<{ subject: string; body: string; tone_notes: string }>(
-    `/api/hitl/queue/${hitlId}/suggest-response`,
-    { method: "POST", body: JSON.stringify({}) }
+/** Get all signals for a specific company. */
+export const getCompanySignals = (companyId: string) =>
+  fetchAPI<{ data: CompanySignal[]; count: number }>(
+    `/api/signals/company/${companyId}`
   );
+
+/** Trigger an immediate scan for a single company. */
+export const scanCompanySignals = (companyId: string) =>
+  fetchAPI<{ data: CompanySignal[]; count: number; message: string }>(
+    `/api/signals/scan/${companyId}`,
+    { method: "POST" }
+  );
+
+/** Run a batch signal scan across unscanned companies. */
+export const scanBatchSignals = (limit = 50) =>
+  fetchAPI<BatchScanResult>("/api/signals/scan-batch", {
+    method: "POST",
+    body: JSON.stringify({ limit }),
+  });
+
+/** Mark a signal as read. */
+export const markSignalRead = (signalId: string) =>
+  fetchAPI<{ message: string; signal_id: string }>(
+    `/api/signals/${signalId}/read`,
+    { method: "PATCH" }
+  );
+
+/** Mark a signal as actioned. */
+export const markSignalActioned = (signalId: string) =>
+  fetchAPI<{ message: string; signal_id: string }>(
+    `/api/signals/${signalId}/action`,
+    { method: "PATCH" }
+  );
+
+/** Add a manually-observed buying signal. */
+export const addManualSignal = (data: ManualSignalInput) =>
+  fetchAPI<{ data: CompanySignal; message: string }>("/api/signals/manual", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+/** Get aggregate signal stats (badge counts). */
+export const getSignalStats = () =>
+  fetchAPI<SignalStats>("/api/signals/stats");

@@ -22,15 +22,10 @@ import {
   CheckCircle2,
   Moon,
   Sun,
-  Inbox,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { listThreads, getHitlStats } from "@/lib/api";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "https://prospectiq-production-4848.up.railway.app";
+import { listThreads, getSignalStats } from "@/lib/api";
 
 /** Fetch threads needing action for the badge count. */
 function useThreadsBadge(): number {
@@ -45,30 +40,22 @@ function useThreadsBadge(): number {
   return count;
 }
 
-/** HITL queue pending badge count. */
-function useHitlBadge(): number {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    getHitlStats()
-      .then((res) => setCount(res.pending ?? 0))
-      .catch(() => {});
-  }, []);
-
-  return count;
-}
-
-/** Hot signals badge — companies with intent_score > 15. */
+/**
+ * Live signals badge — shows count of IMMEDIATE unactioned signals.
+ * Calls /api/signals/stats on mount and refreshes every 60s.
+ */
 function useSignalsBadge(): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/intelligence/signals`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        if (json) setCount(json.total_hot ?? 0);
-      })
-      .catch(() => {});
+    const fetch = () => {
+      getSignalStats()
+        .then((stats) => setCount(stats.by_urgency?.immediate ?? 0))
+        .catch(() => {});
+    };
+    fetch();
+    const interval = setInterval(fetch, 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   return count;
@@ -97,7 +84,6 @@ interface NavSection {
 export function Sidebar() {
   const pathname = usePathname();
   const threadsBadge = useThreadsBadge();
-  const hitlBadge = useHitlBadge();
   const signalsBadge = useSignalsBadge();
 
   const [dark, setDark] = useState(false);
@@ -128,7 +114,6 @@ export function Sidebar() {
       items: [
         { label: "Command Center", href: "/", icon: LayoutDashboard, exactMatch: true },
         { label: "Pipeline", href: "/pipeline", icon: Activity },
-        { label: "Reply Queue", href: "/hitl", icon: Inbox, badge: hitlBadge > 0 ? hitlBadge : undefined },
         { label: "Threads", href: "/threads", icon: MessageSquare, badge: threadsBadge > 0 ? threadsBadge : undefined },
         { label: "Signals", href: "/signals", icon: Zap, badge: signalsBadge > 0 ? signalsBadge : undefined },
       ],
