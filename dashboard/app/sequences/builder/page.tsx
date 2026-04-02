@@ -17,14 +17,11 @@ import {
   ArrowLeft, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createSequenceV2, updateSequenceV2, getSequenceById } from "@/lib/api";
-import type {
-  SequenceStepV2,
-  SequenceDefinitionV2,
-  StepType,
-  WaitCondition,
-  ConditionType,
-} from "@/types/sequence";
+import {
+  createSequenceV2, updateSequenceV2, getSequenceById,
+  type SequenceStepV2, type SequenceDefinitionV2,
+} from "@/lib/api";
+import type { StepType, WaitCondition, ConditionType } from "@/types/sequence";
 import { TEMPLATE_VARIABLES } from "@/types/sequence";
 import { SequencePreview } from "@/components/sequences/SequencePreview";
 
