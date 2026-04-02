@@ -524,3 +524,80 @@ async def get_analytics_summary():
     ra = RevenueAnalytics(db)
     result = ra.get_analytics_summary(workspace_id=db.workspace_id)
     return result.model_dump()
+
+
+@router.get("/cost-per-meeting")
+async def get_cost_per_meeting(days: int = Query(default=90, ge=1, le=365)):
+    """Return cost-per-meeting breakdown for the last N days.
+
+    Aggregates:
+    - total_cost_usd: all API costs (Anthropic, Perplexity, Apollo enrichment)
+    - meetings_booked: interactions with type='meeting' in the window
+    - cost_per_meeting_usd: total_cost / meetings (null if no meetings yet)
+    - cost_breakdown: per-provider and per-model cost totals
+    - meetings_pipeline: companies at meeting_scheduled / pilot_discussion / pilot_signed stage
+
+    This is the north-star unit economic metric for the outreach program.
+    """
+    import datetime
+    db = get_db()
+    client = db.client
+    workspace_id = db.workspace_id
+
+    since = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
+
+    # --- Total API costs ---
+    costs_result = (
+        db._filter_ws(client.table("api_costs").select("provider, model, estimated_cost_usd"))
+        .gte("created_at", since)
+        .execute()
+    )
+    costs_rows = costs_result.data or []
+    total_cost = sum(r.get("estimated_cost_usd") or 0.0 for r in costs_rows)
+
+    # Cost breakdown by provider + model
+    breakdown: dict = {}
+    for row in costs_rows:
+        key = f"{row.get('provider', 'unknown')}/{row.get('model') or 'unknown'}"
+        breakdown[key] = round(breakdown.get(key, 0.0) + (row.get("estimated_cost_usd") or 0.0), 6)
+
+    # --- Meetings booked ---
+    meetings_result = (
+        db._filter_ws(
+            client.table("interactions")
+            .select("id, company_id, created_at", count="exact")
+        )
+        .eq("type", "meeting")
+        .gte("created_at", since)
+        .execute()
+    )
+    meetings_count = meetings_result.count or 0
+
+    # --- Companies at advanced pipeline stages ---
+    pipeline_result = (
+        db._filter_ws(
+            client.table("companies")
+            .select("id, name, status, tier, pqs_total", count="exact")
+        )
+        .in_("status", ["meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot", "converted"])
+        .execute()
+    )
+    pipeline_companies = pipeline_result.data or []
+
+    cost_per_meeting = (
+        round(total_cost / meetings_count, 2) if meetings_count > 0 else None
+    )
+
+    return {
+        "data": {
+            "period_days": days,
+            "total_cost_usd": round(total_cost, 4),
+            "meetings_booked": meetings_count,
+            "cost_per_meeting_usd": cost_per_meeting,
+            "cost_breakdown": breakdown,
+            "meetings_pipeline": {
+                "count": len(pipeline_companies),
+                "companies": pipeline_companies,
+            },
+        }
+    }

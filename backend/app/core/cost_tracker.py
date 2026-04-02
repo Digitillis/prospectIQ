@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 COST_TABLE = {
     "anthropic": {
         "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+        "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00},
         "claude-haiku-4-20250414": {"input": 0.80, "output": 4.00},
         "claude-opus-4-20250515": {"input": 15.00, "output": 75.00},
         # Fallback for unknown model versions

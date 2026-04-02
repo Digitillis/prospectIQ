@@ -10,6 +10,32 @@ from contextlib import asynccontextmanager
 from time import time
 
 from fastapi import FastAPI
+
+# ---------------------------------------------------------------------------
+# Sentry — initialize early so all errors (including startup) are captured
+# ---------------------------------------------------------------------------
+try:
+    from backend.app.core.config import get_settings as _get_settings
+    _s = _get_settings()
+    if _s.sentry_dsn:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        sentry_sdk.init(
+            dsn=_s.sentry_dsn,
+            environment=_s.sentry_environment,
+            traces_sample_rate=_s.sentry_traces_sample_rate,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+            # Don't capture 4xx errors as Sentry issues — those are user errors
+            ignore_errors=[],
+        )
+        logging.getLogger(__name__).info(
+            "Sentry initialized (env=%s, traces=%.0f%%)",
+            _s.sentry_environment,
+            _s.sentry_traces_sample_rate * 100,
+        )
+except Exception as _sentry_err:
+    logging.getLogger(__name__).warning("Sentry init skipped: %s", _sentry_err)
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse

@@ -236,6 +236,11 @@ class ResearchResult(BaseModel):
     trigger_score: int = 0  # 0-10; higher = more compelling buying triggers detected
     personalization_hooks: list[str] = Field(default_factory=list)
     confidence_level: str = "low"  # high, medium, low
+    # Awareness level: how aware the prospect is of AI manufacturing intelligence solutions.
+    # unaware         — no evidence they know solutions like Digitillis exist
+    # problem_aware   — they know the problem (downtime, quality, etc.) but not specific AI solutions
+    # solution_aware  — they know AI manufacturing platforms exist; may be evaluating options
+    awareness_level: str = "unaware"  # unaware, problem_aware, solution_aware
 
 
 # ============================================================

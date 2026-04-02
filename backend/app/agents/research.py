@@ -107,13 +107,18 @@ OUTPUT THIS EXACT JSON SCHEMA:
         "e.g., 'Uses SAP ERP and Rockwell automation — direct integration path for Digitillis'",
         "e.g., 'New VP Ops joined from Honeywell in Q1 2025 — likely evaluating new tools'"
     ],
-    "confidence_level": "high" or "medium" or "low"
+    "confidence_level": "high" or "medium" or "low",
+    "awareness_level": "unaware" or "problem_aware" or "solution_aware"
 }}
 
 Rules:
 - trigger_events must be an array (empty [] if none found — do NOT omit the field)
 - trigger_score: 0=no triggers, 1-3=weak signals, 4-6=moderate, 7-10=strong/multiple triggers
 - Do not fabricate events — only include triggers with factual basis
+- awareness_level:
+    "unaware"        — no evidence they are aware of AI manufacturing intelligence platforms
+    "problem_aware"  — evidence they recognize operational problems (downtime, OEE, quality loss) but not specifically AI solutions
+    "solution_aware" — evidence they are evaluating or have evaluated AI/ML manufacturing platforms (existing_solutions not empty, or digital transformation initiatives mention AI/ML)
 - Output ONLY valid JSON. No markdown, no explanation, no preamble."""
 
 

@@ -18,6 +18,7 @@ from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import get_settings, get_manufacturing_ontology
+from backend.app.core.model_router import get_model
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -376,8 +377,9 @@ class LinkedInAgent(BaseAgent):
                     # Call Claude
                     console.print(f"  [dim]{company_name} → {contact_name}...[/dim]")
 
+                    _model = get_model("linkedin_msg")
                     response = client.messages.create(
-                        model="claude-sonnet-4-6",
+                        model=_model,
                         max_tokens=1200,
                         system=system_prompt,
                         messages=[{"role": "user", "content": prompt}],
@@ -387,7 +389,7 @@ class LinkedInAgent(BaseAgent):
                     usage = response.usage
                     self.track_cost(
                         provider="anthropic",
-                        model="claude-sonnet-4-6",
+                        model=_model,
                         endpoint="/messages",
                         company_id=company_id,
                         input_tokens=usage.input_tokens,

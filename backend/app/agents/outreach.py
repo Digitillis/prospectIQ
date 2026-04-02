@@ -18,6 +18,7 @@ from backend.app.core.config import (
     get_sequences_config,
     get_manufacturing_ontology,
     get_outreach_guidelines,
+    get_offer_context,
 )
 
 console = Console()
@@ -38,9 +39,9 @@ PERSONA_PRIORITY = {
 }
 
 def _build_system_prompt() -> str:
-    """Build the outreach system prompt from outreach_guidelines.yaml.
+    """Build the outreach system prompt from outreach_guidelines.yaml + offer_context.yaml.
 
-    Reads the YAML every time so dashboard edits are picked up
+    Reads both YAMLs every time so dashboard edits are picked up
     immediately without restarting the server.
     """
     try:
@@ -51,6 +52,12 @@ def _build_system_prompt() -> str:
             "You are writing cold outreach emails for Digitillis, an AI manufacturing platform. "
             "Write in a direct, conversational, founder-to-operator tone. No filler. No buzzwords."
         )
+
+    # Load offer context — always fresh
+    try:
+        offer = get_offer_context()
+    except FileNotFoundError:
+        offer = {}
 
     sender = g.get("sender", {})
     voice = g.get("voice_and_tone", "")
@@ -125,6 +132,33 @@ def _build_system_prompt() -> str:
         signature,
     ]
 
+    # Inject offer context if available
+    if offer:
+        core_vp = (offer.get("core_value_prop") or "").strip()
+        capabilities = offer.get("capabilities") or []
+        proof_points = offer.get("proof_points") or []
+        pilot = offer.get("pilot_offer") or {}
+        diff = offer.get("differentiation") or {}
+
+        parts += [
+            "",
+            "## WHAT DIGITILLIS ACTUALLY DOES (use selectively — 1-2 facts max per email)",
+            "",
+            f"Core value proposition: {core_vp}",
+            "",
+            "Key capabilities (pick 1 that's most relevant to this prospect's pain):",
+            *[f"- {c}" for c in capabilities],
+            "",
+            "Proof points (use at most ONE — make it relevant to their industry/size):",
+            *[f"- {p}" for p in proof_points],
+            "",
+            "Pilot offer (use as CTA for step 1):",
+            f"- {pilot.get('description', '')}",
+            "",
+            "Differentiation (use only if prospect is solution_aware and has seen competitors):",
+            *[f"- {v}" for v in diff.values() if v],
+        ]
+
     return "\n".join(parts)
 
 OUTREACH_USER = """Generate an outreach message for this prospect.
@@ -179,6 +213,15 @@ EXISTING SOLUTIONS (competitors already in use):
 
 VALUE MESSAGING FOR THIS SUB-SECTOR:
 {value_messaging}
+
+PROSPECT AWARENESS LEVEL: {awareness_level}
+  - unaware: Start with the problem, not the solution. Don't mention "AI platform" in your opener.
+    Lead with a pain/challenge observation specific to their operation.
+  - problem_aware: Acknowledge they know the problem. Position Digitillis as the answer.
+    You can reference "predictive maintenance" or "manufacturing intelligence" early.
+  - solution_aware: They've seen pitches before. Differentiate immediately — skip generic AI claims,
+    go straight to what makes Digitillis different (speed to value, existing integration path,
+    specific sub-sector benchmarks, or a competitor gap they have).
 
 SEQUENCE: {sequence_name}, Step {sequence_step}
 CHANNEL: {channel}
@@ -543,10 +586,15 @@ class OutreachAgent(BaseAgent):
         mfg_profile = dict(company.get("manufacturing_profile", {}) or {})
         existing = []
 
+        # Awareness level — from research or company record
+        awareness_level = company.get("awareness_level", "") or "unaware"
+
         # Merge in research intelligence (often richer than company record)
         if research:
             ri = research.get("research_intelligence", {}) or {}
             existing = research.get("existing_solutions", []) or ri.get("existing_solutions", []) or []
+            if not awareness_level or awareness_level == "unaware":
+                awareness_level = research.get("awareness_level", "") or ri.get("awareness_level", "") or "unaware"
             if not research_summary:
                 research_summary = research.get("summary", "") or ri.get("summary", "")
             # Merge pain points
@@ -613,6 +661,7 @@ class OutreachAgent(BaseAgent):
             manufacturing_profile=json.dumps(mfg_profile, indent=2) if mfg_profile else "Not profiled",
             existing_solutions=", ".join(existing) if existing else "None identified",
             value_messaging=value_text or "No tier-specific messaging available",
+            awareness_level=awareness_level or "unaware",
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
             channel=channel,

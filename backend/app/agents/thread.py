@@ -34,6 +34,7 @@ from rich import box
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import get_settings
+from backend.app.core.model_router import get_model
 from backend.app.core.thread_manager import ThreadManager
 
 console = Console()
@@ -242,8 +243,9 @@ class ThreadAgent(BaseAgent):
         settings = get_settings()
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+        _classify_model = get_model("thread_class")
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=_classify_model,
             max_tokens=500,
             system=CLASSIFY_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
@@ -251,7 +253,7 @@ class ThreadAgent(BaseAgent):
 
         self.track_cost(
             provider="anthropic",
-            model="claude-sonnet-4-6",
+            model=_classify_model,
             endpoint="/messages",
             company_id=thread["company_id"],
             input_tokens=response.usage.input_tokens,
@@ -352,8 +354,9 @@ class ThreadAgent(BaseAgent):
         settings = get_settings()
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+        _gen_model = get_model("thread_gen")
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=_gen_model,
             max_tokens=800,
             system=DRAFT_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
@@ -361,7 +364,7 @@ class ThreadAgent(BaseAgent):
 
         self.track_cost(
             provider="anthropic",
-            model="claude-sonnet-4-6",
+            model=_gen_model,
             endpoint="/messages",
             company_id=thread["company_id"],
             input_tokens=response.usage.input_tokens,

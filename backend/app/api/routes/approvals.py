@@ -106,14 +106,53 @@ async def approve_draft(
     draft_id: str,
     body: Optional[ApproveRequest] = None,
     _role=Depends(require_role("member")),
+    force: bool = False,
 ):
     """Approve an outreach draft.
 
     Optionally provide an edited body. No interaction is logged and no
     company status is changed here — those happen only when the email is
     actually sent via Resend (in the engagement agent / gtm_send).
+
+    Set ?force=true to bypass the quality gate (admin use only).
     """
     db = get_db()
+
+    # Quality gate — block approval if draft has error-severity issues.
+    # Run against edited_body if provided, otherwise the stored body.
+    if not force:
+        result_raw = (
+            db._filter_ws(
+                db.client.table("outreach_drafts")
+                .select("*, companies(name, tier), research_intelligence(*)")
+            )
+            .eq("id", draft_id)
+            .execute()
+        )
+        if result_raw.data:
+            draft_row = result_raw.data[0]
+            if body and body.edited_body:
+                draft_row = dict(draft_row)
+                draft_row["edited_body"] = body.edited_body
+
+            company = draft_row.get("companies") or {}
+            research = draft_row.get("research_intelligence") or None
+
+            from backend.app.core.draft_quality import validate_draft
+            report = validate_draft(draft_row, company, research)
+            errors = [i for i in report.issues if i.severity == "error"]
+            if errors:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "message": "Draft has quality errors and cannot be approved. Fix the issues or use ?force=true.",
+                        "quality_score": report.score,
+                        "errors": [
+                            {"check": i.check_name, "message": i.message}
+                            for i in errors
+                        ],
+                    },
+                )
 
     update_data: dict = {
         "approval_status": "approved",

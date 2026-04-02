@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     unipile_dsn: str = ""               # Unipile DSN (e.g. api4.unipile.com:13453)
     unipile_webhook_secret: str = ""    # Shared secret for validating Unipile webhook calls
 
+    # Sentry — error tracking and performance monitoring
+    sentry_dsn: str = ""                # Get from Sentry project settings
+    sentry_environment: str = "production"  # production | staging | development
+    sentry_traces_sample_rate: float = 0.1  # 10% of transactions for performance monitoring
+
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",
@@ -167,6 +172,15 @@ def get_content_guidelines() -> dict:
     immediately without restarting the backend.
     """
     return load_yaml_config("content_guidelines.yaml")
+
+
+def get_offer_context() -> dict:
+    """Load Digitillis offer context — capabilities, proof points, differentiation.
+
+    NOT cached — reads fresh every time so dashboard edits take effect
+    immediately without restarting the backend.
+    """
+    return load_yaml_config("offer_context.yaml")
 
 
 def get_linkedin_messages_guidelines() -> dict:
