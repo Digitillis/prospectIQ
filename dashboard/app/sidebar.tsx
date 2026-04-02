@@ -150,6 +150,7 @@ export function Sidebar() {
         { label: "Multi-Thread", href: "/multi-thread", icon: GitBranch },
         { label: "Outreach Hub", href: "/outreach", icon: Send },
         { label: "Content", href: "/content", icon: PenTool },
+        { label: "Ghostwriting", href: "/ghostwriting", icon: PenTool },
       ],
     },
     {

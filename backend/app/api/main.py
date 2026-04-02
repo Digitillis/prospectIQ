@@ -14,7 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, multi_thread
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization
+=======
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, lookalike, auth as auth_routes
+>>>>>>> Stashed changes
+=======
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, multi_thread, ghostwriting
+>>>>>>> Stashed changes
 from backend.app.webhooks import instantly as instantly_webhooks
 from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
@@ -243,7 +251,16 @@ app.include_router(intelligence.router)
 app.include_router(outreach_agent.router)
 app.include_router(hitl.router)
 app.include_router(personalization.router)
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+app.include_router(lookalike.router)
+app.include_router(auth_routes.router)
+>>>>>>> Stashed changes
+=======
 app.include_router(multi_thread.router)
+app.include_router(ghostwriting.router)
+>>>>>>> Stashed changes
 
 
 @app.get("/health")
