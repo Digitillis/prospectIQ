@@ -11,13 +11,17 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
   useEffect(() => {
     if (searchParams.get("signup") === "success") {
       setSignupSuccess(true);
-      // Clean the query param from the URL without triggering a navigation
+      window.history.replaceState({}, "", "/login");
+    }
+    if (searchParams.get("reset") === "success") {
+      setResetSuccess(true);
       window.history.replaceState({}, "", "/login");
     }
   }, [searchParams]);
@@ -65,6 +69,13 @@ export default function LoginPage() {
           </div>
         )}
 
+        {/* Password reset success banner */}
+        {resetSuccess && (
+          <div className="rounded-lg bg-green-900/30 border border-green-700 px-4 py-3 text-sm text-green-300">
+            Password updated! Sign in with your new password below.
+          </div>
+        )}
+
         {/* Card */}
         <div className="rounded-xl bg-white p-8 shadow-xl dark:bg-gray-900">
           <h2 className="mb-6 text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -95,9 +106,17 @@ export default function LoginPage() {
 
             {/* Password */}
             <div>
-              <label htmlFor="password" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Password
-              </label>
+              <div className="mb-1 flex items-center justify-between">
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Password
+                </label>
+                <a
+                  href="/forgot-password"
+                  className="text-xs font-medium text-blue-500 hover:text-blue-400"
+                >
+                  Forgot password?
+                </a>
+              </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
