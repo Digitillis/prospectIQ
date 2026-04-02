@@ -1,10 +1,15 @@
-"""Engagement Agent — Sequence orchestration + Instantly.ai delivery.
+"""Engagement Agent — Sequence orchestration + Resend delivery.
 
 Handles:
-- Sending approved outreach via Instantly.ai campaigns
+- Sending approved outreach via Resend (from avi@digitillis.com)
 - Managing multi-stage engagement sequences
 - Processing webhook events (opens, clicks, replies, bounces)
 - Generating follow-up drafts when sequences are due
+
+Delivery architecture:
+- FROM: avi@digitillis.com (digitillis.com verified in Resend — sent via Resend infrastructure)
+- Full per-lead custom subject + body — no template variable limitations
+- Replies land directly in avi@digitillis.com inbox
 """
 
 from __future__ import annotations
@@ -59,10 +64,13 @@ class EngagementAgent(BaseAgent):
             return result
 
     def _send_approved_drafts(self, campaign_name: str | None = None) -> AgentResult:
-        """Send all approved but unsent outreach drafts via Instantly.ai.
+        """Send all approved but unsent outreach drafts via Resend.
 
-        Gated by SEND_ENABLED env flag. Set SEND_ENABLED=true once mailbox
-        warm-up is complete and you are ready to begin sending.
+        FROM: avanish@digitillis.com (digitillis.com verified in Resend)
+        REPLY-TO: avi@digitillis.com (prospect replies land in primary inbox)
+        Full per-lead custom subject + body — no template variable limitations.
+
+        Gated by SEND_ENABLED env flag.
         """
         result = AgentResult()
 
@@ -70,189 +78,133 @@ class EngagementAgent(BaseAgent):
         if not settings.send_enabled:
             console.print(
                 "[yellow]SEND_ENABLED is false — drafts staged but not sent. "
-                "Set SEND_ENABLED=true in .env when warm-up completes.[/yellow]"
+                "Set SEND_ENABLED=true in .env when ready to send.[/yellow]"
             )
             return result
 
-        # Get approved drafts that haven't been sent yet
+        if not settings.resend_api_key:
+            console.print("[red]RESEND_API_KEY not configured. Cannot send.[/red]")
+            result.success = False
+            return result
+
+        import resend
+        resend.api_key = settings.resend_api_key
+
+        # Get approved email drafts that haven't been sent yet
         drafts = (
             self.db.client.table("outreach_drafts")
             .select("*, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
+            .eq("channel", "email")
+            .not_.is_("subject", "null")
+            .neq("subject", "")
             .order("created_at")
             .execute()
             .data
         )
 
         if not drafts:
-            console.print("[yellow]No approved drafts to send.[/yellow]")
+            console.print("[yellow]No approved email drafts to send.[/yellow]")
             return result
 
-        console.print(f"[cyan]Sending {len(drafts)} approved drafts via Instantly.ai...[/cyan]")
+        console.print(f"[cyan]Sending {len(drafts)} approved drafts via Resend...[/cyan]")
 
-        # Mapping of (cluster, persona) → Instantly campaign name.
-        # These are the 7 pre-configured template campaigns — NEVER attach leads via Instantly UI.
-        # ProspectIQ routes here programmatically; Instantly is the delivery rail only.
-        _CAMPAIGN_ROUTE: dict[tuple[str, str], str] = {
-            ("machinery", "vp_ops"):        "mfg-vp-ops",
-            ("machinery", "plant_manager"): "mfg-plant-manager",
-            ("machinery", "director_ops"):  "mfg-director-ops",
-            ("auto", "vp_ops"):             "mfg-vp-ops",
-            ("auto", "plant_manager"):      "mfg-plant-manager",
-            ("metals", "vp_ops"):           "mfg-vp-ops",
-            ("metals", "plant_manager"):    "mfg-plant-manager",
-            ("process", "vp_ops"):          "mfg-vp-ops",
-            ("process", "plant_manager"):   "mfg-plant-manager",
-            ("chemicals", "vp_ops"):        "mfg-vp-ops",
-            ("chemicals", "plant_manager"): "mfg-plant-manager",
-            ("fb", "vp_ops"):               "fb-vp-ops",
-            ("fb", "plant_manager"):        "fb-maintenance",
-            ("fb", "maintenance_leader"):   "fb-maintenance",
-        }
-        _FALLBACK_CAMPAIGN = "mfg-general"
+        for draft in drafts:
+            contact = draft.get("contacts", {}) or {}
+            company = draft.get("companies", {}) or {}
+            company_name = company.get("name", "Unknown")
+            contact_email = contact.get("email")
 
-        with InstantlyClient() as instantly:
-            # Cache campaign name → id to avoid repeated list calls
-            campaigns = instantly.list_campaigns()
-            campaign_name_to_id: dict[str, str] = {
-                c.get("name"): c.get("id") for c in campaigns if c.get("name") and c.get("id")
-            }
+            if not contact_email:
+                console.print(f"  [yellow]{company_name}: No email for contact. Skipping.[/yellow]")
+                result.skipped += 1
+                continue
 
-            default_campaign_id: str | None = None
-            if campaign_name:
-                default_campaign_id = campaign_name_to_id.get(campaign_name)
+            # Suppression check before sending
+            from backend.app.core.suppression import is_suppressed
+            suppressed, reason = is_suppressed(
+                self.db, draft["company_id"], draft.get("contact_id")
+            )
+            if suppressed:
+                console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping.[/dim]")
+                result.skipped += 1
+                continue
 
-            for draft in drafts:
-                contact = draft.get("contacts", {}) or {}
-                company = draft.get("companies", {}) or {}
-                company_name = company.get("name", "Unknown")
-                contact_email = contact.get("email")
+            subject = draft.get("subject", "")
+            body = draft.get("edited_body") or draft.get("body", "")
 
-                # Resolve which Instantly campaign this draft belongs to
-                cluster = (company.get("campaign_cluster") or "other").lower()
-                persona = (contact.get("persona_type") or "").lower()
-                route_key = (cluster, persona)
-                resolved_campaign = (
-                    campaign_name
-                    or _CAMPAIGN_ROUTE.get(route_key)
-                    or _CAMPAIGN_ROUTE.get((cluster, "vp_ops"))  # persona fallback
-                    or _FALLBACK_CAMPAIGN
-                )
-                campaign_id = default_campaign_id or campaign_name_to_id.get(resolved_campaign)
+            try:
+                resend.Emails.send({
+                    "from": "Avanish Mehrotra <avi@digitillis.io>",
+                    "to": [contact_email],
+                    "subject": subject,
+                    "text": body,
+                })
 
-                if not campaign_id:
-                    console.print(
-                        f"  [yellow]{company_name}: No Instantly campaign found for "
-                        f"cluster={cluster} persona={persona} (tried '{resolved_campaign}'). Skipping.[/yellow]"
-                    )
-                    result.skipped += 1
-                    continue
+                # Mark draft as sent
+                now = datetime.now(timezone.utc).isoformat()
+                self.db.update_outreach_draft(draft["id"], {"sent_at": now})
 
-                if not contact_email:
-                    console.print(f"  [yellow]{company_name}: No email for contact. Skipping.[/yellow]")
-                    result.skipped += 1
-                    continue
+                # Log interaction
+                self.db.insert_interaction({
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "type": "email_sent",
+                    "channel": "email",
+                    "subject": subject,
+                    "body": body,
+                    "source": "resend",
+                    "metadata": {
+                        "from": "avi@digitillis.io",
+                        "sequence_name": draft.get("sequence_name"),
+                        "sequence_step": draft.get("sequence_step"),
+                    },
+                })
 
-                # Suppression check before sending
-                from backend.app.core.suppression import is_suppressed
-                suppressed, reason = is_suppressed(
-                    self.db, draft["company_id"], draft.get("contact_id")
-                )
-                if suppressed:
-                    console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping send.[/dim]")
-                    result.skipped += 1
-                    continue
+                # Update company status
+                self.db.update_company(draft["company_id"], {"status": "contacted"})
 
-                try:
-                    # Add lead to Instantly campaign
-                    lead = {
-                        "email": contact_email,
-                        "first_name": contact.get("first_name", ""),
-                        "last_name": contact.get("last_name", ""),
-                        "company_name": company_name,
-                        "campaign_id": campaign_id,
-                        "custom_variables": {
-                            "subject": draft.get("subject", ""),
-                            "body": draft.get("edited_body") or draft.get("body", ""),
-                            "prospect_iq_draft_id": draft["id"],
-                        },
-                    }
+                # Create engagement sequence record
+                seq_config = get_sequences_config()
+                sequence = seq_config["sequences"].get(draft.get("sequence_name", "initial_outreach"), {})
+                total_steps = sequence.get("total_steps", 5)
+                current_step = draft.get("sequence_step", 1)
 
-                    instantly.add_leads_to_campaign(
-                        campaign_id=campaign_id,
-                        leads=[lead],
-                    )
+                next_step = current_step + 1
+                next_action_at = None
+                next_action_type = None
 
-                    # Mark draft as sent
-                    now = datetime.now(timezone.utc).isoformat()
-                    self.db.update_outreach_draft(draft["id"], {
-                        "sent_at": now,
-                        "instantly_lead_id": contact_email,
-                    })
+                if next_step <= total_steps:
+                    for step in sequence.get("steps", []):
+                        if step["step"] == next_step:
+                            delay = step.get("delay_days", 3)
+                            next_action_at = (
+                                datetime.now(timezone.utc) + timedelta(days=delay)
+                            ).isoformat()
+                            next_action_type = f"send_{step['channel']}"
+                            break
 
-                    # Log interaction
-                    self.db.insert_interaction({
-                        "company_id": draft["company_id"],
-                        "contact_id": draft["contact_id"],
-                        "type": "email_sent",
-                        "channel": "email",
-                        "subject": draft.get("subject", ""),
-                        "body": draft.get("edited_body") or draft.get("body", ""),
-                        "source": "instantly",
-                        "metadata": {
-                            "campaign_id": campaign_id,
-                            "sequence_name": draft.get("sequence_name"),
-                            "sequence_step": draft.get("sequence_step"),
-                        },
-                    })
+                self.db.insert_engagement_sequence({
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "sequence_name": draft.get("sequence_name", "initial_outreach"),
+                    "current_step": current_step,
+                    "total_steps": total_steps,
+                    "status": "active" if next_step <= total_steps else "completed",
+                    "next_action_at": next_action_at,
+                    "next_action_type": next_action_type,
+                    "started_at": now,
+                })
 
-                    # Update company status
-                    self.db.update_company(draft["company_id"], {"status": "contacted"})
+                console.print(f"  [green]{company_name} → {contact_email}: Sent[/green]")
+                result.processed += 1
+                result.add_detail(company_name, "sent", f"To: {contact_email}")
 
-                    # Create engagement sequence record
-                    seq_config = get_sequences_config()
-                    sequence = seq_config["sequences"].get(draft.get("sequence_name", "initial_outreach"), {})
-                    total_steps = sequence.get("total_steps", 5)
-                    current_step = draft.get("sequence_step", 1)
-
-                    # Calculate next action
-                    next_step = current_step + 1
-                    next_action_at = None
-                    next_action_type = None
-
-                    if next_step <= total_steps:
-                        for step in sequence.get("steps", []):
-                            if step["step"] == next_step:
-                                delay = step.get("delay_days", 3)
-                                next_action_at = (
-                                    datetime.now(timezone.utc) + timedelta(days=delay)
-                                ).isoformat()
-                                next_action_type = f"send_{step['channel']}"
-                                break
-
-                    self.db.insert_engagement_sequence({
-                        "company_id": draft["company_id"],
-                        "contact_id": draft["contact_id"],
-                        "sequence_name": draft.get("sequence_name", "initial_outreach"),
-                        "current_step": current_step,
-                        "total_steps": total_steps,
-                        "status": "active" if next_step <= total_steps else "completed",
-                        "next_action_at": next_action_at,
-                        "next_action_type": next_action_type,
-                        "started_at": now,
-                    })
-
-                    console.print(
-                        f"  [green]{company_name} → {contact_email}: Sent via Instantly[/green]"
-                    )
-                    result.processed += 1
-                    result.add_detail(company_name, "sent", f"To: {contact_email}")
-
-                except Exception as e:
-                    logger.error(f"Error sending to {company_name}: {e}", exc_info=True)
-                    result.errors += 1
-                    result.add_detail(company_name, "error", str(e)[:200])
+            except Exception as e:
+                logger.error(f"Error sending to {company_name}: {e}", exc_info=True)
+                result.errors += 1
+                result.add_detail(company_name, "error", str(e)[:200])
 
         return result
 

@@ -234,7 +234,7 @@ async def test_send_draft(draft_id: str, body: TestEmailRequest):
         resend.api_key = settings.resend_api_key
 
         send_result = resend.Emails.send({
-            "from": "ProspectIQ Test <avi@digitillis.com>",
+            "from": "Avanish Mehrotra <avi@digitillis.io>",
             "to": [body.test_email],
             "subject": test_subject,
             "text": test_body,
