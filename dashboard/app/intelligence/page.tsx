@@ -7,6 +7,8 @@
  * Default tab: Leaderboard (personalization readiness ranking)
  */
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState, useCallback } from "react";
 import {
   BarChart3,
@@ -419,7 +421,7 @@ function TriggerFeedTab() {
         // triggers not stored in leaderboard — we show placeholder with company context
         return []; // actual triggers come from /status/{id} — skip for feed view
       })
-      .sort((a, b) =>
+      .sort((a: { trigger: TriggerEvent; company: PersonalizationLeaderboardItem }, b: { trigger: TriggerEvent; company: PersonalizationLeaderboardItem }) =>
         (urgencyOrder[a.trigger.urgency] ?? 2) - (urgencyOrder[b.trigger.urgency] ?? 2)
       );
 

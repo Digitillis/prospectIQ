@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { Inter } from "next/font/google";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Moon, Sun, User } from "lucide-react";

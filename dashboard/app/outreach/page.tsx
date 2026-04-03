@@ -67,7 +67,7 @@ function DraftQueueTab() {
   useEffect(() => { loadDrafts(); }, [loadDrafts]);
 
   const filteredDrafts = drafts.filter((d) => {
-    const qs = (d as Record<string, unknown>).quality_score as number | undefined;
+    const qs = d.quality_score;
     if (filterQuality === "high" && (qs === undefined || qs < 80)) return false;
     if (filterQuality === "low" && (qs === undefined || qs >= 80)) return false;
     if (filterSequence && !d.sequence_name?.toLowerCase().includes(filterSequence.toLowerCase())) return false;
@@ -93,7 +93,7 @@ function DraftQueueTab() {
 
   const handleApproveHighQuality = async () => {
     const highQ = drafts.filter((d) => {
-      const qs = (d as Record<string, unknown>).quality_score as number | undefined;
+      const qs = d.quality_score;
       return qs !== undefined && qs >= 80;
     });
     for (const d of highQ) { await handleApprove(d.id); }
@@ -133,7 +133,7 @@ function DraftQueueTab() {
   };
 
   const highQCount = drafts.filter((d) => {
-    const qs = (d as Record<string, unknown>).quality_score as number | undefined;
+    const qs = d.quality_score;
     return qs !== undefined && qs >= 80;
   }).length;
 
@@ -190,7 +190,7 @@ function DraftQueueTab() {
         </div>
       ) : (
         filteredDrafts.map((draft) => {
-          const qs = (draft as Record<string, unknown>).quality_score as number | undefined;
+          const qs = draft.quality_score;
           const pqs = draft.companies?.pqs_total ?? 0;
           const isExpanded = expandedId === draft.id;
           return (
@@ -500,10 +500,10 @@ function SentHistoryTab() {
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {filtered.map((d) => {
-                const contact = d.contacts as Record<string, string> | undefined;
-                const sentAt = (d as Record<string, string>).sent_at;
+                const contact = d.contacts;
+                const sentAt = d.sent_at;
                 const isExpanded = expandedId === d.id;
-                const bodyText = (d as Record<string, string>).edited_body || d.body || "";
+                const bodyText = d.edited_body || d.body || "";
                 return (
                   <>
                     <tr
@@ -601,7 +601,7 @@ function GeneratorTab() {
 
       const initialRows: CompanyContactRow[] = [];
       for (const co of companies) {
-        const contacts = (co as Record<string, unknown>).contacts as Array<Record<string, unknown>> | undefined;
+        const contacts = co.contacts;
         const primaryContact = contacts?.[0];
         if (!primaryContact) continue;
 
@@ -610,12 +610,12 @@ function GeneratorTab() {
           companyName: co.name,
           tier: co.tier,
           pqsTotal: co.pqs_total ?? 0,
-          campaignCluster: (co as Record<string, unknown>).campaign_cluster as string | undefined,
-          tranche: (co as Record<string, unknown>).tranche as string | undefined,
+          campaignCluster: co.campaign_cluster,
+          tranche: co.tranche,
           contactId: String(primaryContact.id),
-          contactName: primaryContact.full_name as string | undefined,
-          contactTitle: primaryContact.title as string | undefined,
-          personaType: primaryContact.persona_type as string | undefined,
+          contactName: primaryContact.full_name,
+          contactTitle: primaryContact.title,
+          personaType: primaryContact.persona_type,
           intelligence: null,
           intelligenceLoading: false,
           draftsCount: 0,

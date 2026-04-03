@@ -18,7 +18,7 @@ import {
   Inbox,
   DollarSign,
 } from "lucide-react";
-import { getCommandCenter, updateIntelligenceGoals, getHitlStats, type CommandCenterData, type HitlStats } from "@/lib/api";
+import { getCommandCenter, updateIntelligenceGoals, getHitlStats, getAnalyticsSummary, type CommandCenterData, type HitlStats, type AnalyticsSummary } from "@/lib/api";
 import { cn, getPQSColor } from "@/lib/utils";
 
 const CLASSIFICATION_COLORS: Record<string, string> = {
@@ -370,7 +370,7 @@ export default function CommandCenterPage() {
                 ? (<div className="flex flex-col items-center justify-center py-10 text-gray-400"><CheckCircle2 className="h-8 w-8 mb-2" /><p className="text-sm">No drafts pending</p></div>)
                 : data.draft_queue.slice(0, 5).map((draft) => {
                   const pqs = draft.companies?.pqs_total ?? 0;
-                  const qs = (draft as Record<string, unknown>).quality_score as number | undefined;
+                  const qs = draft.quality_score;
                   return (
                     <div key={draft.id} className="flex items-center justify-between gap-3 px-4 py-3">
                       <div className="min-w-0 flex-1">

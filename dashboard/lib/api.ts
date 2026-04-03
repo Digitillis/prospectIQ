@@ -991,6 +991,8 @@ export interface Company {
   twitter_url?: string;
   phone?: string;
   campaign_name?: string;
+  campaign_cluster?: string;
+  tranche?: string;
   pqs_total: number;
   pqs_firmographic: number;
   pqs_technographic: number;
@@ -1000,6 +1002,7 @@ export interface Company {
   priority_flag?: boolean;
   custom_tags?: string[];
   estimated_deal_value?: number;
+  contacts?: Contact[];
   updated_at: string;
   created_at?: string;
 }
@@ -1079,8 +1082,11 @@ export interface OutreachDraft {
   sequence_step: number;
   subject: string;
   body: string;
+  edited_body?: string;
   personalization_notes?: string;
   approval_status: string;
+  quality_score?: number;
+  sent_at?: string;
   companies?: { name: string; tier?: string; pqs_total: number };
   contacts?: { full_name?: string; title?: string; email?: string };
 }
@@ -1449,6 +1455,7 @@ export interface SequenceTemplate {
   steps: SequenceStep[];
   source: "yaml" | "custom";
   is_active: boolean;
+  is_template?: boolean;
   id?: string;
   created_at?: string;
 }
@@ -1892,6 +1899,18 @@ export const actionHitlItem = (
 
 export const getHitlStats = () =>
   fetchAPI<HitlStats>("/api/hitl/stats");
+
+export interface AnalyticsSummary {
+  pipeline_health: string;
+  projected_arr_90d: number;
+  total_replied: number;
+  overall_conversion_rate: number;
+  best_cluster: string;
+  stuck_in_research_14d: number;
+}
+
+export const getAnalyticsSummary = () =>
+  fetchAPI<AnalyticsSummary>("/api/analytics/summary");
 
 export const suggestHitlResponse = (hitlId: string) =>
   fetchAPI<{ subject: string; body: string; tone_notes: string }>(

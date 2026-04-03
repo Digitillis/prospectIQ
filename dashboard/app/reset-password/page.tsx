@@ -3,7 +3,7 @@
 // Copyright © 2026 ProspectIQ. All rights reserved.
 // Authors: Avanish Mehrotra & ProspectIQ Technical Team
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Lock, CheckCircle2, XCircle } from "lucide-react";
 
@@ -90,10 +90,10 @@ function Requirement({
 }
 
 // ---------------------------------------------------------------------------
-// Page
+// Page Content (wrapped in Suspense)
 // ---------------------------------------------------------------------------
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -364,5 +364,13 @@ export default function ResetPasswordPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-digitillis-dark"><p className="text-white">Loading...</p></div>}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

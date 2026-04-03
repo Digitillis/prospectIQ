@@ -7,7 +7,7 @@
  * Right panel: Full thread history, classification card, research context, action panel
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Inbox, Loader2, RefreshCw, Building2, User, Clock,
@@ -492,7 +492,7 @@ function DetailPanel({
 // Main page
 // ---------------------------------------------------------------------------
 
-export default function HitlQueuePage() {
+function HitlQueueContent() {
   const searchParams = useSearchParams();
   const [queue, setQueue] = useState<HitlQueueItem[]>([]);
   const [stats, setStats] = useState<HitlStats | null>(null);
@@ -670,5 +670,13 @@ export default function HitlQueuePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function HitlQueuePage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><p>Loading...</p></div>}>
+      <HitlQueueContent />
+    </Suspense>
   );
 }
