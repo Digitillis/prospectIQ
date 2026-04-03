@@ -18,7 +18,7 @@ import {
   Inbox,
   DollarSign,
 } from "lucide-react";
-import { getCommandCenter, updateIntelligenceGoals, getHitlStats, getAnalyticsSummary, type CommandCenterData, type HitlStats, type AnalyticsSummary } from "@/lib/api";
+import { getCommandCenter, updateIntelligenceGoals, getHitlStats, type CommandCenterData, type HitlStats } from "@/lib/api";
 import { cn, getPQSColor } from "@/lib/utils";
 
 const CLASSIFICATION_COLORS: Record<string, string> = {
