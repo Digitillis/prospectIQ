@@ -253,32 +253,42 @@ function DetailPanel({
               {/* Extracted entities */}
               {inbound.extracted_entities && (
                 <div className="mt-3 space-y-1.5">
-                  {(inbound.extracted_entities as Record<string, unknown>).competitors &&
-                    ((inbound.extracted_entities as Record<string, unknown[]>).competitors?.length ?? 0) > 0 && (
+                  {(() => {
+                    const entities = inbound.extracted_entities as Record<string, unknown>;
+                    const competitors = entities.competitors as string[] | undefined;
+                    return competitors && competitors.length > 0 ? (
                       <div className="flex items-start gap-2 text-xs">
                         <span className="shrink-0 text-gray-400">Competitors:</span>
                         <span className="text-gray-700 dark:text-gray-300">
-                          {((inbound.extracted_entities as Record<string, unknown[]>).competitors as string[]).join(", ")}
+                          {competitors.join(", ")}
                         </span>
                       </div>
-                    )}
-                  {(inbound.extracted_entities as Record<string, unknown>).timeline && (
-                    <div className="flex items-start gap-2 text-xs">
-                      <span className="shrink-0 text-gray-400">Timeline:</span>
-                      <span className="text-gray-700 dark:text-gray-300">
-                        {String((inbound.extracted_entities as Record<string, unknown>).timeline)}
-                      </span>
-                    </div>
-                  )}
-                  {(inbound.extracted_entities as Record<string, unknown>).pain_points &&
-                    ((inbound.extracted_entities as Record<string, unknown[]>).pain_points?.length ?? 0) > 0 && (
+                    ) : null;
+                  })()}
+                  {(() => {
+                    const entities = inbound.extracted_entities as Record<string, unknown>;
+                    const timeline = entities.timeline;
+                    return timeline ? (
+                      <div className="flex items-start gap-2 text-xs">
+                        <span className="shrink-0 text-gray-400">Timeline:</span>
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {String(timeline)}
+                        </span>
+                      </div>
+                    ) : null;
+                  })()}
+                  {(() => {
+                    const entities = inbound.extracted_entities as Record<string, unknown>;
+                    const painPoints = entities.pain_points as string[] | undefined;
+                    return painPoints && painPoints.length > 0 ? (
                       <div className="flex items-start gap-2 text-xs">
                         <span className="shrink-0 text-gray-400">Pain points:</span>
                         <span className="text-gray-700 dark:text-gray-300">
-                          {((inbound.extracted_entities as Record<string, unknown[]>).pain_points as string[]).join(", ")}
+                          {painPoints.join(", ")}
                         </span>
                       </div>
-                    )}
+                    ) : null;
+                  })()}
                 </div>
               )}
               {inbound.next_action_suggestion && (
