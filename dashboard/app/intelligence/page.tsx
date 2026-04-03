@@ -7,6 +7,8 @@
  * Default tab: Leaderboard (personalization readiness ranking)
  */
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState, useCallback } from "react";
 import {
   BarChart3,
