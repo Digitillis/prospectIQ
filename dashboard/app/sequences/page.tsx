@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import {
   getSequenceTemplates, getSequenceRouting, updateRoutingEntry, provisionInstantlyCampaigns,
-  duplicateSequenceV2,
   type SequenceTemplate, type RoutingEntry,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -48,8 +47,8 @@ function MySequencesTab() {
     if (!seq.id) return;
     setDuplicating(seq.id);
     try {
-      await duplicateSequenceV2(seq.id);
-      await load();
+      // TODO: Implement duplicateSequenceV2 in API
+      alert("Duplicate sequence functionality coming soon");
     } catch { /* noop */ }
     finally { setDuplicating(null); }
   };

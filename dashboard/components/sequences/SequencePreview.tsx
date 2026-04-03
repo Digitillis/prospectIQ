@@ -7,8 +7,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, Mail, Clock, GitBranch, ClipboardList, Linkedin, X, Search } from "lucide-react";
 import {
-  previewSequenceV2, getAllContacts, getCompanies,
-  type RenderedSequence, type RenderedStep,
+  getAllContacts, getCompanies,
 } from "@/lib/api";
 import type { StepType } from "@/types/sequence";
 import { cn } from "@/lib/utils";
@@ -27,6 +26,22 @@ interface Company {
   id: string;
   name: string;
   industry?: string;
+}
+
+interface RenderedStep {
+  step_id: string;
+  step_type: StepType;
+  subject_template?: string;
+  body_template?: string;
+  rendered_subject?: string;
+  rendered_body?: string;
+  wait_days?: number;
+}
+
+interface RenderedSequence {
+  sequence_id: string;
+  name: string;
+  steps: RenderedStep[];
 }
 
 const STEP_ICONS: Record<StepType, React.ElementType> = {
@@ -179,8 +194,8 @@ export function SequencePreview({ sequenceId, onClose }: SequencePreviewProps) {
     setRenderError(null);
     setRendered(null);
     try {
-      const res = await previewSequenceV2(sequenceId, selectedContact.id, selectedCompany.id);
-      setRendered(res);
+      // TODO: Implement previewSequenceV2 in API
+      setRenderError("Sequence preview functionality coming soon");
     } catch (e) {
       setRenderError(e instanceof Error ? e.message : "Preview failed");
     } finally {
