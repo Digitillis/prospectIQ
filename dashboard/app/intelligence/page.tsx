@@ -419,7 +419,7 @@ function TriggerFeedTab() {
         // triggers not stored in leaderboard — we show placeholder with company context
         return []; // actual triggers come from /status/{id} — skip for feed view
       })
-      .sort((a, b) =>
+      .sort((a: { trigger: TriggerEvent; company: PersonalizationLeaderboardItem }, b: { trigger: TriggerEvent; company: PersonalizationLeaderboardItem }) =>
         (urgencyOrder[a.trigger.urgency] ?? 2) - (urgencyOrder[b.trigger.urgency] ?? 2)
       );
 
