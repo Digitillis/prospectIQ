@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 // Copyright © 2026 ProspectIQ. All rights reserved.
 // Authors: Avanish Mehrotra & ProspectIQ Technical Team
 
