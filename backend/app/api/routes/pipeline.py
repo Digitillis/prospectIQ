@@ -22,6 +22,7 @@ from backend.app.agents.linkedin_sender import LinkedInSenderAgent
 from backend.app.agents.signal_monitor import SignalMonitorAgent
 from backend.app.orchestrator.pipeline import Pipeline
 from backend.app.billing.quota import require_quota
+from backend.app.core.auth import require_role
 from backend.app.core.audit import log_audit_event_from_ctx
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
