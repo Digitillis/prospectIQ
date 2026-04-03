@@ -1,12 +1,10 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
 /**
  * Threads — Campaign reply thread management with split-pane layout.
  */
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   MessageSquare, ChevronRight, Loader2, RefreshCw, CheckCircle2,
@@ -544,7 +542,7 @@ function ThreadDetail({
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
-export default function ThreadsPage() {
+function ThreadsContent() {
   const searchParams = useSearchParams();
   const initialSelected = searchParams.get("selected");
 
@@ -676,5 +674,13 @@ export default function ThreadsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ThreadsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><p>Loading...</p></div>}>
+      <ThreadsContent />
+    </Suspense>
   );
 }

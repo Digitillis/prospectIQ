@@ -1,12 +1,10 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
 /**
  * Sequence Builder — Create a new sequence or template.
  */
 
-import { useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Trash2, ChevronDown, ChevronUp, Copy, Loader2 } from "lucide-react";
 import { saveSequenceTemplate, type SequenceStep } from "@/lib/api";
@@ -39,7 +37,7 @@ function emptyStep(stepNum: number): SequenceStep {
   };
 }
 
-export default function NewSequencePage() {
+function NewSequenceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isTemplate = searchParams.get("mode") === "template";
@@ -327,5 +325,13 @@ export default function NewSequencePage() {
         <p className="mt-3 text-[10px] text-gray-400 dark:text-gray-500 text-center">Click any variable to copy</p>
       </div>
     </div>
+  );
+}
+
+export default function NewSequencePage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><p>Loading...</p></div>}>
+      <NewSequenceContent />
+    </Suspense>
   );
 }
