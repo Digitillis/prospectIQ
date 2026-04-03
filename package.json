@@ -1,0 +1,9 @@
+{
+  "workspaces": [
+    "dashboard",
+    "packages/*"
+  ],
+  "dependencies": {
+    "lucide-react": "^1.7.0"
+  }
+}

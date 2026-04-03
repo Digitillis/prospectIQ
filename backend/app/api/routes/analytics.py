@@ -1,6 +1,7 @@
 """Analytics routes for ProspectIQ API.
 
 Pipeline overview, API cost tracking, and outreach performance metrics.
+Includes full Revenue Intelligence endpoints added in feature/analytics-revenue.
 """
 
 from __future__ import annotations
@@ -454,3 +455,315 @@ async def get_pipeline_velocity():
         }
 
     return {"data": velocity}
+
+
+# ---------------------------------------------------------------------------
+# Revenue Intelligence routes (feature/analytics-revenue)
+# ---------------------------------------------------------------------------
+
+@router.get("/funnel")
+async def get_full_funnel(days: int = Query(default=90, ge=1, le=365)):
+    """Full 10-stage funnel with conversion rates, drop-off, and bottleneck detection."""
+    db = get_db()
+    from backend.app.analytics.funnel import FunnelAnalytics
+    fa = FunnelAnalytics(db)
+    result = fa.get_full_funnel(workspace_id=db.workspace_id, days=days)
+    return result.model_dump()
+
+
+@router.get("/cohorts")
+async def get_cohort_analysis(
+    group_by: str = Query(default="cluster", pattern="^(cluster|tranche|persona|sequence_name)$"),
+    days: int = Query(default=90, ge=1, le=365),
+):
+    """Cohort conversion performance grouped by cluster, tranche, persona, or sequence."""
+    db = get_db()
+    from backend.app.analytics.funnel import FunnelAnalytics
+    fa = FunnelAnalytics(db)
+    result = fa.get_cohort_analysis(workspace_id=db.workspace_id, group_by=group_by, days=days)
+    return result.model_dump()
+
+
+@router.get("/velocity")
+async def get_velocity_metrics():
+    """Stage-by-stage velocity in days with trend vs prior 30-day period."""
+    db = get_db()
+    from backend.app.analytics.funnel import FunnelAnalytics
+    fa = FunnelAnalytics(db)
+    result = fa.get_velocity_metrics(workspace_id=db.workspace_id)
+    return result.model_dump()
+
+
+@router.get("/revenue")
+async def get_revenue_attribution(
+    deal_size: float = Query(default=48000.0, ge=1000.0, le=10_000_000.0),
+):
+    """Pipeline-to-revenue attribution with projected ARR and confidence range."""
+    db = get_db()
+    from backend.app.analytics.revenue import RevenueAnalytics
+    ra = RevenueAnalytics(db)
+    result = ra.get_revenue_attribution(workspace_id=db.workspace_id, deal_size_usd=deal_size)
+    return result.model_dump()
+
+
+@router.get("/activity-roi")
+async def get_activity_roi():
+    """Reply rates by channel, sequence, persona, and cluster."""
+    db = get_db()
+    from backend.app.analytics.revenue import RevenueAnalytics
+    ra = RevenueAnalytics(db)
+    result = ra.get_activity_roi(workspace_id=db.workspace_id)
+    return result.model_dump()
+
+
+@router.get("/summary")
+async def get_analytics_summary():
+    """Combined analytics summary: top KPIs, funnel health, top cluster, projected ARR."""
+    db = get_db()
+    from backend.app.analytics.revenue import RevenueAnalytics
+    ra = RevenueAnalytics(db)
+    result = ra.get_analytics_summary(workspace_id=db.workspace_id)
+    return result.model_dump()
+
+
+@router.get("/benchmarks")
+async def get_benchmarks(days: int = Query(default=30, ge=1, le=365)):
+    """Compare actual outreach metrics vs target benchmarks.
+
+    Targets (industry-calibrated for cold B2B outreach):
+    - Reply rate:          18%
+    - Open rate:           40%
+    - Meeting rate:         3%
+    - Positive reply rate:  8%
+    - Cost per enriched lead: $0.15
+    """
+    import datetime
+    db = get_db()
+    client = db.client
+    since = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
+
+    TARGETS = {
+        "reply_rate_pct": 18.0,
+        "open_rate_pct": 40.0,
+        "meeting_rate_pct": 3.0,
+        "positive_reply_rate_pct": 8.0,
+        "cost_per_enriched_lead_usd": 0.15,
+    }
+
+    # Approved outreach sent in period
+    sent_result = (
+        db._filter_ws(client.table("outreach_drafts").select("id", count="exact"))
+        .eq("approval_status", "approved")
+        .gte("created_at", since)
+        .execute()
+    )
+    total_sent = sent_result.count or 0
+
+    # Interactions — opens, replies, meetings
+    interactions = (
+        db._filter_ws(client.table("interactions").select("type"))
+        .gte("created_at", since)
+        .execute()
+    ).data or []
+    opens = sum(1 for i in interactions if i.get("type") == "email_opened")
+    replies = sum(1 for i in interactions if i.get("type") == "email_replied")
+    meetings = sum(1 for i in interactions if i.get("type") == "meeting")
+
+    # Positive replies from learning outcomes
+    outcomes = (
+        db._filter_ws(client.table("learning_outcomes").select("outcome"))
+        .gte("created_at", since)
+        .execute()
+    ).data or []
+    positive_replies = sum(1 for o in outcomes if o.get("outcome") == "replied_positive")
+
+    # Enrichment cost
+    costs = (
+        db._filter_ws(client.table("api_costs").select("estimated_cost_usd, endpoint"))
+        .gte("created_at", since)
+        .execute()
+    ).data or []
+    enrichment_cost = sum(
+        r.get("estimated_cost_usd") or 0
+        for r in costs
+        if "enrich" in (r.get("endpoint") or "").lower()
+    )
+
+    enriched_count_result = (
+        db._filter_ws(client.table("contacts").select("id", count="exact"))
+        .not_.is_("email", "null")
+        .gte("created_at", since)
+        .execute()
+    )
+    enriched_count = enriched_count_result.count or 0
+
+    def _pct(n: int, d: int) -> float | None:
+        return round(n / d * 100, 1) if d > 0 else None
+
+    actuals = {
+        "reply_rate_pct": _pct(replies, total_sent),
+        "open_rate_pct": _pct(opens, total_sent),
+        "meeting_rate_pct": _pct(meetings, total_sent),
+        "positive_reply_rate_pct": _pct(positive_replies, total_sent),
+        "cost_per_enriched_lead_usd": (
+            round(enrichment_cost / enriched_count, 4) if enriched_count > 0 else None
+        ),
+    }
+
+    def _status(actual: float | None, target: float, higher_is_better: bool = True) -> str:
+        if actual is None:
+            return "no_data"
+        ratio = actual / target if target else 0
+        if higher_is_better:
+            if ratio >= 1.0:
+                return "on_target"
+            if ratio >= 0.75:
+                return "below_target"
+            return "significantly_below"
+        else:  # lower is better (cost metrics)
+            if ratio <= 1.0:
+                return "on_target"
+            if ratio <= 1.5:
+                return "above_target"
+            return "significantly_above"
+
+    metrics = {}
+    for key, target in TARGETS.items():
+        actual = actuals.get(key)
+        is_cost = "cost" in key
+        metrics[key] = {
+            "target": target,
+            "actual": actual,
+            "status": _status(actual, target, higher_is_better=not is_cost),
+            "delta": round(actual - target, 2) if actual is not None else None,
+        }
+
+    return {
+        "data": {
+            "period_days": days,
+            "total_sent": total_sent,
+            "metrics": metrics,
+            "raw_counts": {
+                "opens": opens,
+                "replies": replies,
+                "meetings": meetings,
+                "positive_replies": positive_replies,
+                "enriched_contacts": enriched_count,
+                "enrichment_cost_usd": round(enrichment_cost, 4),
+            },
+        }
+    }
+
+
+@router.get("/ab-tests")
+async def get_ab_tests():
+    """Get A/B test stats for all tracked sequences."""
+    from backend.app.analytics.ab_tracker import ABTracker
+    db = get_db()
+    tracker = ABTracker(db)
+
+    result = (
+        db._filter_ws(
+            db.client.table("ab_test_events").select("sequence_id")
+        )
+        .execute()
+    )
+    sequence_ids = list({
+        r["sequence_id"] for r in (result.data or []) if r.get("sequence_id")
+    })
+
+    stats = []
+    for seq_id in sorted(sequence_ids):
+        seq_stats = tracker.get_variant_stats(seq_id)
+        winner = tracker.get_winning_variant(seq_id)
+        stats.append({**seq_stats, "winner": winner})
+
+    return {"data": stats, "count": len(stats)}
+
+
+@router.get("/ab-tests/{sequence_id}")
+async def get_ab_test(sequence_id: str):
+    """Get A/B test stats for a specific sequence."""
+    from backend.app.analytics.ab_tracker import ABTracker
+    db = get_db()
+    tracker = ABTracker(db)
+    stats = tracker.get_variant_stats(sequence_id)
+    winner = tracker.get_winning_variant(sequence_id)
+    return {"data": {**stats, "winner": winner}}
+
+
+@router.get("/cost-per-meeting")
+async def get_cost_per_meeting(days: int = Query(default=90, ge=1, le=365)):
+    """Return cost-per-meeting breakdown for the last N days.
+
+    Aggregates:
+    - total_cost_usd: all API costs (Anthropic, Perplexity, Apollo enrichment)
+    - meetings_booked: interactions with type='meeting' in the window
+    - cost_per_meeting_usd: total_cost / meetings (null if no meetings yet)
+    - cost_breakdown: per-provider and per-model cost totals
+    - meetings_pipeline: companies at meeting_scheduled / pilot_discussion / pilot_signed stage
+
+    This is the north-star unit economic metric for the outreach program.
+    """
+    import datetime
+    db = get_db()
+    client = db.client
+    workspace_id = db.workspace_id
+
+    since = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
+
+    # --- Total API costs ---
+    costs_result = (
+        db._filter_ws(client.table("api_costs").select("provider, model, estimated_cost_usd"))
+        .gte("created_at", since)
+        .execute()
+    )
+    costs_rows = costs_result.data or []
+    total_cost = sum(r.get("estimated_cost_usd") or 0.0 for r in costs_rows)
+
+    # Cost breakdown by provider + model
+    breakdown: dict = {}
+    for row in costs_rows:
+        key = f"{row.get('provider', 'unknown')}/{row.get('model') or 'unknown'}"
+        breakdown[key] = round(breakdown.get(key, 0.0) + (row.get("estimated_cost_usd") or 0.0), 6)
+
+    # --- Meetings booked ---
+    meetings_result = (
+        db._filter_ws(
+            client.table("interactions")
+            .select("id, company_id, created_at", count="exact")
+        )
+        .eq("type", "meeting")
+        .gte("created_at", since)
+        .execute()
+    )
+    meetings_count = meetings_result.count or 0
+
+    # --- Companies at advanced pipeline stages ---
+    pipeline_result = (
+        db._filter_ws(
+            client.table("companies")
+            .select("id, name, status, tier, pqs_total", count="exact")
+        )
+        .in_("status", ["meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot", "converted"])
+        .execute()
+    )
+    pipeline_companies = pipeline_result.data or []
+
+    cost_per_meeting = (
+        round(total_cost / meetings_count, 2) if meetings_count > 0 else None
+    )
+
+    return {
+        "data": {
+            "period_days": days,
+            "total_cost_usd": round(total_cost, 4),
+            "meetings_booked": meetings_count,
+            "cost_per_meeting_usd": cost_per_meeting,
+            "cost_breakdown": breakdown,
+            "meetings_pipeline": {
+                "count": len(pipeline_companies),
+                "companies": pipeline_companies,
+            },
+        }
+    }

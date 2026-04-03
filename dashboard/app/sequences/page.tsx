@@ -7,10 +7,11 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  GitBranch, Plus, CheckCircle2, Loader2, RefreshCw, ExternalLink, Pencil, Copy, Trash2,
+  GitBranch, Plus, CheckCircle2, Loader2, RefreshCw, Pencil, Copy, Wand2,
 } from "lucide-react";
 import {
   getSequenceTemplates, getSequenceRouting, updateRoutingEntry, provisionInstantlyCampaigns,
+  duplicateSequenceV2,
   type SequenceTemplate, type RoutingEntry,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -24,15 +25,18 @@ function Skeleton({ className }: { className?: string }) {
 // ---------------------------------------------------------------------------
 // My Sequences Tab
 // ---------------------------------------------------------------------------
+type FilterKey = "all" | "templates" | "custom" | "active";
+
 function MySequencesTab() {
   const [sequences, setSequences] = useState<SequenceTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [duplicating, setDuplicating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await getSequenceTemplates();
-      // Show all sequences (built-in + custom) as "My Sequences"
       setSequences([...res.custom, ...res.built_in]);
     } catch { setSequences([]); }
     finally { setLoading(false); }
@@ -40,74 +44,177 @@ function MySequencesTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  const handleDuplicate = async (seq: SequenceTemplate) => {
+    if (!seq.id) return;
+    setDuplicating(seq.id);
+    try {
+      await duplicateSequenceV2(seq.id);
+      await load();
+    } catch { /* noop */ }
+    finally { setDuplicating(null); }
+  };
+
+  const FILTER_TABS: { key: FilterKey; label: string }[] = [
+    { key: "all",       label: "All" },
+    { key: "templates", label: "Templates" },
+    { key: "custom",    label: "Custom" },
+    { key: "active",    label: "Active" },
+  ];
+
+  const filtered = sequences.filter((seq) => {
+    if (filter === "templates") return seq.is_template === true || seq.source === "yaml";
+    if (filter === "custom")    return seq.source === "custom";
+    if (filter === "active")    return seq.is_active;
+    return true;
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-500 dark:text-gray-500">{sequences.length} sequence{sequences.length !== 1 ? "s" : ""}</p>
+        <div className="flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-0.5">
+          {FILTER_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setFilter(tab.key)}
+              className={cn(
+                "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                filter === tab.key
+                  ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="rounded border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+          <button onClick={load} aria-label="Refresh sequences" className="rounded border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-400">
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
           </button>
-          <Link href="/sequences/new" className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100">
+          <Link
+            href="/sequences/builder"
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <Wand2 className="h-3.5 w-3.5" /> Visual Builder
+          </Link>
+          <Link href="/sequences/new" className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
             <Plus className="h-3.5 w-3.5" /> New Sequence
           </Link>
         </div>
       </div>
 
+      <p className="text-xs text-gray-500 dark:text-gray-500">{filtered.length} sequence{filtered.length !== 1 ? "s" : ""}</p>
+
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40" />)}
         </div>
-      ) : sequences.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 py-20">
           <GitBranch className="h-12 w-12 text-gray-300 mb-4" />
           <p className="text-sm font-medium text-gray-900 dark:text-gray-100">No sequences yet</p>
-          <Link href="/sequences/new" className="mt-3 text-xs text-gray-500 underline underline-offset-2 hover:text-gray-900 dark:hover:text-gray-100">Create your first sequence →</Link>
+          <Link href="/sequences/builder" className="mt-3 text-xs text-blue-600 underline underline-offset-2 hover:text-blue-700">
+            Build your first sequence with the visual editor →
+          </Link>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {sequences.map((seq) => (
-            <div key={seq.name} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className={cn("h-2 w-2 rounded-full shrink-0", seq.is_active ? "bg-green-500" : "bg-gray-300")} />
-                  <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{seq.display_name}</span>
-                </div>
-                <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", seq.source === "custom" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400")}>
-                  {seq.source}
-                </span>
-              </div>
-              {seq.description && (
-                <p className="text-xs text-gray-500 dark:text-gray-500 mb-3 leading-relaxed line-clamp-2">{seq.description}</p>
-              )}
-              <p className="text-xs text-gray-500 dark:text-gray-500 mb-4">
-                {seq.total_steps} steps · {seq.channel}
-              </p>
-              <div className="grid grid-cols-3 gap-2 mb-4 text-center text-xs">
-                {[["Enrolled", "0"], ["Replied", "0%"], ["Active", "0"]].map(([label, val]) => (
-                  <div key={label} className="rounded bg-gray-50 dark:bg-gray-800 p-2">
-                    <p className="font-semibold text-gray-900 dark:text-gray-100">{val}</p>
-                    <p className="text-gray-400 dark:text-gray-500">{label}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {seq.source === "custom" && seq.id && (
-                  <Link href={`/sequences/${seq.name}/edit`} className="inline-flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-[11px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <Pencil className="h-3 w-3" /> Edit
-                  </Link>
-                )}
-                <button className="inline-flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-[11px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800">
-                  <Copy className="h-3 w-3" /> Duplicate
-                </button>
-                <Link href={`/segments`} className="inline-flex items-center gap-1 rounded bg-gray-900 dark:bg-white px-2 py-1 text-[11px] text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100">
-                  Enroll Segment
-                </Link>
-              </div>
-            </div>
+          {filtered.map((seq) => (
+            <SequenceCard
+              key={seq.name}
+              seq={seq}
+              duplicating={duplicating === seq.id}
+              onDuplicate={() => handleDuplicate(seq)}
+            />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+interface SequenceCardProps {
+  seq: SequenceTemplate;
+  duplicating: boolean;
+  onDuplicate: () => void;
+}
+
+function SequenceCard({ seq, duplicating, onDuplicate }: SequenceCardProps) {
+  const sourceLabel =
+    seq.source === "custom" ? "Custom"
+    : (seq.is_template ? "Template" : "Built-in");
+
+  const sourceBadge =
+    seq.source === "custom"
+      ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+      : seq.is_template
+      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+      : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400";
+
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-200">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={cn("h-2 w-2 rounded-full shrink-0", seq.is_active ? "bg-green-500" : "bg-gray-300")} />
+          <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{seq.display_name || seq.name}</span>
+        </div>
+        <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ml-2", sourceBadge)}>
+          {sourceLabel}
+        </span>
+      </div>
+
+      {seq.description && (
+        <p className="text-xs text-gray-500 dark:text-gray-500 mb-3 leading-relaxed line-clamp-2">{seq.description}</p>
+      )}
+      <p className="text-xs text-gray-500 dark:text-gray-500 mb-4">
+        {seq.total_steps} steps · {seq.channel}
+      </p>
+
+      <div className="grid grid-cols-3 gap-2 mb-4 text-center text-xs">
+        {[["Enrolled", "—"], ["Open", "—"], ["Reply", "—"]].map(([label, val]) => (
+          <div key={label} className="rounded bg-gray-50 dark:bg-gray-800 p-2">
+            <p className="font-semibold text-gray-900 dark:text-gray-100">{val}</p>
+            <p className="text-gray-400 dark:text-gray-500">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Visual builder edit — for v2 sequences with UUID id */}
+        {seq.id && seq.source === "custom" && (
+          <Link
+            href={`/sequences/builder?id=${seq.id}`}
+            className="inline-flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-[11px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400"
+          >
+            <Wand2 className="h-3 w-3" /> Builder
+          </Link>
+        )}
+        {/* Legacy edit for non-v2 custom sequences */}
+        {seq.source === "custom" && !seq.id?.includes("-") && (
+          <Link
+            href={`/sequences/${seq.name}/edit`}
+            className="inline-flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-[11px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400"
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </Link>
+        )}
+        {seq.id && (
+          <button
+            onClick={onDuplicate}
+            disabled={duplicating}
+            className="inline-flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-[11px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-gray-400"
+          >
+            {duplicating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+            Duplicate
+          </button>
+        )}
+        <Link
+          href="/sequences/builder"
+          className="ml-auto inline-flex items-center gap-1 rounded bg-blue-600 hover:bg-blue-700 px-2 py-1 text-[11px] text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          New from Builder
+        </Link>
+      </div>
     </div>
   );
 }
@@ -147,7 +254,10 @@ function TemplateLibraryTab() {
           onChange={(e) => setFilterUseCase(e.target.value)}
           className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400"
         />
-        <Link href="/sequences/new?mode=template" className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+        <Link href="/sequences/builder" className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <Wand2 className="h-3.5 w-3.5" /> Visual Builder
+        </Link>
+        <Link href="/sequences/new?mode=template" className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
           <Plus className="h-3.5 w-3.5" /> Add Custom Template
         </Link>
       </div>
@@ -207,10 +317,10 @@ function TemplateLibraryTab() {
               ))}
             </div>
             <Link
-              href={`/sequences/new?template=${previewSeq.name}`}
-              className="mt-6 block w-full rounded-md bg-gray-900 dark:bg-white px-4 py-2.5 text-center text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100"
+              href={`/sequences/builder`}
+              className="mt-6 block w-full rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2.5 text-center text-sm font-medium text-white"
             >
-              Use This Template →
+              Build from Scratch →
             </Link>
           </div>
         </div>
@@ -240,8 +350,8 @@ function TemplateCard({ template, onPreview, isCustom }: { template: SequenceTem
         <button onClick={onPreview} className="flex-1 rounded border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
           Preview
         </button>
-        <Link href={`/sequences/new?template=${template.name}`} className="flex-1 rounded bg-gray-900 dark:bg-white px-3 py-1.5 text-center text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100">
-          Use →
+        <Link href="/sequences/builder" className="flex-1 rounded bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-center text-xs font-medium text-white focus:outline-none focus:ring-1 focus:ring-blue-500">
+          Build →
         </Link>
       </div>
     </div>

@@ -65,6 +65,40 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""     # whsec_...
     app_base_url: str = "https://app.prospectiq.ai"
 
+    # Stripe price IDs — set per environment after creating products in Stripe dashboard.
+    # Monthly prices:
+    stripe_price_starter: str = ""      # $1,500/mo
+    stripe_price_growth: str = ""       # $3,500/mo
+    stripe_price_scale: str = ""        # $7,500/mo
+    stripe_price_api: str = ""          # $0.05/company (metered)
+    # Annual prices (15% discount):
+    stripe_price_starter_annual: str = ""
+    stripe_price_growth_annual: str = ""
+    stripe_price_scale_annual: str = ""
+
+    # Unipile — LinkedIn automation
+    unipile_api_key: str = ""
+    unipile_account_id: str = ""        # LinkedIn account ID registered in Unipile
+    unipile_dsn: str = ""               # Unipile DSN (e.g. api4.unipile.com:13453)
+    unipile_webhook_secret: str = ""    # Shared secret for validating Unipile webhook calls
+
+    # HubSpot CRM sync (optional)
+    hubspot_api_key: str = ""           # Private app access token
+    hubspot_portal_id: str = ""         # Numeric portal/account ID
+
+    # Salesforce CRM sync (optional)
+    salesforce_username: str = ""
+    salesforce_password: str = ""
+    salesforce_security_token: str = ""
+    salesforce_domain: str = "login"    # "login" for production, "test" for sandbox
+    salesforce_consumer_key: str = ""
+    salesforce_consumer_secret: str = ""
+
+    # Sentry — error tracking and performance monitoring
+    sentry_dsn: str = ""                # Get from Sentry project settings
+    sentry_environment: str = "production"  # production | staging | development
+    sentry_traces_sample_rate: float = 0.1  # 10% of transactions for performance monitoring
+
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",
@@ -150,6 +184,15 @@ def get_content_guidelines() -> dict:
     immediately without restarting the backend.
     """
     return load_yaml_config("content_guidelines.yaml")
+
+
+def get_offer_context() -> dict:
+    """Load ProspectIQ offer context — capabilities, proof points, differentiation.
+
+    NOT cached — reads fresh every time so dashboard edits take effect
+    immediately without restarting the backend.
+    """
+    return load_yaml_config("offer_context.yaml")
 
 
 def get_linkedin_messages_guidelines() -> dict:

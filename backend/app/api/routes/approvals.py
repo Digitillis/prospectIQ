@@ -8,9 +8,11 @@ happen exclusively when email is actually sent via Resend.
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend.app.core.audit import log_audit_event_from_ctx
+from backend.app.core.auth import require_role
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
@@ -100,14 +102,57 @@ async def list_pending_drafts(limit: int = 50):
 
 
 @router.post("/{draft_id}/approve")
-async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
+async def approve_draft(
+    draft_id: str,
+    body: Optional[ApproveRequest] = None,
+    _role=Depends(require_role("member")),
+    force: bool = False,
+):
     """Approve an outreach draft.
 
     Optionally provide an edited body. No interaction is logged and no
     company status is changed here — those happen only when the email is
     actually sent via Resend (in the engagement agent / gtm_send).
+
+    Set ?force=true to bypass the quality gate (admin use only).
     """
     db = get_db()
+
+    # Quality gate — block approval if draft has error-severity issues.
+    # Run against edited_body if provided, otherwise the stored body.
+    if not force:
+        result_raw = (
+            db._filter_ws(
+                db.client.table("outreach_drafts")
+                .select("*, companies(name, tier), research_intelligence(*)")
+            )
+            .eq("id", draft_id)
+            .execute()
+        )
+        if result_raw.data:
+            draft_row = result_raw.data[0]
+            if body and body.edited_body:
+                draft_row = dict(draft_row)
+                draft_row["edited_body"] = body.edited_body
+
+            company = draft_row.get("companies") or {}
+            research = draft_row.get("research_intelligence") or None
+
+            from backend.app.core.draft_quality import validate_draft
+            report = validate_draft(draft_row, company, research)
+            errors = [i for i in report.issues if i.severity == "error"]
+            if errors:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "message": "Draft has quality errors and cannot be approved. Fix the issues or use ?force=true.",
+                        "quality_score": report.score,
+                        "errors": [
+                            {"check": i.check_name, "message": i.message}
+                            for i in errors
+                        ],
+                    },
+                )
 
     update_data: dict = {
         "approval_status": "approved",
@@ -121,6 +166,17 @@ async def approve_draft(draft_id: str, body: Optional[ApproveRequest] = None):
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
+    action = "draft.edited" if (body and body.edited_body) else "draft.approved"
+    log_audit_event_from_ctx(
+        action,
+        resource_type="outreach_draft",
+        resource_id=draft_id,
+        metadata={
+            "sequence_name": draft.get("sequence_name"),
+            "channel": draft.get("channel"),
+        },
+    )
+
     return {"data": draft, "message": "Draft approved"}
 
 
@@ -129,7 +185,11 @@ class EditRequest(BaseModel):
 
 
 @router.patch("/{draft_id}/edit")
-async def edit_draft(draft_id: str, body: EditRequest):
+async def edit_draft(
+    draft_id: str,
+    body: EditRequest,
+    _role=Depends(require_role("member")),
+):
     """Save edits to a draft without approving it.
 
     The draft remains in the pending queue so it can be reviewed
@@ -146,7 +206,11 @@ async def edit_draft(draft_id: str, body: EditRequest):
 
 
 @router.post("/{draft_id}/reject")
-async def reject_draft(draft_id: str, body: RejectRequest):
+async def reject_draft(
+    draft_id: str,
+    body: RejectRequest,
+    _role=Depends(require_role("member")),
+):
     """Reject an outreach draft with a reason."""
     db = get_db()
 
@@ -159,11 +223,22 @@ async def reject_draft(draft_id: str, body: RejectRequest):
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
+    log_audit_event_from_ctx(
+        "draft.rejected",
+        resource_type="outreach_draft",
+        resource_id=draft_id,
+        metadata={"rejection_reason": body.rejection_reason},
+    )
+
     return {"data": draft, "message": "Draft rejected"}
 
 
 @router.post("/{draft_id}/test-send")
-async def test_send_draft(draft_id: str, body: TestEmailRequest):
+async def test_send_draft(
+    draft_id: str,
+    body: TestEmailRequest,
+    _role=Depends(require_role("member")),
+):
     """Send a draft to a test email address (your own inbox).
 
     Does NOT mark the draft as sent or change any status.
@@ -219,8 +294,19 @@ async def test_send_draft(draft_id: str, body: TestEmailRequest):
         import resend
         resend.api_key = settings.resend_api_key
 
+        # Get sender info from config
+        try:
+            from backend.app.core.config import get_outreach_guidelines
+            guidelines = get_outreach_guidelines()
+            sender = guidelines.get("sender", {})
+            sender_email = sender.get("email", "noreply@example.com")
+            sender_name = sender.get("name", "ProspectIQ")
+            from_addr = f"{sender_name} <{sender_email}>" if sender_name else sender_email
+        except Exception:
+            from_addr = "ProspectIQ <noreply@example.com>"
+
         send_result = resend.Emails.send({
-            "from": "Avanish Mehrotra <avi@digitillis.io>",
+            "from": from_addr,
             "to": [body.test_email],
             "subject": test_subject,
             "text": test_body,

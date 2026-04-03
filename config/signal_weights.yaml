@@ -1,0 +1,162 @@
+# ProspectIQ — Signal Weight Configuration
+# Controls how buying signals influence PQS recalculation.
+# Each signal type adds delta_pqs to the company's timing dimension.
+# Edit this file to tune sensitivity without code changes.
+
+version: "1.0"
+
+# ---------------------------------------------------------------
+# Generic trigger event signals (from ResearchAgent output)
+# ---------------------------------------------------------------
+trigger_events:
+  leadership_change:
+    delta_pqs: 12
+    description: "New VP/Director hire — high evaluation likelihood in first 90 days"
+    decay_days: 90           # signal decays to 0 after this many days
+
+  capex_investment:
+    delta_pqs: 10
+    description: "CapEx or plant expansion — budget exists, project mindset active"
+    decay_days: 120
+
+  ma_pe:
+    delta_pqs: 8
+    description: "M&A or PE involvement — operational review likely"
+    decay_days: 180
+
+  esg_commitment:
+    delta_pqs: 6
+    description: "ESG/sustainability mandate — energy and compliance use cases open"
+    decay_days: 180
+
+  operational_incident:
+    delta_pqs: 15
+    description: "Press-reported failure or recall — acute pain, high receptivity"
+    decay_days: 60
+
+  growth_signal:
+    delta_pqs: 7
+    description: "Revenue growth or headcount expansion — scaling means new problems"
+    decay_days: 90
+
+  competitor_displacement:
+    delta_pqs: 18
+    description: "Stated dissatisfaction with or removing a competing vendor"
+    decay_days: 60
+
+# ---------------------------------------------------------------
+# Manufacturing-specific signals (from SignalMonitorAgent)
+# ---------------------------------------------------------------
+manufacturing_signals:
+  skilled_trades_hiring:
+    delta_pqs: 8
+    description: "Hiring surge for maintenance technicians / millwrights — reactive maintenance indicator"
+    decay_days: 60
+    search_patterns:
+      - "maintenance technician hiring"
+      - "millwright job posting"
+      - "industrial mechanic opening"
+      - "predictive maintenance engineer"
+
+  plant_expansion_press:
+    delta_pqs: 10
+    description: "Plant expansion or CapEx press release — new lines = new monitoring needs"
+    decay_days: 120
+    search_patterns:
+      - "plant expansion announcement"
+      - "new production line"
+      - "facility upgrade"
+      - "capital investment manufacturing"
+
+  erp_cmms_rfp:
+    delta_pqs: 14
+    description: "ERP/CMMS upgrade RFP or vendor evaluation — systems review in progress"
+    decay_days: 90
+    search_patterns:
+      - "ERP upgrade RFP"
+      - "CMMS evaluation"
+      - "maintenance management system"
+      - "enterprise software replacement"
+
+  esg_mandate:
+    delta_pqs: 7
+    description: "ESG or net-zero mandate — energy intelligence and reporting use case"
+    decay_days: 180
+    search_patterns:
+      - "net zero commitment"
+      - "carbon reduction target"
+      - "sustainability mandate"
+      - "ESG reporting"
+
+  fda_warning_letter:
+    delta_pqs: 20
+    description: "FDA warning letter — acute compliance pain, high urgency"
+    decay_days: 90
+    search_patterns:
+      - "FDA warning letter"
+      - "FDA 483 observation"
+      - "import alert"
+      - "consent decree"
+
+  food_safety_audit_failure:
+    delta_pqs: 18
+    description: "Failed audit or recall — direct pain signal, immediate receptivity"
+    decay_days: 60
+    search_patterns:
+      - "product recall announcement"
+      - "FSMA violation"
+      - "SQF audit failure"
+      - "BRC non-conformance"
+
+  iso_certification_drive:
+    delta_pqs: 9
+    description: "ISO/AS9100/IATF certification drive — process discipline and documentation need"
+    decay_days: 120
+    search_patterns:
+      - "ISO 9001 certification"
+      - "AS9100 certification"
+      - "IATF 16949"
+      - "quality management certification"
+
+  competitor_contract_win:
+    delta_pqs: 11
+    description: "Competitor won a contract in their sub-sector — peer pressure signal"
+    decay_days: 90
+    search_patterns:
+      - "contract award manufacturing"
+      - "new customer announcement"
+      - "production partnership"
+
+  post_ma_consolidation:
+    delta_pqs: 13
+    description: "Post-M&A plant consolidation — systems fragmentation and operational chaos"
+    decay_days: 180
+    search_patterns:
+      - "post-acquisition integration"
+      - "plant consolidation"
+      - "merger operational integration"
+      - "divested facility"
+
+# ---------------------------------------------------------------
+# Competitive intelligence signals (from Trigify / LinkedIn)
+# ---------------------------------------------------------------
+competitor_engagement:
+  liked_competitor_post:
+    delta_pqs: 5
+    description: "Company employee liked a competitor's LinkedIn post"
+    decay_days: 30
+
+  commented_competitor_post:
+    delta_pqs: 10
+    description: "Company employee commented on a competitor's LinkedIn post"
+    decay_days: 30
+
+  shared_competitor_post:
+    delta_pqs: 15
+    description: "Company employee shared a competitor's content — active evaluation signal"
+    decay_days: 30
+
+  followed_competitor:
+    delta_pqs: 8
+    description: "Decision maker followed a competitor's LinkedIn page"
+    decay_days: 60

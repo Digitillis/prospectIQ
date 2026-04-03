@@ -6,8 +6,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, Mail, Clock, GitBranch, ClipboardList, Linkedin, X, Search } from "lucide-react";
-import { previewSequenceV2, getAllContacts, getCompanies } from "@/lib/api";
-import type { RenderedSequence, RenderedStep, StepType } from "@/types/sequence";
+import {
+  previewSequenceV2, getAllContacts, getCompanies,
+  type RenderedSequence, type RenderedStep,
+} from "@/lib/api";
+import type { StepType } from "@/types/sequence";
 import { cn } from "@/lib/utils";
 
 interface Contact {

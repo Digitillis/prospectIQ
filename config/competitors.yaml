@@ -1,0 +1,54 @@
+# ProspectIQ — Competitor LinkedIn Monitoring (Trigify)
+# When a prospect company employee engages with one of these competitor
+# LinkedIn profiles or posts, it fires a competitor_engagement intent signal.
+#
+# Add/remove competitors as needed. Trigify picks these up on next sync.
+
+version: "1.0"
+
+# Competitor LinkedIn company page URLs to monitor
+competitors:
+  - name: "C3.ai"
+    linkedin_url: "https://www.linkedin.com/company/c3-ai"
+    category: "ai_manufacturing_platform"
+
+  - name: "Uptake"
+    linkedin_url: "https://www.linkedin.com/company/uptake"
+    category: "predictive_analytics"
+
+  - name: "SparkCognition"
+    linkedin_url: "https://www.linkedin.com/company/sparkcognition"
+    category: "ai_manufacturing_platform"
+
+  - name: "Sight Machine"
+    linkedin_url: "https://www.linkedin.com/company/sight-machine"
+    category: "manufacturing_analytics"
+
+  - name: "MachineMetrics"
+    linkedin_url: "https://www.linkedin.com/company/machinemetrics"
+    category: "oee_analytics"
+
+  - name: "Augury"
+    linkedin_url: "https://www.linkedin.com/company/augury"
+    category: "predictive_maintenance"
+
+  - name: "Samsara"
+    linkedin_url: "https://www.linkedin.com/company/samsara"
+    category: "iot_platform"
+
+  - name: "Falkonry"
+    linkedin_url: "https://www.linkedin.com/company/falkonry"
+    category: "ai_manufacturing_platform"
+
+  - name: "Aveva"
+    linkedin_url: "https://www.linkedin.com/company/aveva"
+    category: "industrial_software"
+
+  - name: "Aspentech"
+    linkedin_url: "https://www.linkedin.com/company/aspentech"
+    category: "process_optimization"
+
+# Trigify webhook endpoint for inbound events:
+# POST /api/webhooks/trigify
+# Set this URL in your Trigify workspace settings.
+trigify_webhook_path: "/api/webhooks/trigify"

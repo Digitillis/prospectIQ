@@ -224,17 +224,30 @@ def validate_draft(
         if marker in body if marker in ("—", "–") else marker in body_lower:
             report.add_issue("warning", f"ai_tell_{check_name}", message)
 
-    # 8. Sign-off check — must include the full signature block
-    if "avanish mehrotra" not in body_lower:
-        report.add_issue(
-            "warning", "no_signoff",
-            "Missing full signature (should end with 'Avanish Mehrotra / Founder & CEO / Digitillis')"
-        )
-    if "224.355.4500" not in body:
-        report.add_issue(
-            "warning", "no_phone_in_sig",
-            "Missing phone number in signature (224.355.4500)"
-        )
+    # 8. Sign-off check — must include a signature block
+    # Try to load expected sender info from config
+    try:
+        from backend.app.core.config import get_outreach_guidelines
+        guidelines = get_outreach_guidelines()
+        sender = guidelines.get("sender", {})
+        sender_name = sender.get("name", "").lower() if sender.get("name") else ""
+    except Exception:
+        sender_name = ""
+
+    # Only check for signature if config has a sender name
+    if sender_name:
+        if sender_name not in body_lower:
+            report.add_issue(
+                "warning", "no_signoff",
+                f"Missing full signature (should include '{sender_name}')"
+            )
+    else:
+        # Fallback: just check for any reasonable signature marker
+        if "—" not in body and "//" not in body:
+            report.add_issue(
+                "warning", "no_signoff",
+                "Missing signature block (should end with sender name and details)"
+            )
 
     return report
 

@@ -18,6 +18,7 @@ from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import get_settings, get_manufacturing_ontology
+from backend.app.core.model_router import get_model
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -46,12 +47,12 @@ def get_linkedin_messages_guidelines() -> dict:
 def _build_system_prompt(guidelines: dict) -> str:
     """Build the LinkedIn system prompt from guidelines YAML (or sensible defaults)."""
     sender = guidelines.get("sender", {})
-    sender_name = sender.get("name", "Avanish Mehrotra")
-    sender_title = sender.get("title", "Founder & CEO")
-    sender_company = sender.get("company", "Digitillis")
+    sender_name = sender.get("name", "the sender")
+    sender_title = sender.get("title", "")
+    sender_company = sender.get("company", "the company")
 
     voice = guidelines.get("voice_and_tone", (
-        "Direct, human, founder-to-operator. No filler. No buzzwords. "
+        "Direct, human, expert-to-operator. No filler. No buzzwords. "
         "Sounds like a real person, not a sales bot."
     ))
     never = guidelines.get("never_include", [
@@ -62,11 +63,11 @@ def _build_system_prompt(guidelines: dict) -> str:
         "Revolutionary / game-changing / cutting-edge",
     ])
     banned_phrases = guidelines.get("banned_phrases", [])
-    facts = guidelines.get("digitillis_facts", [
-        "Digitillis is an AI platform purpose-built for manufacturers",
-        "Helps predict equipment failures before they happen",
-        "Reduces unplanned downtime and improves OEE",
-    ])
+    facts = guidelines.get("product_facts", guidelines.get("digitillis_facts", [
+        "The product is purpose-built for the target industry",
+        "Helps predict operational failures before they happen",
+        "Reduces unplanned downtime and improves operational efficiency",
+    ]))
 
     parts = [
         f"You are writing LinkedIn messages on behalf of {sender_name}, "
@@ -85,7 +86,7 @@ def _build_system_prompt(guidelines: dict) -> str:
         "NEVER INCLUDE:",
         *[f"- {item}" for item in never],
         "",
-        "DIGITILLIS FACTS (use sparingly, max 1 per message):",
+        "PRODUCT FACTS (use sparingly, max 1 per message):",
         *[f"- {fact}" for fact in facts],
         "",
         "## LINKEDIN MESSAGE QUALITY",
@@ -174,7 +175,7 @@ HARD REJECTION RULES — if your output contains ANY of these, regenerate:
 - Sentence fragments like "Saw your company..." or "Curious about..." — always use complete sentences with explicit subject ("I saw...", "I am curious...").
 - Em dashes (—) or en dashes (–) anywhere.
 
-WRITING STYLE (Avanish's voice):
+WRITING STYLE (sender's voice):
 - Write in complete sentences. Never start with a fragment.
 - Use explicit first person: "I saw", "I am curious", "I have been following" — not "Saw", "Curious about", "Been following".
 - Do NOT use contractions in connection notes (first impression). "I am" not "I'm". "I have" not "I've". DMs can use contractions sparingly.
@@ -200,7 +201,7 @@ EXAMPLE of wrong style (REJECTED):
      or "Thanks for accepting." Start with their name and go directly into a
      genuine question about their operations.
    - The question should demonstrate domain expertise specific to their sub-sector.
-   - No product mention. No Digitillis mention.
+   - No product mention. Pure research and curiosity only.
    - Use "I am" not "I'm". Complete sentences with explicit subjects.
 
 3. FOLLOW-UP DM (100 words max, send 5-7 days after opening DM if no reply)
@@ -376,8 +377,9 @@ class LinkedInAgent(BaseAgent):
                     # Call Claude
                     console.print(f"  [dim]{company_name} → {contact_name}...[/dim]")
 
+                    _model = get_model("linkedin_msg")
                     response = client.messages.create(
-                        model="claude-sonnet-4-6",
+                        model=_model,
                         max_tokens=1200,
                         system=system_prompt,
                         messages=[{"role": "user", "content": prompt}],
@@ -387,7 +389,7 @@ class LinkedInAgent(BaseAgent):
                     usage = response.usage
                     self.track_cost(
                         provider="anthropic",
-                        model="claude-sonnet-4-6",
+                        model=_model,
                         endpoint="/messages",
                         company_id=company_id,
                         input_tokens=usage.input_tokens,

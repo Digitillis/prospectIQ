@@ -16,8 +16,9 @@ import {
   TrendingUp,
   RefreshCw,
   Inbox,
+  DollarSign,
 } from "lucide-react";
-import { getCommandCenter, updateIntelligenceGoals, getHitlStats, type CommandCenterData, type HitlStats } from "@/lib/api";
+import { getCommandCenter, updateIntelligenceGoals, getHitlStats, getAnalyticsSummary, type CommandCenterData, type HitlStats, type AnalyticsSummary } from "@/lib/api";
 import { cn, getPQSColor } from "@/lib/utils";
 
 const CLASSIFICATION_COLORS: Record<string, string> = {
@@ -91,9 +92,16 @@ function WeeklyBar({ label, actual, target, onEdit }: { label: string; actual: n
   );
 }
 
+function formatCurrencyShort(v: number): string {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
+  return `$${Math.round(v).toLocaleString()}`;
+}
+
 export default function CommandCenterPage() {
   const [data, setData] = useState<CommandCenterData | null>(null);
   const [hitlStats, setHitlStats] = useState<HitlStats | null>(null);
+  const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingGoal, setEditingGoal] = useState<string | null>(null);
   const [goalInput, setGoalInput] = useState("");
@@ -101,12 +109,14 @@ export default function CommandCenterPage() {
   const doFetch = useCallback(async () => {
     try {
       setLoading(true);
-      const [res, hStats] = await Promise.allSettled([
+      const [res, hStats, aSum] = await Promise.allSettled([
         getCommandCenter(),
         getHitlStats(),
+        getAnalyticsSummary(),
       ]);
       if (res.status === "fulfilled") setData(res.value);
       if (hStats.status === "fulfilled") setHitlStats(hStats.value);
+      if (aSum.status === "fulfilled") setAnalyticsSummary(aSum.value);
     } catch {
       // graceful empty state
     } finally {
@@ -449,6 +459,71 @@ export default function CommandCenterPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── Section F: Revenue Intelligence Card ── */}
+      {!loading && analyticsSummary && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-5 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Revenue Intelligence</h3>
+              <span className={cn(
+                "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                analyticsSummary.pipeline_health === "green"
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                  : analyticsSummary.pipeline_health === "amber"
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+              )}>
+                {analyticsSummary.pipeline_health}
+              </span>
+            </div>
+            <Link href="/analytics/revenue" className="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-gray-100">
+              Full analytics →
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Projected ARR (90d)</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {formatCurrencyShort(analyticsSummary.projected_arr_90d)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Replied</p>
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                {analyticsSummary.total_replied.toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Conversion Rate</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {analyticsSummary.overall_conversion_rate.toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Best Cluster</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                {analyticsSummary.best_cluster || "—"}
+              </p>
+            </div>
+          </div>
+
+          {analyticsSummary.stuck_in_research_14d > 0 && (
+            <div className="flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="text-xs text-amber-700 dark:text-amber-300">
+                <strong>{analyticsSummary.stuck_in_research_14d}</strong>{" "}
+                {analyticsSummary.stuck_in_research_14d === 1 ? "company" : "companies"} stuck in research for &gt;14 days
+              </span>
+              <Link href="/pipeline?status=researched" className="ml-auto shrink-0 text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline">
+                Review →
+              </Link>
+            </div>
+          )}
         </div>
       )}
 

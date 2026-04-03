@@ -1,15 +1,15 @@
 """Engagement Agent — Sequence orchestration + Resend delivery.
 
 Handles:
-- Sending approved outreach via Resend (from avi@digitillis.com)
+- Sending approved outreach via Resend
 - Managing multi-stage engagement sequences
 - Processing webhook events (opens, clicks, replies, bounces)
 - Generating follow-up drafts when sequences are due
 
 Delivery architecture:
-- FROM: avi@digitillis.com (digitillis.com verified in Resend — sent via Resend infrastructure)
+- FROM address and sender identity configured in config/outreach_guidelines.yaml (sender section)
 - Full per-lead custom subject + body — no template variable limitations
-- Replies land directly in avi@digitillis.com inbox
+- Replies land in the sender's inbox
 """
 
 from __future__ import annotations
@@ -66,10 +66,8 @@ class EngagementAgent(BaseAgent):
     def _send_approved_drafts(self, campaign_name: str | None = None) -> AgentResult:
         """Send all approved but unsent outreach drafts via Resend.
 
-        FROM: avanish@digitillis.com (digitillis.com verified in Resend)
-        REPLY-TO: avi@digitillis.com (prospect replies land in primary inbox)
+        FROM address is read from config/outreach_guidelines.yaml (sender.email).
         Full per-lead custom subject + body — no template variable limitations.
-
         Gated by SEND_ENABLED env flag.
         """
         result = AgentResult()
@@ -89,6 +87,21 @@ class EngagementAgent(BaseAgent):
 
         import resend
         resend.api_key = settings.resend_api_key
+
+        # Resolve sender identity from outreach_guidelines config
+        _from_address = "noreply@example.com"
+        _from_display = "ProspectIQ"
+        try:
+            from backend.app.core.config import get_outreach_guidelines
+            _guidelines = get_outreach_guidelines()
+            _sender = _guidelines.get("sender", {})
+            _email = _sender.get("email", "")
+            _name = _sender.get("name", "")
+            if _email:
+                _from_address = _email
+                _from_display = f"{_name} <{_email}>" if _name else _email
+        except Exception:
+            pass
 
         # Get approved email drafts that haven't been sent yet
         drafts = (
@@ -136,7 +149,7 @@ class EngagementAgent(BaseAgent):
 
             try:
                 resend.Emails.send({
-                    "from": "Avanish Mehrotra <avi@digitillis.io>",
+                    "from": _from_display,
                     "to": [contact_email],
                     "subject": subject,
                     "text": body,
@@ -156,7 +169,7 @@ class EngagementAgent(BaseAgent):
                     "body": body,
                     "source": "resend",
                     "metadata": {
-                        "from": "avi@digitillis.io",
+                        "from": _from_address,
                         "sequence_name": draft.get("sequence_name"),
                         "sequence_step": draft.get("sequence_step"),
                     },

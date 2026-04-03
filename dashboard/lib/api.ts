@@ -1898,8 +1898,6 @@ export const suggestHitlResponse = (hitlId: string) =>
     `/api/hitl/queue/${hitlId}/suggest-response`,
     { method: "POST", body: JSON.stringify({}) }
   );
-<<<<<<< Updated upstream
-=======
 
 // ---------------------------------------------------------------------------
 // Lookalike Discovery
@@ -1999,52 +1997,3 @@ export const addLookalikesToPipeline = (
 
 export const getSeedProfile = () =>
   fetchAPI<SeedProfile>("/api/lookalike/seed-profile");
-
-// ---------------------------------------------------------------------------
-// Auth — password reset + session management
-// ---------------------------------------------------------------------------
-
-export const forgotPassword = (email: string) =>
-  fetchAPI<{ message: string }>("/api/auth/forgot-password", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
-
-export const resetPassword = (token: string, newPassword: string) =>
-  fetchAPI<{ message: string }>("/api/auth/reset-password", {
-    method: "POST",
-    body: JSON.stringify({ token, new_password: newPassword }),
-  });
-
-export const authLogout = () =>
-  fetchAPI<{ message: string }>("/api/auth/logout", { method: "POST" });
-
-export interface Session {
-  id: string;
-  event_type: string;
-  ip_address: string | null;
-  user_agent: string | null;
-  created_at: string;
-  metadata: Record<string, unknown>;
-}
-
-export const getSessions = () =>
-  fetchAPI<{ sessions: Session[] }>("/api/auth/sessions");
-
-export const revokeSession = (id: string) =>
-  fetchAPI<{ message: string }>(`/api/auth/sessions/${id}`, {
-    method: "DELETE",
-  });
-
-export interface AuditEvent {
-  id: string;
-  event_type: string;
-  ip_address: string | null;
-  user_agent: string | null;
-  created_at: string;
-  metadata: Record<string, unknown>;
-}
-
-export const getAuthAuditLog = () =>
-  fetchAPI<{ events: AuditEvent[] }>("/api/auth/audit-log");
->>>>>>> Stashed changes

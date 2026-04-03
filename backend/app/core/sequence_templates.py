@@ -57,7 +57,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Reference cost-per-hour of downtime on food processing lines (~$15-40K/hr)",
             "Mention that quality issues often trace back to equipment degradation",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "ops",
     },
 
@@ -77,7 +77,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Ask whether they can predict quality issues before they reach the line",
             "Position as equipment intelligence, not compliance software",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "ops",
     },
 
@@ -99,7 +99,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Mention seasonal capacity pressures if their product is seasonal",
             "Lead with maintenance cost reduction angle over pure uptime",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "ops",
     },
 
@@ -118,7 +118,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Mention shift handoff pain or overnight equipment failures",
             "Reference maintenance crew size and how that affects coverage",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "ops",
     },
 
@@ -139,7 +139,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Reference vibration, temperature, and motor current as primary signals",
             "Do NOT lead with FSMA — they own equipment uptime, not compliance filings",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "pdm_tech",
     },
 
@@ -158,7 +158,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Reference throughput constraints by food category",
             "Connect to their CAPEX cycle if it's a plant expansion year",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "ops",
     },
 
@@ -180,7 +180,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Reference their industry sub-vertical (automotive, aerospace, etc.)",
             "If they're NAICS 332/333, mention CNC and spindle failure as examples",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "pdm",
     },
 
@@ -199,7 +199,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Ask about their worst recurring failure mode",
             "Reference overnight or weekend crew coverage gaps",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "pdm",
     },
 
@@ -218,7 +218,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Tie to their budgeting cycle if it's Q4",
             "Mention integration with their existing CMMS",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "pdm",
     },
 
@@ -241,7 +241,7 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
             "Offer to start with one asset or one line as a pilot",
             "Reference vibration analysis and thermal monitoring specifically",
         ],
-        "from_name": "Avanish @ Digitillis",
+        "from_name": "the sender",
         "signature_variant": "pdm_tech",
     },
 }

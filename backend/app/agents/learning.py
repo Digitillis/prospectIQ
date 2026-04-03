@@ -24,7 +24,7 @@ from backend.app.core.config import get_settings, CONFIG_DIR
 console = Console()
 logger = logging.getLogger(__name__)
 
-LEARNING_ANALYSIS_SYSTEM = """You are a B2B sales analytics expert specializing in manufacturing outreach performance. You analyze engagement data for Digitillis, an AI-native manufacturing intelligence platform, and generate actionable insights.
+LEARNING_ANALYSIS_SYSTEM = """You are a B2B sales analytics expert specializing in manufacturing outreach performance. You analyze engagement data for a B2B outreach program and generate actionable insights.
 
 Your analysis should:
 - Identify patterns in what works and what doesn't
@@ -185,12 +185,24 @@ class LearningAgent(BaseAgent):
                     f"\n  [bold green]Auto-applied {applied_count} scoring adjustment(s) "
                     f"to config/scoring.yaml[/bold green]"
                 )
+            icp_applied = self._apply_icp_refinements(analysis)
+            if icp_applied > 0:
+                console.print(
+                    f"\n  [bold magenta]Applied {icp_applied} ICP refinement(s) "
+                    f"to config/icp.yaml[/bold magenta]"
+                )
         else:
             adjustments = analysis.get("scoring_adjustments", [])
             if adjustments:
                 console.print(
                     f"\n  [dim]Tip: Run with auto_apply=True to write "
                     f"{len(adjustments)} scoring adjustment(s) to config/scoring.yaml[/dim]"
+                )
+            refinements = [r for r in analysis.get("icp_refinements", []) if r.get("priority") == "high"]
+            if refinements:
+                console.print(
+                    f"\n  [dim]Tip: Run with auto_apply=True to write "
+                    f"{len(refinements)} high-priority ICP refinement(s) to config/icp.yaml[/dim]"
                 )
 
         result.processed = 1
@@ -562,6 +574,59 @@ class LearningAgent(BaseAgent):
     # ------------------------------------------------------------------
     # Feedback loop — apply insights back to config
     # ------------------------------------------------------------------
+
+    def _apply_icp_refinements(self, analysis: dict) -> int:
+        """Write high-priority ICP refinements to icp.yaml.
+
+        Appends structured refinement notes under a `learning_refinements` key
+        rather than modifying the core ICP filters — preserving auditability.
+
+        Returns:
+            Number of refinements written.
+        """
+        refinements = [
+            r for r in analysis.get("icp_refinements", [])
+            if r.get("priority") == "high"
+        ]
+        if not refinements:
+            return 0
+
+        icp_path = CONFIG_DIR / "icp.yaml"
+        if not icp_path.exists():
+            logger.warning("icp.yaml not found, cannot apply ICP refinements")
+            return 0
+
+        with open(icp_path, "r") as f:
+            config = yaml.safe_load(f) or {}
+
+        # Backup
+        backup_path = CONFIG_DIR / f"icp.yaml.bak.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        with open(backup_path, "w") as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+        existing = config.get("learning_refinements") or []
+        for r in refinements:
+            existing.append({
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "refinement": r.get("refinement", ""),
+                "evidence": r.get("evidence", ""),
+                "priority": r.get("priority", "high"),
+                "source": "learning_agent",
+            })
+            console.print(f"    [magenta]ICP note: {r.get('refinement', '')[:80]}[/magenta]")
+
+        config["learning_refinements"] = existing
+
+        with open(icp_path, "w") as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+        console.print(f"\n  [dim]ICP backup saved to {backup_path.name}[/dim]")
+
+        # Clear cache so next run picks up any downstream changes
+        from backend.app.core.config import get_icp_config
+        get_icp_config.cache_clear()
+
+        return len(refinements)
 
     def _apply_scoring_adjustments(self, analysis: dict) -> int:
         """Apply scoring adjustments from Claude's analysis back to scoring.yaml.

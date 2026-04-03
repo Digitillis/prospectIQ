@@ -13,8 +13,22 @@ from backend.app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-FOUNDER_EMAIL = "avi@digitillis.com"
-DEFAULT_FROM_EMAIL = "notifications@digitillis.com"
+# Load from config — fallback to generic defaults if not set
+def _get_sender_email() -> str:
+    """Get primary sender email from config."""
+    try:
+        from backend.app.core.config import get_outreach_guidelines
+        guidelines = get_outreach_guidelines()
+        sender = guidelines.get("sender", {})
+        email = sender.get("email")
+        if email:
+            return email
+    except Exception:
+        pass
+    return "noreply@example.com"
+
+FOUNDER_EMAIL = _get_sender_email()  # Primary contact email for alerts
+DEFAULT_FROM_EMAIL = "notifications@example.com"  # Default transactional email
 
 
 class ResendClient:
@@ -178,7 +192,7 @@ class ResendClient:
             </table>
             <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
             <p style="color: #999; font-size: 12px;">
-                Sent by ProspectIQ &middot; Digitillis AI
+                Sent by ProspectIQ &middot; AI-powered outreach intelligence
             </p>
         </div>
         """

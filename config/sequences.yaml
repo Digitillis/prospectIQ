@@ -251,6 +251,122 @@ sequences:
             - "If they don't respond, that's a valid answer"
 
   # =========================================================
+  # SEQUENCE 4: Story-Driven Follow-up (Brunson Arc)
+  # Use after email_value_first completes with no reply,
+  # or as an alternative cold sequence for story-receptive personas.
+  # Follows: Problem → Villain → Solution → Proof → CTA
+  # 5 steps, email-only.
+  # =========================================================
+  email_story_followup:
+    name: "Story-Driven Follow-up (Brunson Arc)"
+    description: "5-step email sequence using Problem → Villain → Solution → Proof → CTA storytelling structure."
+    channel: email
+    timing_jitter_days: 1
+    steps:
+      - step: 1
+        name: the_problem
+        type: initial_value_prop
+        delay_days: 0
+        instructions:
+          subject_approach: "Name the specific problem they're likely living with — use their sub-sector and equipment type"
+          description: >
+            Open with a vivid description of the exact operational problem this
+            company is likely experiencing. Not a generic pain point — the specific
+            version of it for their sub-sector and scale. Use data to make it real:
+            "A $300M automotive stamping plant running predictive maintenance on gut
+            feel is generating roughly $1.2M in avoidable downtime per year."
+            Do NOT pitch a solution. End with one empathy question.
+          tone: "Operator who's seen this problem firsthand. Grounded, not dramatic."
+          max_words: 100
+          anti_patterns:
+            - "Do not pitch a solution — the problem is the entire email"
+            - "The problem must be specific to THIS company's sub-sector and operation"
+            - "No leading with Digitillis or AI"
+            - "Use data, not emotion ('significant downtime' → '$X per event')"
+
+      - step: 2
+        name: the_villain
+        type: follow_up_insight
+        delay_days: 4
+        instructions:
+          subject_approach: "Name the villain — the root cause they've accepted as normal"
+          description: >
+            Identify the villain: the systemic reason the problem persists despite
+            the team knowing about it. This is NOT a competitor — it's the structural
+            cause. For maintenance: "The villain is reactive scheduling — it's not
+            that maintenance teams don't care, it's that your CMMS was designed for
+            tracking repairs, not predicting them." For F&B: "The villain is that
+            HACCP plans are built for audits, not operations." Name it. Validate them.
+            Show you understand why it's hard. No solution yet.
+          tone: "Empathetic industry analyst. Not finger-pointing — exonerating."
+          max_words: 100
+          anti_patterns:
+            - "The villain is a structural/systemic cause — never a competitor or person"
+            - "Do NOT hint at your solution"
+            - "Validate that the villain is not their fault"
+
+      - step: 3
+        name: the_solution
+        type: follow_up_insight
+        delay_days: 8
+        instructions:
+          subject_approach: "Frame the category shift, not the product — 'A different approach to X'"
+          description: >
+            Introduce the category of solution — not Digitillis specifically, but
+            the approach that solves this. "The shift from reactive tracking to
+            predictive modeling changes the ROI math entirely. Instead of logging
+            failures, you're catching the 72-hour warning window before they happen."
+            Connect the solution category to the villain from email 2.
+            Mention Digitillis briefly and naturally in one sentence.
+          tone: "Thought leader describing a category shift. Not a product pitch."
+          max_words: 120
+          anti_patterns:
+            - "Digitillis gets one sentence maximum"
+            - "Frame the solution category, not features"
+            - "Must connect back to the villain from email 2"
+
+      - step: 4
+        name: the_proof
+        type: follow_up_insight
+        delay_days: 12
+        instructions:
+          subject_approach: "A specific outcome — a number, a timeline, a before/after"
+          description: >
+            One concrete proof point that the solution works. Use Digitillis
+            real capabilities as examples: 18-day advance warning on bearing
+            failures, 87% prediction confidence, 25-40% maintenance cost
+            reduction. Frame as a story about a comparable operation (no names):
+            "A food & beverage plant in the Midwest was averaging 3 unplanned
+            CIP line shutdowns per quarter. 90 days after deploying sensor
+            monitoring, that dropped to 0." Specific. Believable. Verifiable.
+          tone: "Evidence-based. The numbers do the work, not adjectives."
+          max_words: 100
+          anti_patterns:
+            - "No fabricated case studies — use real Digitillis capabilities"
+            - "The comparison plant must be genuinely similar to this prospect"
+            - "Numbers are mandatory — no vague 'significant improvement'"
+
+      - step: 5
+        name: the_cta
+        type: soft_close
+        delay_days: 16
+        instructions:
+          subject_approach: "A specific, bounded offer — name exactly what you're proposing"
+          description: >
+            Tie the full arc together in 2-3 sentences: you named the problem,
+            identified why it persists, and showed one path through it. Now make
+            a single, bounded ask: the 6-8 week pilot. "We run 6-8 week pilots
+            with one equipment class. No long-term commitment. If it doesn't work,
+            we part as friends." One binary question to close.
+          tone: "Confident, respectful, easy to say yes or no."
+          max_words: 80
+          anti_patterns:
+            - "No urgency or scarcity language"
+            - "No guilt or 'last chance'"
+            - "The ask must be binary — one clear yes/no offer"
+            - "Don't re-pitch everything — trust the arc to have done the work"
+
+  # =========================================================
   # WARM FOLLOW-UP: For prospects who engaged but didn't reply
   # Email-only.
   # =========================================================
@@ -318,7 +434,7 @@ sequences:
 # =========================================================
 global_principles:
   voice:
-    - "Write as Avi -- a technical founder who understands manufacturing, not a salesperson"
+    - "Write as the sender -- a subject matter expert who understands the prospect's industry, not a salesperson"
     - "Direct, confident, conversational. Short sentences. No corporate jargon."
     - "Show genuine curiosity about their operation -- ask smart questions"
     - "Use their industry language naturally (OEE, MTBF, RUL, CCP, HACCP, FSMA)"
@@ -339,11 +455,164 @@ global_principles:
     - "Every email must reference at least 1 specific fact about the company"
     - "Subject lines must reference their company name or specific situation"
     - "CTA must be a single, low-friction ask (15-min call, not a demo)"
-  signature: |
-    Best regards,
-    Avanish
+  # Signature is driven by config/outreach_guidelines.yaml (sender section).
+  # The outreach agent reads the signature from there; this entry is informational only.
+  signature_note: "Configure sender signature in config/outreach_guidelines.yaml under sender.signature"
 
-    Avanish Mehrotra
-    Founder & CEO
-    Digitillis | www.digitillis.com
-    avi@digitillis.io | 224.355.4500
+# ---------------------------------------------------------------------------
+# Cross-channel orchestration rules
+# Determines which sequence to start based on contact attributes.
+# The pipeline orchestrator reads these to auto-assign sequences.
+# ---------------------------------------------------------------------------
+channel_orchestration:
+  # Decision logic (evaluated top-to-bottom, first match wins)
+  rules:
+    - name: "linkedin_first"
+      condition: "contact has linkedin_url AND contact is VP/C-suite"
+      sequence: "linkedin_relationship"
+      rationale: "LinkedIn relationship building is highest-converting for senior personas"
+
+    - name: "email_only"
+      condition: "contact has email AND no linkedin_url"
+      sequence: "email_value_first"
+      rationale: "Default email sequence when LinkedIn is unavailable"
+
+    - name: "linkedin_with_email_fallback"
+      condition: "contact has both linkedin_url and email"
+      primary_sequence: "linkedin_relationship"
+      fallback_sequence: "linkedin_to_email_fallback"
+      fallback_trigger_days: 14
+      rationale: "Start on LinkedIn; if silent after 14 days, switch to email with fresh angle"
+
+    - name: "story_arc_reengagement"
+      condition: "email_value_first completed with no reply AND PQS >= 50"
+      sequence: "email_story_followup"
+      rationale: "High-PQS prospects that didn't respond to value-first get the story arc"
+
+  # Persona-to-sequence affinity overrides
+  persona_overrides:
+    coo: "linkedin_relationship"
+    vp_ops: "linkedin_relationship"
+    plant_manager: "email_value_first"
+    maintenance_leader: "email_value_first"
+    digital_transformation: "email_story_followup"
+    vp_quality_food_safety: "linkedin_relationship"
+
+  # Cooldown between sequence completions (days before next sequence starts)
+  inter_sequence_cooldown_days: 7
+
+# ---------------------------------------------------------------------------
+# LinkedIn Automation — Unipile configuration
+# ---------------------------------------------------------------------------
+linkedin_automation:
+  # Set to true to enable automated sending via Unipile.
+  # When false, the LinkedIn page remains copy-paste manual (safe default).
+  auto_send_enabled: false
+
+  # Per-workspace override: operators can toggle from Settings → LinkedIn tab
+  # This global setting acts as a master switch; workspace setting gates further.
+
+  # Daily limits (LinkedIn soft limits — do not exceed)
+  daily_connection_request_limit: 20
+  daily_dm_limit: 50
+
+  # Automatically withdraw pending connection invites older than this many days.
+  # Keeps pending invite count below LinkedIn's ~400 limit.
+  stale_invite_withdraw_days: 21
+
+  # Delay (in hours) after connection accepted before opening DM is eligible.
+  # Gives the prospect time to see the connection before receiving a message.
+  dm_delay_after_acceptance_hours: 24
+
+  # HITL mode: when true, every automated send still requires a final approval
+  # click in the UI. Reduces risk during initial rollout.
+  require_hitl_approval: true
+
+  # Scheduler: how often to run the LinkedIn sender agent (minutes)
+  # Set to 0 to disable scheduled runs (manual trigger only via /run/linkedin-send)
+  scheduler_interval_minutes: 0
+
+# ---------------------------------------------------------------------------
+# Reply Strategy Variants (2.10)
+# Named strategies selected by the reply classifier based on reply type.
+# ---------------------------------------------------------------------------
+reply_strategies:
+
+  # Positive reply — prospect wants to know more or book a call
+  positive_reply:
+    strategy: "transition_to_call"
+    instructions: >
+      Acknowledge their interest warmly but concisely. Don't oversell — they're
+      already interested. Propose 2-3 specific calendar slots in the next 5 business
+      days. Offer to send a calendar link. Reference ONE specific thing you'll show
+      them based on what they mentioned. Sign as Avanish. Under 80 words.
+    anti_patterns:
+      - "No 'great to hear from you' filler"
+      - "No over-enthusiasm or exclamation marks"
+      - "Propose SPECIFIC times, not 'what works for you?'"
+      - "Do not add new value props — they're interested, just confirm the call"
+
+  # "Tell me more" reply — prospect is curious but hasn't committed
+  tell_me_more:
+    strategy: "3_variants"
+    variants:
+      concise:
+        description: "One paragraph — the key outcome for their specific operation"
+        max_words: 60
+        instructions: >
+          Answer the implied question in one paragraph. Focus on the outcome most
+          relevant to what they do (not a feature list). End with a binary CTA:
+          "Worth a 20-minute call to see if this applies to you?"
+      story:
+        description: "A specific manufacturer story — similar company, specific outcome"
+        max_words: 100
+        instructions: >
+          Tell a brief story about a similar manufacturer (no names — 'a food & beverage
+          plant in the Midwest'). Problem they had → what changed → specific outcome.
+          Keep it factual. End with: "Does this resonate with what you're dealing with?"
+      flip_the_question:
+        description: "Ask a clarifying question that advances the sale"
+        max_words: 50
+        instructions: >
+          Instead of answering, ask ONE question that will help you give them a better
+          answer AND advance the conversation. E.g.: 'Before I send more — what's your
+          biggest maintenance headache right now?' Short, direct, no preamble.
+
+  # No-reply bump — prospect hasn't responded, adding new value
+  no_reply_bump:
+    strategy: "new_value_not_bump"
+    instructions: >
+      Do NOT write 'just following up' or 'circling back.' Instead, add genuine new
+      value: a data point they haven't seen, a regulatory update that affects their
+      specific operation, or a framework they can use today. The email should be worth
+      reading even if they never respond. Subtle callback to the previous email is OK
+      ('Last week I mentioned...') but the value in THIS email must stand alone.
+    anti_patterns:
+      - "No 'following up' or 'bumping this'"
+      - "No 'did you have a chance to read my last email'"
+      - "New value must be specific to their sub-sector, not generic"
+
+  # Objection handling — prospect raises a concern
+  objection:
+    strategies:
+      incumbent_vendor:
+        instructions: >
+          Acknowledge their current vendor — don't attack it. Ask ONE specific question
+          about a gap you suspect: 'Does [vendor] give you [specific capability]?'
+          Don't pitch Digitillis directly. Make them articulate the gap themselves.
+      budget:
+        instructions: >
+          Reframe around ROI: 'What's one unplanned stop costing you per day?'
+          Then briefly mention that for most plants we work with, one avoided event
+          pays for a full year. Offer a no-cost data readiness assessment so they
+          can make the case internally. Under 60 words.
+      timing:
+        instructions: >
+          Agree with them — respect the constraint. Offer to send a single-page
+          summary they can file for when the timing is right. Ask if it's OK to
+          check in in 60 days. Make it easy for them to park this without losing
+          the relationship. Under 50 words.
+      not_the_right_person:
+        instructions: >
+          Thank them for the clarification. Ask: 'Who should I be talking to about
+          [specific operational challenge]?' One sentence. Don't over-explain.

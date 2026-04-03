@@ -1,0 +1,66 @@
+# ProspectIQ — Offer Context
+# Configure this for your product. The outreach agent injects these details
+# into every generated email to make it specific and credible.
+#
+# Edit this file from the dashboard (Settings → Offer Context) or directly.
+# The outreach agent reads this fresh on every run — no restart required.
+
+version: "1.0"
+
+company: Digitillis
+tagline: "Orchestrated Intelligence for Manufacturing"
+
+# The one-sentence value proposition — use in body, not subject
+core_value_prop: >
+  Digitillis connects to your existing equipment and ERP to surface
+  why things break before they do, where production is bleeding efficiency,
+  and what your data is telling you that your current systems aren't.
+
+# What the product does — specific capabilities to reference in emails
+capabilities:
+  - "Predictive maintenance: flags equipment failure 7–14 days before it happens
+    using sensor data, work order history, and failure mode patterns"
+  - "OEE intelligence: identifies the top 3 downtime drivers per line per week,
+    with root cause — not just the symptom"
+  - "Quality early warning: catches process drift before it becomes a defect batch"
+  - "Works with what you have: integrates with Rockwell, Siemens, SAP, Epicor, Plex,
+    and most CMMS/SCADA systems — no rip-and-replace"
+
+# Time-to-value messaging — use to overcome 'we don't have time for a big project'
+time_to_value:
+  pilot_timeline: "8 weeks from first data connection to first actionable insight"
+  setup_description: "No new sensors required for initial pilot — uses existing historian and work order data"
+  first_result: "First anomaly detection result within 2 weeks of data ingestion"
+
+# Proof points — specific numbers to use in emails (use 1–2 max per email)
+proof_points:
+  - "Plants using Digitillis cut unplanned downtime by 23–41% in the first 6 months"
+  - "Average ROI: $2.3M in avoided downtime costs in year 1 for a 3-line operation"
+  - "One food & beverage plant avoided a $400K recall by catching a filler drift 3 days early"
+  - "Maintenance teams spend 60% less time on reactive work after 90 days on the platform"
+
+# Differentiation — what makes Digitillis different from competitors
+differentiation:
+  vs_generic_ai: >
+    Unlike horizontal AI platforms (C3.ai, Palantir), Digitillis is built
+    exclusively for discrete and process manufacturing — the failure modes,
+    equipment classes, and operational rhythms are pre-trained.
+  vs_sensor_vendors: >
+    Augury, Samsara, and similar sensor-first vendors require new hardware.
+    Digitillis uses your existing data infrastructure — historian, CMMS,
+    ERP — so there's no CapEx to justify before you see value.
+  vs_doing_nothing: >
+    The average US manufacturer loses $532K/year to unplanned downtime per
+    production line. Digitillis pays for itself when it prevents one event.
+
+# Pilot offer — what you offer in a first meeting
+pilot_offer:
+  format: "No-commitment data readiness assessment"
+  description: >
+    We connect to one historian or CMMS data export, run our diagnostic engine,
+    and give you a prioritized list of the 3 highest-ROI use cases for your
+    operation — in 2 weeks, at no cost.
+  cta_options:
+    - "Would it be worth a 20-minute call to see if your data is ready?"
+    - "Want me to send over the 5-question data readiness checklist?"
+    - "Happy to do a quick data diagnostic on one asset if you can share an export."

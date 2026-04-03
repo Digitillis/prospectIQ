@@ -13,25 +13,51 @@ import anthropic
 from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
-from backend.app.core.config import get_settings
+from backend.app.core.config import get_settings, get_sequences_config
 
 console = Console()
 logger = logging.getLogger(__name__)
 
-REPLY_CLASSIFICATION_SYSTEM = """You are a B2B sales reply classifier for Digitillis, an AI-native manufacturing intelligence platform. Your job is to classify incoming prospect replies and draft appropriate responses.
 
-Digitillis capabilities:
-- 32 specialized AI agents across 7 manufacturing domains
-- Predictive maintenance with 18+ day advance warning, 87% confidence
-- Anomaly detection across 100+ sensors
-- Quality control with defect prediction
-- Energy optimization and ESG reporting
-- Production optimization with OEE analytics
-- Conversational AI copilot (ARIA)
-- Pilot program: 6-8 weeks, no long-term commitment
+def _build_reply_system_prompt() -> str:
+    """Build the reply classification system prompt from offer_context + outreach_guidelines.
 
-Founder sending these emails: Avi, Co-Founder & MD at Digitillis
-Email: avi@digitillis.io
+    Reads config fresh on each call so dashboard edits are picked up immediately.
+    Falls back to generic instructions if config files are missing.
+    """
+    try:
+        from backend.app.core.config import get_offer_context, get_outreach_guidelines
+        offer = get_offer_context()
+        guidelines = get_outreach_guidelines()
+    except Exception:
+        offer = {}
+        guidelines = {}
+
+    sender = guidelines.get("sender", {})
+    sender_name = sender.get("name", "the sender")
+    sender_title = sender.get("title", "")
+    company_name = offer.get("company") or sender.get("company", "the company")
+    core_vp = (offer.get("core_value_prop") or "").strip()
+    capabilities = offer.get("capabilities") or []
+
+    sender_line = sender_name
+    if sender_title and company_name:
+        sender_line = f"{sender_name}, {sender_title} at {company_name}"
+    elif sender_title:
+        sender_line = f"{sender_name}, {sender_title}"
+
+    caps_block = "\n".join(f"- {c}" for c in capabilities[:8]) if capabilities else (
+        "- Refer to offer_context.yaml for product capabilities"
+    )
+
+    return f"""You are a B2B sales reply classifier for {company_name}. Your job is to classify incoming prospect replies and draft appropriate responses.
+
+{company_name} — {core_vp}
+
+Key capabilities:
+{caps_block}
+
+Sender: {sender_line}
 
 Classify the reply into exactly one of these categories:
 - positive: Prospect is interested, wants a meeting, demo, or more info
@@ -41,10 +67,12 @@ Classify the reply into exactly one of these categories:
 - unsubscribe: Prospect requests removal from communications
 - bounce: Technical delivery failure / bounce notification
 
-Draft an appropriate response based on the classification:
-- positive: Warm, enthusiastic response proposing 2-3 specific meeting times in the coming week. Keep it concise and action-oriented.
-- question: Helpful, informative answer addressing their specific questions. Reference relevant Digitillis capabilities without being pushy.
-- negative: Polite, gracious acknowledgment. Thank them for their time. Offer to stay in touch for future needs. No pressure.
+Draft an appropriate response based on the classification.
+Always follow the reply strategy from the STRATEGY INSTRUCTIONS provided.
+If no specific strategy is given, use these defaults:
+- positive: Warm, concise response proposing 2-3 specific meeting times. No filler.
+- question: Helpful, specific answer to their exact question. Reference capabilities without being pushy.
+- negative: Polite acknowledgment. Thank them for their time. No pressure.
 - out_of_office: No response needed; note the return date if available.
 - unsubscribe: Brief confirmation that they have been removed.
 - bounce: No response needed; flag for review.
@@ -70,12 +98,16 @@ COMPANY CONTEXT:
 - Research Summary: {company_context}
 - Prospect Qualification Score: {pqs_total}
 
+STRATEGY INSTRUCTIONS (follow these when drafting the response):
+{strategy_instructions}
+
 OUTPUT FORMAT (JSON):
 {{
     "classification": "positive|question|negative|out_of_office|unsubscribe|bounce",
     "sentiment": "very_positive|positive|neutral|negative|very_negative",
+    "strategy_used": "name of the reply strategy used",
     "response_draft_subject": "Re: subject line for the response",
-    "response_draft_body": "The drafted response body. Sign off as Avi, Co-Founder, Digitillis.",
+    "response_draft_body": "The drafted response body. Use the sender signature from the system prompt.",
     "notes": "Brief internal notes about the reply and reasoning",
     "urgency": "high|medium|low"
 }}
@@ -166,6 +198,9 @@ class ReplyAgent(BaseAgent):
 
             pqs_total = company.get("pqs_total", 0)
 
+            # Load reply strategies from sequences.yaml
+            strategy_instructions = _get_reply_strategy_hint(reply_body)
+
             # Build the classification prompt
             prompt = REPLY_CLASSIFICATION_USER.format(
                 prospect_name=contact.get("full_name", contact.get("first_name", "Unknown")),
@@ -176,6 +211,7 @@ class ReplyAgent(BaseAgent):
                 reply_body=reply_body,
                 company_context=research_summary,
                 pqs_total=pqs_total,
+                strategy_instructions=strategy_instructions,
             )
 
             # Call Claude Haiku for classification
@@ -185,7 +221,7 @@ class ReplyAgent(BaseAgent):
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=1000,
-                system=REPLY_CLASSIFICATION_SYSTEM,
+                system=_build_reply_system_prompt(),
                 messages=[{"role": "user", "content": prompt}],
             )
 
@@ -351,6 +387,63 @@ class ReplyAgent(BaseAgent):
             )
 
         return result
+
+def _get_reply_strategy_hint(reply_body: str) -> str:
+    """Return strategy instructions from sequences.yaml based on reply content.
+
+    Uses simple keyword heuristics for fast classification before the LLM call.
+    The LLM can override the strategy in edge cases.
+    """
+    try:
+        seq_config = get_sequences_config()
+        strategies = seq_config.get("reply_strategies", {})
+    except Exception:
+        return "Use your best judgment based on the reply classification."
+
+    body_lower = reply_body.lower()
+
+    # Detect "tell me more" pattern
+    tell_more_signals = [
+        "tell me more", "more information", "more info",
+        "how does", "what does", "can you explain", "walk me through",
+        "sounds interesting", "interesting", "intrigued",
+    ]
+    if any(s in body_lower for s in tell_more_signals):
+        s = strategies.get("tell_me_more", {})
+        variants = s.get("variants", {})
+        # Default to concise variant
+        concise = variants.get("concise", {})
+        return f"Strategy: tell_me_more (concise variant). {concise.get('instructions', '')}"
+
+    # Detect objection patterns
+    if any(w in body_lower for w in ["already using", "already have", "current vendor", "working with"]):
+        obj = strategies.get("objection", {}).get("strategies", {}).get("incumbent_vendor", {})
+        return f"Strategy: objection_incumbent. {obj.get('instructions', '')}"
+
+    if any(w in body_lower for w in ["budget", "cost", "expensive", "price", "afford"]):
+        obj = strategies.get("objection", {}).get("strategies", {}).get("budget", {})
+        return f"Strategy: objection_budget. {obj.get('instructions', '')}"
+
+    if any(w in body_lower for w in ["not right now", "bad timing", "next year", "next quarter", "q4", "q1"]):
+        obj = strategies.get("objection", {}).get("strategies", {}).get("timing", {})
+        return f"Strategy: objection_timing. {obj.get('instructions', '')}"
+
+    if any(w in body_lower for w in ["not the right person", "not my area", "reach out to", "contact"]):
+        obj = strategies.get("objection", {}).get("strategies", {}).get("not_the_right_person", {})
+        return f"Strategy: objection_referral. {obj.get('instructions', '')}"
+
+    # Detect positive reply
+    positive_signals = [
+        "yes", "interested", "let's", "happy to", "sure", "sounds good",
+        "would love", "open to", "schedule", "calendar", "book",
+    ]
+    if any(s in body_lower for s in positive_signals):
+        s = strategies.get("positive_reply", {})
+        return f"Strategy: positive_reply. {s.get('instructions', '')}"
+
+    # Default: use judgment
+    return "Use your best judgment based on the reply content and classification."
+
 
     def _cancel_active_sequences(self, company_id: str) -> int:
         """Cancel all active engagement sequences for a company.

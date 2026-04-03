@@ -23,6 +23,7 @@ import {
   Moon,
   Sun,
   Inbox,
+  Sparkles,
   Mic2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -138,6 +139,7 @@ export function Sidebar() {
       title: "BUILD",
       items: [
         { label: "Prospects", href: "/prospects", icon: Building2 },
+        { label: "Lookalike Discovery", href: "/lookalike", icon: Sparkles },
         { label: "Contacts", href: "/contacts", icon: Users },
         { label: "Segments", href: "/segments", icon: Filter },
       ],
@@ -146,8 +148,10 @@ export function Sidebar() {
       title: "ENGAGE",
       items: [
         { label: "Sequences", href: "/sequences", icon: GitBranch },
+        { label: "Multi-Thread", href: "/multi-thread", icon: GitBranch },
         { label: "Outreach Hub", href: "/outreach", icon: Send },
         { label: "Content", href: "/content", icon: PenTool },
+        { label: "Ghostwriting", href: "/ghostwriting", icon: PenTool },
       ],
     },
     {

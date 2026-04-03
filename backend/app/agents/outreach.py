@@ -18,6 +18,7 @@ from backend.app.core.config import (
     get_sequences_config,
     get_manufacturing_ontology,
     get_outreach_guidelines,
+    get_offer_context,
 )
 
 console = Console()
@@ -38,9 +39,9 @@ PERSONA_PRIORITY = {
 }
 
 def _build_system_prompt() -> str:
-    """Build the outreach system prompt from outreach_guidelines.yaml.
+    """Build the outreach system prompt from outreach_guidelines.yaml + offer_context.yaml.
 
-    Reads the YAML every time so dashboard edits are picked up
+    Reads both YAMLs every time so dashboard edits are picked up
     immediately without restarting the server.
     """
     try:
@@ -48,9 +49,15 @@ def _build_system_prompt() -> str:
     except FileNotFoundError:
         # Fallback if YAML doesn't exist
         return (
-            "You are writing cold outreach emails for Digitillis, an AI manufacturing platform. "
-            "Write in a direct, conversational, founder-to-operator tone. No filler. No buzzwords."
+            "You are writing cold outreach emails on behalf of the sender. "
+            "Write in a direct, conversational, expert-to-operator tone. No filler. No buzzwords."
         )
+
+    # Load offer context — always fresh
+    try:
+        offer = get_offer_context()
+    except FileNotFoundError:
+        offer = {}
 
     sender = g.get("sender", {})
     voice = g.get("voice_and_tone", "")
@@ -59,13 +66,13 @@ def _build_system_prompt() -> str:
     never_include = g.get("never_include", [])
     banned_phrases = g.get("banned_phrases", [])
     banned_chars = g.get("banned_characters", [])
-    facts = g.get("digitillis_facts", [])
+    facts = g.get("product_facts", g.get("digitillis_facts", []))
     subject_rules = g.get("subject_line_rules", "")
     signature = sender.get("signature", "")
 
     parts = [
-        f"You are writing cold outreach emails on behalf of {sender.get('name', 'Avanish Mehrotra')}, "
-        f"{sender.get('title', 'Founder & CEO')} of {sender.get('company', 'Digitillis')}.",
+        f"You are writing cold outreach emails on behalf of {sender.get('name', 'the sender')}, "
+        f"{sender.get('title', '')}{'of ' if sender.get('title') else ''}{sender.get('company', 'the company')}.",
         "",
         "VOICE & TONE:",
         voice,
@@ -89,7 +96,7 @@ def _build_system_prompt() -> str:
         "SUBJECT LINE RULES:",
         subject_rules,
         "",
-        "DIGITILLIS FACTS (use selectively, not as a list):",
+        "PRODUCT FACTS (use selectively, not as a list):",
         *[f"- {fact}" for fact in facts],
         "",
         "## PERSONALIZATION DEPTH",
@@ -124,6 +131,33 @@ def _build_system_prompt() -> str:
         "SIGNATURE BLOCK (copy exactly):",
         signature,
     ]
+
+    # Inject offer context if available
+    if offer:
+        core_vp = (offer.get("core_value_prop") or "").strip()
+        capabilities = offer.get("capabilities") or []
+        proof_points = offer.get("proof_points") or []
+        pilot = offer.get("pilot_offer") or {}
+        diff = offer.get("differentiation") or {}
+
+        parts += [
+            "",
+            "## PRODUCT VALUE (use selectively — 1-2 facts max per email)",
+            "",
+            f"Core value proposition: {core_vp}",
+            "",
+            "Key capabilities (pick 1 that's most relevant to this prospect's pain):",
+            *[f"- {c}" for c in capabilities],
+            "",
+            "Proof points (use at most ONE — make it relevant to their industry/size):",
+            *[f"- {p}" for p in proof_points],
+            "",
+            "Pilot offer (use as CTA for step 1):",
+            f"- {pilot.get('description', '')}",
+            "",
+            "Differentiation (use only if prospect is solution_aware and has seen competitors):",
+            *[f"- {v}" for v in diff.values() if v],
+        ]
 
     return "\n".join(parts)
 
@@ -180,6 +214,15 @@ EXISTING SOLUTIONS (competitors already in use):
 VALUE MESSAGING FOR THIS SUB-SECTOR:
 {value_messaging}
 
+PROSPECT AWARENESS LEVEL: {awareness_level}
+  - unaware: Start with the problem, not the solution. Don't mention "AI platform" in your opener.
+    Lead with a pain/challenge observation specific to their operation.
+  - problem_aware: Acknowledge they know the problem. Position the platform as the answer.
+    You can reference "predictive maintenance" or "manufacturing intelligence" early.
+  - solution_aware: They've seen pitches before. Differentiate immediately — skip generic AI claims,
+    go straight to what makes the platform different (speed to value, existing integration path,
+    specific sub-sector benchmarks, or a competitor gap they have).
+
 SEQUENCE: {sequence_name}, Step {sequence_step}
 CHANNEL: {channel}
 
@@ -189,11 +232,40 @@ STEP INSTRUCTIONS:
 GLOBAL ANTI-PATTERNS:
 {anti_patterns}
 
+## HORMOZI QUALITY CHECK (run this before returning JSON)
+
+Before returning the JSON, silently check your draft against these three questions:
+1. Does the email reference a specific, believable outcome for THIS company?
+   (Not "reduce downtime" — something like "based on their Plex ERP setup, the
+   likely first win is work order prediction, not sensors")
+2. Is there at least one concrete proof point? (a number, a timeline, a specific outcome)
+3. Is the CTA low-friction? (a question or an offer — not "schedule a demo")
+
+If any check fails, rewrite that sentence before returning.
+
+## FORBIDDEN PHRASES (rewrite any of these if they appear)
+
+Never use:
+- "many manufacturers" → name the specific type instead
+- "companies like yours" → say "plants with [their specific setup]"
+- "significant downtime" → use a number or "unplanned stops on [their equipment type]"
+- "improve your operations" → name the specific operation
+- "cutting-edge AI" / "industry-leading" / "state-of-the-art" → delete entirely
+- "we help companies" → show, don't tell
+- "reach out to learn more" → make a specific offer instead
+- "would love to connect" → say what specifically you want to discuss
+- "leverage" / "synergy" / "game-changing" → delete entirely
+
 OUTPUT FORMAT (JSON):
 {{
     "subject": "Short, specific subject line referencing their company or situation (under 50 chars, no generic subjects)",
     "body": "The email body. MUST start with 'Hi [first_name],' (use actual first name). {max_words} words max. MUST end with the exact signature block from the system prompt.",
-    "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect"
+    "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect",
+    "hormozi_check": {{
+        "specific_outcome": true,
+        "proof_point_present": true,
+        "low_friction_cta": true
+    }}
 }}
 
 Output ONLY valid JSON. No markdown, no explanation."""
@@ -424,6 +496,20 @@ class OutreachAgent(BaseAgent):
 
                     self.db.insert_outreach_draft(draft_data)
 
+                    # A/B variant tracking — stable assignment by contact ID hash
+                    try:
+                        from backend.app.analytics.ab_tracker import ABTracker
+                        _cid = contact["id"].replace("-", "")
+                        ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
+                        ABTracker(self.db).record_send(
+                            contact_id=contact["id"],
+                            variant=ab_variant,
+                            subject_line=parsed.get("subject", ""),
+                            sequence_id=f"{sequence_name}_step_{sequence_step}",
+                        )
+                    except Exception:
+                        pass  # A/B tracking is non-blocking
+
                     console.print(
                         f"  [green]{company_name} → {contact.get('full_name', 'Unknown')}: Draft created. "
                         f"Subject: \"{parsed.get('subject', '')[:50]}\"[/green]"
@@ -543,10 +629,15 @@ class OutreachAgent(BaseAgent):
         mfg_profile = dict(company.get("manufacturing_profile", {}) or {})
         existing = []
 
+        # Awareness level — from research or company record
+        awareness_level = company.get("awareness_level", "") or "unaware"
+
         # Merge in research intelligence (often richer than company record)
         if research:
             ri = research.get("research_intelligence", {}) or {}
             existing = research.get("existing_solutions", []) or ri.get("existing_solutions", []) or []
+            if not awareness_level or awareness_level == "unaware":
+                awareness_level = research.get("awareness_level", "") or ri.get("awareness_level", "") or "unaware"
             if not research_summary:
                 research_summary = research.get("summary", "") or ri.get("summary", "")
             # Merge pain points
@@ -613,6 +704,7 @@ class OutreachAgent(BaseAgent):
             manufacturing_profile=json.dumps(mfg_profile, indent=2) if mfg_profile else "Not profiled",
             existing_solutions=", ".join(existing) if existing else "None identified",
             value_messaging=value_text or "No tier-specific messaging available",
+            awareness_level=awareness_level or "unaware",
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
             channel=channel,

@@ -27,6 +27,177 @@ router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
 # ---------------------------------------------------------------------------
+# Unipile (LinkedIn) webhook handler
+# ---------------------------------------------------------------------------
+
+@router.post("/unipile")
+async def unipile_webhook(request: Request):
+    """Receive webhook events from Unipile for LinkedIn automation.
+
+    Handled event types:
+      - connection_accepted  → mark contact linkedin_accepted_at,
+                               opening DM becomes eligible for next send cycle
+      - message_received     → route LinkedIn DM reply to reply classifier (future)
+
+    Unipile sends a shared secret in the X-Unipile-Signature header.
+    Set UNIPILE_WEBHOOK_SECRET in env vars and configure the same value
+    in the Unipile dashboard webhook settings.
+    """
+    settings = get_settings()
+
+    # Validate webhook signature if secret is configured
+    webhook_secret = getattr(settings, "unipile_webhook_secret", "") or ""
+    if webhook_secret:
+        signature = request.headers.get("X-Unipile-Signature", "")
+        if signature != webhook_secret:
+            raise HTTPException(status_code=401, detail="Invalid Unipile webhook signature")
+
+    payload: dict[Any, Any] = await request.json()
+    event_type: str = (payload.get("event_type") or payload.get("type") or "").lower().strip()
+
+    logger.info("Unipile webhook received: event_type=%s", event_type)
+
+    if event_type == "connection_accepted":
+        return await _handle_linkedin_connection_accepted(payload)
+    elif event_type == "message_received":
+        return await _handle_linkedin_message_received(payload)
+    else:
+        return {"status": "ignored", "reason": f"unhandled event_type: {event_type}"}
+
+
+async def _handle_linkedin_connection_accepted(payload: dict) -> dict:
+    """Handle Unipile connection_accepted event.
+
+    Payload expected fields:
+      - account_id: Unipile account ID
+      - profile_url or linkedin_profile_url: prospect's LinkedIn URL
+      - contact_id (optional): if ProspectIQ contact_id stored in Unipile metadata
+    """
+    linkedin_url: str = (
+        payload.get("linkedin_profile_url")
+        or payload.get("profile_url")
+        or ""
+    )
+
+    if not linkedin_url:
+        return {"status": "ignored", "reason": "no linkedin_profile_url in payload"}
+
+    try:
+        from backend.app.core.database import Database
+        from backend.app.core.workspace import get_workspace_id
+        from backend.app.agents.linkedin_sender import LinkedInSenderAgent
+        from datetime import datetime, timezone
+
+        db = Database(workspace_id=get_workspace_id())
+
+        # Find contact by LinkedIn URL
+        result = (
+            db.client.table("contacts")
+            .select("id, full_name, workspace_id")
+            .eq("linkedin_url", linkedin_url)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            logger.warning(
+                "Unipile connection_accepted: no contact found for linkedin_url=%s",
+                linkedin_url,
+            )
+            return {"status": "ignored", "reason": f"no contact found for {linkedin_url}"}
+
+        contact = result.data[0]
+        contact_id = contact["id"]
+
+        # Mark connection accepted
+        db.client.table("contacts").update({
+            "linkedin_accepted_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", contact_id).execute()
+
+        logger.info(
+            "Unipile: connection accepted — contact %s (%s)",
+            contact.get("full_name", contact_id), linkedin_url,
+        )
+
+        return {
+            "status": "processed",
+            "action": "connection_accepted",
+            "contact_id": contact_id,
+            "note": "Opening DM eligible for next LinkedInSenderAgent cycle",
+        }
+
+    except Exception as exc:
+        logger.error("Unipile connection_accepted handling failed: %s", exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
+
+
+async def _handle_linkedin_message_received(payload: dict) -> dict:
+    """Handle inbound LinkedIn DM via Unipile.
+
+    Routes through the reply classifier the same way email replies do.
+    Future: full thread management for LinkedIn DMs.
+    """
+    linkedin_url: str = (
+        payload.get("sender_linkedin_profile_url")
+        or payload.get("profile_url")
+        or ""
+    )
+    message_text: str = payload.get("message_text") or payload.get("body") or ""
+
+    if not linkedin_url or not message_text:
+        return {"status": "ignored", "reason": "missing linkedin_url or message_text"}
+
+    try:
+        from backend.app.core.database import Database
+        from backend.app.core.workspace import get_workspace_id
+
+        db = Database(workspace_id=get_workspace_id())
+
+        result = (
+            db.client.table("contacts")
+            .select("id, company_id, full_name")
+            .eq("linkedin_url", linkedin_url)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            return {"status": "ignored", "reason": f"no contact found for {linkedin_url}"}
+
+        contact = result.data[0]
+
+        # Log the LinkedIn reply as an interaction
+        db.insert_interaction({
+            "company_id": contact["company_id"],
+            "contact_id": contact["id"],
+            "type": "linkedin_message",
+            "channel": "linkedin",
+            "body": message_text,
+            "source": "unipile_webhook",
+            "metadata": {
+                "event_type": "message_received",
+                "linkedin_url": linkedin_url,
+            },
+        })
+
+        # Mark contact as responded
+        from datetime import datetime, timezone
+        db.client.table("contacts").update({
+            "linkedin_responded_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", contact["id"]).execute()
+
+        return {
+            "status": "processed",
+            "action": "linkedin_reply_logged",
+            "contact_id": contact["id"],
+        }
+
+    except Exception as exc:
+        logger.error("Unipile message_received handling failed: %s", exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -498,4 +669,252 @@ async def instantly_webhook(
 
     except Exception as exc:
         logger.error("Webhook processing error for %s: %s", event_type, exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
+
+
+# ---------------------------------------------------------------------------
+# Trigify webhook — competitor engagement signals
+# ---------------------------------------------------------------------------
+
+@router.post("/trigify")
+async def trigify_webhook(request: Request):
+    """Receive competitor engagement signals from Trigify.
+
+    Fired when a prospect company employee engages with a configured
+    competitor's LinkedIn post (like, comment, share, follow).
+
+    Expected payload (Trigify standard format):
+    {
+        "event": "engagement",
+        "engagement_type": "liked|commented|shared|followed",
+        "actor": {
+            "linkedin_profile_url": "...",
+            "name": "...",
+            "company_name": "...",
+            "company_linkedin_url": "..."
+        },
+        "target": {
+            "company_name": "...",  # the competitor
+            "linkedin_url": "..."
+        },
+        "timestamp": "ISO8601"
+    }
+
+    Maps to signal_weights.yaml competitor_engagement weights.
+    """
+    payload: dict[Any, Any] = await request.json()
+
+    engagement_type = payload.get("engagement_type", "liked_competitor_post")
+    actor = payload.get("actor", {})
+    target = payload.get("target", {})
+
+    company_name = actor.get("company_name", "")
+    company_li_url = actor.get("company_linkedin_url", "")
+    actor_name = actor.get("name", "")
+    competitor_name = target.get("company_name", "")
+
+    if not company_name and not company_li_url:
+        return {"status": "ignored", "reason": "no company info in actor payload"}
+
+    logger.info(
+        "Trigify: %s engagement by %s at %s with competitor %s",
+        engagement_type, actor_name, company_name, competitor_name,
+    )
+
+    try:
+        from backend.app.core.database import Database
+        from backend.app.core.workspace import get_workspace_id
+        from backend.app.agents.signal_monitor import _upsert_intent_signal, _get_signal_weight, _recalculate_pqs_timing
+        from backend.app.core.config import load_yaml_config
+        from datetime import datetime, timezone
+
+        db = Database(workspace_id=get_workspace_id())
+
+        # Find company by name or LinkedIn URL
+        company = None
+        if company_li_url:
+            result = (
+                db.client.table("companies")
+                .select("*")
+                .eq("linkedin_url", company_li_url)
+                .limit(1)
+                .execute()
+            )
+            company = result.data[0] if result.data else None
+
+        if not company and company_name:
+            result = (
+                db.client.table("companies")
+                .select("*")
+                .ilike("name", f"%{company_name}%")
+                .limit(1)
+                .execute()
+            )
+            company = result.data[0] if result.data else None
+
+        if not company:
+            return {"status": "ignored", "reason": f"company '{company_name}' not found in ProspectIQ"}
+
+        company_id = company["id"]
+
+        # Map engagement type to signal key
+        signal_type_map = {
+            "liked": "liked_competitor_post",
+            "commented": "commented_competitor_post",
+            "shared": "shared_competitor_post",
+            "followed": "followed_competitor",
+        }
+        signal_key = signal_type_map.get(engagement_type.lower(), "liked_competitor_post")
+
+        try:
+            signal_config = load_yaml_config("signal_weights.yaml")
+        except FileNotFoundError:
+            signal_config = {}
+
+        signal_data = {
+            "signal_type": signal_key,
+            "description": (
+                f"{actor_name} at {company_name} {engagement_type} "
+                f"content from competitor {competitor_name}"
+            ),
+            "date_approx": datetime.now(timezone.utc).strftime("%Y-%m"),
+            "source": "trigify",
+            "confidence": "high",
+            "outreach_angle": (
+                f"{company_name} is actively engaging with {competitor_name} content — "
+                "likely in active evaluation mode. Reach out with differentiation message."
+            ),
+        }
+
+        _upsert_intent_signal(db=db, company_id=company_id, signal_type=signal_key, signal_data=signal_data)
+
+        weight = _get_signal_weight(signal_config, signal_key)
+        _recalculate_pqs_timing(db, company, weight)
+
+        # Log interaction
+        db.insert_interaction({
+            "company_id": company_id,
+            "type": "note",
+            "channel": "linkedin",
+            "subject": f"Trigify signal: {signal_key}",
+            "body": signal_data["description"],
+            "source": "trigify_webhook",
+            "metadata": {"payload": payload},
+        })
+
+        # Notify Slack for high-value signals
+        if engagement_type.lower() in ("commented", "shared"):
+            try:
+                from backend.app.utils.notifications import notify_slack
+                notify_slack(
+                    f"*Trigify signal: {company_name}* — employee {engagement_type} "
+                    f"{competitor_name} content. +{weight} PQS timing.",
+                    emoji=":competition:",
+                )
+            except Exception:
+                pass
+
+        return {
+            "status": "processed",
+            "company": company_name,
+            "signal": signal_key,
+            "pqs_delta": weight,
+        }
+
+    except Exception as exc:
+        logger.error("Trigify webhook error: %s", exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
+
+
+# ---------------------------------------------------------------------------
+# Meeting transcript webhook — Fathom / Fireflies
+# ---------------------------------------------------------------------------
+
+@router.post("/meeting-transcript")
+async def meeting_transcript_webhook(request: Request):
+    """Receive meeting transcripts from Fathom or Fireflies.
+
+    Fathom format: {"event": "meeting.completed", "meeting": {...}, "transcript": "..."}
+    Fireflies format: {"event_type": "Transcription completed", "meeting_id": "...", "transcript_text": "..."}
+    Manual format: {"company_id": "...", "contact_id": "...", "transcript": "...", "meeting_date": "..."}
+
+    Extracts structured intelligence, updates company status,
+    and queues follow-up draft for HITL approval.
+    """
+    settings = get_settings()
+
+    # Validate webhook secret if configured
+    webhook_secret = getattr(settings, "webhook_secret", "") or ""
+    if webhook_secret:
+        signature = request.headers.get("X-Webhook-Secret", "")
+        if signature != webhook_secret:
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    payload: dict[Any, Any] = await request.json()
+
+    # Normalise across Fathom, Fireflies, and manual formats
+    event_type = (payload.get("event") or payload.get("event_type") or "").lower()
+
+    transcript: str = (
+        payload.get("transcript")
+        or payload.get("transcript_text")
+        or (payload.get("meeting", {}) or {}).get("transcript", "")
+        or ""
+    )
+
+    company_id: str = payload.get("company_id", "")
+    contact_id: str | None = payload.get("contact_id")
+    meeting_date: str | None = payload.get("meeting_date")
+    source: str = "fathom" if "fathom" in event_type else (
+        "fireflies" if "fireflies" in event_type else "manual"
+    )
+
+    # Fathom/Fireflies: try to match company from meeting title or attendees
+    if not company_id and payload.get("meeting"):
+        meeting = payload["meeting"]
+        title = meeting.get("title", "")
+        if title:
+            try:
+                from backend.app.core.database import Database
+                from backend.app.core.workspace import get_workspace_id
+                db = Database(workspace_id=get_workspace_id())
+                result = (
+                    db.client.table("companies")
+                    .select("id")
+                    .ilike("name", f"%{title.split()[0]}%")
+                    .limit(1)
+                    .execute()
+                )
+                if result.data:
+                    company_id = result.data[0]["id"]
+            except Exception:
+                pass
+
+    if not company_id:
+        return {
+            "status": "ignored",
+            "reason": "company_id could not be determined — pass company_id explicitly",
+        }
+
+    if not transcript:
+        return {"status": "ignored", "reason": "no transcript content in payload"}
+
+    try:
+        from backend.app.agents.post_meeting import PostMeetingAgent
+        agent = PostMeetingAgent()
+        result = agent.execute(
+            company_id=company_id,
+            contact_id=contact_id,
+            transcript=transcript,
+            meeting_date=meeting_date,
+            meeting_source=source,
+        )
+        return {
+            "status": "processed",
+            "processed": result.processed,
+            "errors": result.errors,
+            "details": result.details[:3],
+        }
+    except Exception as exc:
+        logger.error("Meeting transcript webhook error: %s", exc, exc_info=True)
         return {"status": "error", "reason": str(exc)[:200]}

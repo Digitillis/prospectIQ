@@ -44,8 +44,8 @@ CONTENT_CALENDAR: list[dict[str, Any]] = [
 # Default guidelines used if content_guidelines.yaml doesn't exist
 _DEFAULT_GUIDELINES: dict[str, Any] = {
     "author": {
-        "name": "Avanish Mehrotra",
-        "background": "Manufacturing operations and food safety expert, founder building in this space",
+        "name": "the author",
+        "background": "Subject matter expert in the target industry",
     },
     "voice_and_tone": (
         "Write as a McKinsey partner sharing insight with industry peers. "
@@ -168,7 +168,7 @@ def _build_system_prompt(guidelines: dict[str, Any]) -> str:
     never = guidelines.get("never_include", _DEFAULT_GUIDELINES["never_include"])
 
     parts = [
-        f"You are writing LinkedIn thought leadership posts for {author.get('name', 'Avanish Mehrotra')}.",
+        f"You are writing LinkedIn thought leadership posts for {author.get('name', 'the author')}.",
         f"Background: {author.get('background', 'Manufacturing operations expert')}",
         "",
         "VOICE AND TONE:",

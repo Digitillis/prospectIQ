@@ -2,8 +2,11 @@
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from backend.app.core.audit import log_audit_event_from_ctx
+from backend.app.core.auth import require_role
 
 from backend.app.core.config import (
     CONFIG_DIR,
@@ -13,6 +16,7 @@ from backend.app.core.config import (
     get_outreach_guidelines,
     get_content_guidelines,
     get_linkedin_messages_guidelines,
+    get_offer_context,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -146,7 +150,7 @@ class GuidelinesPatch(BaseModel):
     never_include: Optional[list[str]] = None
     banned_phrases: Optional[list[str]] = None
     banned_characters: Optional[list[str]] = None
-    digitillis_facts: Optional[list[str]] = None
+    product_facts: Optional[list[str]] = None
     subject_line_rules: Optional[str] = None
     sender_name: Optional[str] = None
     sender_title: Optional[str] = None
@@ -156,7 +160,7 @@ class GuidelinesPatch(BaseModel):
 
 
 @router.patch("/outreach-guidelines")
-async def patch_guidelines(payload: GuidelinesPatch):
+async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role("admin"))):
     """Update outreach guidelines. Changes take effect on the next outreach run.
 
     Only provided fields are updated. Others are left unchanged.
@@ -179,7 +183,7 @@ async def patch_guidelines(payload: GuidelinesPatch):
 
     # Update list fields
     for field in ["must_include", "never_include", "banned_phrases",
-                   "banned_characters", "digitillis_facts"]:
+                   "banned_characters", "product_facts"]:
         value = getattr(payload, field, None)
         if value is not None:
             data[field] = value
@@ -211,6 +215,7 @@ async def patch_guidelines(payload: GuidelinesPatch):
     with open(guidelines_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
+    log_audit_event_from_ctx("settings.updated", resource_type="outreach_guidelines")
     return {"data": data, "message": "Outreach guidelines updated. Changes apply to the next outreach run."}
 
 
@@ -232,6 +237,55 @@ async def test_slack():
             detail="Slack notification failed. Check that SLACK_WEBHOOK_URL is configured.",
         )
     return {"data": {"status": "sent"}}
+
+
+@router.get("/icp-wizard")
+async def get_icp_wizard():
+    """Return ICP configuration in a structured wizard-friendly format.
+
+    Designed for the guided ICP setup flow. Groups fields by wizard step:
+      Step 1 — Company filters (revenue, employees, geography)
+      Step 2 — Industry targeting (tiers, labels)
+      Step 3 — Contact targeting (titles, seniority)
+      Step 4 — Discovery settings (pages, results per run)
+    """
+    try:
+        icp = get_icp_config()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    cf = icp.get("company_filters", {})
+    ctf = icp.get("contact_filters", {})
+    disc = icp.get("discovery", {})
+
+    return {
+        "data": {
+            "step1_company_filters": {
+                "revenue_min": cf.get("revenue", {}).get("min"),
+                "revenue_max": cf.get("revenue", {}).get("max"),
+                "employee_min": cf.get("employee_count", {}).get("min"),
+                "employee_max": cf.get("employee_count", {}).get("max"),
+                "primary_states": cf.get("geography", {}).get("primary_states", []),
+                "countries": cf.get("geography", {}).get("countries", []),
+            },
+            "step2_industries": [
+                {
+                    "tier": ind.get("tier"),
+                    "label": ind.get("label"),
+                    "apollo_industry": ind.get("apollo_industry"),
+                }
+                for ind in cf.get("industries", [])
+            ],
+            "step3_contacts": {
+                "titles_include": ctf.get("titles", {}).get("include", []),
+                "seniority": ctf.get("seniority", []),
+            },
+            "step4_discovery": {
+                "max_results_per_run": disc.get("max_results_per_run"),
+                "pages_per_tier": disc.get("pages_per_tier"),
+            },
+        }
+    }
 
 
 @router.get("")
@@ -272,7 +326,7 @@ async def get_templates():
 
 
 @router.patch("")
-async def patch_settings(payload: SettingsPatch):
+async def patch_settings(payload: SettingsPatch, _role=Depends(require_role("admin"))):
     """Partially update ICP and/or scoring configuration and persist to YAML."""
     import yaml  # local import to keep top-level clean
 
@@ -392,6 +446,11 @@ async def patch_settings(payload: SettingsPatch):
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+    log_audit_event_from_ctx(
+        "settings.updated",
+        resource_type="settings",
+        metadata={"updated_sections": [k for k in ("icp", "scoring") if getattr(payload, k) is not None]},
+    )
     return {"data": data, "message": "Settings saved successfully"}
 
 
@@ -421,7 +480,7 @@ class ContentGuidelinesPatch(BaseModel):
 
 
 @router.patch("/content-guidelines")
-async def patch_content_guidelines(payload: ContentGuidelinesPatch):
+async def patch_content_guidelines(payload: ContentGuidelinesPatch, _role=Depends(require_role("admin"))):
     """Update content guidelines. Changes take effect on the next content generation run.
 
     Only provided fields are updated. Others are left unchanged.
@@ -502,7 +561,7 @@ class LinkedInGuidelinesPatch(BaseModel):
 
 
 @router.patch("/linkedin-guidelines")
-async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch):
+async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch, _role=Depends(require_role("admin"))):
     """Update LinkedIn messages guidelines. Changes take effect on the next LinkedIn DM run.
 
     Only provided fields are updated. Others are left unchanged.
@@ -553,3 +612,67 @@ async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch):
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     return {"data": data, "message": "LinkedIn messages guidelines updated. Changes apply to the next LinkedIn DM run."}
+
+
+# ---------------------------------------------------------------------------
+# Offer Context CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/offer-context")
+async def get_offer_context_route():
+    """Get the current ProspectIQ offer context (capabilities, proof points, pilot offer)."""
+    try:
+        data = get_offer_context()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="offer_context.yaml not found")
+    return {"data": data}
+
+
+class OfferContextPatch(BaseModel):
+    core_value_prop: Optional[str] = None
+    capabilities: Optional[list[str]] = None
+    proof_points: Optional[list[str]] = None
+    pilot_offer_description: Optional[str] = None
+    pilot_offer_timeline: Optional[str] = None
+
+
+@router.patch("/offer-context")
+async def patch_offer_context(payload: OfferContextPatch, _role=Depends(require_role("admin"))):
+    """Update the offer context. Changes take effect on the next outreach run.
+
+    Only provided fields are updated. Others are left unchanged.
+    """
+    import yaml
+
+    ctx_path = CONFIG_DIR / "offer_context.yaml"
+    try:
+        with open(ctx_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="offer_context.yaml not found")
+
+    if payload.core_value_prop is not None:
+        data["core_value_prop"] = payload.core_value_prop
+    if payload.capabilities is not None:
+        data["capabilities"] = payload.capabilities
+    if payload.proof_points is not None:
+        data["proof_points"] = payload.proof_points
+
+    pilot = data.setdefault("pilot_offer", {})
+    if payload.pilot_offer_description is not None:
+        pilot["description"] = payload.pilot_offer_description
+    if payload.pilot_offer_timeline is not None:
+        pilot["pilot_timeline"] = payload.pilot_offer_timeline
+
+    ver = data.get("version", "1.0")
+    try:
+        major, minor = ver.split(".")
+        data["version"] = f"{major}.{int(minor) + 1}"
+    except (ValueError, AttributeError):
+        data["version"] = "1.1"
+
+    with open(ctx_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    log_audit_event_from_ctx("settings.updated", resource_type="offer_context")
+    return {"data": data, "message": "Offer context updated. Changes apply to the next outreach run."}

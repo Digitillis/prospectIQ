@@ -208,6 +208,81 @@ async def require_workspace_member(
     return ctx
 
 
+def require_role(min_role: str):
+    """Dependency factory: enforce a minimum workspace role on a route.
+
+    Role hierarchy (ascending): viewer → member → admin → owner
+
+    Usage:
+        @router.post("/something")
+        async def my_route(
+            ctx: WorkspaceContext = Depends(require_role("member")),
+        ):
+            ...
+
+    Raises HTTP 403 if the authenticated user's role is below min_role.
+    API key callers are treated as having "member" role by default.
+    """
+    _ROLE_RANK: dict[str, int] = {
+        "viewer": 10,
+        "member": 20,
+        "admin": 30,
+        "owner": 40,
+    }
+    required_rank = _ROLE_RANK.get(min_role, 20)
+
+    async def _check(
+        user: dict[str, Any] = Depends(get_current_user),
+        ctx: WorkspaceContext = Depends(require_workspace_member),
+    ) -> WorkspaceContext:
+        # API key callers get member-level access
+        if user.get("auth_method") == "api_key":
+            if required_rank > _ROLE_RANK["member"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"API key access requires at least '{min_role}' role.",
+                )
+            return ctx
+
+        # Look up the user's role in this workspace
+        workspace_id = ctx.workspace_id
+        user_id = user.get("user_id", "")
+        client = get_supabase_client()
+        try:
+            result = (
+                client.table("workspace_members")
+                .select("role")
+                .eq("workspace_id", workspace_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            logger.warning("require_role: DB lookup failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Could not verify workspace role.",
+            )
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not a member of this workspace.",
+            )
+
+        role = result.data[0].get("role", "viewer")
+        actual_rank = _ROLE_RANK.get(role, 10)
+        if actual_rank < required_rank:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This action requires '{min_role}' role. Your role is '{role}'.",
+            )
+
+        return ctx
+
+    return _check
+
+
 # Convenience alias for routes that just need the DB dependency satisfied
 # (kept separate from require_workspace_member so call sites are explicit)
 def get_db():

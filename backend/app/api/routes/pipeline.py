@@ -6,7 +6,7 @@ and return results synchronously.
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.app.agents.discovery import DiscoveryAgent
@@ -18,7 +18,11 @@ from backend.app.agents.engagement import EngagementAgent
 from backend.app.agents.reengagement import ReengagementAgent
 from backend.app.agents.linkedin import LinkedInAgent
 from backend.app.agents.learning import LearningAgent
+from backend.app.agents.linkedin_sender import LinkedInSenderAgent
+from backend.app.agents.signal_monitor import SignalMonitorAgent
 from backend.app.orchestrator.pipeline import Pipeline
+from backend.app.billing.quota import require_quota
+from backend.app.core.audit import log_audit_event_from_ctx
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -88,6 +92,13 @@ class LearningRequest(BaseModel):
     auto_apply: bool = False
 
 
+class SignalMonitorRequest(BaseModel):
+    company_ids: Optional[list[str]] = None
+    limit: int = 50
+    min_pqs: int = 30
+    tier: Optional[str] = None
+
+
 # ------------------------------------------------------------------
 # Helper to serialize AgentResult
 # ------------------------------------------------------------------
@@ -112,7 +123,10 @@ def _serialize_result(result) -> dict:
 # ------------------------------------------------------------------
 
 @router.post("/run/discovery")
-async def run_discovery(body: DiscoveryRequest):
+async def run_discovery(
+    body: DiscoveryRequest,
+    _quota: None = Depends(require_quota("discovery")),
+):
     """Trigger the discovery agent to find new companies via Apollo."""
     agent = DiscoveryAgent()
     result = agent.execute(
@@ -120,11 +134,19 @@ async def run_discovery(body: DiscoveryRequest):
         campaign_name=body.campaign,
         tiers=body.tiers,
     )
+    log_audit_event_from_ctx(
+        "pipeline.run",
+        resource_type="agent",
+        metadata={"agent": "discovery", "processed": result.processed, "errors": result.errors},
+    )
     return {"data": _serialize_result(result)}
 
 
 @router.post("/run/research")
-async def run_research(body: ResearchRequest):
+async def run_research(
+    body: ResearchRequest,
+    _quota: None = Depends(require_quota("research")),
+):
     """Trigger the research agent for deep company analysis."""
     agent = ResearchAgent()
     result = agent.execute(
@@ -133,6 +155,11 @@ async def run_research(body: ResearchRequest):
         tier=body.tier,
         tiers=body.tiers,
         limit=body.limit,
+    )
+    log_audit_event_from_ctx(
+        "pipeline.run",
+        resource_type="agent",
+        metadata={"agent": "research", "processed": result.processed, "errors": result.errors, "cost_usd": result.total_cost_usd},
     )
     return {"data": _serialize_result(result)}
 
@@ -149,7 +176,10 @@ async def run_qualification(body: QualificationRequest):
 
 
 @router.post("/run/enrichment")
-async def run_enrichment(body: EnrichmentRequest):
+async def run_enrichment(
+    body: EnrichmentRequest,
+    _quota: None = Depends(require_quota("enrichment")),
+):
     """Trigger the enrichment agent to get emails/phones for qualified contacts.
 
     Consumes Apollo credits — only enriches the top-priority contact per company.
@@ -165,7 +195,10 @@ async def run_enrichment(body: EnrichmentRequest):
 
 
 @router.post("/run/outreach")
-async def run_outreach(body: OutreachRequest):
+async def run_outreach(
+    body: OutreachRequest,
+    _role=Depends(require_role("member")),
+):
     """Trigger the outreach agent to generate personalized drafts."""
     agent = OutreachAgent()
     result = agent.execute(
@@ -174,6 +207,12 @@ async def run_outreach(body: OutreachRequest):
         sequence_step=body.step,
         limit=body.limit,
         tiers=body.tiers,
+    )
+
+    log_audit_event_from_ctx(
+        "pipeline.run",
+        resource_type="agent",
+        metadata={"agent": "outreach", "processed": result.processed, "errors": result.errors, "cost_usd": result.total_cost_usd},
     )
 
     if result.processed > 0:
@@ -191,7 +230,10 @@ async def run_outreach(body: OutreachRequest):
 
 
 @router.post("/run/linkedin")
-async def run_linkedin(body: LinkedInRequest):
+async def run_linkedin(
+    body: LinkedInRequest,
+    _role=Depends(require_role("member")),
+):
     """Generate LinkedIn messages (connection note, opening DM, follow-up DM) for qualified contacts.
 
     All drafts are auto-approved since LinkedIn messages are copy-pasted manually.
@@ -219,7 +261,10 @@ async def run_linkedin(body: LinkedInRequest):
 
 
 @router.post("/run/reengagement")
-async def run_reengagement(body: ReengagementRequest):
+async def run_reengagement(
+    body: ReengagementRequest,
+    _role=Depends(require_role("member")),
+):
     """Re-queue stale prospects whose sequences completed without reply.
 
     Scans for contacts past the cooldown period (default 90 days) and
@@ -231,7 +276,10 @@ async def run_reengagement(body: ReengagementRequest):
 
 
 @router.post("/run/engagement")
-async def run_engagement(body: EngagementRequest):
+async def run_engagement(
+    body: EngagementRequest,
+    _role=Depends(require_role("member")),
+):
     """Trigger an engagement action (send approved drafts, process sequences, poll events).
 
     Actions:
@@ -299,6 +347,153 @@ async def poll_instantly():
     return {"data": _serialize_result(result)}
 
 
+class LinkedInSendRequest(BaseModel):
+    send_connection_requests: bool = True
+    send_dms: bool = True
+    withdraw_stale: bool = True
+    dry_run: bool = False
+
+
+@router.post("/run/linkedin-send")
+async def run_linkedin_send(
+    body: LinkedInSendRequest,
+    _role=Depends(require_role("member")),
+):
+    """Trigger the LinkedIn sender agent to send approved drafts via Unipile.
+
+    - send_connection_requests: send approved connection note drafts (max 20/day)
+    - send_dms: send approved opening DM drafts for accepted connections
+    - withdraw_stale: withdraw pending invites older than 21 days
+    - dry_run: log actions without sending anything
+    """
+    agent = LinkedInSenderAgent()
+    result = agent.execute(
+        send_connection_requests=body.send_connection_requests,
+        send_dms=body.send_dms,
+        withdraw_stale=body.withdraw_stale,
+        dry_run=body.dry_run,
+    )
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/signal-monitor")
+async def run_signal_monitor(
+    body: SignalMonitorRequest,
+    _role=Depends(require_role("member")),
+):
+    """Run the signal monitor agent to detect new buying signals.
+
+    Re-researches tracked companies via Perplexity for 9 manufacturing-specific
+    signals + generic trigger events. Fires when signals are found:
+    - Updates company_intent_signals table
+    - Recalculates PQS timing dimension
+    - Queues stale research for refresh
+    - Sends Slack notification for high-value signals
+    """
+    agent = SignalMonitorAgent()
+    result = agent.execute(
+        company_ids=body.company_ids,
+        limit=body.limit,
+        min_pqs=body.min_pqs,
+        tier=body.tier,
+    )
+    return {"data": _serialize_result(result)}
+
+
+@router.post("/run/sequence-assign")
+async def run_sequence_assign(
+    company_ids: list[str] | None = None,
+    limit: int = 50,
+):
+    """Auto-assign the optimal sequence for each qualified company.
+
+    Reads cross-channel orchestration rules from sequences.yaml and assigns
+    the best starting sequence based on:
+    - Available contact channels (email vs LinkedIn)
+    - Contact persona type
+    - Current pipeline stage
+    - Whether prior sequences have been attempted
+
+    Returns a report of assignments made. Does NOT start sending — the
+    outreach agent must still be triggered with the assigned sequence_name.
+    """
+    from backend.app.core.config import get_sequences_config
+    from backend.app.core.database import Database
+    from backend.app.core.workspace import get_workspace_id
+
+    db = Database(workspace_id=get_workspace_id())
+    seq_config = get_sequences_config()
+    orchestration = seq_config.get("channel_orchestration", {})
+    persona_overrides = orchestration.get("persona_overrides", {})
+
+    if company_ids:
+        companies = [db.get_company(cid) for cid in company_ids if cid]
+        companies = [c for c in companies if c]
+    else:
+        companies = db.get_companies(status="qualified", limit=limit)
+
+    assignments = []
+    for company in companies:
+        company_id = company["id"]
+        contacts = db.get_contacts_for_company(company_id)
+
+        if not contacts:
+            assignments.append({
+                "company_id": company_id,
+                "company_name": company.get("name"),
+                "assigned_sequence": None,
+                "reason": "no_contacts",
+            })
+            continue
+
+        # Pick best contact
+        primary = next(
+            (c for c in contacts if c.get("email") or c.get("linkedin_url")),
+            contacts[0],
+        )
+        persona = primary.get("persona_type", "")
+        has_email = bool(primary.get("email"))
+        has_linkedin = bool(primary.get("linkedin_url"))
+
+        # Persona override takes priority
+        if persona in persona_overrides:
+            sequence = persona_overrides[persona]
+            reason = f"persona_override:{persona}"
+        elif has_linkedin and persona in ("coo", "vp_ops", "vp_quality_food_safety"):
+            sequence = "linkedin_relationship"
+            reason = "senior_persona_with_linkedin"
+        elif has_linkedin and has_email:
+            sequence = "linkedin_relationship"
+            reason = "linkedin_with_email_fallback_ready"
+        elif has_email:
+            sequence = "email_value_first"
+            reason = "email_only"
+        else:
+            sequence = None
+            reason = "no_reachable_channel"
+
+        assignments.append({
+            "company_id": company_id,
+            "company_name": company.get("name"),
+            "contact_name": primary.get("full_name", ""),
+            "persona": persona,
+            "assigned_sequence": sequence,
+            "has_email": has_email,
+            "has_linkedin": has_linkedin,
+            "reason": reason,
+        })
+
+    assigned_count = sum(1 for a in assignments if a.get("assigned_sequence"))
+    return {
+        "data": {
+            "total_evaluated": len(assignments),
+            "assigned": assigned_count,
+            "unassignable": len(assignments) - assigned_count,
+            "assignments": assignments,
+        }
+    }
+
+
 @router.post("/run/learning")
 async def run_learning(body: LearningRequest):
     """Analyze outreach engagement outcomes and generate actionable insights.
@@ -316,7 +511,11 @@ async def run_learning(body: LearningRequest):
 
 
 @router.post("/run/full")
-async def run_full_pipeline(body: FullPipelineRequest):
+async def run_full_pipeline(
+    body: FullPipelineRequest,
+    _role=Depends(require_role("member")),
+    _quota: None = Depends(require_quota("research")),
+):
     """Run the full pipeline: discovery → research → qualification → outreach.
 
     Chains all four agents in sequence. Stops early if any stage fails.

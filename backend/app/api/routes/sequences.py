@@ -737,3 +737,352 @@ async def get_send_status():
             else "Set SEND_ENABLED=true in .env and restart server when mailbox warm-up completes"
         ),
     }
+
+
+# ===========================================================================
+# V2 Visual Sequence Builder — models and routes
+# Stored in campaign_sequence_definitions_v2 table with full SequenceStepV2
+# shape supporting email / wait / condition / task / linkedin step types.
+# ===========================================================================
+
+
+class SequenceStepV2(BaseModel):
+    step_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    step_type: str                        # email | wait | condition | linkedin | task
+    step_order: int
+
+    # Email
+    subject_template: Optional[str] = None
+    body_template: Optional[str] = None
+    persona_variants: Optional[Dict[str, str]] = None
+
+    # Wait
+    wait_days: Optional[int] = None
+    wait_condition: Optional[str] = None  # no_reply | no_open | any
+
+    # Condition branch
+    condition_type: Optional[str] = None  # if_opened | if_replied | if_clicked | if_pqs_above
+    condition_value: Optional[Any] = None
+    branch_yes: Optional[str] = None      # step_id
+    branch_no: Optional[str] = None       # step_id
+
+    # Task
+    task_description: Optional[str] = None
+    task_due_offset_days: Optional[int] = None
+
+    metadata: Dict[str, Any] = {}
+
+
+class SequenceDefinitionV2Body(BaseModel):
+    name: str
+    description: Optional[str] = None
+    cluster: Optional[str] = None
+    persona: Optional[str] = None
+    steps: List[SequenceStepV2]
+    is_template: bool = False
+    tags: List[str] = []
+
+
+class SequencePreviewRequest(BaseModel):
+    contact_id: str
+    company_id: str
+
+
+def _validate_sequence_steps(steps: List[SequenceStepV2]) -> List[str]:
+    """Return list of validation error strings (empty = valid)."""
+    errors: List[str] = []
+    email_steps = [s for s in steps if s.step_type == "email"]
+    if not email_steps:
+        errors.append("Sequence must contain at least one email step.")
+    for step in email_steps:
+        if not step.subject_template or not step.subject_template.strip():
+            errors.append(f"Email step (order {step.step_order}) is missing a subject template.")
+        if not step.body_template or not step.body_template.strip():
+            errors.append(f"Email step (order {step.step_order}) is missing a body template.")
+    step_ids = {s.step_id for s in steps}
+    for step in steps:
+        if step.step_type == "condition":
+            if step.branch_yes and step.branch_yes not in step_ids:
+                errors.append(f"Condition step (order {step.step_order}) branch_yes points to unknown step_id.")
+            if step.branch_no and step.branch_no not in step_ids:
+                errors.append(f"Condition step (order {step.step_order}) branch_no points to unknown step_id.")
+    return errors
+
+
+def _render_template(template: str, contact: dict, company: dict) -> str:
+    """Fill {variable} placeholders with contact/company data."""
+    replacements = {
+        "{first_name}": contact.get("first_name") or "",
+        "{last_name}": contact.get("last_name") or "",
+        "{company_name}": company.get("name") or "",
+        "{industry}": company.get("industry") or "",
+        "{title}": contact.get("title") or "",
+        "{pain_signal_1}": ((company.get("pain_signals") or []) + [""])[0],
+        "{personalization_hook_1}": ((company.get("personalization_hooks") or []) + [""])[0],
+        "{trigger_event_1}": "",
+    }
+    result = template
+    for key, value in replacements.items():
+        result = result.replace(key, str(value))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# V2 Router — /api/sequences/v2/*
+# ---------------------------------------------------------------------------
+
+v2_router = APIRouter(prefix="/api/sequences/v2", tags=["sequences-v2"])
+
+
+@v2_router.post("")
+async def create_sequence_v2(body: SequenceDefinitionV2Body):
+    """Create a new V2 visual sequence. Validates steps before saving."""
+    errors = _validate_sequence_steps(body.steps)
+    if errors:
+        raise HTTPException(status_code=422, detail={"validation_errors": errors})
+
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    steps_data = [step.model_dump() for step in body.steps]
+
+    try:
+        result = (
+            db.client.table("campaign_sequence_definitions_v2")
+            .insert(db._inject_ws({
+                "id": str(uuid.uuid4()),
+                "name": body.name,
+                "description": body.description or "",
+                "cluster": body.cluster,
+                "persona": body.persona,
+                "steps": steps_data,
+                "is_template": body.is_template,
+                "tags": body.tags,
+                "is_active": True,
+                "created_at": now,
+                "updated_at": now,
+            }))
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Insert returned no data")
+        return {"data": result.data[0], "message": f"Sequence '{body.name}' created"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            raise HTTPException(status_code=409, detail=f"Sequence named '{body.name}' already exists.")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@v2_router.get("/{sequence_id}")
+async def get_sequence_v2(sequence_id: str):
+    """Fetch a single V2 sequence by UUID."""
+    db = get_db()
+    try:
+        result = (
+            db._filter_ws(db.client.table("campaign_sequence_definitions_v2").select("*"))
+            .eq("id", sequence_id)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail=f"Sequence '{sequence_id}' not found.")
+        return {"data": result.data[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@v2_router.put("/{sequence_id}")
+async def update_sequence_v2(sequence_id: str, body: SequenceDefinitionV2Body):
+    """Replace all steps for a V2 sequence. Full validation applied."""
+    errors = _validate_sequence_steps(body.steps)
+    if errors:
+        raise HTTPException(status_code=422, detail={"validation_errors": errors})
+
+    db = get_db()
+    existing = (
+        db._filter_ws(db.client.table("campaign_sequence_definitions_v2").select("id"))
+        .eq("id", sequence_id)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"Sequence '{sequence_id}' not found.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    update_data = {
+        "name": body.name,
+        "description": body.description or "",
+        "cluster": body.cluster,
+        "persona": body.persona,
+        "steps": [s.model_dump() for s in body.steps],
+        "is_template": body.is_template,
+        "tags": body.tags,
+        "updated_at": now,
+    }
+
+    try:
+        result = (
+            db._filter_ws(db.client.table("campaign_sequence_definitions_v2").update(update_data))
+            .eq("id", sequence_id)
+            .execute()
+        )
+        return {"data": result.data[0] if result.data else None, "message": f"Sequence '{sequence_id}' updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@v2_router.delete("/{sequence_id}")
+async def delete_sequence_v2(sequence_id: str):
+    """Soft-delete a V2 sequence (sets is_active=false)."""
+    db = get_db()
+    existing = (
+        db._filter_ws(db.client.table("campaign_sequence_definitions_v2").select("id"))
+        .eq("id", sequence_id)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"Sequence '{sequence_id}' not found.")
+
+    db._filter_ws(
+        db.client.table("campaign_sequence_definitions_v2")
+        .update({"is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
+    ).eq("id", sequence_id).execute()
+
+    return {"message": f"Sequence '{sequence_id}' deactivated"}
+
+
+@v2_router.post("/{sequence_id}/duplicate")
+async def duplicate_sequence_v2(sequence_id: str):
+    """Create a copy of a V2 sequence."""
+    db = get_db()
+    existing = (
+        db._filter_ws(db.client.table("campaign_sequence_definitions_v2").select("*"))
+        .eq("id", sequence_id)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"Sequence '{sequence_id}' not found.")
+
+    source = existing.data[0]
+    now = datetime.now(timezone.utc).isoformat()
+    new_id = str(uuid.uuid4())
+
+    try:
+        result = (
+            db.client.table("campaign_sequence_definitions_v2")
+            .insert(db._inject_ws({
+                "id": new_id,
+                "name": f"{source['name']}_copy_{new_id[:6]}",
+                "description": source.get("description", ""),
+                "cluster": source.get("cluster"),
+                "persona": source.get("persona"),
+                "steps": source.get("steps", []),
+                "is_template": source.get("is_template", False),
+                "tags": source.get("tags", []),
+                "is_active": True,
+                "created_at": now,
+                "updated_at": now,
+            }))
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Duplicate returned no data")
+        return {"data": result.data[0], "message": f"Sequence duplicated as '{new_id}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@v2_router.post("/{sequence_id}/preview")
+async def preview_sequence_v2(sequence_id: str, body: SequencePreviewRequest):
+    """Render template variables for a specific contact/company."""
+    db = get_db()
+    seq_result = (
+        db._filter_ws(db.client.table("campaign_sequence_definitions_v2").select("*"))
+        .eq("id", sequence_id)
+        .execute()
+    )
+    if not seq_result.data:
+        raise HTTPException(status_code=404, detail=f"Sequence '{sequence_id}' not found.")
+    seq = seq_result.data[0]
+
+    try:
+        contact_result = db._filter_ws(db.client.table("contacts").select("*")).eq("id", body.contact_id).execute()
+        contact = contact_result.data[0] if contact_result.data else {}
+    except Exception:
+        contact = {}
+
+    try:
+        company_result = db._filter_ws(db.client.table("companies").select("*")).eq("id", body.company_id).execute()
+        company = company_result.data[0] if company_result.data else {}
+    except Exception:
+        company = {}
+
+    rendered_steps = []
+    for step in (seq.get("steps") or []):
+        rendered: dict[str, Any] = {
+            "step_id": step.get("step_id"),
+            "step_type": step.get("step_type"),
+            "step_order": step.get("step_order"),
+        }
+        stype = step.get("step_type")
+        if stype == "email":
+            rendered["subject"] = _render_template(step.get("subject_template") or "", contact, company)
+            rendered["body"] = _render_template(step.get("body_template") or "", contact, company)
+        elif stype == "wait":
+            rendered["wait_days"] = step.get("wait_days")
+            rendered["wait_condition"] = step.get("wait_condition")
+        elif stype == "condition":
+            rendered["condition_type"] = step.get("condition_type")
+        elif stype == "task":
+            rendered["task_description"] = _render_template(step.get("task_description") or "", contact, company)
+        elif stype == "linkedin":
+            rendered["body"] = _render_template(step.get("body_template") or "", contact, company)
+        rendered_steps.append(rendered)
+
+    contact_name = (
+        contact.get("full_name")
+        or f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
+        or None
+    )
+
+    return {
+        "sequence_id": sequence_id,
+        "contact_id": body.contact_id,
+        "company_id": body.company_id,
+        "contact_name": contact_name,
+        "company_name": company.get("name"),
+        "steps": rendered_steps,
+    }
+
+
+@v2_router.get("/{sequence_id}/stats")
+async def get_sequence_stats_v2(sequence_id: str):
+    """Return engagement stats for a V2 sequence."""
+    db = get_db()
+    try:
+        enroll_result = (
+            db._filter_ws(db.client.table("engagement_sequences").select("id,status", count="exact"))
+            .eq("sequence_name", sequence_id)
+            .execute()
+        )
+        total = enroll_result.count or 0
+        enrollments = enroll_result.data or []
+        active_count = sum(1 for e in enrollments if e.get("status") == "active")
+        completed_count = sum(1 for e in enrollments if e.get("status") == "completed")
+    except Exception:
+        total = active_count = completed_count = 0
+
+    return {
+        "sequence_id": sequence_id,
+        "enrolled_count": total,
+        "active_count": active_count,
+        "completed_count": completed_count,
+        "bounced_count": 0,
+        "open_rate": 0.0,
+        "reply_rate": 0.0,
+        "click_rate": 0.0,
+        "conversion_rate": 0.0,
+    }

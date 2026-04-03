@@ -34,6 +34,7 @@ from rich import box
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import get_settings
+from backend.app.core.model_router import get_model
 from backend.app.core.thread_manager import ThreadManager
 
 console = Console()
@@ -51,13 +52,9 @@ CLASSIFICATION_LABELS = {
     "other":        "❓  Other — needs human review",
 }
 
-CLASSIFY_SYSTEM = """You are an expert B2B sales analyst for Digitillis, an AI-native manufacturing intelligence platform.
+CLASSIFY_SYSTEM = """You are an expert B2B sales analyst.
 
 Your job: classify an incoming prospect reply and provide the next-message strategy.
-
-Digitillis in one line: AI agents that predict equipment failures 18+ days in advance, so manufacturers avoid unplanned downtime.
-
-Founder: Avi (Avanish Mehrotra), Co-Founder & MD, avi@digitillis.io
 
 Classification categories:
 - interested: Prospect wants more info, a demo, a call, or says something encouraging
@@ -100,30 +97,45 @@ OUTPUT FORMAT (JSON):
     "return_date": null
 }}"""
 
-DRAFT_SYSTEM = """You are a world-class B2B sales writer for Digitillis, an AI-native manufacturing intelligence platform.
+def _build_thread_draft_system() -> str:
+    """Build the thread draft system prompt dynamically from offer_context + outreach_guidelines.
 
-Digitillis capabilities:
-- 32 AI agents across 7 manufacturing domains (predictive maintenance, quality, energy, supply chain, OEE, safety, sustainability)
-- Predictive maintenance: 18+ day advance warning, 87% confidence, across 100+ sensor types
-- Integrations: SAP PM, Maximo, Plex, Infor EAM, OPC-UA, MQTT, Modbus
-- Pilot: 6-8 weeks, no long-term commitment required
-- Proven: 25-40% maintenance cost reduction in pilots
+    Reads config fresh on each call so dashboard edits are picked up immediately.
+    """
+    try:
+        from backend.app.core.config import get_offer_context, get_outreach_guidelines
+        offer = get_offer_context()
+        guidelines = get_outreach_guidelines()
+    except Exception:
+        offer = {}
+        guidelines = {}
 
-Founder: Avi (Avanish Mehrotra), Co-Founder & MD
-Email: avi@digitillis.io
+    sender = guidelines.get("sender", {})
+    sender_name = sender.get("short_name") or sender.get("name", "the sender")
+    sender_title = sender.get("title", "")
+    company_name = offer.get("company") or sender.get("company", "the company")
+    signature_block = sender.get("signature", f"{sender_name}\n{sender_title}, {company_name}").strip()
+
+    capabilities = offer.get("capabilities") or []
+    caps_block = "\n".join(f"- {c}" for c in capabilities[:6]) if capabilities else (
+        "- Refer to offer_context.yaml for product capabilities"
+    )
+
+    return f"""You are a world-class B2B sales writer for {company_name}.
+
+Product capabilities:
+{caps_block}
 
 You are writing a CONTEXT-AWARE reply to a prospect who has responded to our outreach.
 The full thread history is provided. Your reply must:
 1. Directly acknowledge what they said (their exact signal, not a generic acknowledgment)
 2. Move the conversation forward based on the classification
-3. Match the tone of a founder reaching out personally — not a sales template
+3. Match the tone of someone reaching out personally — not a sales template
 4. Be SHORT: max 120 words unless the situation absolutely requires more
 5. End with a clear, single next step
 
-Sign off format (always use exactly this):
-Avi
-Co-Founder, Digitillis
-avi@digitillis.io
+Sign off (use the exact sender signature configured in outreach_guidelines.yaml):
+{signature_block}
 
 Output ONLY valid JSON. No markdown."""
 
@@ -155,7 +167,7 @@ DRAFTING STRATEGY BY CLASSIFICATION:
 - soft_no: Accept gracefully, plant a seed, offer to reconnect at a specific trigger event (Q3 budget cycle, next audit, etc.).
 - other: Ask one clarifying question to understand where they stand.
 
-MAX WORDS: 120 (short is better — this is a founder's personal reply, not a sales template)
+MAX WORDS: 120 (short is better — this should read like a personal reply, not a sales template)
 
 OUTPUT FORMAT (JSON):
 {{
@@ -242,8 +254,9 @@ class ThreadAgent(BaseAgent):
         settings = get_settings()
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+        _classify_model = get_model("thread_class")
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=_classify_model,
             max_tokens=500,
             system=CLASSIFY_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
@@ -251,7 +264,7 @@ class ThreadAgent(BaseAgent):
 
         self.track_cost(
             provider="anthropic",
-            model="claude-sonnet-4-6",
+            model=_classify_model,
             endpoint="/messages",
             company_id=thread["company_id"],
             input_tokens=response.usage.input_tokens,
@@ -352,16 +365,17 @@ class ThreadAgent(BaseAgent):
         settings = get_settings()
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+        _gen_model = get_model("thread_gen")
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=_gen_model,
             max_tokens=800,
-            system=DRAFT_SYSTEM,
+            system=_build_thread_draft_system(),
             messages=[{"role": "user", "content": prompt}],
         )
 
         self.track_cost(
             provider="anthropic",
-            model="claude-sonnet-4-6",
+            model=_gen_model,
             endpoint="/messages",
             company_id=thread["company_id"],
             input_tokens=response.usage.input_tokens,

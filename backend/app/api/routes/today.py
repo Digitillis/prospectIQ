@@ -1,7 +1,7 @@
 """Daily Cockpit routes for ProspectIQ API.
 
 Provides the /api/today aggregation endpoint and outcome logging
-that power the Daily Cockpit page — Avanish's morning command center.
+that power the Daily Cockpit page — a command center for outreach operations.
 """
 
 from __future__ import annotations
@@ -71,7 +71,16 @@ async def get_today_data():
     yesterday = (now - timedelta(hours=24)).isoformat()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     today_str = now.strftime("%A, %B %-d, %Y")
-    greeting = f"{_get_hour_greeting()}, Avanish"
+    # Get user name from config if available
+    try:
+        from backend.app.core.config import get_outreach_guidelines
+        guidelines = get_outreach_guidelines()
+        sender = guidelines.get("sender", {})
+        user_name = sender.get("name", "User").split()[0]  # First name only
+    except Exception:
+        user_name = "User"
+
+    greeting = f"{_get_hour_greeting()}, {user_name}"
 
     # --- Hot signals: engaged companies ---
     try:
