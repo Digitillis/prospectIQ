@@ -1,9 +1,9 @@
-# Digitillis Offer Context
-# Used by the outreach agent to inject specific, credible offer details
-# into every generated email.
+# ProspectIQ — Offer Context
+# Configure this for your product. The outreach agent injects these details
+# into every generated email to make it specific and credible.
 #
 # Edit this file from the dashboard (Settings → Offer Context) or directly.
-# The outreach agent reads this fresh on every run.
+# The outreach agent reads this fresh on every run — no restart required.
 
 version: "1.0"
 

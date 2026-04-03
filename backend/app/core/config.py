@@ -187,7 +187,7 @@ def get_content_guidelines() -> dict:
 
 
 def get_offer_context() -> dict:
-    """Load Digitillis offer context — capabilities, proof points, differentiation.
+    """Load ProspectIQ offer context — capabilities, proof points, differentiation.
 
     NOT cached — reads fresh every time so dashboard edits take effect
     immediately without restarting the backend.

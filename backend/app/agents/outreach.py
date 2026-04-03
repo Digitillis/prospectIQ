@@ -49,8 +49,8 @@ def _build_system_prompt() -> str:
     except FileNotFoundError:
         # Fallback if YAML doesn't exist
         return (
-            "You are writing cold outreach emails for Digitillis, an AI manufacturing platform. "
-            "Write in a direct, conversational, founder-to-operator tone. No filler. No buzzwords."
+            "You are writing cold outreach emails on behalf of the sender. "
+            "Write in a direct, conversational, expert-to-operator tone. No filler. No buzzwords."
         )
 
     # Load offer context — always fresh
@@ -66,13 +66,13 @@ def _build_system_prompt() -> str:
     never_include = g.get("never_include", [])
     banned_phrases = g.get("banned_phrases", [])
     banned_chars = g.get("banned_characters", [])
-    facts = g.get("digitillis_facts", [])
+    facts = g.get("product_facts", g.get("digitillis_facts", []))
     subject_rules = g.get("subject_line_rules", "")
     signature = sender.get("signature", "")
 
     parts = [
-        f"You are writing cold outreach emails on behalf of {sender.get('name', 'Avanish Mehrotra')}, "
-        f"{sender.get('title', 'Founder & CEO')} of {sender.get('company', 'Digitillis')}.",
+        f"You are writing cold outreach emails on behalf of {sender.get('name', 'the sender')}, "
+        f"{sender.get('title', '')}{'of ' if sender.get('title') else ''}{sender.get('company', 'the company')}.",
         "",
         "VOICE & TONE:",
         voice,
@@ -96,7 +96,7 @@ def _build_system_prompt() -> str:
         "SUBJECT LINE RULES:",
         subject_rules,
         "",
-        "DIGITILLIS FACTS (use selectively, not as a list):",
+        "PRODUCT FACTS (use selectively, not as a list):",
         *[f"- {fact}" for fact in facts],
         "",
         "## PERSONALIZATION DEPTH",
@@ -142,7 +142,7 @@ def _build_system_prompt() -> str:
 
         parts += [
             "",
-            "## WHAT DIGITILLIS ACTUALLY DOES (use selectively — 1-2 facts max per email)",
+            "## PRODUCT VALUE (use selectively — 1-2 facts max per email)",
             "",
             f"Core value proposition: {core_vp}",
             "",
@@ -217,10 +217,10 @@ VALUE MESSAGING FOR THIS SUB-SECTOR:
 PROSPECT AWARENESS LEVEL: {awareness_level}
   - unaware: Start with the problem, not the solution. Don't mention "AI platform" in your opener.
     Lead with a pain/challenge observation specific to their operation.
-  - problem_aware: Acknowledge they know the problem. Position Digitillis as the answer.
+  - problem_aware: Acknowledge they know the problem. Position the platform as the answer.
     You can reference "predictive maintenance" or "manufacturing intelligence" early.
   - solution_aware: They've seen pitches before. Differentiate immediately — skip generic AI claims,
-    go straight to what makes Digitillis different (speed to value, existing integration path,
+    go straight to what makes the platform different (speed to value, existing integration path,
     specific sub-sector benchmarks, or a competitor gap they have).
 
 SEQUENCE: {sequence_name}, Step {sequence_step}

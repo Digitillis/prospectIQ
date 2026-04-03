@@ -104,7 +104,7 @@ OUTPUT FORMAT:
     "deal_confidence": "high|medium|low",
     "qualification_score": 0-10,
     "follow_up_email_subject": "Short, specific follow-up email subject line",
-    "follow_up_email_body": "Full follow-up email body. Reference specific things discussed. Sign as Avanish Mehrotra, Founder & CEO, Digitillis. 150 words max.",
+    "follow_up_email_body": "Full follow-up email body. Reference specific things discussed. Sign as {sender_signature}. 150 words max.",
     "internal_notes": "Brief notes for CRM — key takeaways, risks, and recommended next actions"
 }}"""
 
@@ -167,6 +167,17 @@ class PostMeetingAgent(BaseAgent):
 
             console.print(f"  [cyan]{company_name}: Processing meeting transcript ({len(transcript)} chars)...[/cyan]")
 
+            # Resolve sender signature from outreach_guidelines
+            sender_signature = "the sender"
+            try:
+                from backend.app.core.config import get_outreach_guidelines
+                _g = get_outreach_guidelines()
+                _s = _g.get("sender", {})
+                _parts = [_s.get("name", ""), _s.get("title", ""), _s.get("company", "")]
+                sender_signature = ", ".join(p for p in _parts if p)
+            except Exception:
+                pass
+
             # Build prompt — truncate transcript to ~8000 chars to stay within context
             transcript_excerpt = transcript[:8000]
             if len(transcript) > 8000:
@@ -178,6 +189,7 @@ class PostMeetingAgent(BaseAgent):
                 contact_title=contact_title,
                 meeting_date=meeting_dt,
                 transcript=transcript_excerpt,
+                sender_signature=sender_signature,
             )
 
             _model = get_model("research")

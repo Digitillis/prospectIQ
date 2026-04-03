@@ -1,5 +1,5 @@
 # Copyright © 2026 ProspectIQ. All rights reserved.
-# Authors: Avanish Mehrotra & ProspectIQ Technical Team
+# Authors: ProspectIQ Technical Team
 """Ghostwriting Engine — voice calibration and AI-powered content generation.
 
 Generates LinkedIn posts and short-form thought leadership content calibrated

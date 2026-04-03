@@ -530,7 +530,7 @@ async def get_analytics_summary():
 async def get_benchmarks(days: int = Query(default=30, ge=1, le=365)):
     """Compare actual outreach metrics vs target benchmarks.
 
-    Targets (industry-calibrated for founder-led cold outreach):
+    Targets (industry-calibrated for cold B2B outreach):
     - Reply rate:          18%
     - Open rate:           40%
     - Meeting rate:         3%

@@ -1,5 +1,5 @@
 # Copyright © 2026 ProspectIQ. All rights reserved.
-# Authors: Avanish Mehrotra & ProspectIQ Technical Team
+# Authors: ProspectIQ Technical Team
 """Voice of Prospect API routes for ProspectIQ.
 
 Exposes the VoiceOfProspectAgent as a REST API for the dashboard.

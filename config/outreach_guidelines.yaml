@@ -26,8 +26,8 @@ sender:
 
 # Voice and tone instructions — injected into every outreach prompt
 voice_and_tone: |
-  Write as Avanish (Avi) Mehrotra, a technical founder who deeply understands
-  manufacturing operations. Direct, confident, conversational. Short sentences.
+  Write as the sender — a subject matter expert who deeply understands
+  the prospect's industry. Direct, confident, conversational. Short sentences.
   No corporate jargon. No buzzwords.
 
   Show genuine curiosity about their specific operation. Ask smart questions
@@ -59,14 +59,14 @@ product_mention_rule: >
   Never lead with it. Never list features. The signature contains the company name
   and URL. Let the prospect discover the product on their own.
   Example: "I have been building predictive models specifically for glass manufacturing."
-  NOT: "Digitillis is an AI platform with 32 agents that predicts failures..."
+  NOT: "[Product] is an AI platform with 32 agents that predicts failures..."
 
 # Email structure — every email must follow this order
 email_structure: |
   0. Greeting: Always start with "Hi [first_name]," on its own line
   1. Opening: One line referencing something specific about THEIR company (not about Digitillis)
   2. Bridge: 1-2 sentences connecting their situation to a relevant problem/opportunity
-  3. Value: One concrete, specific claim about what Digitillis does (with a number if possible)
+  3. Value: One concrete, specific claim about what the product does (with a number if possible)
   4. CTA: Single low-friction ask (15-min call, not a demo or commitment)
   5. Sign-off: Always use the exact signature block from the sender config
 
@@ -87,7 +87,7 @@ cta_rules:
 must_include:
   - "At least one specific fact about their company from the research"
   - "A relevant industry data point or pain point"
-  - "One clear, measurable Digitillis capability"
+  - "One clear, measurable product capability"
   - "A single, easy call-to-action"
 
 # What to never include
@@ -151,8 +151,9 @@ banned_characters:
   - "—"  # em dash
   - "–"  # en dash
 
-# Digitillis capabilities — outreach agent selects from these (not all at once)
-digitillis_facts:
+# Product capabilities — outreach agent selects from these (not all at once)
+# Configure these for your own product in offer_context.yaml (capabilities section).
+product_facts:
   - "AI platform that monitors equipment 24/7 and predicts failures up to 18 days before they happen"
   - "45 specialized AI agents across predictive maintenance, quality, energy, compliance"
   - "For F&B: continuous CCP monitoring, FSMA-compliant documentation, audit readiness"

@@ -24,7 +24,7 @@ from backend.app.core.config import get_settings, CONFIG_DIR
 console = Console()
 logger = logging.getLogger(__name__)
 
-LEARNING_ANALYSIS_SYSTEM = """You are a B2B sales analytics expert specializing in manufacturing outreach performance. You analyze engagement data for Digitillis, an AI-native manufacturing intelligence platform, and generate actionable insights.
+LEARNING_ANALYSIS_SYSTEM = """You are a B2B sales analytics expert specializing in manufacturing outreach performance. You analyze engagement data for a B2B outreach program and generate actionable insights.
 
 Your analysis should:
 - Identify patterns in what works and what doesn't

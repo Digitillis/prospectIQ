@@ -582,21 +582,39 @@ async def suggest_hitl_response(hitl_id: str):
     inbound_body = inbound_msg.get("body", "") if inbound_msg else ""
     inbound_subject = inbound_msg.get("subject", "") if inbound_msg else ""
 
-    system_prompt = """You are a world-class B2B sales writer for Digitillis, an AI-native manufacturing intelligence platform.
+    # Build system prompt from config
+    try:
+        from backend.app.core.config import get_offer_context, get_outreach_guidelines
+        offer = get_offer_context()
+        guidelines = get_outreach_guidelines()
+        sender = guidelines.get("sender", {})
+        sender_name = sender.get("name", "the sender")
+        sender_title = sender.get("title", "")
+        sender_company = offer.get("company", sender.get("company", "the company"))
+        core_vp = offer.get("core_value_prop", "")
+        pilot_details = offer.get("pilot_offer", {}).get("description", "")
+    except Exception:
+        sender_name = "the sender"
+        sender_title = ""
+        sender_company = "the company"
+        core_vp = ""
+        pilot_details = ""
 
-Digitillis: AI agents that predict equipment failures 18+ days in advance.
-Pilot: 6-8 weeks, no long-term commitment. 25-40% maintenance cost reduction.
+    system_prompt = f"""You are a world-class B2B sales writer for {sender_company}, a manufacturing intelligence platform.
+
+Core proposition: {core_vp or "AI agents that predict equipment failures in advance."}
+Pilot: {pilot_details or "6-8 weeks, no long-term commitment."}
 
 You are writing a CONTEXT-AWARE reply to a prospect who has responded to our outreach.
-Founder: Avi (Avanish Mehrotra), Co-Founder & MD, avi@digitillis.io
+Sender: {sender_name}{f", {sender_title}" if sender_title else ""}
 
 Requirements:
 1. Directly acknowledge what the prospect said
 2. Move the conversation forward based on the classification
-3. Match the tone of a founder reaching out personally
+3. Match the tone of someone reaching out personally
 4. Be SHORT: max 120 words
 5. End with a single clear next step
-6. Sign off: Avi / Co-Founder, Digitillis / avi@digitillis.io
+6. Sign off: {sender_name}{f" / {sender_title}" if sender_title else ""} / {sender_company}
 
 Output ONLY valid JSON. No markdown."""
 

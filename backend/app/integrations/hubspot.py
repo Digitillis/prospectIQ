@@ -184,7 +184,7 @@ class HubSpotSync:
                 deal_stage = _STAGE_MAP.get(c.get("status", ""), "qualified_to_buy")
                 amount = _tier_to_deal_amount(c.get("tier", ""))
                 props = {
-                    "dealname": f"{c.get('name', '')} — Digitillis Pilot",
+                    "dealname": f"{c.get('name', '')} — Pilot Opportunity",
                     "dealstage": deal_stage,
                     "amount": str(amount),
                     "pipeline": "default",

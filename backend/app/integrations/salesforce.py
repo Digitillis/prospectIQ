@@ -230,7 +230,7 @@ class SalesforceSync:
                               "pilot_discussion": 60, "pilot_signed": 45,
                               "active_pilot": 30, "converted": 0}.get(c.get("status", ""), 90)
                 close_date = (datetime.utcnow() + timedelta(days=close_days)).strftime("%Y-%m-%d")
-                opp_name = f"{c.get('name', '')} — Digitillis Pilot"
+                opp_name = f"{c.get('name', '')} — Pilot Opportunity"
 
                 record = {
                     "Name": opp_name[:120],

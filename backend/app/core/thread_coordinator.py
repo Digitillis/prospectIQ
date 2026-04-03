@@ -1,5 +1,5 @@
 # Copyright © 2026 ProspectIQ. All rights reserved.
-# Authors: Avanish Mehrotra & ProspectIQ Technical Team
+# Authors: ProspectIQ Technical Team
 """Multi-thread account campaign coordinator.
 
 Orchestrates simultaneous outreach to multiple contacts at the same target

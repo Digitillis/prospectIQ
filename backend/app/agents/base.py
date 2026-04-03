@@ -20,7 +20,7 @@ from backend.app.core.database import Database
 from backend.app.core.cost_tracker import log_cost
 
 # Pipeline scripts set WORKSPACE_ID so all records are scoped to the right workspace.
-# Falls back to the default Digitillis workspace if not set.
+# Falls back to the default workspace if not set.
 _DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 
 console = Console()

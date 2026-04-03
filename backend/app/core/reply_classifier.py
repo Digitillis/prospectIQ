@@ -45,9 +45,7 @@ class ReplyClassification(BaseModel):
 # Prompt constants
 # ---------------------------------------------------------------------------
 
-_SYSTEM = """You are a B2B sales reply classifier for Digitillis, an AI-native manufacturing intelligence platform.
-
-Digitillis in one line: AI agents that predict equipment failures 18+ days in advance so manufacturers avoid unplanned downtime.
+_SYSTEM = """You are a B2B sales reply classifier. Your job is to classify incoming prospect replies and extract key signals for the sales team.
 
 Classify the incoming prospect reply into exactly one of these categories:
 - interested: wants more info, open to a call/demo, encouraging signal

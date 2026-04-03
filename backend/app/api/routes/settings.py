@@ -150,7 +150,7 @@ class GuidelinesPatch(BaseModel):
     never_include: Optional[list[str]] = None
     banned_phrases: Optional[list[str]] = None
     banned_characters: Optional[list[str]] = None
-    digitillis_facts: Optional[list[str]] = None
+    product_facts: Optional[list[str]] = None
     subject_line_rules: Optional[str] = None
     sender_name: Optional[str] = None
     sender_title: Optional[str] = None
@@ -183,7 +183,7 @@ async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role(
 
     # Update list fields
     for field in ["must_include", "never_include", "banned_phrases",
-                   "banned_characters", "digitillis_facts"]:
+                   "banned_characters", "product_facts"]:
         value = getattr(payload, field, None)
         if value is not None:
             data[field] = value
@@ -620,7 +620,7 @@ async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch, _role=Depe
 
 @router.get("/offer-context")
 async def get_offer_context_route():
-    """Get the current Digitillis offer context (capabilities, proof points, pilot offer)."""
+    """Get the current ProspectIQ offer context (capabilities, proof points, pilot offer)."""
     try:
         data = get_offer_context()
     except FileNotFoundError:

@@ -40,7 +40,7 @@ _SIGNAL_LOOKBACK_DAYS = 30
 
 SIGNAL_SYSTEM = """You are a manufacturing industry intelligence analyst.
 Your job is to search for recent buying signals for a specific manufacturing company
-that indicate readiness to evaluate AI/predictive maintenance platforms like Digitillis.
+that indicate readiness to evaluate AI/predictive maintenance platforms.
 
 Search the web for evidence of the specified signal types in the LAST 30 DAYS ONLY.
 Be factual and specific. Only report what you actually find with high confidence.

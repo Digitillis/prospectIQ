@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Combined research + extraction system prompt
 RESEARCH_SYSTEM = """You are a senior manufacturing industry analyst conducting deep research on
-companies for strategic partnership evaluation with Digitillis, an AI-powered manufacturing
-intelligence platform.
+companies for B2B sales intelligence and prospecting.
 
 Your job is to analyze manufacturing companies and extract structured intelligence for sales
 prospecting. You must combine your knowledge of the company with structured extraction into
@@ -76,7 +75,7 @@ E. CapEx investment — new production line, facility expansion, major equipment
 F. Growth signal — new customer win, revenue growth announcement, headcount expansion (hiring surge on LinkedIn)
 G. Competitor displacement — stated dissatisfaction with or removal of a competing vendor
 
-For each trigger found, record: what happened, when (approximate date or quarter), and why it matters for Digitillis outreach.
+For each trigger found, record: what happened, when (approximate date or quarter), and why it matters for outreach timing.
 
 OUTPUT THIS EXACT JSON SCHEMA:
 {{
@@ -88,7 +87,7 @@ OUTPUT THIS EXACT JSON SCHEMA:
     "maintenance_approach": "reactive" or "time_based" or "condition_based" or "predictive",
     "digital_transformation_status": "brief description of digital transformation initiatives or 'No initiatives found'",
     "pain_points": ["list", "of", "identified", "pain", "points", "or", "challenges"],
-    "opportunities": ["list", "of", "specific", "opportunities", "for", "Digitillis", "AI", "platform"],
+    "opportunities": ["list", "of", "specific", "opportunities", "for", "AI-powered", "manufacturing", "intelligence"],
     "existing_solutions": ["list", "of", "AI/ML", "or", "predictive", "platforms", "already", "in", "use"],
     "funding_status": "recent funding info or 'Not found'",
     "funding_details": "specific details or empty string",
@@ -97,14 +96,14 @@ OUTPUT THIS EXACT JSON SCHEMA:
             "type": "leadership_change" or "ma_pe" or "esg_commitment" or "operational_incident" or "capex_investment" or "growth_signal" or "competitor_displacement",
             "description": "specific factual description of what happened",
             "date_approx": "YYYY-QQ or YYYY-MM or 'Unknown'",
-            "outreach_relevance": "one sentence on why this creates an opening for Digitillis"
+            "outreach_relevance": "one sentence on why this creates an opening for outreach"
         }}
     ],
     "trigger_score": 0-10,
     "personalization_hooks": [
         "3-5 specific, concrete facts that can be used to personalize outreach",
         "e.g., 'Operates 3 plants across the Midwest with 500+ employees'",
-        "e.g., 'Uses SAP ERP and Rockwell automation — direct integration path for Digitillis'",
+        "e.g., 'Uses SAP ERP and Rockwell automation — strong technical alignment with the platform'",
         "e.g., 'New VP Ops joined from Honeywell in Q1 2025 — likely evaluating new tools'"
     ],
     "confidence_level": "high" or "medium" or "low",

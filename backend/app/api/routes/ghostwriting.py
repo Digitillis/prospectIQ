@@ -1,5 +1,5 @@
 # Copyright © 2026 ProspectIQ. All rights reserved.
-# Authors: Avanish Mehrotra & ProspectIQ Technical Team
+# Authors: ProspectIQ Technical Team
 """Ghostwriting API routes for ProspectIQ.
 
 Exposes the GhostwritingEngine as a REST API for the dashboard.

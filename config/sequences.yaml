@@ -434,7 +434,7 @@ sequences:
 # =========================================================
 global_principles:
   voice:
-    - "Write as Avi -- a technical founder who understands manufacturing, not a salesperson"
+    - "Write as the sender -- a subject matter expert who understands the prospect's industry, not a salesperson"
     - "Direct, confident, conversational. Short sentences. No corporate jargon."
     - "Show genuine curiosity about their operation -- ask smart questions"
     - "Use their industry language naturally (OEE, MTBF, RUL, CCP, HACCP, FSMA)"
@@ -455,14 +455,9 @@ global_principles:
     - "Every email must reference at least 1 specific fact about the company"
     - "Subject lines must reference their company name or specific situation"
     - "CTA must be a single, low-friction ask (15-min call, not a demo)"
-  signature: |
-    Best regards,
-    Avanish
-
-    Avanish Mehrotra
-    Founder & CEO
-    Digitillis | www.digitillis.com
-    avi@digitillis.io | 224.355.4500
+  # Signature is driven by config/outreach_guidelines.yaml (sender section).
+  # The outreach agent reads the signature from there; this entry is informational only.
+  signature_note: "Configure sender signature in config/outreach_guidelines.yaml under sender.signature"
 
 # ---------------------------------------------------------------------------
 # Cross-channel orchestration rules

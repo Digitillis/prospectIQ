@@ -294,8 +294,19 @@ async def test_send_draft(
         import resend
         resend.api_key = settings.resend_api_key
 
+        # Get sender info from config
+        try:
+            from backend.app.core.config import get_outreach_guidelines
+            guidelines = get_outreach_guidelines()
+            sender = guidelines.get("sender", {})
+            sender_email = sender.get("email", "noreply@example.com")
+            sender_name = sender.get("name", "ProspectIQ")
+            from_addr = f"{sender_name} <{sender_email}>" if sender_name else sender_email
+        except Exception:
+            from_addr = "ProspectIQ <noreply@example.com>"
+
         send_result = resend.Emails.send({
-            "from": "Avanish Mehrotra <avi@digitillis.io>",
+            "from": from_addr,
             "to": [body.test_email],
             "subject": test_subject,
             "text": test_body,
