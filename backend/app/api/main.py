@@ -46,7 +46,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals, targeting
 from backend.app.webhooks import instantly as instantly_webhooks
 from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
@@ -282,6 +282,7 @@ app.include_router(ghostwriting.router)
 app.include_router(crm.router)
 app.include_router(meetings.router)
 app.include_router(deals.router)
+app.include_router(targeting.router)
 
 
 @app.get("/health")
