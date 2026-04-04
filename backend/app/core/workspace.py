@@ -7,8 +7,11 @@ workspace without threading it through every function signature.
 
 from __future__ import annotations
 
+import logging
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,20 +34,26 @@ _workspace_context: ContextVar[WorkspaceContext | None] = ContextVar(
 
 def get_current_workspace() -> WorkspaceContext | None:
     """Return the WorkspaceContext bound to the current async task, or None."""
-    return _workspace_context.get()
+    ctx = _workspace_context.get()
+    logger.debug(f"get_current_workspace: returning {ctx}")
+    return ctx
 
 
 def get_workspace_id() -> str | None:
     """Shortcut — return workspace_id from context, or None if no context set."""
     ctx = _workspace_context.get()
-    return ctx.workspace_id if ctx is not None else None
+    ws_id = ctx.workspace_id if ctx is not None else None
+    logger.debug(f"get_workspace_id: returning {ws_id}")
+    return ws_id
 
 
 def set_workspace_context(ctx: WorkspaceContext) -> None:
     """Bind a WorkspaceContext to the current async task."""
+    logger.debug(f"set_workspace_context: setting context with workspace_id={ctx.workspace_id}")
     _workspace_context.set(ctx)
 
 
 def clear_workspace_context() -> None:
     """Reset the ContextVar to None (called after request completes)."""
+    logger.debug("clear_workspace_context: clearing context")
     _workspace_context.set(None)

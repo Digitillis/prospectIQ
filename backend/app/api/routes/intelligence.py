@@ -207,7 +207,7 @@ def _get_threads_needing_action(db: Database, limit: int = 5) -> list[dict]:
     """Get threads needing human review."""
     try:
         result = (
-            db.client.table("campaign_threads")
+            db._filter_ws(db.client.table("campaign_threads"))
             .select(
                 "id, status, current_step, updated_at, "
                 "companies(id, name, tier, pqs_total, campaign_cluster), "
@@ -225,7 +225,7 @@ def _get_threads_needing_action(db: Database, limit: int = 5) -> list[dict]:
         for t in threads:
             try:
                 msg_result = (
-                    db.client.table("thread_messages")
+                    db._filter_ws(db.client.table("thread_messages"))
                     .select("*")
                     .eq("thread_id", t["id"])
                     .eq("direction", "inbound")

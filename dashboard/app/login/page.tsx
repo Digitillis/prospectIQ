@@ -2,12 +2,14 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Mail, Lock } from "lucide-react";
+import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { setAuthCookie } from "@/lib/auth-cookie";
 
 function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
@@ -30,21 +32,33 @@ function LoginContent() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    console.log("🔍 Attempting sign in with email:", email.trim().toLowerCase());
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      console.log("📡 Calling supabase.auth.signInWithPassword...");
+      const { error: authError, data } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
       });
+      console.log("✓ Supabase response received:", { error: authError, session: data.session ? "✓" : "✗" });
 
       if (authError) {
         setError(authError.message || "Invalid email or password.");
         setPassword("");
-      } else {
+      } else if (data.session) {
+        // Session exists in browser storage
+        console.log("✅ Session created, session_id:", data.session.access_token.substring(0, 20) + "...");
+        // Sync session to cookies so middleware can read it
+        setAuthCookie(data.session.access_token, data.session.refresh_token || "");
+        // Wait a moment for cookies to be set
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        console.log("📍 Redirecting to dashboard...");
         router.push("/");
-        router.refresh();
+      } else {
+        setError("No session returned from authentication.");
       }
-    } catch {
+    } catch (err) {
+      console.error("❌ Catch block error:", err);
       setError("Something went wrong. Try again.");
     } finally {
       setLoading(false);
@@ -58,7 +72,7 @@ function LoginContent() {
         <div className="text-center">
           <h1 className="text-3xl font-bold text-white">ProspectIQ</h1>
           <p className="mt-2 text-sm text-slate-400">
-            AI-powered manufacturing intelligence
+            AI-powered Sales Intelligence
           </p>
         </div>
 
@@ -121,14 +135,26 @@ function LoginContent() {
                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                  className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-9 text-sm text-gray-900 placeholder:text-gray-400 focus:border-digitillis-accent focus:outline-none focus:ring-1 focus:ring-digitillis-accent dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -158,14 +184,7 @@ function LoginContent() {
         <p className="text-center text-sm text-slate-400">
           Don&apos;t have a workspace?{" "}
           <a href="/signup" className="font-medium text-blue-400 underline hover:text-blue-300">
-            Create one free
-          </a>
-        </p>
-
-        <p className="text-center text-xs text-slate-500">
-          ProspectIQ by Digitillis &mdash; questions?{" "}
-          <a href="mailto:avi@digitillis.com" className="underline hover:text-slate-300">
-            avi@digitillis.com
+            Create one
           </a>
         </p>
       </div>

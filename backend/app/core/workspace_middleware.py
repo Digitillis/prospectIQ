@@ -42,27 +42,35 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         workspace_id: str | None = None
+        logger.debug("WorkspaceMiddleware.dispatch: path=%s method=%s", request.url.path, request.method)
 
         try:
             workspace_id = self._resolve_workspace_id(request)
+            logger.debug("WorkspaceMiddleware: resolved workspace_id=%s", workspace_id)
         except Exception as exc:
             # Non-fatal: just skip context enrichment; auth deps will catch it properly.
             logger.debug("WorkspaceMiddleware: could not resolve workspace — %s", exc)
 
         if workspace_id:
             ctx = self._load_workspace(workspace_id)
+            logger.debug("WorkspaceMiddleware: loaded context: %s", ctx)
             if ctx:
                 set_workspace_context(ctx)
                 logger.debug(
-                    "WorkspaceMiddleware: workspace=%s path=%s",
+                    "WorkspaceMiddleware: context set with workspace=%s path=%s",
                     workspace_id,
                     request.url.path,
                 )
+            else:
+                logger.warning("WorkspaceMiddleware: failed to load workspace %s", workspace_id)
+        else:
+            logger.debug("WorkspaceMiddleware: no workspace_id resolved, skipping context enrichment")
 
         try:
             response = await call_next(request)
         finally:
             # Always clear after the response, even on error paths.
+            logger.debug("WorkspaceMiddleware: clearing context after response")
             clear_workspace_context()
 
         return response
@@ -76,18 +84,34 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("Authorization", "")
         api_key_header = request.headers.get("X-API-Key", "")
 
+        logger.debug("_resolve_workspace_id: auth_header present=%s api_key_header present=%s", bool(auth_header), bool(api_key_header))
+
         if auth_header.startswith("Bearer "):
+            logger.debug("_resolve_workspace_id: extracting workspace from JWT")
             return self._workspace_from_jwt(auth_header.removeprefix("Bearer ").strip())
 
         if api_key_header:
+            logger.debug("_resolve_workspace_id: extracting workspace from API key")
             return self._workspace_from_api_key(api_key_header)
 
+        logger.debug("_resolve_workspace_id: no auth headers found")
         return None
 
     def _workspace_from_jwt(self, token: str) -> str | None:
         """Decode JWT and extract workspace_id."""
         settings = get_settings()
         if not settings.supabase_jwt_secret:
+            logger.debug("JWT secret not configured, falling back to workspace_members table lookup")
+            # Extract user_id from token without verification (we need the secret to verify anyway)
+            try:
+                import jwt
+                unverified = jwt.decode(token, options={"verify_signature": False})
+                user_id = unverified.get("sub", "")
+                if user_id:
+                    logger.debug(f"Extracted user_id from unverified JWT: {user_id}")
+                    return self._lookup_workspace_member(user_id)
+            except Exception as exc:
+                logger.debug(f"Could not extract user_id from JWT: {exc}")
             return None
         try:
             claims = jwt.decode(
@@ -96,21 +120,34 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
                 algorithms=["HS256"],
                 options={"verify_aud": False},
             )
-        except jwt.PyJWTError:
+        except jwt.PyJWTError as exc:
+            logger.debug("JWT decode failed: %s", exc)
             return None
 
         # Try app_metadata / user_metadata first (stamped by Auth hooks / triggers)
         app_meta = claims.get("app_metadata") or {}
         user_meta = claims.get("user_metadata") or {}
         workspace_id = app_meta.get("workspace_id") or user_meta.get("workspace_id")
+        logger.debug(
+            "JWT claims decoded: sub=%s app_meta=%s user_meta=%s workspace_id_from_claims=%s",
+            claims.get("sub"),
+            app_meta,
+            user_meta,
+            workspace_id,
+        )
         if workspace_id:
+            logger.debug("Found workspace_id in JWT claims: %s", workspace_id)
             return workspace_id
 
         # Fall back to workspace_members table
         user_id: str = claims.get("sub", "")
+        logger.debug("workspace_id not in JWT, looking up via workspace_members for user_id=%s", user_id)
         if user_id:
-            return self._lookup_workspace_member(user_id)
+            ws_id = self._lookup_workspace_member(user_id)
+            logger.debug("workspace_members lookup result: %s", ws_id)
+            return ws_id
 
+        logger.debug("No workspace_id found via JWT or workspace_members")
         return None
 
     def _workspace_from_api_key(self, raw_key: str) -> str | None:

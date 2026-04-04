@@ -126,15 +126,15 @@ async def get_current_user(request: Request) -> dict[str, Any]:
         token = auth_header.removeprefix("Bearer ").strip()
         claims = _decode_bearer(token)
         user = _build_user_from_jwt(claims)
+        logger.debug(f"get_current_user: JWT user={user}")
 
         # If workspace_id wasn't in the JWT claims, look it up from the DB
         if not user["workspace_id"]:
+            logger.debug(f"get_current_user: workspace_id not in JWT, looking up for user_id={user['user_id']}")
             user["workspace_id"] = _lookup_workspace_for_user(user["user_id"])
+            logger.debug(f"get_current_user: workspace_members lookup result={user['workspace_id']}")
 
-        if not user["workspace_id"]:
-            settings = get_settings()
-            user["workspace_id"] = settings.default_workspace_id
-
+        logger.debug(f"get_current_user: returning user={user}")
         return user
 
     if api_key_header:
@@ -286,5 +286,9 @@ def require_role(min_role: str):
 # Convenience alias for routes that just need the DB dependency satisfied
 # (kept separate from require_workspace_member so call sites are explicit)
 def get_db():
-    """Return the Supabase service-role client as a FastAPI dependency."""
-    return get_supabase_client()
+    """Return a Database instance with workspace_id from context."""
+    from backend.app.core.database import Database
+    from backend.app.core.workspace import get_workspace_id
+    ws_id = get_workspace_id()
+    logger.debug(f"get_db() called: workspace_id from context={ws_id}")
+    return Database(workspace_id=ws_id)

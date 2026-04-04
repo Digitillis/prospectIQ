@@ -45,7 +45,11 @@ export async function middleware(request: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (!session) {
+  // Also check if we have the auth cookies set by the client
+  const accessToken = request.cookies.get("sb-access-token")?.value;
+  const hasValidSession = session || accessToken;
+
+  if (!hasValidSession) {
     const loginUrl = new URL("/login", request.url);
     // Preserve redirect target so we can send user back after sign-in
     loginUrl.searchParams.set("redirect", pathname);
@@ -53,8 +57,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // Inject the access token as Authorization header for API routes that proxy to FastAPI
-  if (session.access_token) {
-    response.headers.set("x-supabase-token", session.access_token);
+  const tokenToUse = session?.access_token || accessToken;
+  if (tokenToUse) {
+    response.headers.set("x-supabase-token", tokenToUse);
   }
 
   return response;

@@ -11,6 +11,12 @@ from time import time
 
 from fastapi import FastAPI
 
+# Configure logging to DEBUG level for workspace isolation diagnostics
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 # ---------------------------------------------------------------------------
 # Sentry — initialize early so all errors (including startup) are captured
 # ---------------------------------------------------------------------------
