@@ -74,7 +74,7 @@ export default function SignupPage() {
         <div className="text-center">
           <h1 className="text-3xl font-bold text-white">ProspectIQ</h1>
           <p className="mt-2 text-sm text-slate-400">
-            AI-powered manufacturing intelligence
+            AI-powered Sales Intelligence
           </p>
         </div>
 

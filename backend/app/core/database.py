@@ -6,12 +6,15 @@ with convenience methods for common operations.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from typing import Any
 
 from supabase import create_client, Client
 
 from backend.app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache()
@@ -35,6 +38,7 @@ class Database:
     def __init__(self, workspace_id: str | None = None):
         self.client = get_supabase_client()
         self.workspace_id = workspace_id
+        logger.debug(f"Database.__init__: workspace_id={workspace_id}")
 
     # ------------------------------------------------------------------
     # Workspace helpers (internal)
@@ -43,13 +47,20 @@ class Database:
     def _filter_ws(self, query):
         """Apply workspace filter to a query when workspace_id is set."""
         if self.workspace_id:
+            logger.debug(f"_filter_ws: applying workspace filter workspace_id={self.workspace_id}")
             query = query.eq("workspace_id", self.workspace_id)
+        else:
+            logger.warning("_filter_ws: NO workspace_id set! Returning unfiltered query!")
         return query
 
     def _inject_ws(self, data: dict) -> dict:
         """Add workspace_id to an insert/upsert payload when set."""
         if self.workspace_id and "workspace_id" not in data:
+            logger.debug(f"_inject_ws: adding workspace_id={self.workspace_id} to payload")
             return {**data, "workspace_id": self.workspace_id}
+        else:
+            if not self.workspace_id:
+                logger.warning("_inject_ws: NO workspace_id set! Returning data unmodified!")
         return data
 
     # ------------------------------------------------------------------
@@ -298,8 +309,7 @@ class Database:
 
     def log_api_cost(self, data: dict) -> dict:
         """Log an API cost record."""
-        # api_costs is not workspace-scoped — do not inject workspace_id
-        result = self.client.table("api_costs").insert(data).execute()
+        result = self.client.table("api_costs").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -375,20 +385,20 @@ class Database:
         return result.data[0] if result.data else {}
 
     def get_action_requests(self, limit=50):
-        return self.client.table("action_requests").select("*").order("created_at", desc=True).limit(limit).execute().data
+        return self._filter_ws(self.client.table("action_requests").select("*")).order("created_at", desc=True).limit(limit).execute().data
 
     def get_daily_targets(self, effective_date=None):
         if effective_date:
-            ov = self.client.table("daily_targets").select("*").eq("effective_date", effective_date).eq("is_active", True).execute().data
+            ov = self._filter_ws(self.client.table("daily_targets").select("*")).eq("effective_date", effective_date).eq("is_active", True).execute().data
             if ov:
                 ot = {r["action_type"] for r in ov}
-                df = self.client.table("daily_targets").select("*").is_("effective_date", "null").eq("is_active", True).execute().data
+                df = self._filter_ws(self.client.table("daily_targets").select("*")).is_("effective_date", "null").eq("is_active", True).execute().data
                 return ov + [d for d in df if d["action_type"] not in ot]
-        return self.client.table("daily_targets").select("*").is_("effective_date", "null").eq("is_active", True).execute().data
+        return self._filter_ws(self.client.table("daily_targets").select("*")).is_("effective_date", "null").eq("is_active", True).execute().data
 
     def upsert_daily_target(self, action_type, target_count, effective_date=None):
         data = {"action_type": action_type, "target_count": target_count, "effective_date": effective_date, "is_active": True}
-        result = self.client.table("daily_targets").upsert(data, on_conflict="action_type,effective_date,day_of_week").execute()
+        result = self.client.table("daily_targets").upsert(self._inject_ws(data), on_conflict="action_type,effective_date,day_of_week").execute()
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -642,14 +652,14 @@ class Database:
 
         self.client.table("contacts").update(updates).eq("id", contact_id).execute()
 
-        self.client.table("outreach_state_log").insert({
+        self.client.table("outreach_state_log").insert(self._inject_ws({
             "contact_id": contact_id,
             "from_state": from_state,
             "to_state": new_state,
             "channel": channel,
             "instantly_event": instantly_event,
             "metadata": metadata or {},
-        }).execute()
+        })).execute()
 
     def get_contact_by_email(self, email: str) -> dict | None:
         """Look up a contact by email address.

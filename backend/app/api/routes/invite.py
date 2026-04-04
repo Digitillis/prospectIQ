@@ -170,6 +170,15 @@ async def accept_invite(
     # Don't expose token in response (already nulled, but be safe)
     member_row.pop("invite_token", None)
 
+    # Stamp workspace_id into Auth user's app_metadata so future logins have it in JWT
+    try:
+        client.auth.admin.update_user_by_id(
+            user_id,
+            {"app_metadata": {"workspace_id": row["workspace_id"]}}
+        )
+    except Exception as e:
+        logger.warning("Failed to update Auth user app_metadata: %s", e)
+
     logger.info(
         "Invite accepted: workspace=%s user=%s email=%s role=%s",
         row["workspace_id"], user_id, user_email, row.get("role"),
