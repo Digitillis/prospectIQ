@@ -8,10 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.app.core.auth import require_workspace_member
-from backend.app.core.database import Database, get_db
+from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
 router = APIRouter(prefix="/api/intent-signals", tags=["intent_signals"])
+
+
+def get_db() -> Database:
+    return Database(workspace_id=get_workspace_id())
 
 
 # ============================================================================
