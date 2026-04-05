@@ -166,7 +166,7 @@ class QueueManager:
         # Pull enriched contacts with email
         query = (
             self.db.client.table("contacts")
-            .select("*, companies(name, domain, tier, campaign_name, status)")
+            .select("*, companies!contacts_company_id_fkey(name, domain, tier, campaign_name, status)")
             .eq("enrichment_status", "enriched")
             .not_.is_("email", "null")
             .gte("completeness_score", min_completeness)
@@ -240,7 +240,7 @@ class QueueManager:
         # Fetch all enriched contacts
         query = (
             self.db.client.table("contacts")
-            .select("id, completeness_score, persona_type, updated_at, companies(tier, campaign_name)")
+            .select("id, completeness_score, persona_type, updated_at, companies!contacts_company_id_fkey(tier, campaign_name)")
             .eq("enrichment_status", "enriched")
         )
         rows = query.execute().data or []

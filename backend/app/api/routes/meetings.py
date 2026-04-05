@@ -8,10 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.app.core.auth import get_current_user, require_workspace_member
-from backend.app.core.database import Database, get_db
+from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
+
+
+def get_db() -> Database:
+    return Database(workspace_id=get_workspace_id())
 
 
 # ============================================================================
