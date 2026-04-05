@@ -6,7 +6,7 @@
  * Loads an existing sequence via ?id= param, or starts blank.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, ArrowDown, ArrowUp, ChevronDown, ChevronRight,
@@ -253,9 +253,9 @@ function StepEditor({ step, index, total, allSteps, onChange, onDelete, onMove }
 }
 
 // ---------------------------------------------------------------------------
-// Main page
+// Main page — useSearchParams requires Suspense in Next.js 15
 // ---------------------------------------------------------------------------
-export default function SequenceBuilderPage() {
+function SequenceBuilderInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("id");
@@ -514,5 +514,13 @@ export default function SequenceBuilderPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SequenceBuilderPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>}>
+      <SequenceBuilderInner />
+    </Suspense>
   );
 }
