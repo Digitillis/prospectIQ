@@ -1058,6 +1058,32 @@ async def preview_sequence_v2(sequence_id: str, body: SequencePreviewRequest):
     }
 
 
+class EnrollmentPatchRequest(BaseModel):
+    status: str  # "paused" | "active" | "stopped"
+
+
+@v2_router.patch("/enrollments/{enrollment_id}")
+async def patch_enrollment(enrollment_id: str, body: EnrollmentPatchRequest):
+    """Pause, resume, or stop a contact's enrollment in a sequence."""
+    allowed = {"paused", "active", "stopped"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=422, detail=f"status must be one of: {allowed}")
+    db = get_db()
+    existing = (
+        db._filter_ws(db.client.table("engagement_sequences").select("id"))
+        .eq("id", enrollment_id)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"Enrollment '{enrollment_id}' not found.")
+    now = datetime.now(timezone.utc).isoformat()
+    db._filter_ws(
+        db.client.table("engagement_sequences")
+        .update({"status": body.status, "updated_at": now})
+    ).eq("id", enrollment_id).execute()
+    return {"message": f"Enrollment {enrollment_id} set to '{body.status}'", "status": body.status}
+
+
 @v2_router.get("/{sequence_id}/stats")
 async def get_sequence_stats_v2(sequence_id: str):
     """Return engagement stats for a V2 sequence."""

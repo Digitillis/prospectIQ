@@ -221,8 +221,64 @@ class EngagementAgent(BaseAgent):
 
         return result
 
+    # ------------------------------------------------------------------
+    # Condition evaluation helpers (Phase 3 — runtime branching)
+    # ------------------------------------------------------------------
+
+    def _get_contact_engagement(self, contact_id: str) -> dict:
+        """Return a summary of engagement events for a contact (opens, clicks, replies)."""
+        try:
+            rows = (
+                self.db.client.table("interactions")
+                .select("type")
+                .eq("contact_id", contact_id)
+                .in_("type", ["email_opened", "email_clicked", "email_replied", "reply_received"])
+                .execute()
+                .data or []
+            )
+            types = {r["type"] for r in rows}
+            return {
+                "opened":  bool(types & {"email_opened"}),
+                "clicked": bool(types & {"email_clicked"}),
+                "replied": bool(types & {"email_replied", "reply_received"}),
+            }
+        except Exception:
+            return {"opened": False, "clicked": False, "replied": False}
+
+    def _evaluate_condition(self, step: dict, contact_id: str, contact_pqs: float = 0.0) -> bool:
+        """Evaluate a condition step and return True (branch_yes) or False (branch_no)."""
+        ctype = step.get("condition_type", "if_opened")
+        engagement = self._get_contact_engagement(contact_id)
+        if ctype == "if_opened":
+            return engagement["opened"]
+        elif ctype == "if_replied":
+            return engagement["replied"]
+        elif ctype == "if_clicked":
+            return engagement["clicked"]
+        elif ctype == "if_pqs_above":
+            threshold = float(step.get("condition_value") or 50)
+            return contact_pqs >= threshold
+        return False
+
+    def _find_step_index_by_id(self, steps: list, step_id: str | None) -> int | None:
+        """Return 0-based index of step with given step_id, or None."""
+        if not step_id:
+            return None
+        for i, s in enumerate(steps):
+            if s.get("step_id") == step_id:
+                return i
+        return None
+
+    # ------------------------------------------------------------------
+    # Sequence execution
+    # ------------------------------------------------------------------
+
     def _process_due_sequences(self) -> AgentResult:
-        """Process engagement sequences with due follow-up actions."""
+        """Process engagement sequences with due follow-up actions.
+
+        Handles both V1 (YAML-based) and V2 (campaign_sequence_definitions_v2) sequences.
+        V2 sequences support runtime conditional branching.
+        """
         result = AgentResult()
 
         now = datetime.now(timezone.utc).isoformat()
@@ -235,16 +291,153 @@ class EngagementAgent(BaseAgent):
         console.print(f"[cyan]Processing {len(due_sequences)} due sequence actions...[/cyan]")
 
         for seq in due_sequences:
-            company = seq.get("companies", {})
-            contact = seq.get("contacts", {})
+            company = seq.get("companies", {}) or {}
+            contact = seq.get("contacts", {}) or {}
             company_name = company.get("name", "Unknown")
 
             try:
+                seq_name = seq["sequence_name"]
+                contact_id = seq.get("contact_id")
+
+                # ----------------------------------------------------------------
+                # Try to load as a V2 sequence (UUID name stored in sequence_name)
+                # ----------------------------------------------------------------
+                v2_def = None
+                try:
+                    v2_result = (
+                        self.db.client.table("campaign_sequence_definitions_v2")
+                        .select("*")
+                        .eq("id", seq_name)
+                        .execute()
+                    )
+                    if v2_result.data:
+                        v2_def = v2_result.data[0]
+                except Exception:
+                    pass
+
+                if v2_def:
+                    # ---- V2 path: step_id-based navigation with branching ----
+                    v2_steps: list = v2_def.get("steps") or []
+                    current_step_id: str | None = seq.get("metadata", {}).get("current_step_id") if seq.get("metadata") else None
+
+                    # Find current position
+                    if current_step_id:
+                        current_idx = self._find_step_index_by_id(v2_steps, current_step_id)
+                        current_idx = (current_idx or 0) + 1  # advance
+                    else:
+                        current_idx = 0  # first run
+
+                    if current_idx >= len(v2_steps):
+                        # All steps done
+                        self.db.update_engagement_sequence(seq["id"], {
+                            "status": "completed",
+                            "completed_at": now,
+                        })
+                        result.processed += 1
+                        result.add_detail(company_name, "completed", "V2 sequence finished")
+                        continue
+
+                    step_def = v2_steps[current_idx]
+                    stype = step_def.get("step_type", "email")
+
+                    # Condition step — evaluate and branch
+                    if stype == "condition":
+                        pqs = float(contact.get("pqs_total") or 0)
+                        branch_taken = self._evaluate_condition(step_def, contact_id or "", pqs)
+                        branch_step_id = step_def.get("branch_yes") if branch_taken else step_def.get("branch_no")
+                        next_idx = self._find_step_index_by_id(v2_steps, branch_step_id)
+                        if next_idx is None:
+                            next_idx = current_idx + 1  # fallback: just advance
+                        # Jump to the branched step by updating metadata
+                        if next_idx < len(v2_steps):
+                            next_step_def = v2_steps[next_idx]
+                            delay = next_step_def.get("wait_days") or 0
+                            next_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
+                            self.db.update_engagement_sequence(seq["id"], {
+                                "current_step": next_idx,
+                                "next_action_at": next_at,
+                                "metadata": {**(seq.get("metadata") or {}), "current_step_id": next_step_def["step_id"]},
+                            })
+                        else:
+                            self.db.update_engagement_sequence(seq["id"], {"status": "completed", "completed_at": now})
+                        branch_label = "YES" if branch_taken else "NO"
+                        result.processed += 1
+                        result.add_detail(company_name, f"condition_{branch_label}", step_def.get("condition_type", ""))
+                        continue
+
+                    # Wait step — schedule next action
+                    if stype == "wait":
+                        delay = step_def.get("wait_days") or 1
+                        next_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
+                        next_idx = current_idx + 1
+                        next_step_id = v2_steps[next_idx]["step_id"] if next_idx < len(v2_steps) else None
+                        self.db.update_engagement_sequence(seq["id"], {
+                            "current_step": next_idx,
+                            "next_action_at": next_at,
+                            "metadata": {**(seq.get("metadata") or {}), "current_step_id": next_step_id},
+                            "status": "active" if next_step_id else "completed",
+                        })
+                        result.processed += 1
+                        result.add_detail(company_name, "wait", f"{delay}d")
+                        continue
+
+                    # Email / LinkedIn / Task step
+                    if stype == "email":
+                        from backend.app.agents.outreach import OutreachAgent
+                        outreach = OutreachAgent(batch_id=self.batch_id)
+                        outreach.run(
+                            company_ids=[seq["company_id"]],
+                            sequence_name=seq_name,
+                            sequence_step=current_idx + 1,
+                        )
+                    elif stype == "linkedin":
+                        self.db.insert_interaction({
+                            "company_id": seq["company_id"],
+                            "contact_id": contact_id,
+                            "type": "linkedin_message",
+                            "channel": "linkedin",
+                            "subject": f"LinkedIn touch — V2 step {current_idx + 1}",
+                            "body": step_def.get("body_template", ""),
+                            "source": "system",
+                            "metadata": {"action_required": "manual", "sequence_id": seq_name},
+                        })
+                    elif stype == "task":
+                        self.db.insert_interaction({
+                            "company_id": seq["company_id"],
+                            "contact_id": contact_id,
+                            "type": "task",
+                            "channel": "internal",
+                            "subject": step_def.get("task_description", "Follow-up task"),
+                            "body": step_def.get("task_description", ""),
+                            "source": "system",
+                        })
+
+                    # Advance to next step
+                    next_idx = current_idx + 1
+                    if next_idx < len(v2_steps):
+                        next_step_def = v2_steps[next_idx]
+                        delay = next_step_def.get("wait_days") or 1
+                        next_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
+                        self.db.update_engagement_sequence(seq["id"], {
+                            "current_step": next_idx,
+                            "next_action_at": next_at,
+                            "metadata": {**(seq.get("metadata") or {}), "current_step_id": next_step_def["step_id"]},
+                            "status": "active",
+                        })
+                    else:
+                        self.db.update_engagement_sequence(seq["id"], {"status": "completed", "completed_at": now})
+
+                    result.processed += 1
+                    result.add_detail(company_name, f"v2_step_{current_idx + 1}", stype)
+                    continue
+
+                # ----------------------------------------------------------------
+                # V1 path: YAML sequence (original logic)
+                # ----------------------------------------------------------------
                 next_step = seq["current_step"] + 1
                 seq_config = get_sequences_config()
-                sequence = seq_config["sequences"].get(seq["sequence_name"], {})
+                sequence = seq_config["sequences"].get(seq_name, {})
 
-                # Find the step config
                 step_config = None
                 for step in sequence.get("steps", []):
                     if step["step"] == next_step:
@@ -252,7 +445,6 @@ class EngagementAgent(BaseAgent):
                         break
 
                 if not step_config:
-                    # Sequence complete
                     self.db.update_engagement_sequence(seq["id"], {
                         "status": "completed",
                         "completed_at": now,
@@ -264,34 +456,20 @@ class EngagementAgent(BaseAgent):
                 channel = step_config["channel"]
 
                 if channel == "email":
-                    # Generate follow-up draft via Outreach Agent
                     from backend.app.agents.outreach import OutreachAgent
-
                     outreach = OutreachAgent(batch_id=self.batch_id)
                     outreach_result = outreach.run(
                         company_ids=[seq["company_id"]],
-                        sequence_name=seq["sequence_name"],
+                        sequence_name=seq_name,
                         sequence_step=next_step,
                     )
-
                     if outreach_result.processed > 0:
-                        console.print(
-                            f"  [green]{company_name}: Follow-up draft created "
-                            f"(step {next_step}, email)[/green]"
-                        )
+                        console.print(f"  [green]{company_name}: Follow-up draft created (step {next_step}, email)[/green]")
                     else:
-                        console.print(
-                            f"  [yellow]{company_name}: Could not generate follow-up[/yellow]"
-                        )
+                        console.print(f"  [yellow]{company_name}: Could not generate follow-up[/yellow]")
 
                 elif channel == "linkedin":
-                    # LinkedIn actions are manual — just surface them
-                    console.print(
-                        f"  [bold cyan]{company_name}: LinkedIn touch needed "
-                        f"(step {next_step}) → {contact.get('full_name', 'Unknown')}[/bold cyan]"
-                    )
-
-                    # Log as a pending manual action
+                    console.print(f"  [bold cyan]{company_name}: LinkedIn touch needed (step {next_step}) → {contact.get('full_name', 'Unknown')}[/bold cyan]")
                     self.db.insert_interaction({
                         "company_id": seq["company_id"],
                         "contact_id": seq["contact_id"],
@@ -300,14 +478,9 @@ class EngagementAgent(BaseAgent):
                         "subject": f"LinkedIn touch — Step {next_step}",
                         "body": step_config.get("instructions", {}).get("approach", ""),
                         "source": "system",
-                        "metadata": {
-                            "action_required": "manual",
-                            "sequence_name": seq["sequence_name"],
-                            "sequence_step": next_step,
-                        },
+                        "metadata": {"action_required": "manual", "sequence_name": seq_name, "sequence_step": next_step},
                     })
 
-                # Update sequence
                 further_step = next_step + 1
                 next_next_action_at = None
                 next_next_type = None
@@ -316,9 +489,7 @@ class EngagementAgent(BaseAgent):
                     for step in sequence.get("steps", []):
                         if step["step"] == further_step:
                             delay = step.get("delay_days", 3)
-                            next_next_action_at = (
-                                datetime.now(timezone.utc) + timedelta(days=delay)
-                            ).isoformat()
+                            next_next_action_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
                             next_next_type = f"send_{step['channel']}"
                             break
 

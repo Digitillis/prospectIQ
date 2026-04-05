@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import {
   getSequenceTemplates, getSequenceRouting, updateRoutingEntry, provisionInstantlyCampaigns,
-  type SequenceTemplate, type RoutingEntry,
+  duplicateSequenceV2, getSequenceStatsV2,
+  type SequenceTemplate, type RoutingEntry, type SequenceStats,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ type FilterKey = "all" | "templates" | "custom" | "active";
 
 function MySequencesTab() {
   const [sequences, setSequences] = useState<SequenceTemplate[]>([]);
+  const [stats, setStats] = useState<Record<string, SequenceStats>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [duplicating, setDuplicating] = useState<string | null>(null);
@@ -36,7 +38,21 @@ function MySequencesTab() {
     setLoading(true);
     try {
       const res = await getSequenceTemplates();
-      setSequences([...res.custom, ...res.built_in]);
+      const all = [...res.custom, ...res.built_in];
+      setSequences(all);
+      // Load stats for sequences with a UUID id (v2)
+      const statsMap: Record<string, SequenceStats> = {};
+      await Promise.allSettled(
+        all
+          .filter((s) => s.id && s.id.includes("-"))
+          .map(async (s) => {
+            try {
+              const st = await getSequenceStatsV2(s.id!);
+              statsMap[s.id!] = st;
+            } catch { /* ignore individual stat failures */ }
+          })
+      );
+      setStats(statsMap);
     } catch { setSequences([]); }
     finally { setLoading(false); }
   }, []);
@@ -47,10 +63,11 @@ function MySequencesTab() {
     if (!seq.id) return;
     setDuplicating(seq.id);
     try {
-      // TODO: Implement duplicateSequenceV2 in API
-      alert("Duplicate sequence functionality coming soon");
-    } catch { /* noop */ }
-    finally { setDuplicating(null); }
+      await duplicateSequenceV2(seq.id);
+      await load();
+    } catch (e) {
+      console.error("Duplicate failed", e);
+    } finally { setDuplicating(null); }
   };
 
   const FILTER_TABS: { key: FilterKey; label: string }[] = [
@@ -122,6 +139,7 @@ function MySequencesTab() {
             <SequenceCard
               key={seq.name}
               seq={seq}
+              stats={seq.id ? stats[seq.id] : undefined}
               duplicating={duplicating === seq.id}
               onDuplicate={() => handleDuplicate(seq)}
             />
@@ -134,11 +152,12 @@ function MySequencesTab() {
 
 interface SequenceCardProps {
   seq: SequenceTemplate;
+  stats?: SequenceStats;
   duplicating: boolean;
   onDuplicate: () => void;
 }
 
-function SequenceCard({ seq, duplicating, onDuplicate }: SequenceCardProps) {
+function SequenceCard({ seq, stats, duplicating, onDuplicate }: SequenceCardProps) {
   const sourceLabel =
     seq.source === "custom" ? "Custom"
     : (seq.is_template ? "Template" : "Built-in");
@@ -170,7 +189,11 @@ function SequenceCard({ seq, duplicating, onDuplicate }: SequenceCardProps) {
       </p>
 
       <div className="grid grid-cols-3 gap-2 mb-4 text-center text-xs">
-        {[["Enrolled", "—"], ["Open", "—"], ["Reply", "—"]].map(([label, val]) => (
+        {([
+          ["Enrolled", stats ? String(stats.enrolled_count) : "—"],
+          ["Open %",   stats ? `${(stats.open_rate * 100).toFixed(0)}%` : "—"],
+          ["Reply %",  stats ? `${(stats.reply_rate * 100).toFixed(0)}%` : "—"],
+        ] as [string, string][]).map(([label, val]) => (
           <div key={label} className="rounded bg-gray-50 dark:bg-gray-800 p-2">
             <p className="font-semibold text-gray-900 dark:text-gray-100">{val}</p>
             <p className="text-gray-400 dark:text-gray-500">{label}</p>

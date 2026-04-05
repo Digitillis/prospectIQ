@@ -1524,6 +1524,78 @@ export const listActiveEnrollments = (limit = 100) =>
     `/api/sequences/active-enrollments?limit=${limit}`
   );
 
+// Sequence V2 API
+export interface SequenceStepV2 {
+  step_id: string;
+  step_type: "email" | "wait" | "condition" | "linkedin" | "task";
+  step_order: number;
+  subject_template?: string;
+  body_template?: string;
+  wait_days?: number;
+  wait_condition?: string;
+  condition_type?: string;
+  condition_value?: unknown;
+  branch_yes?: string;
+  branch_no?: string;
+  task_description?: string;
+  task_due_offset_days?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SequenceV2 {
+  id: string;
+  name: string;
+  display_name?: string;
+  description?: string;
+  cluster?: string;
+  persona?: string;
+  steps: SequenceStepV2[];
+  is_template: boolean;
+  tags: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SequenceStats {
+  sequence_id: string;
+  enrolled_count: number;
+  active_count: number;
+  completed_count: number;
+  open_rate: number;
+  reply_rate: number;
+  click_rate: number;
+}
+
+export const createSequenceV2 = (data: Omit<SequenceV2, "id" | "created_at" | "updated_at">) =>
+  fetchAPI<{ data: SequenceV2; message: string }>("/api/sequences/v2", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const getSequenceV2 = (id: string) =>
+  fetchAPI<{ data: SequenceV2 }>(`/api/sequences/v2/${id}`);
+
+export const updateSequenceV2 = (id: string, data: Omit<SequenceV2, "id" | "created_at" | "updated_at">) =>
+  fetchAPI<{ data: SequenceV2; message: string }>(`/api/sequences/v2/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+export const duplicateSequenceV2 = (id: string) =>
+  fetchAPI<{ data: SequenceV2; message: string }>(`/api/sequences/v2/${id}/duplicate`, {
+    method: "POST",
+  });
+
+export const getSequenceStatsV2 = (id: string) =>
+  fetchAPI<SequenceStats>(`/api/sequences/v2/${id}/stats`);
+
+export const patchEnrollment = (enrollmentId: string, status: "paused" | "active" | "stopped") =>
+  fetchAPI<{ message: string; status: string }>(`/api/sequences/v2/enrollments/${enrollmentId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+
 // ---------------------------------------------------------------------------
 // Intelligence — signals, funnel, velocity, costs, goals, command center
 // ---------------------------------------------------------------------------
