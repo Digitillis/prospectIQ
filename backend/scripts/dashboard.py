@@ -58,29 +58,38 @@ def fetch_company_stats(db: Database, campaign_name: str | None) -> dict:
 
 def fetch_contact_stats(db: Database, campaign_name: str | None) -> dict:
     """Aggregate contact-level stats."""
-    # Get companies in campaign
-    company_query = db.client.table("companies").select("id")
-    if campaign_name:
-        company_query = company_query.eq("campaign_name", campaign_name)
-    company_ids = [c["id"] for c in company_query.execute().data]
-
-    if not company_ids:
-        return {
-            "total": 0,
-            "enriched": 0,
-            "needs_enrichment": 0,
-            "failed": 0,
-            "stale": 0,
-            "ready_to_send": 0,
-            "missing_email": 0,
-            "missing_phone": 0,
-            "avg_score": 0,
-        }
-
-    contacts_result = db.client.table("contacts").select(
+    contacts_query = db.client.table("contacts").select(
         "id, enrichment_status, completeness_score, email, phone"
-    ).in_("company_id", company_ids).execute()
-    contacts = contacts_result.data
+    )
+
+    if campaign_name:
+        # Filter by campaign via company join — only fetch IDs for the specific campaign
+        company_ids = [
+            c["id"] for c in db.client.table("companies")
+            .select("id")
+            .eq("campaign_name", campaign_name)
+            .execute().data
+        ]
+        if not company_ids:
+            return {
+                "total": 0,
+                "enriched": 0,
+                "needs_enrichment": 0,
+                "failed": 0,
+                "stale": 0,
+                "ready_to_send": 0,
+                "missing_email": 0,
+                "missing_phone": 0,
+                "avg_score": 0,
+            }
+        # Chunk to avoid URL length limits (PostgREST ~2000 char limit)
+        contacts = []
+        chunk_size = 100
+        for i in range(0, len(company_ids), chunk_size):
+            chunk = company_ids[i:i + chunk_size]
+            contacts += contacts_query.in_("company_id", chunk).execute().data
+    else:
+        contacts = contacts_query.execute().data
 
     total = len(contacts)
     enriched = sum(1 for c in contacts if c.get("enrichment_status") == "enriched" or (c.get("completeness_score") or 0) >= 60)

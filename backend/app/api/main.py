@@ -101,11 +101,26 @@ def _run_health_snapshot() -> None:
 
 
 def _run_send_approved() -> None:
-    """Every-30-min job: push approved drafts to Instantly (gated by SEND_ENABLED)."""
+    """Every-30-min job: push approved drafts to Instantly (gated by SEND_ENABLED + send window)."""
     try:
         from backend.app.core.config import get_settings
-        if not get_settings().send_enabled:
+        settings = get_settings()
+        if not settings.send_enabled:
             return  # Silently skip — warm-up not complete yet
+        # Optional send window (local time). Both must be non-zero to activate.
+        if settings.send_window_start or settings.send_window_end:
+            from datetime import datetime
+            now = datetime.now()
+            # Weekdays only (Monday=0 … Friday=4)
+            if now.weekday() >= 5:
+                logger.debug("Weekend — skipping send_approved")
+                return
+            if not (settings.send_window_start <= now.hour < settings.send_window_end):
+                logger.debug(
+                    f"Outside send window ({settings.send_window_start}:00–"
+                    f"{settings.send_window_end}:00), skipping send_approved"
+                )
+                return
         from backend.app.agents.engagement import EngagementAgent
         agent = EngagementAgent()
         agent.run(action="send_approved")
