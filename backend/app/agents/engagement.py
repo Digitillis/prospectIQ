@@ -41,7 +41,7 @@ class EngagementAgent(BaseAgent):
 
         Args:
             action: One of:
-                - "send_approved": Send all approved outreach drafts via Instantly
+                - "send_approved": Send all approved outreach drafts via Resend
                 - "process_due": Process sequences with due follow-ups
                 - "check_status": Check and log campaign analytics
             campaign_name: Instantly campaign name (created if not exists).
