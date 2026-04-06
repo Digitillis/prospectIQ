@@ -27,6 +27,7 @@ import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
 export default function ApprovalsPage() {
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
+  const [totalPending, setTotalPending] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -90,6 +91,7 @@ export default function ApprovalsPage() {
         (a, b) => (b.companies?.pqs_total ?? 0) - (a.companies?.pqs_total ?? 0)
       );
       setDrafts(sorted);
+      setTotalPending(res.total_pending ?? res.count ?? sorted.length);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load drafts");
@@ -258,7 +260,7 @@ export default function ApprovalsPage() {
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Approval Queue</h2>
           <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-500">
-            {drafts.length} pending
+            {drafts.length}{totalPending > drafts.length ? ` of ${totalPending}` : ""} pending
           </span>
         </div>
       </div>

@@ -74,7 +74,7 @@ async def list_sent_emails(
 
 
 @router.get("/")
-async def list_pending_drafts(limit: int = 50):
+async def list_pending_drafts(limit: int = 200):
     """Get pending outreach drafts with company/contact info and quality scores."""
     db = get_db()
     drafts = db.get_pending_drafts(limit=limit)
@@ -98,7 +98,20 @@ async def list_pending_drafts(limit: int = 50):
             for i in report.issues
         ]
 
-    return {"data": drafts, "count": len(drafts)}
+    # Get total pending count (unaffected by limit) for the UI to display
+    try:
+        total_result = (
+            db._filter_ws(
+                db.client.table("outreach_drafts").select("id", count="exact")
+            )
+            .eq("approval_status", "pending")
+            .execute()
+        )
+        total_pending = total_result.count or len(drafts)
+    except Exception:
+        total_pending = len(drafts)
+
+    return {"data": drafts, "count": len(drafts), "total_pending": total_pending}
 
 
 @router.post("/{draft_id}/approve")
