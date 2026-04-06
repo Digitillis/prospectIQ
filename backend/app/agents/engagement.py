@@ -125,11 +125,15 @@ class EngagementAgent(BaseAgent):
 
         console.print(f"[cyan]Sending {len(drafts)} approved drafts via Resend...[/cyan]")
 
+        # Track companies sent in this batch to prevent same-run multi-contact collision
+        company_ids_sent_this_batch: set[str] = set()
+
         for draft in drafts:
             contact = draft.get("contacts", {}) or {}
             company = draft.get("companies", {}) or {}
             company_name = company.get("name", "Unknown")
             contact_email = contact.get("email")
+            company_id = draft["company_id"]
 
             if not contact_email:
                 console.print(f"  [yellow]{company_name}: No email for contact. Skipping.[/yellow]")
@@ -139,10 +143,27 @@ class EngagementAgent(BaseAgent):
             # Suppression check before sending
             from backend.app.core.suppression import is_suppressed
             suppressed, reason = is_suppressed(
-                self.db, draft["company_id"], draft.get("contact_id")
+                self.db, company_id, draft.get("contact_id")
             )
             if suppressed:
                 console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping.[/dim]")
+                result.skipped += 1
+                continue
+
+            # Company-level send lock — two guards:
+            # 1. In-batch: already sent another contact at this company in this run
+            # 2. Cross-run: another contact at this company was emailed in the last 24h
+            if company_id in company_ids_sent_this_batch:
+                console.print(f"  [dim]{company_name}: already sent to another contact this batch. Skipping.[/dim]")
+                result.skipped += 1
+                continue
+
+            from backend.app.core.channel_coordinator import is_company_locked
+            locked, lock_reason = is_company_locked(
+                self.db, company_id, exclude_contact_id=draft.get("contact_id")
+            )
+            if locked:
+                console.print(f"  [dim]{company_name}: company locked ({lock_reason}). Skipping.[/dim]")
                 result.skipped += 1
                 continue
 
@@ -151,7 +172,7 @@ class EngagementAgent(BaseAgent):
 
             try:
                 from backend.app.utils.email_html import plain_to_html
-                resend.Emails.send({
+                send_response = resend.Emails.send({
                     "from": _from_display,
                     "to": [contact_email],
                     "subject": subject,
@@ -159,9 +180,15 @@ class EngagementAgent(BaseAgent):
                     "text": body,
                 })
 
-                # Mark draft as sent
+                # Mark draft as sent, store Resend message ID for webhook correlation
                 now = datetime.now(timezone.utc).isoformat()
-                self.db.update_outreach_draft(draft["id"], {"sent_at": now})
+                resend_id = getattr(send_response, "id", None) or (
+                    send_response.get("id") if isinstance(send_response, dict) else None
+                )
+                sent_update = {"sent_at": now}
+                if resend_id:
+                    sent_update["resend_message_id"] = resend_id
+                self.db.update_outreach_draft(draft["id"], sent_update)
 
                 # Log interaction
                 self.db.insert_interaction({
@@ -214,6 +241,7 @@ class EngagementAgent(BaseAgent):
                     "started_at": now,
                 })
 
+                company_ids_sent_this_batch.add(company_id)
                 console.print(f"  [green]{company_name} → {contact_email}: Sent[/green]")
                 result.processed += 1
                 result.add_detail(company_name, "sent", f"To: {contact_email}")

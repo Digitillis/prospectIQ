@@ -25,6 +25,7 @@ import {
   Inbox,
   Sparkles,
   Mic2,
+  Linkedin,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -149,6 +150,7 @@ export function Sidebar() {
       items: [
         { label: "Sequences", href: "/sequences", icon: GitBranch },
         { label: "Seq. Timeline", href: "/sequences/timeline", icon: GitBranch },
+        { label: "LinkedIn", href: "/linkedin", icon: Linkedin },
         { label: "Multi-Thread", href: "/multi-thread", icon: GitBranch },
         { label: "Outreach Hub", href: "/outreach", icon: Send },
         { label: "Content", href: "/content", icon: PenTool },
@@ -167,6 +169,7 @@ export function Sidebar() {
     {
       title: "SYSTEM",
       items: [
+        { label: "Run Pipeline", href: "/actions", icon: Zap },
         { label: "Enrichment", href: "/enrichment", icon: UserPlus },
         { label: "Automations", href: "/automations", icon: Zap },
         { label: "Approvals", href: "/approvals", icon: CheckCircle2 },

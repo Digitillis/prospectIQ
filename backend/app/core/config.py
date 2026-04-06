@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 
     # Resend
     resend_api_key: str = ""
+    resend_webhook_secret: str = ""  # Set in Resend dashboard → Webhooks → Signing Secret
 
     # Webhook
     webhook_secret: str = ""

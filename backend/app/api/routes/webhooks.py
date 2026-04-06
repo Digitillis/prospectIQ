@@ -673,6 +673,191 @@ async def instantly_webhook(
 
 
 # ---------------------------------------------------------------------------
+# Resend webhook — email delivery, open, click, bounce, complaint events
+# ---------------------------------------------------------------------------
+
+@router.post("/resend")
+async def resend_webhook(
+    request: Request,
+    secret: Optional[str] = Query(default=None),
+):
+    """Receive delivery events from Resend.
+
+    Configure in Resend dashboard → Webhooks → add endpoint:
+      https://prospectiq-production-4848.up.railway.app/api/webhooks/resend?secret=YOUR_SECRET
+
+    Handled event types:
+      email.delivered   → confirm delivery
+      email.opened      → advance company status to 'engaged', update contact signal
+      email.clicked     → same as opened + higher engagement signal
+      email.bounced     → DNC, pause sequence, mark contact bounced
+      email.complained  → DNC, pause sequence (spam complaint)
+
+    Resend payload shape:
+      {
+        "type": "email.opened",
+        "data": {
+          "email_id": "re_abc123",      ← matches resend_message_id on outreach_drafts
+          "from": "avi@digitillis.io",
+          "to": ["prospect@company.com"],
+          "subject": "...",
+          "created_at": "2026-04-06T..."
+        }
+      }
+    """
+    settings = get_settings()
+
+    # Simple shared-secret validation (same pattern as Instantly webhook)
+    if settings.resend_webhook_secret and secret != settings.resend_webhook_secret:
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+
+    payload: dict[str, Any] = await request.json()
+    event_type: str = (payload.get("type") or "").lower().strip()
+    data: dict[str, Any] = payload.get("data") or {}
+
+    resend_message_id: str = data.get("email_id") or data.get("id") or ""
+    # Resend sends "to" as a list
+    to_field = data.get("to") or []
+    recipient_email: str = to_field[0] if isinstance(to_field, list) and to_field else str(to_field)
+
+    if not event_type:
+        return {"status": "ignored", "reason": "no event type"}
+
+    try:
+        db = _get_db_and_workspace()
+
+        # --- Resolve draft → contact/company ---
+        draft_row: dict | None = None
+        contact_id: str | None = None
+        company_id: str | None = None
+
+        # Primary: look up by resend_message_id stored at send time
+        if resend_message_id:
+            try:
+                r = (
+                    db._filter_ws(
+                        db.client.table("outreach_drafts")
+                        .select("id, company_id, contact_id, sequence_name")
+                    )
+                    .eq("resend_message_id", resend_message_id)
+                    .limit(1)
+                    .execute()
+                )
+                if r.data:
+                    draft_row = r.data[0]
+                    contact_id = draft_row["contact_id"]
+                    company_id = draft_row["company_id"]
+            except Exception as exc:
+                logger.debug("resend_message_id lookup failed: %s", exc)
+
+        # Fallback: look up by recipient email
+        if not contact_id and recipient_email:
+            company_id, contact_id = _lookup_company_contact(db, recipient_email)
+
+        if not contact_id:
+            return {"status": "ignored", "reason": f"no contact found for {recipient_email or resend_message_id}"}
+
+        now_iso = _now_iso()
+
+        # --- Handle each event type ---
+
+        if event_type == "email.delivered":
+            # Confirm delivery — no status change needed, just log
+            return {"status": "processed", "action": "delivered", "contact_id": contact_id}
+
+        elif event_type in ("email.opened", "email.clicked"):
+            action = "opened" if event_type == "email.opened" else "clicked"
+            count_col = "open_count" if action == "opened" else "click_count"
+            time_col = "last_opened_at" if action == "opened" else "last_clicked_at"
+
+            # Increment signal counter on contact
+            try:
+                contact_r = db.client.table("contacts").select(count_col).eq("id", contact_id).limit(1).execute()
+                current = contact_r.data[0].get(count_col, 0) if contact_r.data else 0
+                db.client.table("contacts").update({
+                    count_col: (current or 0) + 1,
+                    time_col: now_iso,
+                }).eq("id", contact_id).execute()
+            except Exception as exc:
+                logger.debug("Signal counter update failed: %s", exc)
+
+            # Advance company status to 'engaged' (guarded — won't downgrade)
+            if company_id:
+                db.update_company(company_id, {"status": "engaged"})
+
+            # Update campaign_thread status
+            try:
+                thread = _find_thread(db, contact_id, company_id)
+                if thread:
+                    db.client.table("campaign_threads").update({
+                        "status": "opened" if action == "opened" else "clicked",
+                        "last_opened_at": now_iso,
+                    }).eq("id", thread["id"]).execute()
+            except Exception as exc:
+                logger.debug("Thread update failed: %s", exc)
+
+            # Log as an interaction
+            try:
+                db.insert_interaction({
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "type": f"email_{action}",
+                    "channel": "email",
+                    "source": "resend_webhook",
+                    "metadata": {
+                        "resend_message_id": resend_message_id,
+                        "subject": data.get("subject"),
+                    },
+                })
+            except Exception:
+                pass
+
+            return {"status": "processed", "action": action, "contact_id": contact_id, "company_id": company_id}
+
+        elif event_type in ("email.bounced", "email.complained"):
+            action = "bounced" if event_type == "email.bounced" else "complained"
+            dnc_reason = "bounced" if action == "bounced" else "spam_complaint"
+
+            try:
+                db.update_contact(contact_id, {"outreach_state": action})
+                if company_id:
+                    db.update_company(company_id, {"status": "bounced"}, allow_downgrade=True)
+                if recipient_email:
+                    db.add_to_dnc(recipient_email, reason=dnc_reason, added_by="resend_webhook")
+
+                # Pause active engagement sequences for this contact
+                active_seqs = (
+                    db.client.table("engagement_sequences")
+                    .select("id")
+                    .eq("contact_id", contact_id)
+                    .in_("status", ["active", "paused"])
+                    .execute()
+                )
+                for seq in (active_seqs.data or []):
+                    db.client.table("engagement_sequences").update({
+                        "status": "cancelled",
+                        "updated_at": now_iso,
+                    }).eq("id", seq["id"]).execute()
+
+                # Update thread
+                thread = _find_thread(db, contact_id, company_id)
+                if thread:
+                    db.client.table("campaign_threads").update({"status": action}).eq("id", thread["id"]).execute()
+
+            except Exception as exc:
+                logger.error("Bounce/complaint handling failed: %s", exc)
+
+            return {"status": "processed", "action": action, "contact_id": contact_id}
+
+        else:
+            return {"status": "ignored", "reason": f"unhandled event type: {event_type}"}
+
+    except Exception as exc:
+        logger.error("Resend webhook error for %s: %s", event_type, exc, exc_info=True)
+        return {"status": "error", "reason": str(exc)[:200]}
+
+
+# ---------------------------------------------------------------------------
 # Trigify webhook — competitor engagement signals
 # ---------------------------------------------------------------------------
 
