@@ -213,9 +213,23 @@ async def lifespan(app: FastAPI):
     """Start background scheduler on startup, shut down gracefully."""
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
+        from backend.app.core.config import get_settings as _get_settings
+        _sched_settings = _get_settings()
         scheduler = BackgroundScheduler()
         scheduler.add_job(_run_health_snapshot, "interval", minutes=15, id="health_snapshot")
-        scheduler.add_job(_run_send_approved, "interval", minutes=30, id="send_approved")
+        # Fire at :00 and :30 of every hour inside the send window (weekdays only).
+        # SEND_WINDOW_START / SEND_WINDOW_END are UTC hours (e.g. 13–16 = 8–11am CDT).
+        # _run_send_approved still enforces the window as a secondary safety net.
+        _ws = _sched_settings.send_window_start or 0
+        _we = (_sched_settings.send_window_end - 1) if _sched_settings.send_window_end else 23
+        scheduler.add_job(
+            _run_send_approved,
+            "cron",
+            day_of_week="mon-fri",
+            hour=f"{_ws}-{_we}",
+            minute="0,30",
+            id="send_approved",
+        )
         scheduler.add_job(_run_process_due_sequences, "interval", hours=1, id="process_due")
         scheduler.add_job(_run_poll_instantly, "interval", hours=6, id="poll_instantly")
         scheduler.add_job(_run_process_hitl_snoozed, "interval", minutes=15, id="hitl_snoozed")
@@ -223,9 +237,11 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
         scheduler.start()
         logger.info(
-            "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
-            "send_approved every 30m, process_due/hitl_auto_archive every 1h, "
-            "poll_instantly every 6h, personalization_refresh every 24h"
+            f"APScheduler started — health_snapshot/hitl_snoozed every 15m, "
+            f"send_approved at :00/:30 UTC {_ws:02d}:00–{_we+1:02d}:00 Mon–Fri "
+            f"(batch={_sched_settings.batch_size}, daily_limit={_sched_settings.daily_send_limit}), "
+            f"process_due/hitl_auto_archive every 1h, poll_instantly every 6h, "
+            f"personalization_refresh every 24h"
         )
     except ImportError:
         logger.warning("APScheduler not installed — background jobs disabled")
