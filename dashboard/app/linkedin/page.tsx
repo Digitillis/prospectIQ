@@ -711,9 +711,10 @@ export default function LinkedInPage() {
             </button>
           </div>
 
-          {/* Row 1b: Select All */}
+          {/* Row 1b: Selection controls */}
           {!loading && allSelectableContacts.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Select all checkbox */}
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -728,6 +729,34 @@ export default function LinkedInPage() {
                   {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select all"}
                 </span>
               </label>
+
+              {/* Select top N dropdown */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-gray-400 dark:text-gray-500">Select top</span>
+                {[10, 20, 30, 50].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      const ids = allSelectableContacts.slice(0, n).map((c) => c.id);
+                      setSelectedIds(new Set(ids));
+                    }}
+                    className="rounded px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+
+              {/* Quick action: open selected tabs inline (visible even before batch bar) */}
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={openSelectedTabs}
+                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open {selectedIds.size} tab{selectedIds.size !== 1 ? "s" : ""}
+                </button>
+              )}
             </div>
           )}
 
