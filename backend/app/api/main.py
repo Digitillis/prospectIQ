@@ -197,6 +197,170 @@ def _run_jit_pregenerate() -> None:
         logger.error(f"Scheduled jit_pregenerate failed: {e}")
 
 
+def _run_gmail_intake() -> None:
+    """Every-30-min job: poll Gmail IMAP for reply emails to avi@digitillis.io."""
+    try:
+        from backend.app.core.config import get_settings
+        from backend.app.core.database import Database
+        from backend.app.integrations.gmail_imap import GmailImapClient, _classify_intent
+        from datetime import datetime, timezone, timedelta
+
+        settings = get_settings()
+        if not settings.gmail_user or not settings.gmail_app_password:
+            return  # Not configured — skip silently
+
+        db = Database()
+        processed = 0
+        skipped = 0
+
+        with GmailImapClient(settings.gmail_user, settings.gmail_app_password) as gmail:
+            replies = gmail.fetch_unseen_replies()
+            if not replies:
+                return
+
+            for reply in replies:
+                from_email = reply["from_email"]
+                subject = reply["subject"]
+                body = reply["body"]
+                received_at = reply["received_at"]
+
+                # Match to outreach_draft by stripping "Re: " prefix and looking up subject
+                clean_subject = subject.strip()
+                if clean_subject.lower().startswith("re:"):
+                    clean_subject = clean_subject[3:].strip()
+
+                # Try to find matching draft by subject + sender email
+                match = (
+                    db.client.table("outreach_drafts")
+                    .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
+                    .ilike("subject", clean_subject)
+                    .not_.is_("sent_at", "null")
+                    .limit(1)
+                    .execute()
+                ).data
+
+                # Fallback: match by contact email
+                if not match:
+                    contact_row = (
+                        db.client.table("contacts")
+                        .select("id, company_id")
+                        .eq("email", from_email)
+                        .limit(1)
+                        .execute()
+                    ).data
+                    if contact_row:
+                        match = (
+                            db.client.table("outreach_drafts")
+                            .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
+                            .eq("contact_id", contact_row[0]["id"])
+                            .not_.is_("sent_at", "null")
+                            .order("sent_at", desc=True)
+                            .limit(1)
+                            .execute()
+                        ).data
+
+                if not match:
+                    logger.debug(f"Gmail intake: no draft match for reply from {from_email} re: {subject!r}")
+                    gmail.mark_as_read(reply["uid"])
+                    skipped += 1
+                    continue
+
+                draft = match[0]
+                company_id = draft["company_id"]
+                contact_id = draft["contact_id"]
+                workspace_id = draft.get("workspace_id", "00000000-0000-0000-0000-000000000001")
+
+                # Dedup: skip if already logged this message (same from_email + received_at)
+                existing = (
+                    db.client.table("thread_messages")
+                    .select("id")
+                    .eq("contact_id", contact_id)
+                    .eq("direction", "inbound")
+                    .gte("created_at", (
+                        datetime.fromisoformat(received_at.replace("Z", "+00:00")) - timedelta(minutes=5)
+                    ).isoformat())
+                    .limit(1)
+                    .execute()
+                ).data
+                if existing:
+                    gmail.mark_as_read(reply["uid"])
+                    skipped += 1
+                    continue
+
+                intent = _classify_intent(body, subject)
+
+                # Insert thread_message
+                try:
+                    db.client.table("thread_messages").insert({
+                        "company_id": company_id,
+                        "contact_id": contact_id,
+                        "direction": "inbound",
+                        "body": body[:4000],
+                        "subject": subject,
+                        "classification": intent,
+                        "source": "gmail_imap",
+                        "workspace_id": workspace_id,
+                    }).execute()
+                except Exception as e:
+                    logger.warning(f"Gmail intake: thread_message insert failed: {e}")
+
+                # Insert interaction
+                try:
+                    db.client.table("interactions").insert({
+                        "company_id": company_id,
+                        "contact_id": contact_id,
+                        "type": "email_replied",
+                        "channel": "email",
+                        "subject": subject,
+                        "body": body[:4000],
+                        "source": "gmail_imap",
+                        "metadata": {"intent": intent, "from": from_email},
+                        "workspace_id": workspace_id,
+                    }).execute()
+                except Exception as e:
+                    logger.warning(f"Gmail intake: interaction insert failed: {e}")
+
+                # Update campaign_threads if exists
+                try:
+                    db.client.table("campaign_threads").update({
+                        "status": "replied",
+                        "last_replied_at": received_at,
+                    }).eq("contact_id", contact_id).execute()
+                except Exception as e:
+                    logger.warning(f"Gmail intake: campaign_threads update failed: {e}")
+
+                # Update engagement_sequence based on intent
+                try:
+                    if intent == "not_interested":
+                        db.client.table("engagement_sequences").update({
+                            "status": "paused",
+                        }).eq("contact_id", contact_id).eq("status", "active").execute()
+                    elif intent == "interested":
+                        from datetime import timedelta
+                        expedite_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+                        db.client.table("engagement_sequences").update({
+                            "next_action_at": expedite_at,
+                        }).eq("contact_id", contact_id).eq("status", "active").execute()
+                    elif intent == "ooo":
+                        # Delay next step by 7 days
+                        delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+                        db.client.table("engagement_sequences").update({
+                            "next_action_at": delay_at,
+                        }).eq("contact_id", contact_id).eq("status", "active").execute()
+                except Exception as e:
+                    logger.warning(f"Gmail intake: sequence update failed: {e}")
+
+                gmail.mark_as_read(reply["uid"])
+                processed += 1
+                logger.info(f"Gmail intake: processed reply from {from_email} (intent={intent})")
+
+        if processed or skipped:
+            logger.info(f"Gmail intake: {processed} processed, {skipped} skipped/unmatched")
+
+    except Exception as e:
+        logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
+
+
 def _run_auto_action_low_priority() -> None:
     """Hourly job: auto-archive soft_no items pending for >72 hours."""
     try:
@@ -233,10 +397,11 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_auto_action_low_priority, "interval", hours=1, id="hitl_auto_archive")
         scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
+        scheduler.add_job(_run_gmail_intake, "interval", minutes=30, id="gmail_intake")
         scheduler.start()
         logger.info(
             "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
-            "send_approved every 30m, process_due/hitl_auto_archive every 1h, "
+            "send_approved/gmail_intake every 30m, process_due/hitl_auto_archive every 1h, "
             "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h"
         )
     except ImportError:
