@@ -132,8 +132,56 @@ class Database:
         result = self.client.table("companies").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
-    def update_company(self, company_id: str, data: dict) -> dict:
-        """Update a company record."""
+    # Status rank — higher rank statuses must never be downgraded by lower ones
+    _COMPANY_STATUS_RANK: dict[str, int] = {
+        "discovered": 1,
+        "researched": 2,
+        "qualified": 3,
+        "outreach_pending": 4,
+        "contacted": 5,
+        "engaged": 6,
+        "meeting_scheduled": 7,
+        "pilot_discussion": 8,
+        "pilot_signed": 9,
+        "active_pilot": 10,
+        "converted": 11,
+        # Terminal statuses — never overwrite
+        "not_interested": 20,
+        "disqualified": 20,
+        "bounced": 20,
+    }
+
+    def update_company(self, company_id: str, data: dict, allow_downgrade: bool = False) -> dict:
+        """Update a company record.
+
+        If `data` contains a 'status' field, the update is only applied if the
+        new status is an advancement (higher rank) over the current status.
+        Pass allow_downgrade=True only for explicit resets (e.g. re-engagement).
+        """
+        new_status = data.get("status")
+        if new_status and not allow_downgrade:
+            # Fetch current status to guard against downgrades
+            try:
+                current = (
+                    self.client.table("companies")
+                    .select("status")
+                    .eq("id", company_id)
+                    .limit(1)
+                    .execute()
+                )
+                if current.data:
+                    cur_status = current.data[0].get("status", "")
+                    cur_rank = self._COMPANY_STATUS_RANK.get(cur_status, 0)
+                    new_rank = self._COMPANY_STATUS_RANK.get(new_status, 0)
+                    if cur_rank >= new_rank:
+                        import logging
+                        logging.getLogger(__name__).debug(
+                            f"update_company: skipping status downgrade {cur_status}→{new_status} for {company_id}"
+                        )
+                        return current.data[0]
+            except Exception:
+                pass  # If check fails, allow the update to proceed
+
         result = (
             self.client.table("companies")
             .update(data)

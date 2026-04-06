@@ -140,7 +140,7 @@ class ReengagementAgent(BaseAgent):
             # This prospect is eligible for re-engagement
             try:
                 # Reset company status to qualified (re-enters outreach pipeline)
-                self.db.update_company(company_id, {"status": "qualified"})
+                self.db.update_company(company_id, {"status": "qualified"}, allow_downgrade=True)
 
                 # Log the re-engagement
                 self.db.insert_interaction({
