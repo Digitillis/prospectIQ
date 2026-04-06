@@ -12,10 +12,13 @@ populated WorkspaceContext via require_workspace_member().
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import urllib.request
 from typing import Any
 
 import jwt
+from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 from fastapi import Depends, HTTPException, Request, status
 
 from backend.app.core.config import get_settings
@@ -26,31 +29,84 @@ logger = logging.getLogger(__name__)
 
 _ALGORITHM = "HS256"
 
+# ---------------------------------------------------------------------------
+# JWKS cache — fetched once per process, supports ES256 and RS256
+# ---------------------------------------------------------------------------
+
+_jwks_public_keys: list[Any] | None = None  # list of (kid, algorithm, key) tuples
+
+
+def _load_jwks() -> list[tuple[str, str, Any]]:
+    """Fetch Supabase JWKS and return list of (kid, alg, public_key) tuples."""
+    global _jwks_public_keys
+    if _jwks_public_keys is not None:
+        return _jwks_public_keys
+
+    settings = get_settings()
+    supabase_url = settings.supabase_url.rstrip("/")
+    jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+    try:
+        with urllib.request.urlopen(jwks_url, timeout=5) as resp:
+            data = json.loads(resp.read())
+        keys = []
+        for jwk in data.get("keys", []):
+            alg = jwk.get("alg", "")
+            kid = jwk.get("kid", "")
+            if alg.startswith("ES"):
+                pub_key = ECAlgorithm.from_jwk(json.dumps(jwk))
+            elif alg.startswith("RS"):
+                pub_key = RSAAlgorithm.from_jwk(json.dumps(jwk))
+            else:
+                continue
+            keys.append((kid, alg, pub_key))
+        _jwks_public_keys = keys
+        logger.info("Loaded %d Supabase JWKS key(s) (algs: %s)", len(keys), [k[1] for k in keys])
+        return _jwks_public_keys
+    except Exception as exc:
+        logger.warning("Failed to load Supabase JWKS: %s — falling back to HS256", exc)
+        return []
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
 def _decode_bearer(token: str) -> dict[str, Any]:
-    """Decode a Supabase JWT.  Returns the full claims dict."""
+    """Decode a Supabase JWT using JWKS (ES256/RS256) or legacy HS256 secret."""
     settings = get_settings()
-    if not settings.supabase_jwt_secret:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SUPABASE_JWT_SECRET is not configured",
-        )
-    try:
-        return jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=[_ALGORITHM],
-            options={"verify_aud": False},  # Supabase sets aud="authenticated"
-        )
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
-    except jwt.PyJWTError as exc:
-        logger.debug("JWT decode failed: %s", exc)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    last_exc: Exception | None = None
+
+    # 1. Try asymmetric keys from JWKS (ES256 / RS256 — Supabase default since 2024)
+    for _kid, alg, pub_key in _load_jwks():
+        try:
+            return jwt.decode(
+                token,
+                pub_key,
+                algorithms=[alg],
+                options={"verify_aud": False},
+            )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+        except jwt.PyJWTError as exc:
+            last_exc = exc
+            continue
+
+    # 2. Fall back to legacy HS256 secret (older Supabase projects)
+    if settings.supabase_jwt_secret:
+        try:
+            return jwt.decode(
+                token,
+                settings.supabase_jwt_secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+        except jwt.PyJWTError as exc:
+            last_exc = exc
+
+    logger.debug("JWT decode failed (all methods): %s", last_exc)
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
 def _lookup_api_key(raw_key: str) -> dict[str, Any] | None:
