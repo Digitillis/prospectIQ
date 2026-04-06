@@ -726,6 +726,47 @@ export const getLinkedInMessages = (params?: Record<string, string>) => {
   );
 };
 
+// All contacts with LinkedIn URL — no draft generation required
+export interface LinkedInContactRaw {
+  contact: {
+    id: string;
+    company_id: string;
+    full_name?: string;
+    first_name?: string;
+    last_name?: string;
+    title?: string;
+    persona_type?: string;
+    is_decision_maker?: boolean;
+    linkedin_url?: string;
+    linkedin_status?: string;
+    linkedin_notes?: string;
+    status?: string;
+    linkedin_connection_sent_at?: string;
+    linkedin_accepted_at?: string;
+    linkedin_dm_sent_at?: string;
+    linkedin_responded_at?: string;
+    linkedin_meeting_booked_at?: string;
+  };
+  company: {
+    id: string;
+    name?: string;
+    tier?: string;
+    sub_sector?: string;
+    pqs_total?: number;
+    domain?: string;
+  };
+}
+
+export const getLinkedInContacts = (params?: Record<string, string>) => {
+  const qs =
+    params && Object.keys(params).length > 0
+      ? "?" + new URLSearchParams(params).toString()
+      : "";
+  return fetchAPI<{ data: LinkedInContactRaw[]; count: number; total: number }>(
+    `/api/companies/linkedin-contacts${qs}`
+  );
+};
+
 export const updateLinkedInStatus = (
   contactId: string,
   status: string,

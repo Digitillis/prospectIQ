@@ -280,6 +280,78 @@ async def get_linkedin_messages(
     return {"data": results, "count": len(results)}
 
 
+@router.get("/linkedin-contacts")
+async def get_linkedin_contacts(
+    status: Optional[str] = None,
+    tier: Optional[str] = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    """Return all contacts with a LinkedIn URL, sorted by company PQS descending.
+
+    No draft generation required — shows every contact ready for manual outreach.
+    Used by the LinkedIn page 'All Contacts' tab.
+    """
+    db = get_db()
+
+    # Fetch contacts with linkedin_url set
+    q = (
+        db._filter_ws(db.client.table("contacts")
+        .select(
+            "id, company_id, full_name, first_name, last_name, title, persona_type, "
+            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, "
+            "created_at, linkedin_connection_sent_at, linkedin_accepted_at, "
+            "linkedin_dm_sent_at, linkedin_responded_at, linkedin_meeting_booked_at"
+        ))
+        .not_.is_("linkedin_url", "null")
+        .neq("linkedin_url", "")
+    )
+
+    if status and status != "all":
+        q = q.eq("linkedin_status", status)
+
+    contacts = q.order("created_at", desc=False).range(offset, offset + limit - 1).execute().data or []
+
+    if not contacts:
+        return {"data": [], "count": 0, "total": 0}
+
+    # Bulk fetch companies
+    company_ids = list({c["company_id"] for c in contacts if c.get("company_id")})
+    companies_result = (
+        db._filter_ws(db.client.table("companies")
+        .select("id, name, tier, sub_sector, pqs_total, domain"))
+        .in_("id", company_ids)
+        .execute()
+    )
+    company_by_id = {c["id"]: c for c in companies_result.data}
+
+    # Apply tier filter + build results sorted by PQS desc
+    results = []
+    for contact in contacts:
+        company = company_by_id.get(contact.get("company_id", ""), {})
+        if tier and tier != "all" and not (company.get("tier", "") or "").startswith(tier):
+            continue
+        results.append({
+            "contact": contact,
+            "company": company,
+        })
+
+    results.sort(key=lambda x: x["company"].get("pqs_total") or 0, reverse=True)
+
+    # Total count query (without pagination)
+    total_q = (
+        db._filter_ws(db.client.table("contacts").select("id", count="exact"))
+        .not_.is_("linkedin_url", "null")
+        .neq("linkedin_url", "")
+    )
+    if status and status != "all":
+        total_q = total_q.eq("linkedin_status", status)
+    total_result = total_q.execute()
+    total = total_result.count or len(results)
+
+    return {"data": results, "count": len(results), "total": total}
+
+
 @router.post("/{contact_id}/linkedin-status")
 async def update_linkedin_status(contact_id: str, body: dict):
     """Update the LinkedIn outreach status for a contact.
