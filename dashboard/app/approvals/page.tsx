@@ -19,8 +19,9 @@ import {
   Loader2,
   Inbox,
   Shuffle,
+  MessageSquareReply,
 } from "lucide-react";
-import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, OutreachDraft, type DraftQualityScore } from "@/lib/api";
+import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, logReply, OutreachDraft, type DraftQualityScore, type LogReplyPayload } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
@@ -39,7 +40,33 @@ export default function ApprovalsPage() {
   const [testSendingId, setTestSendingId] = useState<string | null>(null);
   const [testSendResult, setTestSendResult] = useState<{ id: string; message: string } | null>(null);
   const [qualityScores, setQualityScores] = useState<Record<string, DraftQualityScore>>({});
+  const [replyFormId, setReplyFormId] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState("");
+  const [replyIntent, setReplyIntent] = useState<LogReplyPayload["intent"]>("interested");
+  const [replyNotes, setReplyNotes] = useState("");
+  const [replyLoading, setReplyLoading] = useState<string | null>(null);
+  const [replySuccess, setReplySuccess] = useState<Record<string, string>>({});
   const TEST_EMAIL = "avi@digitillis.com";
+
+  const handleLogReply = async (draft: OutreachDraft) => {
+    if (!replyBody.trim()) return;
+    setReplyLoading(draft.id);
+    try {
+      const res = await logReply(draft.contact_id, {
+        body: replyBody,
+        intent: replyIntent,
+        notes: replyNotes || undefined,
+      });
+      setReplySuccess((prev) => ({ ...prev, [draft.id]: res.intent }));
+      setReplyFormId(null);
+      setReplyBody("");
+      setReplyNotes("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to log reply");
+    } finally {
+      setReplyLoading(null);
+    }
+  };
 
   const handleTestSend = async (id: string) => {
     setTestSendingId(id);
@@ -515,6 +542,25 @@ export default function ApprovalsPage() {
                       )}
                       Send Test to Me
                     </button>
+                    {draft.sent_at && !replySuccess[draft.id] && (
+                      <button
+                        onClick={() => {
+                          setReplyFormId(replyFormId === draft.id ? null : draft.id);
+                          setReplyBody("");
+                          setReplyNotes("");
+                          setReplyIntent("interested");
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                      >
+                        <MessageSquareReply className="h-4 w-4" />
+                        Log Reply
+                      </button>
+                    )}
+                    {replySuccess[draft.id] && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                        ↩ Replied · {replySuccess[draft.id]}
+                      </span>
+                    )}
                   </>
                 )}
                 {testSendResult?.id === draft.id && (
@@ -523,6 +569,53 @@ export default function ApprovalsPage() {
                   </span>
                 )}
               </div>
+              {/* Log Reply inline form */}
+              {replyFormId === draft.id && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+                  <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Log Reply from Prospect</p>
+                  <textarea
+                    value={replyBody}
+                    onChange={(e) => setReplyBody(e.target.value)}
+                    rows={3}
+                    placeholder="Paste the reply text here..."
+                    className="w-full rounded-md border border-amber-200 bg-white p-2.5 text-sm text-gray-700 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                  />
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={replyIntent}
+                      onChange={(e) => setReplyIntent(e.target.value as LogReplyPayload["intent"])}
+                      className="rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none"
+                    >
+                      <option value="interested">Interested</option>
+                      <option value="not_interested">Not Interested</option>
+                      <option value="question">Question</option>
+                      <option value="referral">Referral</option>
+                      <option value="objection">Objection</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={replyNotes}
+                      onChange={(e) => setReplyNotes(e.target.value)}
+                      placeholder="Notes (optional)"
+                      className="flex-1 rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => handleLogReply(draft)}
+                      disabled={!replyBody.trim() || replyLoading === draft.id}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      {replyLoading === draft.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                      Save Reply
+                    </button>
+                    <button
+                      onClick={() => setReplyFormId(null)}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}

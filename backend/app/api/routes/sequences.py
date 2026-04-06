@@ -1112,3 +1112,342 @@ async def get_sequence_stats_v2(sequence_id: str):
         "click_rate": 0.0,
         "conversion_rate": 0.0,
     }
+
+
+# ---------------------------------------------------------------------------
+# Timeline — GET /api/sequences/v2/timeline
+# ---------------------------------------------------------------------------
+
+@v2_router.get("/timeline")
+async def get_sequence_timeline():
+    """Return all active/paused/completed enrollment rows with per-step due dates.
+
+    Joins engagement_sequences + outreach_drafts (step=1, sent_at) + companies +
+    contacts + thread_messages (latest inbound) to build a full timeline view.
+    """
+    db = get_db()
+
+    # Fetch all enrollments for this workspace
+    enroll_result = (
+        db._filter_ws(
+            db.client.table("engagement_sequences").select(
+                "id, company_id, contact_id, sequence_name, current_step, total_steps, "
+                "status, next_action_at, next_action_type, created_at"
+            )
+        )
+        .execute()
+    )
+    enrollments = enroll_result.data or []
+    if not enrollments:
+        return {"data": [], "total": 0}
+
+    company_ids = list({e["company_id"] for e in enrollments if e.get("company_id")})
+    contact_ids = list({e["contact_id"] for e in enrollments if e.get("contact_id")})
+
+    # Batch-fetch companies
+    companies_map: dict[str, dict] = {}
+    if company_ids:
+        comp_result = (
+            db.client.table("companies")
+            .select("id, name")
+            .in_("id", company_ids)
+            .execute()
+        )
+        companies_map = {c["id"]: c for c in (comp_result.data or [])}
+
+    # Batch-fetch contacts
+    contacts_map: dict[str, dict] = {}
+    if contact_ids:
+        cont_result = (
+            db.client.table("contacts")
+            .select("id, full_name, email, persona_type")
+            .in_("id", contact_ids)
+            .execute()
+        )
+        contacts_map = {c["id"]: c for c in (cont_result.data or [])}
+
+    # Batch-fetch step-1 sent_at from outreach_drafts
+    step1_map: dict[str, str] = {}  # contact_id -> sent_at
+    if contact_ids:
+        drafts_result = (
+            db._filter_ws(
+                db.client.table("outreach_drafts").select("contact_id, sent_at")
+            )
+            .eq("sequence_step", 1)
+            .not_.is_("sent_at", "null")
+            .in_("contact_id", contact_ids)
+            .execute()
+        )
+        for d in (drafts_result.data or []):
+            if d["contact_id"] not in step1_map:
+                step1_map[d["contact_id"]] = d["sent_at"]
+
+    # Batch-fetch latest inbound thread_messages per contact
+    reply_map: dict[str, dict] = {}  # contact_id -> latest inbound
+    if contact_ids:
+        try:
+            thread_result = (
+                db.client.table("thread_messages")
+                .select("contact_id, body, classification, created_at")
+                .eq("direction", "inbound")
+                .in_("contact_id", contact_ids)
+                .order("created_at", desc=True)
+                .execute()
+            )
+            for msg in (thread_result.data or []):
+                cid = msg.get("contact_id")
+                if cid and cid not in reply_map:
+                    reply_map[cid] = msg
+        except Exception:
+            pass  # thread_messages may not have contact_id FK — degrade gracefully
+
+    # Load sequence step delays from YAML to compute per-step due dates
+    from backend.app.core.config import get_sequences_config
+    sequences_config = get_sequences_config()
+    step_delays_by_seq: dict[str, dict[int, int]] = {}
+    for seq_name, seq_def in sequences_config.get("sequences", {}).items():
+        delays: dict[int, int] = {}
+        for step in seq_def.get("steps", []):
+            delays[step["step"]] = step.get("delay_days", 0)
+        step_delays_by_seq[seq_name] = delays
+
+    from datetime import timedelta
+
+    rows = []
+    for e in enrollments:
+        contact_id = e.get("contact_id", "")
+        company_id = e.get("company_id", "")
+        company = companies_map.get(company_id, {})
+        contact = contacts_map.get(contact_id, {})
+        reply = reply_map.get(contact_id)
+
+        step1_sent_at = step1_map.get(contact_id)
+        total_steps = e.get("total_steps", 4)
+        seq_name = e.get("sequence_name", "")
+        delays = step_delays_by_seq.get(seq_name, {})
+
+        step_due_dates: dict[str, str | None] = {}
+        if step1_sent_at:
+            try:
+                base = datetime.fromisoformat(step1_sent_at.replace("Z", "+00:00"))
+                for step_num in range(1, total_steps + 1):
+                    delay = delays.get(step_num, 0)
+                    due = base + timedelta(days=delay)
+                    step_due_dates[f"step{step_num}_due_at"] = due.isoformat()
+            except Exception:
+                pass
+
+        rows.append({
+            "enrollment_id": e["id"],
+            "company_id": company_id,
+            "company_name": company.get("name"),
+            "contact_id": contact_id,
+            "contact_name": contact.get("full_name"),
+            "contact_email": contact.get("email"),
+            "persona_type": contact.get("persona_type"),
+            "sequence_name": seq_name,
+            "current_step": e.get("current_step"),
+            "total_steps": total_steps,
+            "status": e.get("status"),
+            "next_action_at": e.get("next_action_at"),
+            "next_action_type": e.get("next_action_type"),
+            "step1_sent_at": step1_sent_at,
+            **step_due_dates,
+            "reply_received": reply is not None,
+            "reply_intent": reply.get("classification") if reply else None,
+            "reply_body_preview": (reply.get("body", "")[:120] if reply else None),
+        })
+
+    return {"data": rows, "total": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# Log Reply — POST /api/sequences/v2/contacts/{contact_id}/reply
+# ---------------------------------------------------------------------------
+
+class LogReplyRequest(BaseModel):
+    body: str
+    intent: str  # interested | not_interested | question | referral | objection
+    notes: Optional[str] = None
+    sequence_enrollment_id: Optional[str] = None
+
+
+@v2_router.post("/contacts/{contact_id}/reply")
+async def log_reply(contact_id: str, body: LogReplyRequest):
+    """Log a reply received from a prospect.
+
+    - Inserts into interactions (type=email_replied, direction inbound via metadata)
+    - Inserts into thread_messages (direction=inbound)
+    - Updates campaign_threads.status = replied, last_replied_at = now
+    - If intent=not_interested → pauses engagement_sequences
+    - If intent=interested → advances next_action_at to now+1d
+    """
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Upsert interaction record
+    try:
+        db._filter_ws(
+            db.client.table("interactions").insert(db._inject_ws({
+                "contact_id": contact_id,
+                "type": "email_replied",
+                "body": body.body,
+                "source": "manual",
+                "metadata": {"direction": "inbound", "intent": body.intent, "notes": body.notes},
+                "created_at": now,
+            }))
+        ).execute()
+    except Exception as e:
+        logger.warning(f"log_reply: failed to insert interaction: {e}")
+
+    # Insert thread_messages inbound row
+    # Look up campaign_thread for this contact
+    thread_id: str | None = None
+    try:
+        thread_result = (
+            db._filter_ws(
+                db.client.table("campaign_threads").select("id")
+            )
+            .eq("contact_id", contact_id)
+            .limit(1)
+            .execute()
+        )
+        if thread_result.data:
+            thread_id = thread_result.data[0]["id"]
+    except Exception:
+        pass
+
+    if thread_id:
+        try:
+            db.client.table("thread_messages").insert({
+                "thread_id": thread_id,
+                "contact_id": contact_id,
+                "direction": "inbound",
+                "body": body.body,
+                "classification": body.intent,
+                "source": "manual",
+                "created_at": now,
+            }).execute()
+        except Exception as e:
+            logger.warning(f"log_reply: failed to insert thread_messages: {e}")
+
+        # Update campaign_threads status
+        try:
+            db.client.table("campaign_threads").update({
+                "status": "replied",
+                "last_replied_at": now,
+            }).eq("id", thread_id).execute()
+        except Exception as e:
+            logger.warning(f"log_reply: failed to update campaign_threads: {e}")
+
+    # Update engagement_sequences based on intent
+    enrollment_id = body.sequence_enrollment_id
+    try:
+        query = db._filter_ws(
+            db.client.table("engagement_sequences").select("id, status")
+        ).eq("contact_id", contact_id)
+        if enrollment_id:
+            query = query.eq("id", enrollment_id)
+        enroll_result = query.limit(1).execute()
+        enrollment = enroll_result.data[0] if enroll_result.data else None
+
+        if enrollment:
+            eid = enrollment["id"]
+            if body.intent in ("not_interested", "unsubscribe"):
+                db.client.table("engagement_sequences").update({
+                    "status": "paused",
+                    "updated_at": now,
+                }).eq("id", eid).execute()
+                new_status = "paused"
+            elif body.intent == "interested":
+                from datetime import timedelta
+                next_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+                db.client.table("engagement_sequences").update({
+                    "next_action_at": next_at,
+                    "updated_at": now,
+                }).eq("id", eid).execute()
+                new_status = "active (expedited)"
+            else:
+                new_status = enrollment["status"]
+        else:
+            eid = None
+            new_status = "no enrollment found"
+    except Exception as e:
+        logger.warning(f"log_reply: failed to update engagement_sequences: {e}")
+        eid = None
+        new_status = "update failed"
+
+    return {
+        "message": "Reply logged",
+        "contact_id": contact_id,
+        "intent": body.intent,
+        "enrollment_id": eid,
+        "enrollment_status": new_status,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Reschedule Step — PATCH /api/sequences/v2/enrollments/{enrollment_id}/schedule
+# ---------------------------------------------------------------------------
+
+class RescheduleStepRequest(BaseModel):
+    step: int
+    new_date: str  # ISO datetime string
+
+
+@v2_router.patch("/enrollments/{enrollment_id}/schedule")
+async def reschedule_step(enrollment_id: str, body: RescheduleStepRequest):
+    """Reschedule a specific step for an enrollment by updating next_action_at.
+
+    Only updates if the enrollment's current_step matches the requested step
+    (i.e., the step hasn't been sent yet). For steps that have already passed,
+    returns a 400 with context.
+    """
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Fetch enrollment
+    result = (
+        db._filter_ws(
+            db.client.table("engagement_sequences").select(
+                "id, current_step, total_steps, status, next_action_at"
+            )
+        )
+        .eq("id", enrollment_id)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Enrollment {enrollment_id} not found")
+
+    enrollment = result.data[0]
+    current_step = enrollment.get("current_step", 1)
+
+    if body.step < current_step:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Step {body.step} has already been sent (current step is {current_step}). Cannot reschedule past steps."
+        )
+
+    if body.step != current_step + 1 and body.step != current_step:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Can only reschedule the next pending step. Current step: {current_step}, requested: {body.step}."
+        )
+
+    try:
+        new_dt = datetime.fromisoformat(body.new_date.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {body.new_date}")
+
+    db.client.table("engagement_sequences").update({
+        "next_action_at": new_dt.isoformat(),
+        "updated_at": now,
+    }).eq("id", enrollment_id).execute()
+
+    return {
+        "message": f"Step {body.step} rescheduled",
+        "enrollment_id": enrollment_id,
+        "step": body.step,
+        "new_next_action_at": new_dt.isoformat(),
+    }

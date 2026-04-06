@@ -1597,6 +1597,56 @@ export const patchEnrollment = (enrollmentId: string, status: "paused" | "active
   });
 
 // ---------------------------------------------------------------------------
+// Sequence Timeline + Reply Intake
+// ---------------------------------------------------------------------------
+
+export interface TimelineRow {
+  enrollment_id: string;
+  company_id: string;
+  company_name: string | null;
+  contact_id: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  persona_type: string | null;
+  sequence_name: string;
+  current_step: number;
+  total_steps: number;
+  status: string;
+  next_action_at: string | null;
+  next_action_type: string | null;
+  step1_sent_at: string | null;
+  step1_due_at?: string;
+  step2_due_at?: string;
+  step3_due_at?: string;
+  step4_due_at?: string;
+  reply_received: boolean;
+  reply_intent: string | null;
+  reply_body_preview: string | null;
+}
+
+export const getSequenceTimeline = () =>
+  fetchAPI<{ data: TimelineRow[]; total: number }>("/api/sequences/v2/timeline");
+
+export interface LogReplyPayload {
+  body: string;
+  intent: "interested" | "not_interested" | "question" | "referral" | "objection";
+  notes?: string;
+  sequence_enrollment_id?: string;
+}
+
+export const logReply = (contactId: string, payload: LogReplyPayload) =>
+  fetchAPI<{ message: string; contact_id: string; intent: string; enrollment_status: string }>(
+    `/api/sequences/v2/contacts/${contactId}/reply`,
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+
+export const rescheduleStep = (enrollmentId: string, step: number, newDate: string) =>
+  fetchAPI<{ message: string; enrollment_id: string; step: number; new_next_action_at: string }>(
+    `/api/sequences/v2/enrollments/${enrollmentId}/schedule`,
+    { method: "PATCH", body: JSON.stringify({ step, new_date: newDate }) }
+  );
+
+// ---------------------------------------------------------------------------
 // Intelligence — signals, funnel, velocity, costs, goals, command center
 // ---------------------------------------------------------------------------
 

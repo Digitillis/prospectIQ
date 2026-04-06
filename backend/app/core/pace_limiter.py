@@ -31,9 +31,9 @@ def _get_dnc(workspace_id: str | None = None) -> DNCRegistry:
 
 # Default daily send limits per campaign type
 CAMPAIGN_DEFAULTS: dict[str, int] = {
-    "tier0-mfg-pdm-roi": 10,
-    "tier0-fb-fsma": 10,
-    "default": 10,
+    "tier0-mfg-pdm-roi": 25,
+    "tier0-fb-fsma": 25,
+    "default": 25,
 }
 
 
