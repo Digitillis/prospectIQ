@@ -597,8 +597,11 @@ export default function LinkedInPage() {
   };
 
   const openSelectedTabs = () => {
-    // Browsers only allow 1 window.open per click — show links panel instead
-    setShowLinksPanel(true);
+    const urls = selectedContacts.map((c) => c.linkedin_url!);
+    if (urls.length === 0) return;
+    // Open all synchronously within the click handler — works now popup blocker is off
+    urls.forEach((url) => window.open(url, "_blank", "noopener,noreferrer"));
+    setShowLinksPanel(true); // Also show panel so "Mark Connection Sent" is easy to find
   };
 
   const markSelectedConnectionSent = async () => {
