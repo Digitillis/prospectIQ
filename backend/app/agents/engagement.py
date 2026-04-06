@@ -103,6 +103,25 @@ class EngagementAgent(BaseAgent):
         except Exception:
             pass
 
+        # Check how many have already been sent today (UTC date)
+        today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        sent_today_result = (
+            self.db.client.table("outreach_drafts")
+            .select("id", count="exact")
+            .gte("sent_at", f"{today_utc}T00:00:00+00:00")
+            .lt("sent_at", f"{today_utc}T23:59:59+00:00")
+            .execute()
+        )
+        sent_today = sent_today_result.count or 0
+        daily_remaining = settings.daily_send_limit - sent_today
+
+        if daily_remaining <= 0:
+            console.print(
+                f"[yellow]Daily send limit reached ({settings.daily_send_limit}/day). "
+                f"Already sent {sent_today} today. Skipping.[/yellow]"
+            )
+            return result
+
         # Get approved email drafts that haven't been sent yet
         drafts = (
             self.db.client.table("outreach_drafts")
@@ -121,7 +140,13 @@ class EngagementAgent(BaseAgent):
             console.print("[yellow]No approved email drafts to send.[/yellow]")
             return result
 
-        console.print(f"[cyan]Sending {len(drafts)} approved drafts via Resend...[/cyan]")
+        # Apply batch limit, then daily remaining cap
+        batch = drafts[:min(settings.batch_size, daily_remaining)]
+        console.print(
+            f"[cyan]{len(drafts)} approved drafts queued — sending {len(batch)} "
+            f"(batch_size={settings.batch_size}, daily_remaining={daily_remaining})...[/cyan]"
+        )
+        drafts = batch
 
         sent_contact_ids: set[str] = set()
         for draft in drafts:

@@ -48,7 +48,8 @@ class Settings(BaseSettings):
 
     # App settings
     log_level: str = "INFO"
-    batch_size: int = 10
+    batch_size: int = 10          # Max emails to send per scheduler run
+    daily_send_limit: int = 30    # Max emails to send per calendar day (UTC)
 
     # Outreach gating — set SEND_ENABLED=true in .env once mailbox warm-up completes.
     # When false, approved drafts are staged but never pushed to Instantly.
