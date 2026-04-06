@@ -109,8 +109,8 @@ def _run_send_approved() -> None:
             return  # Silently skip — warm-up not complete yet
         # Optional send window (local time). Both must be non-zero to activate.
         if settings.send_window_start or settings.send_window_end:
-            from datetime import datetime
-            now = datetime.now()
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
             # Weekdays only (Monday=0 … Friday=4)
             if now.weekday() >= 5:
                 logger.debug("Weekend — skipping send_approved")

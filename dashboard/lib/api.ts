@@ -140,6 +140,9 @@ export const addNote = (companyId: string, body: string, subject?: string) =>
 export const getPendingDrafts = () =>
   fetchAPI<{ data: OutreachDraft[]; count: number }>("/api/approvals");
 
+export const getApprovedDraftCount = () =>
+  fetchAPI<{ count: number }>("/api/approvals/approved-count");
+
 export const approveDraft = (id: string, editedBody?: string) =>
   fetchAPI(`/api/approvals/${id}/approve`, {
     method: "POST",

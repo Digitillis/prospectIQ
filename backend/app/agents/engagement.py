@@ -123,6 +123,7 @@ class EngagementAgent(BaseAgent):
 
         console.print(f"[cyan]Sending {len(drafts)} approved drafts via Resend...[/cyan]")
 
+        sent_contact_ids: set[str] = set()
         for draft in drafts:
             contact = draft.get("contacts", {}) or {}
             company = draft.get("companies", {}) or {}
@@ -131,6 +132,12 @@ class EngagementAgent(BaseAgent):
 
             if not contact_email:
                 console.print(f"  [yellow]{company_name}: No email for contact. Skipping.[/yellow]")
+                result.skipped += 1
+                continue
+
+            contact_id_key = draft.get("contact_id")
+            if contact_id_key and contact_id_key in sent_contact_ids:
+                console.print(f"  [dim]{company_name}: Duplicate draft for same contact — skipping.[/dim]")
                 result.skipped += 1
                 continue
 
@@ -212,6 +219,8 @@ class EngagementAgent(BaseAgent):
                     "started_at": now,
                 })
 
+                if contact_id_key:
+                    sent_contact_ids.add(contact_id_key)
                 console.print(f"  [green]{company_name} → {contact_email}: Sent[/green]")
                 result.processed += 1
                 result.add_detail(company_name, "sent", f"To: {contact_email}")

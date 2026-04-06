@@ -20,7 +20,7 @@ import {
   Inbox,
   Shuffle,
 } from "lucide-react";
-import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, OutreachDraft, type DraftQualityScore } from "@/lib/api";
+import { getPendingDrafts, getApprovedDraftCount, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, OutreachDraft, type DraftQualityScore } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
@@ -39,6 +39,7 @@ export default function ApprovalsPage() {
   const [testSendingId, setTestSendingId] = useState<string | null>(null);
   const [testSendResult, setTestSendResult] = useState<{ id: string; message: string } | null>(null);
   const [qualityScores, setQualityScores] = useState<Record<string, DraftQualityScore>>({});
+  const [approvedCount, setApprovedCount] = useState<number | null>(null);
   const TEST_EMAIL = "avi@digitillis.com";
 
   const handleTestSend = async (id: string) => {
@@ -73,6 +74,7 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     fetchDrafts();
+    getApprovedDraftCount().then((res) => setApprovedCount(res.count)).catch(() => {});
   }, [fetchDrafts]);
 
   const handleApprove = async (id: string) => {
@@ -84,6 +86,7 @@ export default function ApprovalsPage() {
         return next;
       });
       setFocusedIndex((i) => Math.min(i, drafts.length - 2));
+      getApprovedDraftCount().then((res) => setApprovedCount(res.count)).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to approve");
     } finally {
@@ -233,6 +236,11 @@ export default function ApprovalsPage() {
           <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-500">
             {drafts.length} pending
           </span>
+          {approvedCount !== null && approvedCount > 0 && (
+            <span className="rounded bg-green-100 dark:bg-green-900/30 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
+              {approvedCount} approved &amp; queued
+            </span>
+          )}
         </div>
       </div>
 

@@ -111,13 +111,15 @@ def is_suppressed(
                         days_left = (cooldown_end - datetime.now(timezone.utc)).days
                         return True, f"cooldown:{days_left}d_remaining"
 
-    # 5. Check for duplicate outreach — already has pending/approved draft
+    # 5. Check for duplicate outreach — already has a pending (unreviewed) draft.
+    # Approved drafts are intentionally excluded: they are processed by the send
+    # loop and should not suppress each other.
     if contact_id:
         pending = (
             db.client.table("outreach_drafts")
             .select("id")
             .eq("contact_id", contact_id)
-            .in_("approval_status", ["pending", "approved"])
+            .eq("approval_status", "pending")
             .is_("sent_at", "null")
             .limit(1)
             .execute()

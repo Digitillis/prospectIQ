@@ -35,6 +35,21 @@ class TestEmailRequest(BaseModel):
     test_email: str  # Your email address to receive the test
 
 
+@router.get("/approved-count")
+async def get_approved_count():
+    """Return count of approved-but-unsent drafts queued to send."""
+    db = get_db()
+    result = (
+        db._filter_ws(
+            db.client.table("outreach_drafts").select("id", count="exact")
+        )
+        .in_("approval_status", ["approved", "edited"])
+        .is_("sent_at", "null")
+        .execute()
+    )
+    return {"count": result.count or 0}
+
+
 @router.get("/sent")
 async def list_sent_emails(
     limit: int = 200,
