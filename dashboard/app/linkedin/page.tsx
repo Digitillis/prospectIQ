@@ -599,9 +599,11 @@ export default function LinkedInPage() {
   const openSelectedTabs = () => {
     const urls = selectedContacts.map((c) => c.linkedin_url!);
     if (urls.length === 0) return;
-    // Open all synchronously within the click handler — works now popup blocker is off
-    urls.forEach((url) => window.open(url, "_blank", "noopener,noreferrer"));
-    setShowLinksPanel(true); // Also show panel so "Mark Connection Sent" is easy to find
+    // Stagger opens by 150ms — Chrome allows multiple window.open if spaced out
+    urls.forEach((url, i) => {
+      setTimeout(() => window.open(url, "_blank", "noopener,noreferrer"), i * 150);
+    });
+    setShowLinksPanel(true);
   };
 
   const markSelectedConnectionSent = async () => {
