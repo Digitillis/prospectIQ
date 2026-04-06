@@ -128,7 +128,7 @@ export default function ApprovalsPage() {
 
   const startEditing = (draft: OutreachDraft) => {
     setEditingId(draft.id);
-    setEditBody(draft.body);
+    setEditBody(draft.edited_body || draft.body);
     setRejectingId(null);
     setRejectReason("");
   };
@@ -402,7 +402,7 @@ export default function ApprovalsPage() {
                   />
                 ) : (
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-                    {draft.body}
+                    {draft.edited_body || draft.body}
                   </p>
                 )}
               </div>
