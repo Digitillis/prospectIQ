@@ -53,6 +53,8 @@ class EngagementAgent(BaseAgent):
             return self._send_approved_drafts(campaign_name)
         elif action == "process_due":
             return self._process_due_sequences()
+        elif action == "jit_pregenerate":
+            return self._jit_pregenerate_upcoming()
         elif action == "check_status":
             return self._check_campaign_status()
         elif action == "poll_events":
@@ -458,15 +460,31 @@ class EngagementAgent(BaseAgent):
                 channel = step_config["channel"]
 
                 if channel == "email":
+                    # Check for a prospect reply to inject as context
+                    reply_ctx = self._get_latest_reply_context(seq.get("contact_id"))
+
+                    # Auto-stop sequence if prospect unsubscribed or bounced
+                    if reply_ctx and reply_ctx.get("stop_sequence"):
+                        self.db.update_engagement_sequence(seq["id"], {
+                            "status": "completed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                        })
+                        console.print(f"  [yellow]{company_name}: Sequence stopped ({reply_ctx['reason']})[/yellow]")
+                        result.processed += 1
+                        result.add_detail(company_name, "stopped", reply_ctx["reason"])
+                        continue
+
                     from backend.app.agents.outreach import OutreachAgent
                     outreach = OutreachAgent(batch_id=self.batch_id)
                     outreach_result = outreach.run(
                         company_ids=[seq["company_id"]],
                         sequence_name=seq_name,
                         sequence_step=next_step,
+                        reply_context=reply_ctx.get("context_str") if reply_ctx else None,
                     )
                     if outreach_result.processed > 0:
-                        console.print(f"  [green]{company_name}: Follow-up draft created (step {next_step}, email)[/green]")
+                        label = "reply-aware " if reply_ctx else ""
+                        console.print(f"  [green]{company_name}: {label}Follow-up draft created (step {next_step}, email)[/green]")
                     else:
                         console.print(f"  [yellow]{company_name}: Could not generate follow-up[/yellow]")
 
@@ -509,6 +527,196 @@ class EngagementAgent(BaseAgent):
                 logger.error(f"Error processing sequence for {company_name}: {e}", exc_info=True)
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
+
+        return result
+
+    def _get_latest_reply_context(self, contact_id: str | None) -> dict | None:
+        """Return reply context dict for a contact, or None if no reply exists.
+
+        Returns dict with:
+          - context_str: formatted string to inject into prompt
+          - stop_sequence: True if sequence should stop (unsubscribe/bounce)
+          - reason: human-readable reason for stop
+        """
+        if not contact_id:
+            return None
+        try:
+            result = (
+                self.db.client.table("thread_messages")
+                .select("body, classification, direction, created_at")
+                .eq("direction", "inbound")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            # Filter by contact via campaign_threads join
+            thread_result = (
+                self.db.client.table("campaign_threads")
+                .select("id")
+                .eq("contact_id", contact_id)
+                .execute()
+            )
+            thread_ids = [t["id"] for t in (thread_result.data or [])]
+            if not thread_ids:
+                return None
+
+            msg_result = (
+                self.db.client.table("thread_messages")
+                .select("body, classification, direction, created_at")
+                .in_("thread_id", thread_ids)
+                .eq("direction", "inbound")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if not msg_result.data:
+                return None
+
+            msg = msg_result.data[0]
+            classification = msg.get("classification") or "other"
+            body = msg.get("body", "").strip()
+
+            # Stop sequence for these classifications
+            if classification in ("unsubscribe", "bounce"):
+                return {"stop_sequence": True, "reason": classification, "context_str": None}
+
+            intent_labels = {
+                "interested": "INTERESTED — they want to learn more",
+                "objection": "OBJECTION — they raised a concern",
+                "referral": "REFERRAL — they pointed you to someone else",
+                "soft_no": "NOT INTERESTED RIGHT NOW — not a hard no",
+                "out_of_office": "OUT OF OFFICE — auto-reply",
+                "other": "REPLIED — intent unclear",
+            }
+            intent_label = intent_labels.get(classification, "REPLIED")
+            context_str = (
+                f'Intent: {intent_label}\n'
+                f'Their message: "{body[:600]}"'
+            )
+            return {"stop_sequence": False, "context_str": context_str, "reason": classification}
+
+        except Exception as exc:
+            logger.debug("_get_latest_reply_context failed: %s", exc)
+            return None
+
+    def _jit_pregenerate_upcoming(self) -> AgentResult:
+        """JIT pre-generate: create drafts for sequences due within 3 days.
+
+        Runs daily. For each active sequence where next_action_at is within
+        3 days, generates the follow-up draft NOW so it appears in the approval
+        queue in time. This is the JIT mechanism — drafts are generated just
+        before they're needed, not upfront.
+
+        Respects reply context: if a prospect replied, the draft is generated
+        with that context injected so it can be reviewed and approved.
+        """
+        result = AgentResult()
+        now = datetime.now(timezone.utc)
+        window_end = (now + timedelta(days=3)).isoformat()
+
+        # Get sequences due within 3 days that haven't already generated a pending draft
+        try:
+            seq_result = (
+                self.db._filter_ws(
+                    self.db.client.table("engagement_sequences")
+                    .select("*, companies(name), contacts(full_name, email)")
+                )
+                .eq("status", "active")
+                .lte("next_action_at", window_end)
+                .gte("next_action_at", now.isoformat())
+                .execute()
+            )
+        except Exception as e:
+            logger.error("JIT pregenerate: failed to fetch due sequences: %s", e)
+            result.success = False
+            return result
+
+        sequences = seq_result.data or []
+        if not sequences:
+            console.print("[dim]JIT pregenerate: no sequences due within 3 days[/dim]")
+            return result
+
+        console.print(f"[cyan]JIT pregenerate: {len(sequences)} sequence(s) due within 3 days[/cyan]")
+
+        seq_config = get_sequences_config()
+
+        for seq in sequences:
+            company_id = seq["company_id"]
+            contact_id = seq["contact_id"]
+            seq_name = seq["sequence_name"]
+            current_step = seq.get("current_step", 1)
+            next_step = current_step + 1
+            company = seq.get("companies") or {}
+            contact = seq.get("contacts") or {}
+            company_name = company.get("name", company_id[:8])
+
+            try:
+                # Check if a pending draft already exists for this contact + step
+                existing = (
+                    self.db._filter_ws(
+                        self.db.client.table("outreach_drafts").select("id")
+                    )
+                    .eq("company_id", company_id)
+                    .eq("contact_id", contact_id)
+                    .eq("sequence_step", next_step)
+                    .eq("approval_status", "pending")
+                    .is_("sent_at", "null")
+                    .execute()
+                )
+                if existing.data:
+                    console.print(f"  [dim]{company_name}: Step {next_step} draft already pending — skipping[/dim]")
+                    result.skipped += 1
+                    continue
+
+                # Load the sequence definition to validate the step exists
+                sequence_def = seq_config.get("sequences", {}).get(seq_name, {})
+                step_exists = any(s["step"] == next_step for s in sequence_def.get("steps", []))
+                if not step_exists:
+                    console.print(f"  [dim]{company_name}: No step {next_step} in {seq_name} — sequence complete[/dim]")
+                    self.db.update_engagement_sequence(seq["id"], {
+                        "status": "completed",
+                        "completed_at": now.isoformat(),
+                    })
+                    result.skipped += 1
+                    continue
+
+                # Check for reply context
+                reply_ctx = self._get_latest_reply_context(contact_id)
+                if reply_ctx and reply_ctx.get("stop_sequence"):
+                    self.db.update_engagement_sequence(seq["id"], {
+                        "status": "completed",
+                        "completed_at": now.isoformat(),
+                    })
+                    console.print(f"  [yellow]{company_name}: Stopped ({reply_ctx['reason']})[/yellow]")
+                    result.processed += 1
+                    continue
+
+                # Generate the draft JIT
+                from backend.app.agents.outreach import OutreachAgent
+                outreach = OutreachAgent(batch_id=self.batch_id)
+                outreach_result = outreach.run(
+                    company_ids=[company_id],
+                    sequence_name=seq_name,
+                    sequence_step=next_step,
+                    reply_context=reply_ctx.get("context_str") if reply_ctx else None,
+                )
+
+                if outreach_result.processed > 0:
+                    label = "[reply-aware] " if reply_ctx else ""
+                    due_date = seq["next_action_at"][:10]
+                    console.print(
+                        f"  [green]{company_name}: {label}Step {next_step} draft generated "
+                        f"(due {due_date}) → approval queue[/green]"
+                    )
+                    result.processed += 1
+                    result.add_detail(company_name, f"jit_step_{next_step}", "draft created")
+                else:
+                    console.print(f"  [yellow]{company_name}: Could not generate step {next_step}[/yellow]")
+                    result.errors += 1
+
+            except Exception as e:
+                logger.error(f"JIT pregenerate error for {company_name}: {e}", exc_info=True)
+                result.errors += 1
 
         return result
 

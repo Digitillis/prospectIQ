@@ -222,7 +222,7 @@ class Database:
     # Outreach Drafts
     # ------------------------------------------------------------------
 
-    def get_pending_drafts(self, limit: int = 50) -> list[dict]:
+    def get_pending_drafts(self, limit: int = 200) -> list[dict]:
         """Get outreach drafts pending approval."""
         query = self._filter_ws(
             self.client.table("outreach_drafts")
@@ -238,7 +238,38 @@ class Database:
         return result.data
 
     def insert_outreach_draft(self, data: dict) -> dict:
-        """Insert a new outreach draft."""
+        """Insert a new outreach draft — deduplication guard included.
+
+        Skips insert and returns the existing row if a draft already exists
+        for the same (company_id, contact_id, sequence_step) with status
+        'pending', 'approved', 'edited', or 'sent'. This prevents duplicate
+        drafts from multiple scheduler runs or retriggers.
+        """
+        company_id = data.get("company_id")
+        contact_id = data.get("contact_id")
+        sequence_step = data.get("sequence_step")
+
+        if company_id and contact_id and sequence_step is not None:
+            existing = (
+                self._filter_ws(
+                    self.client.table("outreach_drafts").select("id, approval_status")
+                )
+                .eq("company_id", company_id)
+                .eq("contact_id", contact_id)
+                .eq("sequence_step", sequence_step)
+                .in_("approval_status", ["pending", "approved", "edited", "sent"])
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                import logging
+                logging.getLogger(__name__).debug(
+                    f"insert_outreach_draft: skipping duplicate for contact={contact_id} "
+                    f"step={sequence_step} (existing id={existing.data[0]['id']}, "
+                    f"status={existing.data[0]['approval_status']})"
+                )
+                return existing.data[0]
+
         result = self.client.table("outreach_drafts").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 

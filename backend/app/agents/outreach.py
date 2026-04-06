@@ -225,7 +225,7 @@ PROSPECT AWARENESS LEVEL: {awareness_level}
 
 SEQUENCE: {sequence_name}, Step {sequence_step}
 CHANNEL: {channel}
-
+{reply_context_block}
 STEP INSTRUCTIONS:
 {step_instructions}
 
@@ -285,12 +285,14 @@ class OutreachAgent(BaseAgent):
         multi_thread: bool = True,
         max_contacts_per_company: int = 2,
         tiers: list[str] | None = None,
+        reply_context: str | None = None,
     ) -> AgentResult:
         """Generate outreach drafts for qualified companies.
 
         Args:
             company_ids: Specific company IDs (overrides query).
             sequence_name: Which sequence to use.
+            reply_context: Optional reply text from prospect to inject into prompt.
             sequence_step: Which step in the sequence.
             limit: Max companies to process.
 
@@ -448,6 +450,7 @@ class OutreachAgent(BaseAgent):
                         value_messaging=value_msg,
                         global_principles=seq_config.get("global_principles", {}),
                         channel=resolved_channel,
+                        reply_context=reply_context,
                     )
 
                     # Call Claude
@@ -615,6 +618,7 @@ class OutreachAgent(BaseAgent):
         value_messaging: dict,
         global_principles: dict,
         channel: str = "email",
+        reply_context: str | None = None,
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -686,6 +690,18 @@ class OutreachAgent(BaseAgent):
 
         max_words = instructions.get("max_words", 150)
 
+        # Build reply context block if a prospect reply was logged
+        if reply_context:
+            reply_context_block = (
+                "\n⚠️  PROSPECT REPLIED — THIS IS A REPLY-AWARE FOLLOW-UP:\n"
+                f"{reply_context}\n"
+                "Your email MUST directly address what they said. Do not re-introduce Digitillis "
+                "as if they haven't heard of it. Respond to their specific point first, then "
+                "advance the conversation naturally.\n"
+            )
+        else:
+            reply_context_block = ""
+
         return OUTREACH_USER.format(
             company_name=company.get("name", ""),
             sub_sector=company.get("sub_sector", company.get("industry", "Manufacturing")),
@@ -708,6 +724,7 @@ class OutreachAgent(BaseAgent):
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
             channel=channel,
+            reply_context_block=reply_context_block,
             step_instructions=step_text,
             anti_patterns=anti_text,
             max_words=max_words,

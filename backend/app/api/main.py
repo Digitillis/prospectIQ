@@ -186,6 +186,17 @@ def _run_personalization_refresh() -> None:
 
 
 
+def _run_jit_pregenerate() -> None:
+    """Every-24-hour job: pre-generate follow-up drafts due within the next 3 days."""
+    try:
+        from backend.app.agents.engagement import EngagementAgent
+        agent = EngagementAgent()
+        result = agent.run(action="jit_pregenerate")
+        logger.info(f"JIT pre-generate: {result}")
+    except Exception as e:
+        logger.error(f"Scheduled jit_pregenerate failed: {e}")
+
+
 def _run_auto_action_low_priority() -> None:
     """Hourly job: auto-archive soft_no items pending for >72 hours."""
     try:
@@ -221,11 +232,12 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_process_hitl_snoozed, "interval", minutes=15, id="hitl_snoozed")
         scheduler.add_job(_run_auto_action_low_priority, "interval", hours=1, id="hitl_auto_archive")
         scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
+        scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         scheduler.start()
         logger.info(
             "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
             "send_approved every 30m, process_due/hitl_auto_archive every 1h, "
-            "poll_instantly every 6h, personalization_refresh every 24h"
+            "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h"
         )
     except ImportError:
         logger.warning("APScheduler not installed — background jobs disabled")
