@@ -148,10 +148,12 @@ class EngagementAgent(BaseAgent):
             body = draft.get("edited_body") or draft.get("body", "")
 
             try:
+                from backend.app.utils.email_html import plain_to_html
                 resend.Emails.send({
                     "from": _from_display,
                     "to": [contact_email],
                     "subject": subject,
+                    "html": plain_to_html(body),
                     "text": body,
                 })
 

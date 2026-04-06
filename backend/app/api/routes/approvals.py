@@ -305,10 +305,12 @@ async def test_send_draft(
         except Exception:
             from_addr = "ProspectIQ <noreply@example.com>"
 
+        from backend.app.utils.email_html import plain_to_html
         send_result = resend.Emails.send({
             "from": from_addr,
             "to": [body.test_email],
             "subject": test_subject,
+            "html": plain_to_html(test_body),
             "text": test_body,
         })
 
