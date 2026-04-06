@@ -509,6 +509,9 @@ export default function LinkedInPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkSuccess, setBulkSuccess] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [showLinksPanel, setShowLinksPanel] = useState(false);
   const [viewMode, setViewMode] = useState<"messages" | "contacts">("contacts");
   const [rawContacts, setRawContacts] = useState<LinkedInContactRaw[]>([]);
   const [rawTotal, setRawTotal] = useState(0);
@@ -594,28 +597,31 @@ export default function LinkedInPage() {
   };
 
   const openSelectedTabs = () => {
-    const urls = allSelectableContacts
-      .filter((c) => selectedIds.has(c.id) && c.linkedin_url)
-      .map((c) => c.linkedin_url!);
-    if (urls.length === 0) return;
-    urls.forEach((url) => window.open(url, "_blank", "noopener,noreferrer"));
+    // Browsers only allow 1 window.open per click — show links panel instead
+    setShowLinksPanel(true);
   };
 
   const markSelectedConnectionSent = async () => {
     const targets = allSelectableContacts.filter((c) => selectedIds.has(c.id));
     if (targets.length === 0) return;
     setBulkUpdating(true);
+    setBulkError(null);
+    setBulkSuccess(false);
     try {
       await Promise.all(
         targets.map((c) =>
           updateLinkedInStatus(c.id, "connection_sent", c.linkedin_notes || "")
         )
       );
+      setBulkSuccess(true);
+      setTimeout(() => setBulkSuccess(false), 3000);
       setSelectedIds(new Set());
+      setShowLinksPanel(false);
       if (viewMode === "messages") await fetchMessages();
       else await fetchContacts(rawOffset);
     } catch (err) {
       console.error("Bulk update failed:", err);
+      setBulkError("Update failed — check console");
     } finally {
       setBulkUpdating(false);
     }
@@ -656,6 +662,8 @@ export default function LinkedInPage() {
   const allSelectableContacts = viewMode === "messages"
     ? filteredItems.map((i) => ({ id: i.contact.id, linkedin_url: i.contact.linkedin_url, linkedin_notes: i.contact.linkedin_notes }))
     : filteredRawContacts.map((i) => ({ id: i.contact.id, linkedin_url: i.contact.linkedin_url, linkedin_notes: i.contact.linkedin_notes }));
+
+  const selectedContacts = allSelectableContacts.filter((c) => selectedIds.has(c.id) && c.linkedin_url);
 
   return (
     <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
@@ -711,9 +719,10 @@ export default function LinkedInPage() {
             </button>
           </div>
 
-          {/* Row 1b: Select All */}
+          {/* Row 1b: Selection controls */}
           {!loading && allSelectableContacts.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Select all checkbox */}
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -728,6 +737,34 @@ export default function LinkedInPage() {
                   {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select all"}
                 </span>
               </label>
+
+              {/* Select top N dropdown */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-gray-400 dark:text-gray-500">Select top</span>
+                {[10, 20, 30, 50].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      const ids = allSelectableContacts.slice(0, n).map((c) => c.id);
+                      setSelectedIds(new Set(ids));
+                    }}
+                    className="rounded px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+
+              {/* Quick action: open selected tabs inline (visible even before batch bar) */}
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={openSelectedTabs}
+                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open {selectedIds.size} profile{selectedIds.size !== 1 ? "s" : ""}
+                </button>
+              )}
             </div>
           )}
 
@@ -857,7 +894,7 @@ export default function LinkedInPage() {
         </div>
       )}
 
-      {/* Batch action bar — appears when items are selected */}
+      {/* Batch action bar */}
       {selectedIds.size > 0 && (
         <div className="sticky top-0 z-10 border-b border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-6 py-2.5">
           <div className="max-w-4xl mx-auto flex items-center gap-3 flex-wrap">
@@ -869,7 +906,7 @@ export default function LinkedInPage() {
               className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              Open {selectedIds.size} tab{selectedIds.size !== 1 ? "s" : ""}
+              Open {selectedIds.size} profile{selectedIds.size !== 1 ? "s" : ""}
             </button>
             <button
               onClick={markSelectedConnectionSent}
@@ -877,17 +914,66 @@ export default function LinkedInPage() {
               className="flex items-center gap-1.5 rounded-md bg-white dark:bg-gray-900 border border-blue-200 dark:border-blue-700 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900 transition-colors disabled:opacity-50"
             >
               {bulkUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-              Mark Connection Sent
+              {bulkSuccess ? "Marked!" : "Mark Connection Sent"}
             </button>
+            {bulkError && <span className="text-xs text-red-500">{bulkError}</span>}
             <button
-              onClick={() => setSelectedIds(new Set())}
+              onClick={() => { setSelectedIds(new Set()); setShowLinksPanel(false); }}
               className="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 ml-auto"
             >
               Clear selection
             </button>
-            <p className="w-full text-[10px] text-blue-400 dark:text-blue-500">
-              Allow popups for this site if tabs don&apos;t open — your browser may block multiple tabs at once.
-            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Links panel — opens when "Open profiles" clicked */}
+      {showLinksPanel && selectedContacts.length > 0 && (
+        <div className="sticky top-0 z-20 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-6 py-3 shadow-md">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                Click each profile to open — use ⌘+click to open in background tab
+              </span>
+              <button onClick={() => setShowLinksPanel(false)} className="text-xs text-gray-400 hover:text-gray-700">Close</button>
+            </div>
+            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+              {selectedContacts.map((c) => {
+                const contact = viewMode === "contacts"
+                  ? filteredRawContacts.find((r) => r.contact.id === c.id)?.contact
+                  : filteredItems.find((r) => r.contact.id === c.id)?.contact;
+                const company = viewMode === "contacts"
+                  ? filteredRawContacts.find((r) => r.contact.id === c.id)?.company
+                  : filteredItems.find((r) => r.contact.id === c.id)?.company;
+                const name = contact?.full_name || `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim() || "Unknown";
+                return (
+                  <a
+                    key={c.id}
+                    href={c.linkedin_url!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 rounded-md px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 group"
+                  >
+                    <Linkedin className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                    <span className="font-medium text-gray-900 dark:text-gray-100 w-36 truncate">{name}</span>
+                    <span className="text-gray-400 truncate flex-1">{contact?.title}</span>
+                    <span className="text-gray-500 truncate w-36">{company?.name}</span>
+                    <ExternalLink className="h-3 w-3 text-gray-300 group-hover:text-blue-500 shrink-0" />
+                  </a>
+                );
+              })}
+            </div>
+            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
+              <span className="text-[10px] text-gray-400">After sending connection requests, click below to update status</span>
+              <button
+                onClick={markSelectedConnectionSent}
+                disabled={bulkUpdating}
+                className="flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-gray-100 px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                {bulkUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                {bulkSuccess ? "Marked!" : `Mark ${selectedIds.size} as Connection Sent`}
+              </button>
+            </div>
           </div>
         </div>
       )}
