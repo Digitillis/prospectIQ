@@ -169,6 +169,7 @@ export function Sidebar() {
     {
       title: "SYSTEM",
       items: [
+        { label: "Run Pipeline", href: "/actions", icon: Zap },
         { label: "Enrichment", href: "/enrichment", icon: UserPlus },
         { label: "Automations", href: "/automations", icon: Zap },
         { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
