@@ -375,8 +375,8 @@ async def update_linkedin_status(contact_id: str, body: dict):
 
     # Verify contact exists
     contact_result = (
-        db._filter_ws(db.client.table("contacts")
-        .select("id, company_id, full_name"))
+        db.client.table("contacts")
+        .select("id, company_id, full_name")
         .eq("id", contact_id)
         .execute()
     )
@@ -407,7 +407,7 @@ async def update_linkedin_status(contact_id: str, body: dict):
     if ts_col:
         update_data[ts_col] = datetime.now(timezone.utc).isoformat()
 
-    db._filter_ws(db.client.table("contacts").update(update_data)).eq("id", contact_id).execute()
+    db.client.table("contacts").update(update_data).eq("id", contact_id).execute()
 
     # Log an interaction so activity feed reflects the LinkedIn touch
     interaction_body = f"LinkedIn status updated to: {new_status}"
