@@ -124,7 +124,7 @@ async def approve_draft(
         result_raw = (
             db._filter_ws(
                 db.client.table("outreach_drafts")
-                .select("*, companies(name, tier), research_intelligence(*)")
+                .select("*, companies(name, tier)")
             )
             .eq("id", draft_id)
             .execute()
