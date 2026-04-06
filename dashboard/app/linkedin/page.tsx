@@ -299,7 +299,15 @@ function IntelPanel({ intel }: { intel: LinkedInIntel | undefined }) {
 // Contact card
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ContactCard({ item }: { item: LinkedInContact }) {
+function ContactCard({
+  item,
+  selected,
+  onToggle,
+}: {
+  item: LinkedInContact;
+  selected: boolean;
+  onToggle: (id: string) => void;
+}) {
   const { contact, company, drafts, intel } = item;
   const [status, setStatus] = useState<LinkedInStatus>(
     (contact.linkedin_status as LinkedInStatus) || "not_sent"
@@ -336,9 +344,18 @@ function ContactCard({ item }: { item: LinkedInContact }) {
   const followupDm = drafts["linkedin_dm_followup"];
 
   return (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-5">
+    <div className={`bg-white dark:bg-gray-900 border rounded-lg p-5 transition-colors ${selected ? "border-blue-400 dark:border-blue-500 ring-1 ring-blue-200 dark:ring-blue-800" : "border-gray-200 dark:border-gray-700"}`}>
       {/* Header */}
       <div className="mb-4 flex items-start justify-between gap-3">
+        {/* Checkbox */}
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(contact.id)}
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 shrink-0 cursor-pointer"
+          title="Select contact"
+        />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
@@ -359,6 +376,7 @@ function ContactCard({ item }: { item: LinkedInContact }) {
             {company.sub_sector ? ` · ${company.sub_sector}` : ""}
           </div>
         </div>
+        </div>{/* end flex-1 + checkbox wrapper */}
 
         {/* LinkedIn profile link */}
         {contact.linkedin_url && (
@@ -489,6 +507,8 @@ export default function LinkedInPage() {
   const [genMode, setGenMode] = useState<"all" | "dm_only">("all");
   const [genRegenerate, setGenRegenerate] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
@@ -525,6 +545,51 @@ export default function LinkedInPage() {
       setError(message);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredItems.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredItems.map((i) => i.contact.id)));
+    }
+  };
+
+  const openSelectedTabs = () => {
+    const urls = filteredItems
+      .filter((i) => selectedIds.has(i.contact.id) && i.contact.linkedin_url)
+      .map((i) => i.contact.linkedin_url!);
+    if (urls.length === 0) return;
+    // Open all tabs in a single click handler — browser allows this within user gesture
+    urls.forEach((url) => window.open(url, "_blank", "noopener,noreferrer"));
+  };
+
+  const markSelectedConnectionSent = async () => {
+    const targets = filteredItems.filter((i) => selectedIds.has(i.contact.id));
+    if (targets.length === 0) return;
+    setBulkUpdating(true);
+    try {
+      await Promise.all(
+        targets.map((i) =>
+          updateLinkedInStatus(i.contact.id, "connection_sent", i.contact.linkedin_notes || "")
+        )
+      );
+      setSelectedIds(new Set());
+      await fetchMessages();
+    } catch (err) {
+      console.error("Bulk update failed:", err);
+    } finally {
+      setBulkUpdating(false);
     }
   };
 
@@ -583,6 +648,26 @@ export default function LinkedInPage() {
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             </button>
           </div>
+
+          {/* Row 1b: Select All */}
+          {!loading && filteredItems.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === filteredItems.length && filteredItems.length > 0}
+                  ref={(el) => {
+                    if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredItems.length;
+                  }}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select all"}
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* Row 2: Status filters */}
           <div className="flex items-center gap-1.5">
@@ -710,6 +795,41 @@ export default function LinkedInPage() {
         </div>
       )}
 
+      {/* Batch action bar — appears when items are selected */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-10 border-b border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-6 py-2.5">
+          <div className="max-w-4xl mx-auto flex items-center gap-3 flex-wrap">
+            <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+              {selectedIds.size} contact{selectedIds.size !== 1 ? "s" : ""} selected
+            </span>
+            <button
+              onClick={openSelectedTabs}
+              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open {selectedIds.size} tab{selectedIds.size !== 1 ? "s" : ""}
+            </button>
+            <button
+              onClick={markSelectedConnectionSent}
+              disabled={bulkUpdating}
+              className="flex items-center gap-1.5 rounded-md bg-white dark:bg-gray-900 border border-blue-200 dark:border-blue-700 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900 transition-colors disabled:opacity-50"
+            >
+              {bulkUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              Mark Connection Sent
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 ml-auto"
+            >
+              Clear selection
+            </button>
+            <p className="w-full text-[10px] text-blue-400 dark:text-blue-500">
+              Allow popups for this site if tabs don&apos;t open — your browser may block multiple tabs at once.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         <div className="max-w-4xl mx-auto">
@@ -729,7 +849,12 @@ export default function LinkedInPage() {
           ) : (
             <div className="grid grid-cols-1 gap-3">
               {filteredItems.map((item) => (
-                <ContactCard key={item.contact.id} item={item} />
+                <ContactCard
+                  key={item.contact.id}
+                  item={item}
+                  selected={selectedIds.has(item.contact.id)}
+                  onToggle={toggleSelect}
+                />
               ))}
             </div>
           )}
