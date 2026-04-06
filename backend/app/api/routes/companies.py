@@ -167,21 +167,22 @@ async def get_linkedin_messages(
     )
     company_by_id = {c["id"]: c for c in companies_result.data}
 
-    # Bulk fetch research (latest per company)
+    # Bulk fetch research — single query for all companies, keep latest per company
     research_by_company: dict[str, dict] = {}
     try:
-        for cid in company_ids:
-            research_rows = (
-                db._filter_ws(db.client.table("research")
-                .select("*"))
-                .eq("company_id", cid)
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute()
-                .data
-            ) or []
-            if research_rows:
-                research_by_company[cid] = research_rows[0]
+        research_rows = (
+            db._filter_ws(db.client.table("research")
+            .select("company_id, research_intelligence, pain_points, known_systems, confidence_level, created_at"))
+            .in_("company_id", company_ids)
+            .order("created_at", desc=True)
+            .limit(len(company_ids) * 2)  # at most 2 per company to get latest
+            .execute()
+            .data
+        ) or []
+        for row in research_rows:
+            cid = row["company_id"]
+            if cid not in research_by_company:  # keep first (latest) per company
+                research_by_company[cid] = row
     except Exception:
         pass
 
@@ -284,7 +285,7 @@ async def get_linkedin_messages(
 async def get_linkedin_contacts(
     status: Optional[str] = None,
     tier: Optional[str] = None,
-    limit: int = Query(default=200, ge=1, le=500),
+    limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
     """Return all contacts with a LinkedIn URL, sorted by company PQS descending.

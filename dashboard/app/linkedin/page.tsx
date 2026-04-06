@@ -516,7 +516,7 @@ export default function LinkedInPage() {
   const [rawContacts, setRawContacts] = useState<LinkedInContactRaw[]>([]);
   const [rawTotal, setRawTotal] = useState(0);
   const [rawOffset, setRawOffset] = useState(0);
-  const RAW_PAGE_SIZE = 200;
+  const RAW_PAGE_SIZE = 100;
 
   const fetchMessages = useCallback(async () => {
     if (viewMode !== "messages") return;
