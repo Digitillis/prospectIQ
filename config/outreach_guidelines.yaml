@@ -11,7 +11,7 @@ sender:
   short_name: "Avanish"
   title: "Founder & CEO"
   company: "Digitillis"
-  email: "avi@digitillis.io"
+  email: "avi@digitillis.com"
   phone: "224.355.4500"
   website: "www.digitillis.com"
   signature: |
@@ -22,6 +22,7 @@ sender:
     Founder & CEO
     Digitillis | www.digitillis.com
     avi@digitillis.com | 224.355.4500
+    Check [Demo](http://demo.digitillis.com)
 
 
 # Voice and tone instructions — injected into every outreach prompt

@@ -54,11 +54,12 @@ class Settings(BaseSettings):
     # When false, approved drafts are staged but never pushed to Instantly.
     send_enabled: bool = False
 
-    # Send window — emails only push to Instantly between these hours (local time, 24h).
-    # e.g. SEND_WINDOW_START=8 SEND_WINDOW_END=11 → sends between 8:00am and 10:59am.
+    # Send window — hours in UTC (Railway server runs UTC).
+    # 8am–11am Chicago CDT (UTC-5) → SEND_WINDOW_START=13 SEND_WINDOW_END=16
+    # 8am–11am Chicago CST (UTC-6, Nov–Mar) → SEND_WINDOW_START=14 SEND_WINDOW_END=17
     # Set both to 0 to disable the window check (send any time SEND_ENABLED is true).
-    send_window_start: int = 0   # hour to start sending (inclusive)
-    send_window_end: int = 0     # hour to stop sending (exclusive); 0 = no window
+    send_window_start: int = 0   # UTC hour to start sending (inclusive)
+    send_window_end: int = 0     # UTC hour to stop sending (exclusive); 0 = no window
 
     # Auth — Supabase JWT secret (from Project Settings → API → JWT Secret)
     supabase_jwt_secret: str = ""
