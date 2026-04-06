@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     unipile_dsn: str = ""               # Unipile DSN (e.g. api4.unipile.com:13453)
     unipile_webhook_secret: str = ""    # Shared secret for validating Unipile webhook calls
 
+    # Gmail IMAP reply intake
+    gmail_user: str = ""              # e.g. avi@digitillis.io
+    gmail_app_password: str = ""      # App Password from myaccount.google.com/apppasswords
+
     # HubSpot CRM sync (optional)
     hubspot_api_key: str = ""           # Private app access token
     hubspot_portal_id: str = ""         # Numeric portal/account ID
