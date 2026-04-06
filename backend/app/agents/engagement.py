@@ -151,7 +151,7 @@ class EngagementAgent(BaseAgent):
 
             try:
                 from backend.app.utils.email_html import plain_to_html
-                resend.Emails.send({
+                send_response = resend.Emails.send({
                     "from": _from_display,
                     "to": [contact_email],
                     "subject": subject,
@@ -159,9 +159,15 @@ class EngagementAgent(BaseAgent):
                     "text": body,
                 })
 
-                # Mark draft as sent
+                # Mark draft as sent, store Resend message ID for webhook correlation
                 now = datetime.now(timezone.utc).isoformat()
-                self.db.update_outreach_draft(draft["id"], {"sent_at": now})
+                resend_id = getattr(send_response, "id", None) or (
+                    send_response.get("id") if isinstance(send_response, dict) else None
+                )
+                sent_update = {"sent_at": now}
+                if resend_id:
+                    sent_update["resend_message_id"] = resend_id
+                self.db.update_outreach_draft(draft["id"], sent_update)
 
                 # Log interaction
                 self.db.insert_interaction({
