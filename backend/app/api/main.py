@@ -480,7 +480,15 @@ app.include_router(intent_signals.router)
 @app.get("/health")
 async def health_check():
     """Basic health check endpoint."""
-    return {"status": "ok", "service": "prospectiq-api"}
+    from backend.app.core.config import get_settings
+    s = get_settings()
+    secret = s.resend_webhook_secret or ""
+    return {
+        "status": "ok",
+        "service": "prospectiq-api",
+        "resend_webhook_secret_set": bool(secret),
+        "resend_webhook_secret_preview": secret[:8] + "..." if len(secret) > 8 else secret,
+    }
 
 
 @app.post("/api/admin/trigger-send")
