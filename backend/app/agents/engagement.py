@@ -250,13 +250,19 @@ class EngagementAgent(BaseAgent):
                     continue
 
                 from backend.app.utils.email_html import plain_to_html
-                send_response = resend.Emails.send({
-                    "from": _from_display,
-                    "to": [contact_email],
-                    "subject": subject,
-                    "html": plain_to_html(body),
-                    "text": body,
-                })
+                # Pass draft ID as idempotency key — Resend will deduplicate on
+                # their end if this exact key was already sent (belt-and-suspenders
+                # on top of the DB atomic claim above).
+                send_response = resend.Emails.send(
+                    {
+                        "from": _from_display,
+                        "to": [contact_email],
+                        "subject": subject,
+                        "html": plain_to_html(body),
+                        "text": body,
+                    },
+                    {"idempotency_key": draft["id"]},
+                )
 
                 # Store Resend message ID for webhook correlation
                 resend_id = getattr(send_response, "id", None) or (
