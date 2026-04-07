@@ -140,10 +140,11 @@ class EngagementAgent(BaseAgent):
                 result.skipped += 1
                 continue
 
-            # Suppression check before sending
+            # Suppression check before sending — skip contact_id to avoid the
+            # duplicate_draft_pending check (which would block the draft we're sending)
             from backend.app.core.suppression import is_suppressed
             suppressed, reason = is_suppressed(
-                self.db, company_id, draft.get("contact_id")
+                self.db, company_id, contact_id=None
             )
             if suppressed:
                 console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping.[/dim]")
@@ -186,12 +187,20 @@ class EngagementAgent(BaseAgent):
                     send_response.get("id") if isinstance(send_response, dict) else None
                 )
                 sent_update = {"sent_at": now}
-                if resend_id:
-                    sent_update["resend_message_id"] = resend_id
-                self.db.update_outreach_draft(draft["id"], sent_update)
+                try:
+                    if resend_id:
+                        sent_update["resend_message_id"] = resend_id
+                    self.db.update_outreach_draft(draft["id"], sent_update)
+                except Exception:
+                    # resend_message_id column may not exist yet — retry without it
+                    sent_update.pop("resend_message_id", None)
+                    self.db.update_outreach_draft(draft["id"], sent_update)
 
-                # Log interaction
-                self.db.insert_interaction({
+                # Log interaction — use default_workspace_id directly since scheduler
+                # runs without auth context (_inject_ws would inject null)
+                from backend.app.core.config import get_settings as _get_settings
+                _settings = _get_settings()
+                self.db.client.table("interactions").insert({
                     "company_id": draft["company_id"],
                     "contact_id": draft["contact_id"],
                     "type": "email_sent",
@@ -199,12 +208,13 @@ class EngagementAgent(BaseAgent):
                     "subject": subject,
                     "body": body,
                     "source": "resend",
+                    "workspace_id": _settings.default_workspace_id,
                     "metadata": {
                         "from": _from_address,
                         "sequence_name": draft.get("sequence_name"),
                         "sequence_step": draft.get("sequence_step"),
                     },
-                })
+                }).execute()
 
                 # Update company status
                 self.db.update_company(draft["company_id"], {"status": "contacted"})

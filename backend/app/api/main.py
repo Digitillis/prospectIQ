@@ -481,3 +481,11 @@ app.include_router(intent_signals.router)
 async def health_check():
     """Basic health check endpoint."""
     return {"status": "ok", "service": "prospectiq-api"}
+
+
+@app.post("/api/admin/trigger-send")
+async def trigger_send():
+    """Manually trigger send_approved — useful when cron tick hasn't fired yet."""
+    import threading
+    threading.Thread(target=_run_send_approved, daemon=True).start()
+    return {"status": "triggered", "message": "send_approved job started in background"}
