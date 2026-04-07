@@ -605,9 +605,16 @@ export default function LinkedInPage() {
       .map((c) => c.linkedin_url!)
       .filter(isValidLinkedInUrl);
     if (urls.length === 0) return;
-    // Stagger opens by 150ms — Chrome allows multiple window.open if spaced out
-    urls.forEach((url, i) => {
-      setTimeout(() => window.open(url, "_blank", "noopener,noreferrer"), i * 150);
+    // Use hidden <a> clicks synchronously within the user gesture — more reliable than
+    // window.open which Chrome throttles, and avoids popup-blocker on setTimeout callbacks
+    urls.forEach((url) => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     });
     setShowLinksPanel(true);
   };
