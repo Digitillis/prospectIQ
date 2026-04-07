@@ -306,6 +306,7 @@ async def get_linkedin_contacts(
         ))
         .not_.is_("linkedin_url", "null")
         .neq("linkedin_url", "")
+        .like("linkedin_url", "%linkedin.com/in/%")
     )
 
     if status and status != "all":
@@ -344,6 +345,7 @@ async def get_linkedin_contacts(
         db._filter_ws(db.client.table("contacts").select("id", count="exact"))
         .not_.is_("linkedin_url", "null")
         .neq("linkedin_url", "")
+        .like("linkedin_url", "%linkedin.com/in/%")
     )
     if status and status != "all":
         total_q = total_q.eq("linkedin_status", status)
@@ -416,15 +418,21 @@ async def update_linkedin_status(contact_id: str, body: dict):
         interaction_body += f"\nNotes: {notes}"
 
     if company_id:
-        db.insert_interaction({
-            "company_id": company_id,
-            "contact_id": contact_id,
-            "type": "linkedin",
-            "channel": "linkedin",
-            "subject": f"LinkedIn: {new_status.replace('_', ' ').title()}",
-            "body": interaction_body,
-            "source": "manual",
-        })
+        try:
+            from backend.app.core.config import get_settings
+            settings = get_settings()
+            db.client.table("interactions").insert({
+                "company_id": company_id,
+                "contact_id": contact_id,
+                "type": "linkedin",
+                "channel": "linkedin",
+                "subject": f"LinkedIn: {new_status.replace('_', ' ').title()}",
+                "body": interaction_body,
+                "source": "manual",
+                "workspace_id": settings.default_workspace_id,
+            }).execute()
+        except Exception:
+            pass  # Interaction log failure must not block status update
 
     return {"data": {"contact_id": contact_id, "linkedin_status": new_status, "linkedin_notes": notes}}
 
