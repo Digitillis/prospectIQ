@@ -30,6 +30,7 @@ def is_suppressed(
     db: Database,
     company_id: str,
     contact_id: str | None = None,
+    skip_duplicate_check: bool = False,
 ) -> tuple[bool, str | None]:
     """Check if a company or contact is suppressed.
 
@@ -112,7 +113,9 @@ def is_suppressed(
                         return True, f"cooldown:{days_left}d_remaining"
 
     # 5. Check for duplicate outreach — already has pending/approved draft
-    if contact_id:
+    # skip_duplicate_check=True is used in the send path (the draft being sent
+    # would otherwise trigger this check against itself)
+    if contact_id and not skip_duplicate_check:
         pending = (
             db.client.table("outreach_drafts")
             .select("id")
