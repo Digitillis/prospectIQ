@@ -208,7 +208,9 @@ def _now_iso() -> str:
 def _get_db_and_workspace():
     from backend.app.core.database import Database
     from backend.app.core.workspace import get_workspace_id
-    return Database(workspace_id=get_workspace_id())
+    from backend.app.core.config import get_settings
+    ws_id = get_workspace_id() or get_settings().default_workspace_id
+    return Database(workspace_id=ws_id)
 
 
 def _find_thread(db, contact_id: str, company_id: str, instantly_campaign_id: Optional[str] = None):
@@ -762,7 +764,19 @@ async def resend_webhook(
         # --- Handle each event type ---
 
         if event_type == "email.delivered":
-            # Confirm delivery — no status change needed, just log
+            # Update resend_status on the draft (by contact_id fallback since message_id may be null)
+            try:
+                q = db._filter_ws(
+                    db.client.table("outreach_drafts")
+                    .update({"resend_status": "delivered"})
+                )
+                if draft_row:
+                    q = q.eq("id", draft_row["id"])
+                elif contact_id:
+                    q = q.eq("contact_id", contact_id).not_.is_("sent_at", "null")
+                q.execute()
+            except Exception as exc:
+                logger.debug("delivered status update failed: %s", exc)
             return {"status": "processed", "action": "delivered", "contact_id": contact_id}
 
         elif event_type in ("email.opened", "email.clicked"):
