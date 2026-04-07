@@ -1451,3 +1451,144 @@ async def reschedule_step(enrollment_id: str, body: RescheduleStepRequest):
         "step": body.step,
         "new_next_action_at": new_dt.isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Email Engagement Dashboard
+# ---------------------------------------------------------------------------
+
+@v2_router.get("/email-engagement")
+async def get_email_engagement(limit: int = 200, offset: int = 0):
+    """Return all sent outreach drafts with delivery/engagement status.
+
+    Joins outreach_drafts (sent) + contacts + companies + interactions
+    to show per-contact: sent date, resend_status, opens, clicks, bounces.
+    """
+    db = get_db()
+
+    # Fetch sent drafts
+    drafts_result = (
+        db._filter_ws(
+            db.client.table("outreach_drafts").select(
+                "id, contact_id, company_id, sequence_step, sent_at, "
+                "resend_status, resend_message_id, subject, approval_status"
+            )
+        )
+        .not_.is_("sent_at", "null")
+        .order("sent_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
+    drafts = drafts_result.data or []
+    if not drafts:
+        return {"data": [], "total": 0}
+
+    # Count total
+    count_result = (
+        db._filter_ws(
+            db.client.table("outreach_drafts").select("id", count="exact")
+        )
+        .not_.is_("sent_at", "null")
+        .execute()
+    )
+    total = count_result.count or len(drafts)
+
+    contact_ids = list({d["contact_id"] for d in drafts if d.get("contact_id")})
+    company_ids = list({d["company_id"] for d in drafts if d.get("company_id")})
+
+    # Batch-fetch contacts
+    contacts_map: dict[str, dict] = {}
+    if contact_ids:
+        cont = (
+            db.client.table("contacts")
+            .select("id, full_name, email, persona_type")
+            .in_("id", contact_ids)
+            .execute()
+        )
+        contacts_map = {c["id"]: c for c in (cont.data or [])}
+
+    # Batch-fetch companies
+    companies_map: dict[str, dict] = {}
+    if company_ids:
+        comp = (
+            db.client.table("companies")
+            .select("id, name, industry")
+            .in_("id", company_ids)
+            .execute()
+        )
+        companies_map = {c["id"]: c for c in (comp.data or [])}
+
+    # Batch-fetch engagement interactions (opens, clicks, bounces)
+    engagement_map: dict[str, list] = {}  # contact_id -> list of events
+    if contact_ids:
+        events_result = (
+            db.client.table("interactions")
+            .select("contact_id, type, created_at, metadata")
+            .in_("contact_id", contact_ids)
+            .in_("type", ["email_opened", "email_clicked", "email_bounced",
+                          "email_delivered", "email_complained"])
+            .order("created_at", desc=False)
+            .execute()
+        )
+        for ev in (events_result.data or []):
+            cid = ev["contact_id"]
+            if cid not in engagement_map:
+                engagement_map[cid] = []
+            engagement_map[cid].append(ev)
+
+    rows = []
+    for d in drafts:
+        cid = d.get("contact_id")
+        company = companies_map.get(d.get("company_id") or "", {})
+        contact = contacts_map.get(cid or "", {})
+        events = engagement_map.get(cid or "", [])
+
+        opens = sum(1 for e in events if e["type"] == "email_opened")
+        clicks = sum(1 for e in events if e["type"] == "email_clicked")
+        bounced = any(e["type"] == "email_bounced" for e in events)
+        complained = any(e["type"] == "email_complained" for e in events)
+        delivered = any(e["type"] == "email_delivered" for e in events)
+        last_open_at = next(
+            (e["created_at"] for e in reversed(events) if e["type"] == "email_opened"),
+            None
+        )
+
+        # Derive display status
+        if complained:
+            display_status = "complained"
+        elif bounced:
+            display_status = "bounced"
+        elif clicks > 0:
+            display_status = "clicked"
+        elif opens > 0:
+            display_status = "opened"
+        elif delivered or d.get("resend_status") == "delivered":
+            display_status = "delivered"
+        elif d.get("resend_status"):
+            display_status = d["resend_status"]
+        else:
+            display_status = "sent"
+
+        rows.append({
+            "draft_id": d["id"],
+            "contact_id": cid,
+            "contact_name": contact.get("full_name") or "—",
+            "contact_email": contact.get("email") or "—",
+            "persona_type": contact.get("persona_type"),
+            "company_id": d.get("company_id"),
+            "company_name": company.get("name") or "—",
+            "industry": company.get("industry"),
+            "sequence_step": d.get("sequence_step", 1),
+            "subject": d.get("subject"),
+            "sent_at": d["sent_at"],
+            "resend_status": d.get("resend_status"),
+            "resend_message_id": d.get("resend_message_id"),
+            "display_status": display_status,
+            "opens": opens,
+            "clicks": clicks,
+            "bounced": bounced,
+            "complained": complained,
+            "last_open_at": last_open_at,
+        })
+
+    return {"data": rows, "total": total}

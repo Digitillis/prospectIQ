@@ -26,6 +26,7 @@ import {
   Sparkles,
   Mic2,
   Linkedin,
+  TrendingUp,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -153,6 +154,7 @@ export function Sidebar() {
         { label: "LinkedIn", href: "/linkedin", icon: Linkedin },
         { label: "Multi-Thread", href: "/multi-thread", icon: GitBranch },
         { label: "Outreach Hub", href: "/outreach", icon: Send },
+        { label: "Email Engagement", href: "/outreach/engagement", icon: TrendingUp },
         { label: "Content", href: "/content", icon: PenTool },
         { label: "Ghostwriting", href: "/ghostwriting", icon: PenTool },
       ],
