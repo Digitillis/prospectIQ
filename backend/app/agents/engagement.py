@@ -232,6 +232,23 @@ class EngagementAgent(BaseAgent):
             body = draft.get("edited_body") or draft.get("body", "")
 
             try:
+                # Atomically claim the draft by setting sent_at before calling Resend.
+                # This prevents two concurrent scheduler instances from double-sending
+                # the same draft (race condition during Railway rolling redeploys).
+                now = datetime.now(timezone.utc).isoformat()
+                claim = (
+                    self.db.client.table("outreach_drafts")
+                    .update({"sent_at": now})
+                    .eq("id", draft["id"])
+                    .is_("sent_at", "null")  # only succeeds if not already claimed
+                    .execute()
+                )
+                if not claim.data:
+                    # Another instance already claimed this draft — skip
+                    console.print(f"  [dim]{company_name}: draft already claimed by another instance. Skipping.[/dim]")
+                    result.skipped += 1
+                    continue
+
                 from backend.app.utils.email_html import plain_to_html
                 send_response = resend.Emails.send({
                     "from": _from_display,
@@ -241,20 +258,15 @@ class EngagementAgent(BaseAgent):
                     "text": body,
                 })
 
-                # Mark draft as sent, store Resend message ID for webhook correlation
-                now = datetime.now(timezone.utc).isoformat()
+                # Store Resend message ID for webhook correlation
                 resend_id = getattr(send_response, "id", None) or (
                     send_response.get("id") if isinstance(send_response, dict) else None
                 )
-                sent_update = {"sent_at": now}
-                try:
-                    if resend_id:
-                        sent_update["resend_message_id"] = resend_id
-                    self.db.update_outreach_draft(draft["id"], sent_update)
-                except Exception:
-                    # resend_message_id column may not exist yet — retry without it
-                    sent_update.pop("resend_message_id", None)
-                    self.db.update_outreach_draft(draft["id"], sent_update)
+                if resend_id:
+                    try:
+                        self.db.update_outreach_draft(draft["id"], {"resend_message_id": resend_id})
+                    except Exception:
+                        pass
 
                 # Log interaction — use default_workspace_id directly since scheduler
                 # runs without auth context (_inject_ws would inject null)

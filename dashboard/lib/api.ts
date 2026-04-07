@@ -2179,3 +2179,34 @@ export const addLookalikesToPipeline = (
 
 export const getSeedProfile = () =>
   fetchAPI<SeedProfile>("/api/lookalike/seed-profile");
+
+// ---------------------------------------------------------------------------
+// Email Engagement
+// ---------------------------------------------------------------------------
+
+export interface EmailEngagementRow {
+  draft_id: string;
+  contact_id: string | null;
+  contact_name: string;
+  contact_email: string;
+  persona_type: string | null;
+  company_id: string | null;
+  company_name: string;
+  industry: string | null;
+  sequence_step: number;
+  subject: string | null;
+  sent_at: string;
+  resend_status: string | null;
+  resend_message_id: string | null;
+  display_status: string;
+  opens: number;
+  clicks: number;
+  bounced: boolean;
+  complained: boolean;
+  last_open_at: string | null;
+}
+
+export const getEmailEngagement = (limit = 200, offset = 0) =>
+  fetchAPI<{ data: EmailEngagementRow[]; total: number }>(
+    `/api/sequences/v2/email-engagement?limit=${limit}&offset=${offset}`
+  );
