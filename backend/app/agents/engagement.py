@@ -65,26 +65,79 @@ class EngagementAgent(BaseAgent):
             result.add_detail("N/A", "error", f"Unknown action: {action}")
             return result
 
+    def _load_send_config(self) -> dict:
+        """Load send limits from outreach_send_config table.
+
+        Falls back to safe defaults if table doesn't exist yet.
+        Returns: {daily_limit, batch_size, min_gap_minutes, send_enabled}
+        """
+        defaults = {"daily_limit": 30, "batch_size": 10, "min_gap_minutes": 4, "send_enabled": True}
+        try:
+            row = (
+                self.db.client.table("outreach_send_config")
+                .select("daily_limit, batch_size, min_gap_minutes, send_enabled")
+                .eq("workspace_id", self.db.workspace_id)
+                .limit(1)
+                .execute()
+                .data
+            )
+            if row:
+                return {**defaults, **row[0]}
+        except Exception:
+            pass
+        return defaults
+
+    def _count_sent_today(self) -> int:
+        """Count emails already sent today (UTC date)."""
+        from datetime import date
+        today = date.today().isoformat()
+        try:
+            r = (
+                self.db.client.table("outreach_drafts")
+                .select("id", count="exact")
+                .gte("sent_at", f"{today}T00:00:00")
+                .execute()
+            )
+            return r.count or 0
+        except Exception:
+            return 0
+
     def _send_approved_drafts(self, campaign_name: str | None = None) -> AgentResult:
-        """Send all approved but unsent outreach drafts via Resend.
+        """Send approved unsent outreach drafts via Resend.
+
+        Limits are read from outreach_send_config table (not hardcoded):
+        - daily_limit: max emails per calendar day
+        - batch_size:  max emails per scheduler run
+        - min_gap_minutes: stagger between sends within a batch
 
         FROM address is read from config/outreach_guidelines.yaml (sender.email).
-        Full per-lead custom subject + body — no template variable limitations.
-        Gated by SEND_ENABLED env flag.
         """
         result = AgentResult()
 
         settings = get_settings()
         if not settings.send_enabled:
             console.print(
-                "[yellow]SEND_ENABLED is false — drafts staged but not sent. "
-                "Set SEND_ENABLED=true in .env when ready to send.[/yellow]"
+                "[yellow]SEND_ENABLED is false — drafts staged but not sent.[/yellow]"
             )
             return result
 
         if not settings.resend_api_key:
             console.print("[red]RESEND_API_KEY not configured. Cannot send.[/red]")
             result.success = False
+            return result
+
+        # Load limits from DB — no hardcoding
+        send_cfg = self._load_send_config()
+        daily_limit = send_cfg["daily_limit"]
+        batch_size  = send_cfg["batch_size"]
+
+        # Check daily cap before fetching drafts
+        sent_today = self._count_sent_today()
+        remaining_today = daily_limit - sent_today
+        if remaining_today <= 0:
+            console.print(
+                f"[yellow]Daily limit reached ({sent_today}/{daily_limit}). No sends.[/yellow]"
+            )
             return result
 
         import resend
@@ -105,7 +158,8 @@ class EngagementAgent(BaseAgent):
         except Exception:
             pass
 
-        # Get approved email drafts that haven't been sent yet
+        # Fetch approved drafts — capped at batch_size AND remaining daily quota
+        fetch_limit = min(batch_size, max(0, remaining_today))
         drafts = (
             self.db.client.table("outreach_drafts")
             .select("*, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
@@ -115,6 +169,7 @@ class EngagementAgent(BaseAgent):
             .not_.is_("subject", "null")
             .neq("subject", "")
             .order("created_at")
+            .limit(fetch_limit)
             .execute()
             .data
         )
@@ -123,7 +178,10 @@ class EngagementAgent(BaseAgent):
             console.print("[yellow]No approved email drafts to send.[/yellow]")
             return result
 
-        console.print(f"[cyan]Sending {len(drafts)} approved drafts via Resend...[/cyan]")
+        console.print(
+            f"[cyan]Sending up to {fetch_limit} drafts "
+            f"(batch_size={batch_size}, {sent_today}/{daily_limit} sent today)...[/cyan]"
+        )
 
         # Track companies sent in this batch to prevent same-run multi-contact collision
         company_ids_sent_this_batch: set[str] = set()
