@@ -306,6 +306,7 @@ async def get_linkedin_contacts(
         ))
         .not_.is_("linkedin_url", "null")
         .neq("linkedin_url", "")
+        .like("linkedin_url", "%linkedin.com/in/%")
     )
 
     if status and status != "all":
@@ -344,6 +345,7 @@ async def get_linkedin_contacts(
         db._filter_ws(db.client.table("contacts").select("id", count="exact"))
         .not_.is_("linkedin_url", "null")
         .neq("linkedin_url", "")
+        .like("linkedin_url", "%linkedin.com/in/%")
     )
     if status and status != "all":
         total_q = total_q.eq("linkedin_status", status)

@@ -596,8 +596,14 @@ export default function LinkedInPage() {
     }
   };
 
+  // Only open URLs that look like valid LinkedIn profile pages (contain /in/)
+  const isValidLinkedInUrl = (url: string) =>
+    /linkedin\.com\/in\//i.test(url);
+
   const openSelectedTabs = () => {
-    const urls = selectedContacts.map((c) => c.linkedin_url!);
+    const urls = selectedContacts
+      .map((c) => c.linkedin_url!)
+      .filter(isValidLinkedInUrl);
     if (urls.length === 0) return;
     // Stagger opens by 150ms — Chrome allows multiple window.open if spaced out
     urls.forEach((url, i) => {
@@ -943,7 +949,7 @@ export default function LinkedInPage() {
               <button onClick={() => setShowLinksPanel(false)} className="text-xs text-gray-400 hover:text-gray-700">Close</button>
             </div>
             <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-              {selectedContacts.map((c) => {
+              {selectedContacts.filter((c) => isValidLinkedInUrl(c.linkedin_url!)).map((c) => {
                 const contact = viewMode === "contacts"
                   ? filteredRawContacts.find((r) => r.contact.id === c.id)?.contact
                   : filteredItems.find((r) => r.contact.id === c.id)?.contact;
