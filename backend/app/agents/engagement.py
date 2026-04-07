@@ -140,11 +140,13 @@ class EngagementAgent(BaseAgent):
                 result.skipped += 1
                 continue
 
-            # Suppression check before sending — skip contact_id to avoid the
-            # duplicate_draft_pending check (which would block the draft we're sending)
+            # Suppression check — pass skip_duplicate_check=True so the approved
+            # draft being sent doesn't trigger the duplicate_draft_pending guard
             from backend.app.core.suppression import is_suppressed
             suppressed, reason = is_suppressed(
-                self.db, company_id, contact_id=None
+                self.db, company_id,
+                contact_id=draft.get("contact_id"),
+                skip_duplicate_check=True,
             )
             if suppressed:
                 console.print(f"  [dim]{company_name}: Suppressed ({reason}). Skipping.[/dim]")
