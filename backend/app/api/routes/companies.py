@@ -285,6 +285,7 @@ async def get_linkedin_messages(
 async def get_linkedin_contacts(
     status: Optional[str] = None,
     tier: Optional[str] = None,
+    search: Optional[str] = None,
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -311,6 +312,9 @@ async def get_linkedin_contacts(
 
     if status and status != "all":
         q = q.eq("linkedin_status", status)
+
+    if search and search.strip():
+        q = q.ilike("full_name", f"%{search.strip()}%")
 
     contacts = q.order("created_at", desc=False).range(offset, offset + limit - 1).execute().data or []
 
@@ -349,6 +353,8 @@ async def get_linkedin_contacts(
     )
     if status and status != "all":
         total_q = total_q.eq("linkedin_status", status)
+    if search and search.strip():
+        total_q = total_q.ilike("full_name", f"%{search.strip()}%")
     total_result = total_q.execute()
     total = total_result.count or len(results)
 

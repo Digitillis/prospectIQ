@@ -548,6 +548,7 @@ export default function LinkedInPage() {
         offset: String(offset),
       };
       if (statusFilter && statusFilter !== "all") params.status = statusFilter;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
       const res = await getLinkedInContacts(params);
       setRawContacts(res.data);
       setRawTotal(res.total);
@@ -558,12 +559,19 @@ export default function LinkedInPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, viewMode]);
+  }, [statusFilter, viewMode, searchQuery]);
 
   useEffect(() => {
     if (viewMode === "messages") fetchMessages();
     else fetchContacts(0);
   }, [viewMode, fetchMessages, fetchContacts]);
+
+  // Re-fetch contacts when search query changes (debounced 400ms)
+  useEffect(() => {
+    if (viewMode !== "contacts") return;
+    const t = setTimeout(() => fetchContacts(0), 400);
+    return () => clearTimeout(t);
+  }, [searchQuery, viewMode, fetchContacts]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -1056,29 +1064,53 @@ export default function LinkedInPage() {
                           <td className="px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap">{co.name || "—"}</td>
                           <td className="px-3 py-2 text-gray-500 dark:text-gray-400 tabular-nums">{co.pqs_total ?? "—"}</td>
                           <td className="px-3 py-2">
-                            <select
-                              value={liStatus}
-                              onChange={async (e) => {
-                                const newStatus = e.target.value as LinkedInStatus;
-                                try {
-                                  await updateLinkedInStatus(c.id, newStatus, c.linkedin_notes || "");
-                                  setRawContacts((prev) =>
-                                    prev.map((r) =>
-                                      r.contact.id === c.id
-                                        ? { ...r, contact: { ...r.contact, linkedin_status: newStatus } }
-                                        : r
-                                    )
-                                  );
-                                } catch (err) {
-                                  console.error(err);
-                                }
-                              }}
-                              className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] text-gray-600 dark:text-gray-300 focus:outline-none"
-                            >
-                              {(Object.keys(STATUS_LABELS) as LinkedInStatus[]).map((s) => (
-                                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                              ))}
-                            </select>
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={liStatus}
+                                onChange={async (e) => {
+                                  const newStatus = e.target.value as LinkedInStatus;
+                                  try {
+                                    await updateLinkedInStatus(c.id, newStatus, c.linkedin_notes || "");
+                                    setRawContacts((prev) =>
+                                      prev.map((r) =>
+                                        r.contact.id === c.id
+                                          ? { ...r, contact: { ...r.contact, linkedin_status: newStatus } }
+                                          : r
+                                      )
+                                    );
+                                  } catch (err) {
+                                    console.error(err);
+                                  }
+                                }}
+                                className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-0.5 text-[11px] text-gray-600 dark:text-gray-300 focus:outline-none"
+                              >
+                                {(Object.keys(STATUS_LABELS) as LinkedInStatus[]).map((s) => (
+                                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                                ))}
+                              </select>
+                              {liStatus === "connection_sent" && (
+                                <button
+                                  title="Mark as Accepted"
+                                  onClick={async () => {
+                                    try {
+                                      await updateLinkedInStatus(c.id, "accepted", c.linkedin_notes || "");
+                                      setRawContacts((prev) =>
+                                        prev.map((r) =>
+                                          r.contact.id === c.id
+                                            ? { ...r, contact: { ...r.contact, linkedin_status: "accepted" } }
+                                            : r
+                                        )
+                                      );
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  }}
+                                  className="rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 px-1.5 py-0.5 text-[10px] font-medium hover:bg-green-200 dark:hover:bg-green-800 transition-colors whitespace-nowrap"
+                                >
+                                  ✓ Accepted
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2">
                             {c.linkedin_url ? (
