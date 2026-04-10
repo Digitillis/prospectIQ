@@ -62,9 +62,7 @@ class BaseAgent(ABC):
 
     def __init__(self, batch_id: str | None = None, workspace_id: str | None = None):
         ws_id = workspace_id or os.environ.get("WORKSPACE_ID") or _DEFAULT_WORKSPACE_ID
-        # workspace_id column does not exist in the current schema (single-tenant deployment)
-        # Pass None so Database._filter_ws is a no-op
-        self.db = Database(workspace_id=None)
+        self.db = Database(workspace_id=ws_id)
         self.workspace_id = ws_id
         self.batch_id = batch_id or f"{self.agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         self.logger = logging.getLogger(f"prospectiq.{self.agent_name}")
