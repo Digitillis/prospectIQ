@@ -213,7 +213,7 @@ class Database:
         """Insert or update research intelligence."""
         result = (
             self.client.table("research_intelligence")
-            .upsert(data, on_conflict="company_id")
+            .upsert(self._inject_ws(data), on_conflict="company_id")
             .execute()
         )
         return result.data[0] if result.data else {}

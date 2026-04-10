@@ -282,6 +282,10 @@ class EnrichmentAgent(BaseAgent):
                             + (f", {phone}" if phone else ""),
                         )
                     else:
+                        # Mark contact so it's not retried on the next run —
+                        # repeated Apollo calls on the same contact with no result
+                        # burn credits without benefit.
+                        self.db.update_contact(contact["id"], {"enrichment_status": "no_result"})
                         console.print(
                             f"  [yellow]{company_name}: No email found for {contact_name}.[/yellow]"
                         )
@@ -312,9 +316,14 @@ class EnrichmentAgent(BaseAgent):
         """Select the highest-priority contact that needs enrichment.
 
         Prioritizes contacts without email, sorted by persona priority.
+        Skips contacts already attempted (enrichment_status="no_result") to avoid
+        burning Apollo credits on contacts that previously returned no data.
         """
-        # Split into needs-enrichment vs already-enriched
-        needs_enrichment = [c for c in contacts if not c.get("email")]
+        # Split into needs-enrichment vs already-enriched or already-attempted
+        needs_enrichment = [
+            c for c in contacts
+            if not c.get("email") and c.get("enrichment_status") != "no_result"
+        ]
         if not needs_enrichment:
             return None
 
