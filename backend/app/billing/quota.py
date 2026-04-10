@@ -36,6 +36,7 @@ QuotaAction = Literal["research", "enrichment", "outreach", "discovery"]
 _TIER_LIMITS: dict[str, int] = {
     "starter": 500,
     "growth": 2000,
+    "professional": 5000,
     "scale": 10000,
     "api": 50000,
 }

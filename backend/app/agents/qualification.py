@@ -54,8 +54,14 @@ class QualificationAgent(BaseAgent):
             # Researched takes priority so they don't get crowded out by large
             # discovered batches.
             researched = self.db.get_companies(status="researched", limit=limit)
+            # Only score researched companies that haven't been scored yet to avoid
+            # redundant Apollo API calls and wasted credits on re-runs.
+            researched = [c for c in researched if not c.get("pqs_total")]
             remaining = limit - len(researched)
             discovered = self.db.get_companies(status="discovered", limit=remaining) if remaining > 0 else []
+            # Skip discovered companies already scored — prevents repeated processing
+            # of the same pool on back-to-back runs (which burned 4,109 Apollo credits).
+            discovered = [c for c in discovered if not c.get("pqs_total")]
             companies = researched + discovered
 
         if not companies:
