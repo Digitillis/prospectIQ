@@ -4,9 +4,11 @@ Trigger agent runs (discovery, research, qualification, outreach)
 and return results synchronously.
 """
 
+import uuid
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.app.agents.discovery import DiscoveryAgent
@@ -26,6 +28,10 @@ from backend.app.core.auth import require_role
 from backend.app.core.audit import log_audit_event_from_ctx
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+
+# In-memory job store for long-running background tasks.
+# Railway is single-instance so this is safe — no cross-process state needed.
+_job_store: dict[str, dict] = {}
 
 
 # ------------------------------------------------------------------
@@ -146,23 +152,61 @@ async def run_discovery(
 @router.post("/run/research")
 async def run_research(
     body: ResearchRequest,
+    background_tasks: BackgroundTasks,
     _quota: None = Depends(require_quota("research")),
 ):
-    """Trigger the research agent for deep company analysis."""
-    agent = ResearchAgent()
-    result = agent.execute(
-        company_ids=body.company_ids,
-        min_firmographic_score=body.min_score,
-        tier=body.tier,
-        tiers=body.tiers,
-        limit=body.limit,
-    )
-    log_audit_event_from_ctx(
-        "pipeline.run",
-        resource_type="agent",
-        metadata={"agent": "research", "processed": result.processed, "errors": result.errors, "cost_usd": result.total_cost_usd},
-    )
-    return {"data": _serialize_result(result)}
+    """Trigger the research agent for deep company analysis (runs in background).
+
+    Returns immediately with a batch_id. Poll GET /api/pipeline/job/{batch_id}
+    to check status. When status is "done", the result shape matches a normal
+    AgentResult response. When status is "error", a message field is present.
+    """
+    batch_id = f"research_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    _job_store[batch_id] = {"status": "running", "batch_id": batch_id}
+
+    # Capture request body values before the background thread runs
+    company_ids = body.company_ids
+    min_score = body.min_score
+    tier = body.tier
+    tiers = body.tiers
+    limit = body.limit
+
+    def _run_research():
+        try:
+            agent = ResearchAgent()
+            result = agent.execute(
+                company_ids=company_ids,
+                min_firmographic_score=min_score,
+                tier=tier,
+                tiers=tiers,
+                limit=limit,
+            )
+            _job_store[batch_id] = {
+                "status": "done",
+                "batch_id": batch_id,
+                **_serialize_result(result),
+            }
+        except Exception as e:
+            _job_store[batch_id] = {
+                "status": "error",
+                "batch_id": batch_id,
+                "message": str(e),
+            }
+
+    background_tasks.add_task(_run_research)
+    return {"data": {"status": "running", "batch_id": batch_id}}
+
+
+@router.get("/job/{batch_id}")
+async def get_job_status(batch_id: str):
+    """Poll for the result of a background job (e.g. research agent run).
+
+    Returns {"data": {"status": "running"|"done"|"error", ...result fields...}}
+    """
+    job = _job_store.get(batch_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {batch_id} not found")
+    return {"data": job}
 
 
 @router.post("/run/qualification")

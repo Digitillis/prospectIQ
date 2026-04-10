@@ -253,11 +253,34 @@ export const scoreDraft = (draftId: string) =>
   });
 
 // Pipeline
-export const runAgent = (agent: string, body: Record<string, unknown> = {}) =>
-  fetchAPI(`/api/pipeline/run/${agent}`, {
+export const runAgent = async (agent: string, body: Record<string, unknown> = {}): Promise<unknown> => {
+  const res = await fetchAPI<{ data: Record<string, unknown> }>(`/api/pipeline/run/${agent}`, {
     method: "POST",
     body: JSON.stringify(body),
   });
+
+  // Long-running agents (e.g. research) return {status: "running", batch_id: "..."}
+  // and run in the background to avoid Railway's request timeout. Poll until done.
+  const d = (res as { data?: Record<string, unknown> })?.data;
+  if (d?.status === "running" && d?.batch_id) {
+    const batchId = d.batch_id as string;
+    for (let i = 0; i < 240; i++) {  // max 12 min (240 × 3s)
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const poll = await fetchAPI<{ data: Record<string, unknown> }>(`/api/pipeline/job/${batchId}`);
+        const s = (poll as { data?: Record<string, unknown> })?.data;
+        if (s?.status !== "running") {
+          return { data: s };
+        }
+      } catch {
+        // transient network error — keep polling
+      }
+    }
+    throw new Error("Research job timed out after 12 minutes");
+  }
+
+  return res;
+};
 
 // Settings
 export const getAppSettings = () =>
