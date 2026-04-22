@@ -19,9 +19,26 @@ logger = logging.getLogger(__name__)
 APOLLO_BASE_URL = "https://api.apollo.io/api/v1"
 RATE_LIMIT_DELAY = 3.5  # seconds between requests (100 req / 5 min ≈ 1 per 3s)
 
+# ---------------------------------------------------------------------------
+# Credit-guard constants
+# ---------------------------------------------------------------------------
+
+_FREE_EMAIL_DOMAINS: frozenset[str] = frozenset({
+    "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "yahoo.ca",
+    "hotmail.com", "hotmail.co.uk", "outlook.com", "live.com", "msn.com",
+    "icloud.com", "me.com", "mac.com", "aol.com", "protonmail.com",
+    "proton.me", "pm.me", "tutanota.com", "zoho.com", "yandex.com",
+    "gmx.com", "gmx.net", "mail.com", "fastmail.com", "hey.com",
+})
+_EMPTY_STREAK_WARN = 20
+
 
 class ApolloClient:
     """Apollo.io REST API client."""
+
+    # Class-level cache and streak counter — persist across instances
+    _enrich_cache: dict[str, dict | None] = {}  # key → result (None = confirmed no-match)
+    _empty_streak: int = 0
 
     def __init__(self):
         settings = get_settings()
@@ -214,6 +231,11 @@ class ApolloClient:
         WARNING: This endpoint CONSUMES credits.
         Use selectively — only for qualified leads.
 
+        Credit guards (applied automatically):
+        - Free-domain filter: skips consumer email domains that never match B2B data
+        - Result cache: class-level, prevents repeat API calls for the same identifier
+        - Empty-streak counter: warns after 20 consecutive no-match responses
+
         Args:
             person_id: Apollo person ID
             email: Known email address
@@ -224,6 +246,20 @@ class ApolloClient:
         Returns:
             Enriched person data.
         """
+        # Free-domain filter — only when enriching by email
+        if email and not person_id and not linkedin_url:
+            domain = email.split("@")[-1].lower() if "@" in email else ""
+            if domain in _FREE_EMAIL_DOMAINS:
+                logger.info(f"enrich_person skipped — free domain: {domain}")
+                return {}
+
+        # Cache key: prefer person_id (most stable), then email, then linkedin_url
+        cache_key = person_id or email or linkedin_url or ""
+        if cache_key and cache_key in ApolloClient._enrich_cache:
+            cached = ApolloClient._enrich_cache[cache_key]
+            logger.info(f"enrich_person cache hit for key={cache_key[:20]}... matched={bool(cached)}")
+            return cached or {}
+
         payload: dict[str, Any] = {
             "reveal_personal_emails": reveal_personal_emails,
             "reveal_phone_number": reveal_phone_number,
@@ -238,7 +274,25 @@ class ApolloClient:
         else:
             raise ValueError("Must provide person_id, email, or linkedin_url")
 
-        return self._post("/people/match", payload)
+        result = self._post("/people/match", payload)
+
+        # Cache result; None = confirmed no-match
+        person = result.get("person") or None
+        if cache_key:
+            ApolloClient._enrich_cache[cache_key] = result if person else None
+
+        # Track empty-response streak
+        if not person:
+            ApolloClient._empty_streak += 1
+            if ApolloClient._empty_streak >= _EMPTY_STREAK_WARN:
+                logger.warning(
+                    f"Apollo enrich_person: {ApolloClient._empty_streak} consecutive "
+                    "empty responses — check ICP targeting or credit balance"
+                )
+        else:
+            ApolloClient._empty_streak = 0
+
+        return result
 
     # ------------------------------------------------------------------
     # Helpers
