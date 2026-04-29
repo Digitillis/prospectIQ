@@ -33,6 +33,12 @@ _TASK_MODEL: dict[str, str] = {
     "thread_gen": SONNET,
     "content": SONNET,
     "learning": SONNET,
+    # Phase 2-5 additions
+    "llm_qualify_title": HAIKU,       # Gate 3 title scoring — cheap classification
+    "llm_qualify_research": SONNET,   # Gates 4-7 — requires reasoning
+    "campaign_plan": SONNET,          # Campaign planning — quality matters
+    "template_compose": SONNET,       # Variant template generation
+    "confidence_summary": HAIKU,      # Summarising learnings — simple extraction
 }
 
 

@@ -265,7 +265,12 @@ class ABTracker:
                 return None
 
             # p < 0.05 — declare winner by reply rate
-            return "a" if a["reply_rate_pct"] >= b["reply_rate_pct"] else "b"
+            winner = "a" if a["reply_rate_pct"] >= b["reply_rate_pct"] else "b"
+
+            # Feed winner into intelligence confidence engine
+            self._record_ab_winner_evidence(sequence_id, winner, stats)
+
+            return winner
 
         except ImportError:
             logger.warning(
@@ -282,6 +287,54 @@ class ABTracker:
         except Exception as exc:
             logger.error(f"ABTracker chi2 test failed: {exc}")
             return None
+
+    def _record_ab_winner_evidence(self, sequence_id: str, winner: str, stats: dict) -> None:
+        """Feed A/B winner into the intelligence confidence engine.
+
+        Finds learning_outcomes for this workspace and records ab_winner evidence.
+        Runs silently — never blocks the caller.
+        """
+        try:
+            from backend.app.core.confidence_engine import ConfidenceEngine
+            # Look up workspace_id from the ab_test_events for this sequence
+            rows = (
+                self.db._filter_ws(
+                    self.db.client.table("ab_test_events").select("workspace_id")
+                )
+                .eq("sequence_id", sequence_id)
+                .limit(1)
+                .execute()
+            )
+            workspace_id = rows.data[0]["workspace_id"] if rows.data else None
+            if not workspace_id:
+                return
+
+            # Find learning_outcomes for this workspace to record evidence on
+            outcomes = (
+                self.db.client.table("learning_outcomes")
+                .select("id")
+                .eq("workspace_id", workspace_id)
+                .in_("confidence_level", ["hypothesis", "validated"])
+                .limit(10)
+                .execute()
+            )
+            if not outcomes.data:
+                return
+
+            engine = ConfidenceEngine(self.db, workspace_id)
+            winner_rate = stats[winner]["reply_rate_pct"]
+            for row in outcomes.data:
+                engine.record_evidence(
+                    outcome_id=row["id"],
+                    source_type="ab_winner",
+                    source_ref=sequence_id,
+                    signal_text=(
+                        f"A/B winner declared: variant {winner.upper()} "
+                        f"({winner_rate:.1f}% reply rate, p<0.05)"
+                    ),
+                )
+        except Exception as e:
+            logger.debug(f"ABTracker._record_ab_winner_evidence: {e}")
 
     # ------------------------------------------------------------------
     # Helpers

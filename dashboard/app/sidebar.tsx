@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Building2,
   MessageSquare,
+  Wand2,
   Zap,
   Users,
   Filter,
@@ -20,6 +21,7 @@ import {
   UserPlus,
   Ban,
   CheckCircle2,
+  BookOpen,
   Moon,
   Sun,
   Inbox,
@@ -149,6 +151,7 @@ export function Sidebar() {
     {
       title: "ENGAGE",
       items: [
+        { label: "Campaign Composer", href: "/composer", icon: Wand2 },
         { label: "Sequences", href: "/sequences", icon: GitBranch },
         { label: "Seq. Timeline", href: "/sequences/timeline", icon: GitBranch },
         { label: "LinkedIn", href: "/linkedin", icon: Linkedin },
@@ -176,6 +179,7 @@ export function Sidebar() {
         { label: "Automations", href: "/automations", icon: Zap },
         { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
         { label: "DNC List", href: "/dnc", icon: Ban },
+        { label: "Knowledge Base", href: "/settings/knowledge-base", icon: BookOpen },
         { label: "Settings", href: "/settings/workspace", icon: Settings },
       ],
     },

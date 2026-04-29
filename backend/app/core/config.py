@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     salesforce_consumer_key: str = ""
     salesforce_consumer_secret: str = ""
 
+    # Voyage AI — text embeddings for RAG memory store (free tier: 200M tokens/month)
+    # Sign up at https://www.voyageai.com — no credit card required for free tier.
+    # When not set, memory store falls back to PostgreSQL full-text search.
+    voyage_api_key: str = ""
+
     # Sentry — error tracking and performance monitoring
     sentry_dsn: str = ""                # Get from Sentry project settings
     sentry_environment: str = "production"  # production | staging | development
