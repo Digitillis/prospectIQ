@@ -193,18 +193,26 @@ def _get_or_create_contact(db: Database, company_id: str, contact: dict,
     """Return existing contact or insert a new one."""
     partial_id = contact["apollo_id"]
 
-    # Dedup by partial apollo_id stored at import time
-    existing = db.get_contact_by_apollo_id(partial_id)
-    if existing:
+    # Dedup by first_name + company_id (truncated apollo IDs can't be used for lookup)
+    existing = (
+        db.client.table("contacts")
+        .select("id, first_name")
+        .eq("company_id", company_id)
+        .eq("first_name", contact["first_name"])
+        .maybe_single()
+        .execute()
+    )
+    if existing and existing.data:
         print(f"      ↩  {contact['first_name']} ({partial_id}) already in DB")
-        return existing
+        return existing.data
 
     data = {
         "company_id":        company_id,
         "first_name":        contact["first_name"],
         "last_name":         "",
         "title":             contact["title"],
-        "apollo_id":         partial_id,
+        # Truncated Apollo IDs (e.g. "6896ea...") fail the min-length constraint
+        # and are useless for API calls anyway — omit and enrich later.
         "persona_type":      contact["persona_type"],
         "is_decision_maker": contact["is_decision_maker"],
         # email/phone not yet known — needs enrichment via Apollo
@@ -219,7 +227,7 @@ def _get_or_create_contact(db: Database, company_id: str, contact: dict,
 
 
 def run_import(verticals: list[str], dry_run: bool) -> None:
-    db = Database()
+    db = Database(workspace_id="00000000-0000-0000-0000-000000000001")
 
     sources = []
     if "mfg" in verticals:
