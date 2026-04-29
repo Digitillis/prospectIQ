@@ -262,6 +262,27 @@ class LinkedInSenderAgent(BaseAgent):
             return
 
         try:
+            # Validate message compliance before sending
+            from backend.app.core.outbound_validator import OutboundValidator, OutboundValidationError
+            try:
+                OutboundValidator().validate_linkedin_connect(message)
+            except OutboundValidationError as ve:
+                logger.warning(
+                    "LinkedInSenderAgent: connect note blocked by validator for %s: %s",
+                    contact_name, ve,
+                )
+                result.skipped += 1
+                result.add_detail(contact_name, "blocked", str(ve))
+                return
+
+            # Consume from DB-backed rate limiter
+            from backend.app.core.linkedin_rate_limiter import LinkedInRateLimiter
+            limiter = LinkedInRateLimiter(self.db, self.workspace_id)
+            if not limiter.consume("linkedin_connect"):
+                result.add_detail(contact_name, "rate_limited", "Daily connect limit reached")
+                result.skipped += 1
+                return
+
             unipile.send_connection_request(linkedin_url, message)
 
             now_iso = datetime.now(timezone.utc).isoformat()
@@ -363,6 +384,24 @@ class LinkedInSenderAgent(BaseAgent):
             return
 
         try:
+            # Validate DM compliance
+            from backend.app.core.outbound_validator import OutboundValidator, OutboundValidationError
+            try:
+                OutboundValidator().validate_linkedin_dm(message)
+            except OutboundValidationError as ve:
+                logger.warning("LinkedInSenderAgent: DM blocked by validator for %s: %s", contact_name, ve)
+                result.skipped += 1
+                result.add_detail(contact_name, "blocked", str(ve))
+                return
+
+            # DB-backed rate limiter
+            from backend.app.core.linkedin_rate_limiter import LinkedInRateLimiter
+            limiter = LinkedInRateLimiter(self.db, self.workspace_id)
+            if not limiter.consume("linkedin_dm"):
+                result.add_detail(contact_name, "rate_limited", "Daily DM limit reached")
+                result.skipped += 1
+                return
+
             unipile.send_message(linkedin_url, message)
 
             now_iso = datetime.now(timezone.utc).isoformat()

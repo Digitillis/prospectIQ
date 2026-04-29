@@ -16,3 +16,4 @@ APScheduler>=3.10.0
 dnspython>=2.6.0
 python-multipart>=0.0.9
 scipy>=1.13.0
+voyageai>=0.3.0          # Semantic embeddings for RAG memory store (optional — free tier at voyageai.com)

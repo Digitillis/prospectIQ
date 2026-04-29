@@ -46,7 +46,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals, targeting, intent_signals
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals, targeting, intent_signals, memory, llm_qualify, composer
 from backend.app.webhooks import instantly as instantly_webhooks
 from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
@@ -103,7 +103,7 @@ def _run_health_snapshot() -> None:
 def _run_send_approved() -> None:
     """Cron job: push approved drafts to Instantly (gated by SEND_ENABLED).
 
-    Scheduled Mon-Fri at :00 and :30 past each hour from 8 AM–10:30 AM Chicago time.
+    Scheduled Mon-Fri at :00 and :30 past each hour from 8 AM–11 AM Chicago time.
     Timing is enforced by the cron trigger; no additional window check needed here.
     """
     try:
@@ -380,12 +380,11 @@ async def lifespan(app: FastAPI):
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler(timezone="America/Chicago")
         scheduler.add_job(_run_health_snapshot, "interval", minutes=15, id="health_snapshot")
-        # send_approved: cron at :00 and :30 of every hour Mon-Fri, 8am-10:30am Chicago
-        # The job itself re-checks the window, but cron aligns ticks to clock time
-        # so emails go out reliably at 8:00, 8:30, 9:00, 9:30, 10:00, 10:30 AM
+        # send_approved: cron at :00 and :30 of every hour Mon-Fri, 8am-11am Chicago
+        # Ticks: 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00 AM
         scheduler.add_job(
             _run_send_approved, "cron",
-            day_of_week="mon-fri", hour="8-10", minute="0,30",
+            day_of_week="mon-fri", hour="8-11", minute="0,30",
             timezone="America/Chicago",
             id="send_approved",
         )
@@ -475,6 +474,9 @@ app.include_router(meetings.router)
 app.include_router(deals.router)
 app.include_router(targeting.router)
 app.include_router(intent_signals.router)
+app.include_router(memory.router)
+app.include_router(llm_qualify.router)
+app.include_router(composer.router)
 
 
 @app.get("/health")
