@@ -552,10 +552,10 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="weekly_cost_summary",
         )
-        # Daily GTM brief: 5pm Chicago Mon-Fri — Claude-written analysis + email to Avi
+        # Daily GTM brief: 6am Chicago Mon-Fri — Claude-written analysis + email to Avi
         scheduler.add_job(
             _run_daily_report, "cron",
-            day_of_week="mon-fri", hour=17, minute=0,
+            day_of_week="mon-fri", hour=6, minute=0,
             timezone="America/Chicago",
             id="daily_report",
         )
@@ -566,7 +566,7 @@ async def lifespan(app: FastAPI):
             "process_due/hitl_auto_archive every 1h, "
             "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
             "research 9/12/3pm → qualification 9:30/12:30/3:30pm → enrichment 9:45am Mon-Fri Chicago (budget-gated), "
-            "daily_report 5pm Chicago Mon-Fri, "
+            "daily_report 6am Chicago Mon-Fri, "
             "weekly_cost_summary Mon 8am Chicago"
         )
     except ImportError:
