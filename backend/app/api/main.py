@@ -400,16 +400,66 @@ def _run_qualification() -> None:
 
 
 def _run_research() -> None:
-    """Runs 3× daily (9am / 12pm / 3pm Mon-Fri) — 25 companies per run, budget-gated."""
+    """Runs 4× daily (9am / 12pm / 3pm / 6pm Mon-Fri) — 50 companies per run, budget-gated."""
     if not _check_budget("research"):
         return
     try:
         from backend.app.agents.research import ResearchAgent
         agent = ResearchAgent()
-        result = agent.run(batch_size=25)
+        result = agent.run(batch_size=50)
         logger.info(f"Scheduled research: processed={result.processed} errors={result.errors}")
     except Exception as e:
         logger.error(f"Scheduled research failed: {e}", exc_info=True)
+
+
+def _run_auto_approve() -> None:
+    """Auto-approve high-PQS pending drafts (PQS >= 70) to reduce manual bottleneck."""
+    try:
+        from backend.app.core.database import get_supabase_client
+        from backend.app.core.config import get_settings
+        client = get_supabase_client()
+        ws = get_settings().default_workspace_id
+
+        rows = (
+            client.table("outreach_drafts")
+            .select("id, company_id, companies(pqs_total)")
+            .eq("approval_status", "pending")
+            .is_("sent_at", "null")
+            .eq("workspace_id", ws)
+            .limit(200)
+            .execute()
+            .data or []
+        )
+
+        approved = 0
+        for r in rows:
+            pqs = (r.get("companies") or {}).get("pqs_total") or 0
+            if pqs >= 70:
+                client.table("outreach_drafts").update(
+                    {"approval_status": "approved"}
+                ).eq("id", r["id"]).execute()
+                approved += 1
+
+        if approved:
+            logger.info(f"Auto-approve: approved {approved} high-PQS drafts (PQS >= 70)")
+    except Exception as e:
+        logger.error(f"Auto-approve failed: {e}", exc_info=True)
+
+
+def _run_limit_ramp() -> None:
+    """One-time job: ramp daily_limit to 150 (30/account × 5) one week after launch."""
+    try:
+        from backend.app.core.database import get_supabase_client
+        from backend.app.core.config import get_settings
+        client = get_supabase_client()
+        ws = get_settings().default_workspace_id
+        client.table("outreach_send_config").update({
+            "daily_limit": 150,
+            "batch_size": 25,
+        }).eq("workspace_id", ws).execute()
+        logger.info("Limit ramp: daily_limit bumped to 150 (30/account/day × 5 senders)")
+    except Exception as e:
+        logger.error(f"Limit ramp failed: {e}", exc_info=True)
 
 
 def _run_daily_report() -> None:
@@ -422,13 +472,13 @@ def _run_daily_report() -> None:
 
 
 def _run_enrichment() -> None:
-    """Daily job: enrich up to 50 contacts via Apollo (burns Apollo credits)."""
+    """2× daily job: enrich up to 100 contacts per run via Apollo (burns Apollo credits)."""
     if not _check_budget("enrichment"):
         return
     try:
         from backend.app.agents.enrichment import EnrichmentAgent
         agent = EnrichmentAgent()
-        result = agent.run(batch_size=50)
+        result = agent.run(batch_size=100)
         logger.info(f"Scheduled enrichment: processed={result.processed} errors={result.errors}")
     except Exception as e:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
@@ -509,9 +559,11 @@ async def lifespan(app: FastAPI):
         # Ticks: 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00 (7 per day)
         # With batch_size=20 and daily_limit=100, first 5 ticks fill the quota
         # so effectively all 100 emails go out by 10am — front-loaded as intended.
+        # send_approved: Mon-Fri, 8am-11am Chicago at :00 and :30 (7 ticks/day)
+        # 7 ticks × batch_size=20 = 140 capacity; daily_limit=125 caps it at 125
         scheduler.add_job(
             _run_send_approved, "cron",
-            day_of_week="tue-thu", hour="8-11", minute="0,30",
+            day_of_week="mon-fri", hour="8-11", minute="0,30",
             timezone="America/Chicago",
             id="send_approved",
         )
@@ -521,29 +573,44 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_auto_action_low_priority, "interval", hours=1, id="hitl_auto_archive")
         scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
-        scheduler.add_job(_run_gmail_intake, "interval", minutes=30, id="gmail_intake")
-        # Research: 3× daily Mon-Fri (9am / 12pm / 3pm) — 25 companies per run, budget-gated
-        # 75 companies/day max; budget gate stops early if monthly limit hit
+        # Gmail intake: every 15 min so replies surface quickly for triage
+        scheduler.add_job(_run_gmail_intake, "interval", minutes=15, id="gmail_intake")
+        # Research: 4× daily Mon-Fri (9am / 12pm / 3pm / 6pm) — 50 companies per run
+        # 200 companies/day max; budget gate stops early if monthly limit hit
         scheduler.add_job(
             _run_research, "cron",
-            day_of_week="mon-fri", hour="9,12,15", minute=0,
+            day_of_week="mon-fri", hour="9,12,15,18", minute=0,
             timezone="America/Chicago",
             id="research",
         )
-        # Qualification: runs after each research wave (9:30 / 12:30 / 3:30)
-        # Scores researched companies, promotes to qualified (PQS 20+) or disqualifies
+        # Qualification: runs 30 min after each research wave
         scheduler.add_job(
             _run_qualification, "cron",
-            day_of_week="mon-fri", hour="9,12,15", minute=30,
+            day_of_week="mon-fri", hour="9,12,15,18", minute=30,
             timezone="America/Chicago",
             id="qualification",
         )
-        # Enrichment: 9:45am Chicago daily Mon-Fri — 50 contacts per run via Apollo
+        # Enrichment: 2× daily Mon-Fri (9:45am + 2:45pm) — 100 contacts per run via Apollo
         scheduler.add_job(
             _run_enrichment, "cron",
-            day_of_week="mon-fri", hour=9, minute=45,
+            day_of_week="mon-fri", hour="9,14", minute=45,
             timezone="America/Chicago",
             id="enrichment",
+        )
+        # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
+        # Runs hourly Mon-Fri during business hours so drafts are ready for morning send
+        scheduler.add_job(
+            _run_auto_approve, "cron",
+            day_of_week="mon-fri", hour="7-18", minute=0,
+            timezone="America/Chicago",
+            id="auto_approve",
+        )
+        # Limit ramp: bump daily_limit to 150 on 2026-05-07 (one week out, 30/account/day × 5)
+        scheduler.add_job(
+            _run_limit_ramp, "date",
+            run_date="2026-05-07 08:00:00",
+            timezone="America/Chicago",
+            id="limit_ramp",
         )
         # Weekly cost summary: Monday 8am Chicago
         scheduler.add_job(
