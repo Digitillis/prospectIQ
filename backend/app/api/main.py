@@ -529,15 +529,55 @@ async def send_config_check():
         ).count or 0
     except Exception:
         pending = -1
+    # Test if the service key can actually UPDATE (not just SELECT)
+    # Uses a no-op update on a known config row
+    update_test = "untested"
+    try:
+        test_r = (
+            client.table("outreach_send_config")
+            .update({"notes": None})
+            .eq("workspace_id", "00000000-0000-0000-0000-000000000001")
+            .execute()
+        )
+        update_test = "ok" if test_r.data else "blocked_empty_return"
+    except Exception as e:
+        update_test = f"error:{e}"
+
+    # Fetch the first pending draft to verify the claim step would work
+    claim_test = "untested"
+    try:
+        import uuid as _uuid
+        from datetime import datetime as _dt, timezone as _tz
+        drafts_sample = (
+            client.table("outreach_drafts")
+            .select("id,sent_at")
+            .eq("approval_status", "approved")
+            .is_("sent_at", "null")
+            .limit(1)
+            .execute()
+            .data
+        )
+        if drafts_sample:
+            d = drafts_sample[0]
+            claim_test = f"draft_found:{d['id'][:8]}..._sent_at_is_null={d['sent_at'] is None}"
+        else:
+            claim_test = "no_pending_drafts_found"
+    except Exception as e:
+        claim_test = f"error:{e}"
+
     return {
         "env_send_enabled": s.send_enabled,
         "env_resend_api_key_set": bool(s.resend_api_key),
         "env_resend_api_key_prefix": s.resend_api_key[:8] + "..." if s.resend_api_key else "",
+        "env_supabase_service_key_set": bool(s.supabase_service_key),
+        "env_supabase_service_key_role": "service_role" if "service_role" in (s.supabase_service_key or "") else "anon_or_other",
         "env_send_window_start": s.send_window_start,
         "env_send_window_end": s.send_window_end,
         "db_send_config": cfg_row,
         "sent_today": sent_today,
         "approved_unsent": pending,
+        "update_permission_test": update_test,
+        "draft_claim_test": claim_test,
     }
 
 
