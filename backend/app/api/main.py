@@ -279,9 +279,43 @@ def _run_gmail_intake() -> None:
 
                 intent = _classify_intent(body, subject)
 
-                # Insert thread_message
+                # Ensure a campaign_thread row exists — upsert so replies always
+                # have a thread to attach to, even for contacts that started before
+                # the threads table was introduced.
+                thread_id = None
+                try:
+                    existing_thread = (
+                        db.client.table("campaign_threads")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .limit(1)
+                        .execute()
+                    ).data
+                    if existing_thread:
+                        thread_id = existing_thread[0]["id"]
+                        db.client.table("campaign_threads").update({
+                            "status": "replied",
+                            "last_replied_at": received_at,
+                        }).eq("id", thread_id).execute()
+                    else:
+                        new_thread = db.client.table("campaign_threads").insert({
+                            "company_id": company_id,
+                            "contact_id": contact_id,
+                            "status": "replied",
+                            "last_replied_at": received_at,
+                            "workspace_id": workspace_id,
+                            "sequence_name": draft.get("sequence_name", "email_value_first"),
+                            "current_step": draft.get("sequence_step", 1),
+                        }).execute()
+                        if new_thread.data:
+                            thread_id = new_thread.data[0]["id"]
+                except Exception as e:
+                    logger.warning(f"Gmail intake: campaign_threads upsert failed: {e}")
+
+                # Insert thread_message — includes thread_id so it surfaces in the triage UI
                 try:
                     db.client.table("thread_messages").insert({
+                        "thread_id": thread_id,
                         "company_id": company_id,
                         "contact_id": contact_id,
                         "direction": "inbound",
@@ -309,15 +343,6 @@ def _run_gmail_intake() -> None:
                     }).execute()
                 except Exception as e:
                     logger.warning(f"Gmail intake: interaction insert failed: {e}")
-
-                # Update campaign_threads if exists
-                try:
-                    db.client.table("campaign_threads").update({
-                        "status": "replied",
-                        "last_replied_at": received_at,
-                    }).eq("contact_id", contact_id).execute()
-                except Exception as e:
-                    logger.warning(f"Gmail intake: campaign_threads update failed: {e}")
 
                 # Update engagement_sequence based on intent
                 try:
