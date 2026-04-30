@@ -38,6 +38,40 @@ PERSONA_PRIORITY = {
     "cio": 55,
 }
 
+# Title keywords that disqualify a contact from cold outreach.
+# These roles don't buy manufacturing ops AI — emailing them burns credibility.
+_WRONG_PERSONA_TITLE_SIGNALS = (
+    "sales", "business development", " bd ", "account manager",
+    "account executive", "marketing", "advertising", "public relations",
+    " hr ", "human resources", "recrui", "talent acquisition",
+    "finance", "financial", "controller", "accounting", "treasurer",
+    "legal", "counsel", "attorney", "compliance officer",
+    "procurement", "purchasing",  # borderline — exclude; they don't sponsor AI
+    "customer service", "customer success",
+)
+
+_REQUIRED_OPS_SIGNALS = (
+    "operation", "manufactur", "plant", "production", "maintenance",
+    "reliability", "engineering", "quality", "process", "supply chain",
+    "director", "vice president", "vp", "coo", "cto", "ceo", "president",
+    "general manager", "gm", "site manager", "facility", "continuous improvement",
+    "lean", "digital transform", "technology", "it ",
+)
+
+
+def _is_wrong_persona(contact: dict) -> bool:
+    """Return True if this contact's title signals a non-buyer persona."""
+    title = (contact.get("title") or "").lower()
+    if not title:
+        return False  # Unknown title: give benefit of the doubt
+
+    # Explicit disqualifying signals
+    for signal in _WRONG_PERSONA_TITLE_SIGNALS:
+        if signal in title:
+            return True
+
+    return False
+
 def _build_system_prompt() -> str:
     """Build the outreach system prompt from outreach_guidelines.yaml + offer_context.yaml.
 
@@ -555,6 +589,12 @@ class OutreachAgent(BaseAgent):
         if not contacts:
             return []
 
+        # Filter wrong personas first; fall back to all contacts if none pass
+        eligible = [c for c in contacts if not _is_wrong_persona(c)]
+        if not eligible:
+            eligible = contacts
+        contacts = eligible
+
         # Score and sort all contacts
         def contact_score(c: dict) -> int:
             persona = c.get("persona_type", "")
@@ -592,11 +632,14 @@ class OutreachAgent(BaseAgent):
         if not contacts:
             return None
 
-        # Filter contacts with email addresses
-        emailable = [c for c in contacts if c.get("email")]
+        # Filter contacts with email addresses, excluding wrong personas
+        emailable = [
+            c for c in contacts
+            if c.get("email") and not _is_wrong_persona(c)
+        ]
         if not emailable:
-            # Fall back to any contact
-            emailable = contacts
+            # Fall back to anyone with an email (better than nothing)
+            emailable = [c for c in contacts if c.get("email")] or contacts
 
         # Sort by persona priority (highest first), then decision_maker
         def contact_score(c):

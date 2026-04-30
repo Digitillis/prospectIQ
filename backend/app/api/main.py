@@ -351,8 +351,58 @@ def _run_gmail_intake() -> None:
         logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
 
 
+MONTHLY_API_BUDGET_USD = 100.0  # Hard stop for automated research/enrichment
+
+
+def _get_monthly_api_spend() -> float:
+    """Return total estimated API spend in the current calendar month (USD)."""
+    try:
+        from backend.app.core.database import get_supabase_client
+        from datetime import datetime, timezone
+        client = get_supabase_client()
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        result = (
+            client.table("api_costs")
+            .select("estimated_cost_usd")
+            .gte("created_at", month_start)
+            .execute()
+        )
+        return sum(float(r.get("estimated_cost_usd") or 0) for r in (result.data or []))
+    except Exception as e:
+        logger.warning(f"Could not fetch monthly API spend: {e}")
+        return 0.0
+
+
+def _check_budget(job_name: str) -> bool:
+    """Return True if budget allows running. Logs a warning and returns False if over limit."""
+    spend = _get_monthly_api_spend()
+    if spend >= MONTHLY_API_BUDGET_USD:
+        logger.warning(
+            f"BUDGET GATE: {job_name} skipped — monthly API spend ${spend:.2f} "
+            f">= ${MONTHLY_API_BUDGET_USD:.2f} limit. Top up at platform.console.anthropic.com."
+        )
+        return False
+    remaining = MONTHLY_API_BUDGET_USD - spend
+    logger.info(f"Budget check ({job_name}): ${spend:.2f} spent, ${remaining:.2f} remaining this month")
+    return True
+
+
+def _run_qualification() -> None:
+    """Daily job: score researched companies and promote to qualified/disqualified."""
+    try:
+        from backend.app.agents.qualification import QualificationAgent
+        agent = QualificationAgent()
+        result = agent.run(batch_size=100)
+        logger.info(f"Scheduled qualification: processed={result.processed} errors={result.errors}")
+    except Exception as e:
+        logger.error(f"Scheduled qualification failed: {e}", exc_info=True)
+
+
 def _run_research() -> None:
-    """Daily job: research up to 20 discovered companies via Claude."""
+    """Runs 3× daily (9am / 12pm / 3pm Mon-Fri) — 25 companies per run, budget-gated."""
+    if not _check_budget("research"):
+        return
     try:
         from backend.app.agents.research import ResearchAgent
         agent = ResearchAgent()
@@ -362,8 +412,19 @@ def _run_research() -> None:
         logger.error(f"Scheduled research failed: {e}", exc_info=True)
 
 
+def _run_daily_report() -> None:
+    """Daily job at 5pm Chicago: generate and email the GTM brief."""
+    try:
+        from backend.app.agents.daily_report import run_daily_report
+        run_daily_report()
+    except Exception as e:
+        logger.error(f"Daily report failed: {e}", exc_info=True)
+
+
 def _run_enrichment() -> None:
     """Daily job: enrich up to 50 contacts via Apollo (burns Apollo credits)."""
+    if not _check_budget("enrichment"):
+        return
     try:
         from backend.app.agents.enrichment import EnrichmentAgent
         agent = EnrichmentAgent()
@@ -371,6 +432,48 @@ def _run_enrichment() -> None:
         logger.info(f"Scheduled enrichment: processed={result.processed} errors={result.errors}")
     except Exception as e:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
+
+
+def _run_weekly_cost_summary() -> None:
+    """Monday 8am job: log a weekly API cost summary."""
+    try:
+        from backend.app.core.database import get_supabase_client
+        from datetime import datetime, timezone, timedelta
+        client = get_supabase_client()
+        now = datetime.now(timezone.utc)
+        week_start = (now - timedelta(days=7)).isoformat()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+        week_result = (
+            client.table("api_costs")
+            .select("provider,model,estimated_cost_usd,input_tokens,output_tokens")
+            .gte("created_at", week_start)
+            .execute()
+        )
+        month_result = (
+            client.table("api_costs")
+            .select("estimated_cost_usd")
+            .gte("created_at", month_start)
+            .execute()
+        )
+
+        week_rows = week_result.data or []
+        month_total = sum(float(r.get("estimated_cost_usd") or 0) for r in (month_result.data or []))
+        week_total = sum(float(r.get("estimated_cost_usd") or 0) for r in week_rows)
+
+        by_provider: dict[str, float] = {}
+        for r in week_rows:
+            key = f"{r.get('provider','?')}/{r.get('model','?')}"
+            by_provider[key] = by_provider.get(key, 0) + float(r.get("estimated_cost_usd") or 0)
+
+        breakdown = " | ".join(f"{k}: ${v:.2f}" for k, v in sorted(by_provider.items(), key=lambda x: -x[1])[:5])
+        logger.info(
+            f"WEEKLY COST SUMMARY — past 7 days: ${week_total:.2f} | "
+            f"month-to-date: ${month_total:.2f} / ${MONTHLY_API_BUDGET_USD:.2f} budget | "
+            f"top models: {breakdown}"
+        )
+    except Exception as e:
+        logger.error(f"Weekly cost summary failed: {e}")
 
 
 def _run_auto_action_low_priority() -> None:
@@ -419,27 +522,52 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         scheduler.add_job(_run_gmail_intake, "interval", minutes=30, id="gmail_intake")
-        # Research: 9am Chicago daily Mon-Fri — 20 companies per run via Claude
+        # Research: 3× daily Mon-Fri (9am / 12pm / 3pm) — 25 companies per run, budget-gated
+        # 75 companies/day max; budget gate stops early if monthly limit hit
         scheduler.add_job(
             _run_research, "cron",
-            day_of_week="mon-fri", hour=9, minute=0,
+            day_of_week="mon-fri", hour="9,12,15", minute=0,
             timezone="America/Chicago",
             id="research",
         )
-        # Enrichment: 9:15am Chicago daily Mon-Fri — 50 contacts per run via Apollo
+        # Qualification: runs after each research wave (9:30 / 12:30 / 3:30)
+        # Scores researched companies, promotes to qualified (PQS 20+) or disqualifies
+        scheduler.add_job(
+            _run_qualification, "cron",
+            day_of_week="mon-fri", hour="9,12,15", minute=30,
+            timezone="America/Chicago",
+            id="qualification",
+        )
+        # Enrichment: 9:45am Chicago daily Mon-Fri — 50 contacts per run via Apollo
         scheduler.add_job(
             _run_enrichment, "cron",
-            day_of_week="mon-fri", hour=9, minute=15,
+            day_of_week="mon-fri", hour=9, minute=45,
             timezone="America/Chicago",
             id="enrichment",
+        )
+        # Weekly cost summary: Monday 8am Chicago
+        scheduler.add_job(
+            _run_weekly_cost_summary, "cron",
+            day_of_week="mon", hour=8, minute=0,
+            timezone="America/Chicago",
+            id="weekly_cost_summary",
+        )
+        # Daily GTM brief: 5pm Chicago Mon-Fri — Claude-written analysis + email to Avi
+        scheduler.add_job(
+            _run_daily_report, "cron",
+            day_of_week="mon-fri", hour=17, minute=0,
+            timezone="America/Chicago",
+            id="daily_report",
         )
         scheduler.start()
         logger.info(
             "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
-            "send_approved cron Mon-Fri 8:00-10:30 Chicago, gmail_intake every 30m, "
+            "send_approved cron Tue-Thu 8:00-11:00 Chicago, gmail_intake every 30m, "
             "process_due/hitl_auto_archive every 1h, "
             "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
-            "research/enrichment Mon-Fri 9:00/9:15am Chicago"
+            "research 9/12/3pm → qualification 9:30/12:30/3:30pm → enrichment 9:45am Mon-Fri Chicago (budget-gated), "
+            "daily_report 5pm Chicago Mon-Fri, "
+            "weekly_cost_summary Mon 8am Chicago"
         )
     except ImportError:
         logger.warning("APScheduler not installed — background jobs disabled")

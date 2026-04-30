@@ -539,9 +539,9 @@ thresholds:
     action: "disqualify"
     new_status: "disqualified"
   research_needed:
-    max_score: 14
+    max_score: 19
     action: "flag_for_review"
-    new_status: null  # stays at current status
+    new_status: null  # stays at current status (score 10-19: hold, don't consume enrichment credits)
   qualified:
     max_score: 39
     action: "qualify"
