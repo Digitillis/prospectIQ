@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 LINKEDIN_TO_EMAIL_COOLDOWN_DAYS = 0  # Email allowed immediately alongside LinkedIn
 DM_COMPLETE_TO_EMAIL_COOLDOWN_DAYS = 14
-COMPANY_LOCK_DAYS = 14
+COMPANY_LOCK_BUSINESS_DAYS = 5
 ACTIVITY_COOLDOWN_HOURS = 48
 
 
@@ -222,17 +222,31 @@ def assign_channel(
     return ("email", "default_email_higher_response_rate")
 
 
+def _business_days_ago(n: int) -> datetime:
+    """Return the datetime that was n business days (Mon-Fri) ago."""
+    now = datetime.now(timezone.utc)
+    count = 0
+    d = now
+    while count < n:
+        d -= timedelta(days=1)
+        if d.weekday() < 5:  # Mon=0 … Fri=4
+            count += 1
+    return d
+
+
 def is_company_locked(
     db: Database,
     company_id: str,
     exclude_contact_id: str = None,
 ) -> tuple[bool, str | None]:
-    """Check if any contact at this company was contacted in the last 14 days.
+    """Check if any contact at this company was contacted in the last 5 business days.
 
-    Prevents multi-contact collision (two VPs getting outreach the same week).
+    Prevents multi-contact collision (two contacts at the same company getting
+    outreach in the same week). Uses business days so weekends don't eat into
+    the window.
     """
     now = datetime.now(timezone.utc)
-    cutoff = (now - timedelta(days=COMPANY_LOCK_DAYS)).isoformat()
+    cutoff = _business_days_ago(COMPANY_LOCK_BUSINESS_DAYS).isoformat()
 
     try:
         # Only count actual outreach touches — not status changes or system notes
@@ -262,7 +276,7 @@ def is_company_locked(
             days_ago = (now - created_at).days
         except (ValueError, AttributeError):
             days_ago = 0
-        return (True, f"another contact reached {days_ago}d ago — retry in {COMPANY_LOCK_DAYS - days_ago}d")
+        return (True, f"another contact reached {days_ago}d ago — retry after {COMPANY_LOCK_BUSINESS_DAYS} business days")
 
     return (False, None)
 
