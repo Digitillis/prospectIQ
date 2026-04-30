@@ -493,6 +493,54 @@ async def health_check():
     }
 
 
+@app.get("/api/admin/send-config")
+async def send_config_check():
+    """Diagnostic: show send-relevant config flags (no secret values)."""
+    from backend.app.core.config import get_settings
+    from backend.app.core.database import get_supabase_client
+    from datetime import date
+    s = get_settings()
+    client = get_supabase_client()
+    today = date.today().isoformat()
+    try:
+        sent_today = (
+            client.table("outreach_drafts")
+            .select("id", count="exact")
+            .gte("sent_at", f"{today}T00:00:00")
+            .execute()
+        ).count or 0
+    except Exception:
+        sent_today = -1
+    try:
+        cfg_row = (
+            client.table("outreach_send_config")
+            .select("daily_limit,batch_size,min_gap_minutes,send_enabled")
+            .limit(1).execute().data or [{}]
+        )[0]
+    except Exception:
+        cfg_row = {}
+    try:
+        pending = (
+            client.table("outreach_drafts")
+            .select("id", count="exact")
+            .eq("approval_status", "approved")
+            .is_("sent_at", "null")
+            .execute()
+        ).count or 0
+    except Exception:
+        pending = -1
+    return {
+        "env_send_enabled": s.send_enabled,
+        "env_resend_api_key_set": bool(s.resend_api_key),
+        "env_resend_api_key_prefix": s.resend_api_key[:8] + "..." if s.resend_api_key else "",
+        "env_send_window_start": s.send_window_start,
+        "env_send_window_end": s.send_window_end,
+        "db_send_config": cfg_row,
+        "sent_today": sent_today,
+        "approved_unsent": pending,
+    }
+
+
 @app.post("/api/admin/trigger-send")
 async def trigger_send():
     """Manually trigger send_approved — useful when cron tick hasn't fired yet."""
