@@ -28,8 +28,10 @@ COST_TABLE = {
         "default": {"input": 3.00, "output": 15.00},
     },
     "apollo": {
-        "people_search": {"per_call": 0.0},  # Free
-        "people_enrichment": {"per_call": 0.01},  # ~$0.01 per credit
+        "people_search": {"per_call": 0.0},          # Free — no credit cost
+        "people_match": {"per_call": 0.02850},        # 1 credit = $114/4000
+        "people_enrichment": {"per_call": 0.02850},   # same
+        "organization_enrich": {"per_call": 0.02850}, # same
         "default": {"per_call": 0.0},
     },
 }

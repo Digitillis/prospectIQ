@@ -68,8 +68,22 @@ class EnrichmentAgent(BaseAgent):
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         else:
-            # Enrich qualified companies that haven't been enriched yet
-            companies = self.db.get_companies(status="qualified", limit=limit)
+            # Pull qualified companies that still need contact emails.
+            # Fetch a large pool sorted by PQS and skip any company where every
+            # known contact has already been attempted (has no email but apollo was
+            # called).  This prevents cycling the same stuck top-20 forever.
+            pool = self.db.get_companies(status="qualified", limit=500)
+            companies = []
+            for co in pool:
+                if len(companies) >= limit:
+                    break
+                existing = self.db.get_contacts_for_company(co["id"])
+                # Include if: no contacts yet (need discovery), or some contacts
+                # still have no email and haven't been attempted this cycle.
+                if not existing:
+                    companies.append(co)
+                elif any(not c.get("email") for c in existing):
+                    companies.append(co)
 
         if not companies:
             console.print("[yellow]No companies ready for enrichment.[/yellow]")
@@ -222,6 +236,7 @@ class EnrichmentAgent(BaseAgent):
                         reveal_phone_number=include_phone,
                     )
 
+                    # 1 Apollo credit per people/match call — $114/4000 = $0.02850/credit
                     self.track_cost(
                         provider="apollo",
                         model="people_match",
@@ -315,15 +330,11 @@ class EnrichmentAgent(BaseAgent):
     def _select_contact_to_enrich(self, contacts: list[dict]) -> dict | None:
         """Select the highest-priority contact that needs enrichment.
 
-        Prioritizes contacts without email, sorted by persona priority.
-        Skips contacts already attempted (enrichment_status="needs_enrichment") to avoid
-        burning Apollo credits on contacts that previously returned no data.
+        Tries all contacts without an email, sorted by persona priority.
+        We do not skip previously-attempted contacts — Apollo data changes and
+        we have credits to burn (6,050 expiring May 27).
         """
-        # Split into needs-enrichment vs already-enriched or already-attempted
-        needs_enrichment = [
-            c for c in contacts
-            if not c.get("email") and c.get("enrichment_status") != "needs_enrichment"
-        ]
+        needs_enrichment = [c for c in contacts if not c.get("email")]
         if not needs_enrichment:
             return None
 
