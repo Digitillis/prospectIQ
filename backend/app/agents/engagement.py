@@ -158,6 +158,12 @@ class EngagementAgent(BaseAgent):
         except Exception:
             pass
 
+        # Ensure workspace_id is set on the DB instance so outreach_state_log
+        # inserts (which have a NOT NULL workspace_id constraint) succeed in
+        # scheduler context where no auth token propagates it automatically.
+        if not self.db.workspace_id:
+            self.db.workspace_id = settings.default_workspace_id
+
         # Fetch a larger candidate pool so blocked drafts (suppressed / locked
         # companies) don't silently consume all batch slots. The oldest drafts
         # are checked first; we stop sending once batch_size emails have gone out.
@@ -336,6 +342,27 @@ class EngagementAgent(BaseAgent):
                     "next_action_type": next_action_type,
                     "started_at": now,
                 })
+
+                # Advance contact state machine: enriched → touch_N_sent
+                _step = max(1, min(int(draft.get("sequence_step") or 1), 5))
+                try:
+                    self.db.update_contact_state(
+                        contact_id=draft["contact_id"],
+                        new_state=f"touch_{_step}_sent",
+                        channel="email",
+                        instantly_event="email_sent",
+                        metadata={
+                            "sequence_step": _step,
+                            "resend_message_id": resend_id,
+                            "sequence_name": draft.get("sequence_name"),
+                        },
+                        extra_updates={
+                            "last_touch_channel": "email",
+                            "last_touch_at": now,
+                        },
+                    )
+                except Exception as _e:
+                    logger.warning(f"update_contact_state failed (non-fatal): {_e}")
 
                 company_ids_sent_this_batch.add(company_id)
                 sent_this_batch += 1
