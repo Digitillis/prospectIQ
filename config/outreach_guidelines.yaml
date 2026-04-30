@@ -21,6 +21,8 @@ sender_pool:
       email: "avanish@trydigitillis.com"
     - name: "Avanish Mehrotra"
       email: "avanish@usedigitillis.com"
+    # hello@ accounts excluded from cold outreach — generic address breaks personal credibility.
+    # Kept in Instantly for warmup only; domain reputation benefit carries over to avanish@ accounts.
 
 # Who is sending the emails
 sender:

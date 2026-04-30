@@ -376,7 +376,8 @@ def _run_gmail_intake() -> None:
         logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
 
 
-MONTHLY_API_BUDGET_USD = 100.0  # Hard stop for automated research/enrichment
+MONTHLY_API_BUDGET_USD = 200.0  # Hard stop for automated research/enrichment
+BUDGET_WARN_THRESHOLD_USD = 150.0  # Alert email at this level (~75% of cap)
 
 
 def _get_monthly_api_spend() -> float:
@@ -400,14 +401,55 @@ def _get_monthly_api_spend() -> float:
 
 
 def _check_budget(job_name: str) -> bool:
-    """Return True if budget allows running. Logs a warning and returns False if over limit."""
+    """Return True if budget allows running. Emails Avi at warning threshold; hard-stops at cap."""
     spend = _get_monthly_api_spend()
+
     if spend >= MONTHLY_API_BUDGET_USD:
         logger.warning(
             f"BUDGET GATE: {job_name} skipped — monthly API spend ${spend:.2f} "
-            f">= ${MONTHLY_API_BUDGET_USD:.2f} limit. Top up at platform.console.anthropic.com."
+            f">= ${MONTHLY_API_BUDGET_USD:.2f} limit."
         )
         return False
+
+    # One-per-day warning email when spend crosses the alert threshold
+    if spend >= BUDGET_WARN_THRESHOLD_USD:
+        try:
+            from backend.app.core.database import get_supabase_client
+            from datetime import date
+            client = get_supabase_client()
+            today = str(date.today())
+            already_warned = (
+                client.table("api_costs")
+                .select("id", count="exact")
+                .eq("provider", "__budget_warn__")
+                .gte("created_at", f"{today}T00:00:00")
+                .execute()
+            ).count or 0
+            if not already_warned:
+                import asyncio
+                from backend.app.core.notifications import send_email
+                asyncio.run(send_email(
+                    to="avanish.mehrotra@gmail.com",
+                    subject=f"ProspectIQ spend alert: ${spend:.0f} of ${MONTHLY_API_BUDGET_USD:.0f} used this month",
+                    html_body=(
+                        f"<p>Monthly API spend is at <strong>${spend:.2f}</strong> "
+                        f"({spend / MONTHLY_API_BUDGET_USD * 100:.0f}% of the ${MONTHLY_API_BUDGET_USD:.0f} cap).</p>"
+                        f"<p>Hard stop activates at ${MONTHLY_API_BUDGET_USD:.0f}. "
+                        f"Remaining budget: <strong>${MONTHLY_API_BUDGET_USD - spend:.2f}</strong>.</p>"
+                        f"<p>Research and enrichment continue until the cap is hit. "
+                        f"Reply to this email or update the cap in Railway if you want to raise it.</p>"
+                    ),
+                ))
+                client.table("api_costs").insert({
+                    "provider": "__budget_warn__",
+                    "model": "alert",
+                    "estimated_cost_usd": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                }).execute()
+        except Exception as e:
+            logger.debug(f"Budget warning email skipped: {e}")
+
     remaining = MONTHLY_API_BUDGET_USD - spend
     logger.info(f"Budget check ({job_name}): ${spend:.2f} spent, ${remaining:.2f} remaining this month")
     return True
@@ -472,7 +514,7 @@ def _run_auto_approve() -> None:
 
 
 def _run_limit_ramp() -> None:
-    """One-time job: ramp daily_limit to 150 (30/account × 5) one week after launch."""
+    """One-time job 2026-05-07: ramp to 150/day (30/account × 5 senders)."""
     try:
         from backend.app.core.database import get_supabase_client
         from backend.app.core.config import get_settings
