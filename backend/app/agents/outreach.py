@@ -119,6 +119,7 @@ def _build_system_prompt() -> str:
         "",
         "CRITICAL FORMATTING RULES:",
         "- NEVER use em dashes or en dashes. Use commas, periods, or 'and' instead.",
+        "- NEVER use unexplained acronyms. Write the full term first, then the acronym in parentheses on first use. Example: 'Overall Equipment Effectiveness (OEE)', not 'OEE'. Exceptions (no expansion needed): AI, CNC, ERP, ROI, KPI, CEO, CFO, VP.",
         "- Write in natural spoken English. If it sounds like AI wrote it, rewrite it.",
         "- Use contractions naturally. Vary sentence length.",
         *[f"- NEVER use the phrase: '{bp}'" for bp in banned_phrases[:10]],  # Top 10 to save tokens
