@@ -158,8 +158,13 @@ class EngagementAgent(BaseAgent):
         except Exception:
             pass
 
-        # Fetch approved drafts — capped at batch_size AND remaining daily quota
-        fetch_limit = min(batch_size, max(0, remaining_today))
+        # Fetch a larger candidate pool so blocked drafts (suppressed / locked
+        # companies) don't silently consume all batch slots. The oldest drafts
+        # are checked first; we stop sending once batch_size emails have gone out.
+        send_limit = min(batch_size, max(0, remaining_today))
+        # Fetch up to 5× the send limit so there are enough candidates even if
+        # most are suppressed or locked.
+        fetch_limit = min(send_limit * 5, max(0, remaining_today) + 40)
         drafts = (
             self.db.client.table("outreach_drafts")
             .select("*, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
@@ -179,14 +184,17 @@ class EngagementAgent(BaseAgent):
             return result
 
         console.print(
-            f"[cyan]Sending up to {fetch_limit} drafts "
+            f"[cyan]Checking up to {fetch_limit} draft candidates, sending up to {send_limit} "
             f"(batch_size={batch_size}, {sent_today}/{daily_limit} sent today)...[/cyan]"
         )
 
         # Track companies sent in this batch to prevent same-run multi-contact collision
         company_ids_sent_this_batch: set[str] = set()
+        sent_this_batch = 0
 
         for draft in drafts:
+            if sent_this_batch >= send_limit:
+                break
             contact = draft.get("contacts", {}) or {}
             company = draft.get("companies", {}) or {}
             company_name = company.get("name", "Unknown")
@@ -330,6 +338,7 @@ class EngagementAgent(BaseAgent):
                 })
 
                 company_ids_sent_this_batch.add(company_id)
+                sent_this_batch += 1
                 console.print(f"  [green]{company_name} → {contact_email}: Sent[/green]")
                 result.processed += 1
                 result.add_detail(company_name, "sent", f"To: {contact_email}")
