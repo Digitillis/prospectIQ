@@ -402,11 +402,13 @@ async def lifespan(app: FastAPI):
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler(timezone="America/Chicago")
         scheduler.add_job(_run_health_snapshot, "interval", minutes=15, id="health_snapshot")
-        # send_approved: cron at :00 and :30 of every hour Mon-Fri, 8am-11am Chicago
-        # Ticks: 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00 AM
+        # send_approved: Tue/Wed/Thu only, 8am-11am Chicago at :00 and :30
+        # Ticks: 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00 (7 per day)
+        # With batch_size=20 and daily_limit=100, first 5 ticks fill the quota
+        # so effectively all 100 emails go out by 10am — front-loaded as intended.
         scheduler.add_job(
             _run_send_approved, "cron",
-            day_of_week="mon-fri", hour="8-11", minute="0,30",
+            day_of_week="tue-thu", hour="8-11", minute="0,30",
             timezone="America/Chicago",
             id="send_approved",
         )
