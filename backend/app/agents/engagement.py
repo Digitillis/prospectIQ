@@ -609,7 +609,8 @@ class EngagementAgent(BaseAgent):
                     result.add_detail(company_name, "completed", "Sequence finished")
                     continue
 
-                channel = step_config["channel"]
+                # channel is defined at sequence level, not per-step in most YAML sequences
+                channel = step_config.get("channel") or sequence.get("channel", "email")
 
                 if channel == "email":
                     # Check for a prospect reply to inject as context
@@ -662,7 +663,7 @@ class EngagementAgent(BaseAgent):
                         if step["step"] == further_step:
                             delay = step.get("delay_days", 3)
                             next_next_action_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
-                            next_next_type = f"send_{step['channel']}"
+                            next_next_type = f"send_{step.get('channel') or sequence.get('channel', 'email')}"
                             break
 
                 self.db.update_engagement_sequence(seq["id"], {

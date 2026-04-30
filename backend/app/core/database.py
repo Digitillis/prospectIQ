@@ -123,12 +123,59 @@ class Database:
         return result.data[0] if result.data else None
 
     def get_company_by_name(self, name: str) -> dict | None:
-        """Get a company by name (case-insensitive, for subsidiary dedup)."""
-        result = self.client.table("companies").select("id, name").ilike("name", name).limit(1).execute()
+        """Get a company by name (case-insensitive, workspace-scoped)."""
+        query = self._filter_ws(self.client.table("companies").select("id, name")).ilike("name", name).limit(1)
+        result = query.execute()
         return result.data[0] if result.data else None
 
     def insert_company(self, data: dict) -> dict:
-        """Insert a new company record."""
+        """Insert a company, returning existing record if a duplicate is detected.
+
+        Dedup priority: apollo_id → domain → name (case-insensitive).
+        When a match is found, missing fields on the existing record are patched
+        with values from ``data`` (winner fields are never overwritten).
+        """
+        existing = None
+
+        apollo_id = data.get("apollo_id")
+        if apollo_id:
+            existing = self.get_company_by_apollo_id(apollo_id)
+
+        if not existing:
+            domain = data.get("domain")
+            if domain:
+                existing = self.get_company_by_domain(domain)
+
+        if not existing:
+            name = data.get("name", "")
+            if name:
+                existing = self.get_company_by_name(name)
+
+        if existing:
+            company_id = existing["id"]
+            # Patch any null/missing fields on the existing record
+            enrichable = [
+                "apollo_id", "domain", "website", "linkedin_url", "phone",
+                "employee_count", "revenue_range", "industry", "sub_sector",
+                "technology_stack", "pain_signals", "personalization_hooks",
+                "research_summary", "tier", "campaign_name",
+                "headcount_growth_6m", "funding_stage",
+            ]
+            # Fetch current row to know which fields are already populated
+            current = self.get_company(company_id) or {}
+            patch = {
+                k: data[k]
+                for k in enrichable
+                if k in data and data[k] and not current.get(k)
+            }
+            if patch:
+                try:
+                    self.client.table("companies").update(patch).eq("id", company_id).execute()
+                except Exception as e:
+                    logger.warning(f"insert_company patch failed for {company_id}: {e}")
+            logger.debug(f"insert_company: dedup hit for '{data.get('name')}' → {company_id}")
+            return {**current, **patch, "id": company_id}
+
         result = self.client.table("companies").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
@@ -264,7 +311,7 @@ class Database:
                 .eq("company_id", company_id)
                 .eq("contact_id", contact_id)
                 .eq("sequence_step", sequence_step)
-                .in_("approval_status", ["pending", "approved", "edited", "sent"])
+                .in_("approval_status", ["pending", "approved", "edited", "rejected"])
                 .limit(1)
                 .execute()
             )
