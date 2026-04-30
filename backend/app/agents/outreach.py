@@ -518,16 +518,17 @@ class OutreachAgent(BaseAgent):
 
                     parsed = json.loads(content)
 
-                    # Create outreach draft
+                    # Create outreach draft — strip em dashes from all text fields
+                    _clean = lambda s: (s or "").replace("—", " - ")
                     draft_data = {
                         "company_id": company_id,
                         "contact_id": contact["id"],
                         "channel": resolved_channel,
                         "sequence_name": sequence_name,
                         "sequence_step": sequence_step,
-                        "subject": parsed.get("subject", ""),
-                        "body": parsed.get("body", ""),
-                        "personalization_notes": parsed.get("personalization_notes", ""),
+                        "subject": _clean(parsed.get("subject", "")),
+                        "body": _clean(parsed.get("body", "")),
+                        "personalization_notes": _clean(parsed.get("personalization_notes", "")),
                         "approval_status": "pending",
                     }
 
