@@ -351,6 +351,28 @@ def _run_gmail_intake() -> None:
         logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
 
 
+def _run_research() -> None:
+    """Daily job: research up to 20 discovered companies via Claude."""
+    try:
+        from backend.app.agents.research import ResearchAgent
+        agent = ResearchAgent()
+        result = agent.run(batch_size=20)
+        logger.info(f"Scheduled research: processed={result.processed} errors={result.errors}")
+    except Exception as e:
+        logger.error(f"Scheduled research failed: {e}", exc_info=True)
+
+
+def _run_enrichment() -> None:
+    """Daily job: enrich up to 50 contacts via Apollo (burns Apollo credits)."""
+    try:
+        from backend.app.agents.enrichment import EnrichmentAgent
+        agent = EnrichmentAgent()
+        result = agent.run(batch_size=50)
+        logger.info(f"Scheduled enrichment: processed={result.processed} errors={result.errors}")
+    except Exception as e:
+        logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
+
+
 def _run_auto_action_low_priority() -> None:
     """Hourly job: auto-archive soft_no items pending for >72 hours."""
     try:
@@ -395,12 +417,27 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         scheduler.add_job(_run_gmail_intake, "interval", minutes=30, id="gmail_intake")
+        # Research: 9am Chicago daily Mon-Fri — 20 companies per run via Claude
+        scheduler.add_job(
+            _run_research, "cron",
+            day_of_week="mon-fri", hour=9, minute=0,
+            timezone="America/Chicago",
+            id="research",
+        )
+        # Enrichment: 9:15am Chicago daily Mon-Fri — 50 contacts per run via Apollo
+        scheduler.add_job(
+            _run_enrichment, "cron",
+            day_of_week="mon-fri", hour=9, minute=15,
+            timezone="America/Chicago",
+            id="enrichment",
+        )
         scheduler.start()
         logger.info(
             "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
             "send_approved cron Mon-Fri 8:00-10:30 Chicago, gmail_intake every 30m, "
             "process_due/hitl_auto_archive every 1h, "
-            "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h"
+            "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
+            "research/enrichment Mon-Fri 9:00/9:15am Chicago"
         )
     except ImportError:
         logger.warning("APScheduler not installed — background jobs disabled")

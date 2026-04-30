@@ -445,26 +445,26 @@ def _get_reply_strategy_hint(reply_body: str) -> str:
     return "Use your best judgment based on the reply content and classification."
 
 
-    def _cancel_active_sequences(self, company_id: str) -> int:
-        """Cancel all active engagement sequences for a company.
+def _cancel_active_sequences(self, company_id: str) -> int:
+    """Cancel all active engagement sequences for a company.
 
-        Returns:
-            Number of sequences cancelled.
-        """
-        cancelled = 0
-        try:
-            active_sequences = self.db.get_active_sequences()
-            for seq in active_sequences:
-                if seq.get("company_id") == company_id:
-                    self.db.update_engagement_sequence(seq["id"], {
-                        "status": "cancelled",
-                    })
-                    cancelled += 1
+    Returns:
+        Number of sequences cancelled.
+    """
+    cancelled = 0
+    try:
+        active_sequences = self.db.get_active_sequences()
+        for seq in active_sequences:
+            if seq.get("company_id") == company_id:
+                self.db.update_engagement_sequence(seq["id"], {
+                    "status": "cancelled",
+                })
+                cancelled += 1
 
-            if cancelled:
-                self.logger.info(f"Cancelled {cancelled} active sequences for company {company_id}")
+        if cancelled:
+            logger.info(f"Cancelled {cancelled} active sequences for company {company_id}")
 
-        except Exception as e:
-            self.logger.warning(f"Error cancelling sequences for {company_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Error cancelling sequences for {company_id}: {e}")
 
-        return cancelled
+    return cancelled
