@@ -581,6 +581,124 @@ async def send_config_check():
     }
 
 
+@app.get("/api/admin/send-trace")
+async def send_trace():
+    """Step-by-step dry-run of the send path — identifies exactly where it stops."""
+    from backend.app.core.config import get_settings
+    from backend.app.core.database import get_supabase_client, Database
+    from backend.app.core.suppression import is_suppressed
+    from backend.app.core.channel_coordinator import is_company_locked
+    from datetime import date
+
+    trace = []
+    s = get_settings()
+
+    # Step 1: gate checks
+    if not s.send_enabled:
+        return {"abort_at": "send_enabled=false", "trace": trace}
+    trace.append("send_enabled=true")
+
+    if not s.resend_api_key:
+        return {"abort_at": "resend_api_key missing", "trace": trace}
+    trace.append("resend_api_key=set")
+
+    client = get_supabase_client()
+    db = Database()
+
+    # Step 2: daily count
+    today = date.today().isoformat()
+    try:
+        sent_today = (
+            client.table("outreach_drafts").select("id", count="exact")
+            .gte("sent_at", f"{today}T00:00:00").execute()
+        ).count or 0
+    except Exception as e:
+        return {"abort_at": f"count_sent_today error: {e}", "trace": trace}
+
+    cfg = {"daily_limit": 30, "batch_size": 10}
+    try:
+        row = client.table("outreach_send_config").select("daily_limit,batch_size").limit(1).execute().data
+        if row:
+            cfg.update(row[0])
+    except Exception:
+        pass
+
+    remaining = cfg["daily_limit"] - sent_today
+    trace.append(f"sent_today={sent_today} daily_limit={cfg['daily_limit']} remaining={remaining}")
+
+    if remaining <= 0:
+        return {"abort_at": "daily_limit_reached", "trace": trace}
+
+    # Step 3: fetch drafts
+    fetch_limit = min(cfg["batch_size"], remaining)
+    try:
+        drafts = (
+            client.table("outreach_drafts")
+            .select("id,company_id,contact_id,subject,channel,companies(name),contacts(full_name,email)")
+            .eq("approval_status", "approved")
+            .is_("sent_at", "null")
+            .eq("channel", "email")
+            .not_.is_("subject", "null")
+            .neq("subject", "")
+            .order("created_at")
+            .limit(fetch_limit)
+            .execute()
+            .data
+        ) or []
+    except Exception as e:
+        return {"abort_at": f"fetch_drafts error: {e}", "trace": trace}
+
+    trace.append(f"drafts_fetched={len(drafts)}")
+    if not drafts:
+        return {"abort_at": "no_drafts_returned", "trace": trace}
+
+    # Step 4: trace first 3 drafts through all checks
+    per_draft = []
+    for draft in drafts[:3]:
+        info = {"id": draft["id"][:8]}
+        contact = draft.get("contacts") or {}
+        company = draft.get("companies") or {}
+        info["company"] = company.get("name", "null")
+        info["contact_email"] = contact.get("email") or None
+
+        if not info["contact_email"]:
+            info["skip_reason"] = "no_email"
+            per_draft.append(info)
+            continue
+
+        try:
+            suppressed, sup_reason = is_suppressed(
+                db, draft["company_id"], contact_id=draft.get("contact_id"), skip_duplicate_check=True
+            )
+            info["suppressed"] = suppressed
+            info["sup_reason"] = sup_reason
+        except Exception as e:
+            info["suppressed"] = f"error:{e}"
+
+        if info.get("suppressed") is True:
+            info["skip_reason"] = f"suppressed:{sup_reason}"
+            per_draft.append(info)
+            continue
+
+        try:
+            locked, lock_reason = is_company_locked(db, draft["company_id"], exclude_contact_id=draft.get("contact_id"))
+            info["locked"] = locked
+            info["lock_reason"] = lock_reason
+        except Exception as e:
+            info["locked"] = f"error:{e}"
+
+        if info.get("locked") is True:
+            info["skip_reason"] = f"locked:{lock_reason}"
+            per_draft.append(info)
+            continue
+
+        info["would_send"] = True
+        per_draft.append(info)
+
+    trace.append(f"first_3_drafts_checked")
+    return {"abort_at": None, "trace": trace, "per_draft": per_draft}
+
+
 @app.post("/api/admin/trigger-send")
 async def trigger_send():
     """Manually trigger send_approved — useful when cron tick hasn't fired yet."""
