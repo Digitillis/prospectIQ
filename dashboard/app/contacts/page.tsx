@@ -67,6 +67,10 @@ function formatLabel(s: string) {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function displayName(c: ContactWithCompany): string {
+  return c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "";
+}
+
 function exportCSV(contacts: ContactWithCompany[]) {
   const headers = [
     "Name",
@@ -80,7 +84,7 @@ function exportCSV(contacts: ContactWithCompany[]) {
     "LinkedIn",
   ];
   const rows = contacts.map((c) => [
-    c.full_name ?? "",
+    displayName(c),
     c.title ?? "",
     c.email ?? "",
     c.companies?.name ?? "",
@@ -291,10 +295,10 @@ export default function ContactsPage() {
                             href={`/prospects/${contact.companies.id}`}
                             className="hover:text-gray-900 dark:text-gray-100 hover:underline"
                           >
-                            {contact.full_name || "—"}
+                            {displayName(contact) || "—"}
                           </Link>
                         ) : (
-                          contact.full_name || "—"
+                          displayName(contact) || "—"
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-500 max-w-[180px] truncate" title={contact.title}>

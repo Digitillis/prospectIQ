@@ -181,6 +181,13 @@ class Database:
             data["persona_type"] = persona_type
             data["is_decision_maker"] = is_dm
 
+        # Auto-compute full_name from first_name + last_name when not provided
+        if not data.get("full_name"):
+            parts = [data.get("first_name", ""), data.get("last_name", "")]
+            computed = " ".join(p for p in parts if p).strip()
+            if computed:
+                data["full_name"] = computed
+
         # Compute initial priority score (no company context yet — will be
         # recomputed with full context on first update-scores run)
         data.setdefault("priority_score", compute_priority_score(data, {}))

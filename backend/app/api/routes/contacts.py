@@ -116,7 +116,7 @@ async def list_contacts(
     if is_decision_maker is not None:
         query = query.eq("is_decision_maker", is_decision_maker)
     if search:
-        query = query.ilike("full_name", f"%{search}%")
+        query = query.or_(f"full_name.ilike.%{search}%,first_name.ilike.%{search}%,last_name.ilike.%{search}%")
     if min_relationship is not None:
         query = query.gte("relationship_strength", min_relationship)
 
