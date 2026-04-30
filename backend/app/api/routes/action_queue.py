@@ -51,7 +51,7 @@ def _resolve_prospects(db, at, count, filt, excl):
     inds, tkw = filt.get("industries",[]), filt.get("title_keywords",[])
     ls = ["not_sent"] if at=="connection" else (["connection_accepted"] if at=="dm" else [])
     try:
-        q=db._filter_ws(db.client.table("contacts").select("id,full_name,title,linkedin_url,linkedin_status,company_id,email,companies(id,name,domain,tier,pqs_total,status,industry,pain_signals,personalization_hooks)"))
+        q=db._filter_ws(db.client.table("contacts").select("id,full_name,title,linkedin_url,linkedin_status,company_id,email,companies!contacts_company_id_fkey(id,name,domain,tier,pqs_total,status,industry,pain_signals,personalization_hooks)"))
         if ls: q=q.in_("linkedin_status",ls)
         if at in("connection","dm"): q=q.not_.is_("linkedin_url","null")
         for r in(q.limit(count*3).execute().data or[]):

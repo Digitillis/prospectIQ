@@ -404,7 +404,7 @@ async def get_signals():
                 db.client.table("contacts")
                 .select(
                     "id, full_name, title, persona_type, outreach_state, open_count, click_count, "
-                    "companies(id, name, tier, pqs_total, campaign_cluster)"
+                    "companies!contacts_company_id_fkey(id, name, tier, pqs_total, campaign_cluster)"
                 )
             )
             .gt("open_count", 2)

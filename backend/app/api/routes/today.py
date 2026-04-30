@@ -170,7 +170,7 @@ async def get_today_data():
             db._filter_ws(db.client.table("contacts")
             .select(
                 "id, full_name, title, linkedin_url, linkedin_status, company_id, "
-                "companies(id, name, tier, pqs_total, status, domain)"
+                "companies!contacts_company_id_fkey(id, name, tier, pqs_total, status, domain)"
             ))
             .not_.is_("linkedin_url", "null")
             .in_("linkedin_status", ["not_sent", "null"])
@@ -217,7 +217,7 @@ async def get_today_data():
             db._filter_ws(db.client.table("contacts")
             .select(
                 "id, full_name, title, linkedin_url, linkedin_status, company_id, seniority, city, state, "
-                "companies(id, name, tier, pqs_total, status, domain, industry, employee_count, "
+                "companies!contacts_company_id_fkey(id, name, tier, pqs_total, status, domain, industry, employee_count, "
                 "revenue_printed, headcount_growth_6m, is_public, parent_company_name, "
                 "pain_signals, personalization_hooks, research_summary)"
             ))
@@ -368,7 +368,7 @@ async def get_today_data():
             db._filter_ws(db.client.table("contacts")
             .select(
                 "id, full_name, title, linkedin_url, company_id, "
-                "companies(name, tier, pqs_total)"
+                "companies!contacts_company_id_fkey(name, tier, pqs_total)"
             ))
             .eq("linkedin_status", "connection_sent")
             .limit(30)

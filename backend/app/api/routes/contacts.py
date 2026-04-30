@@ -71,7 +71,7 @@ async def relationship_summary():
     db = get_db()
     contacts_result = (
         db._filter_ws(db.client.table("contacts")
-        .select("id, full_name, relationship_strength, is_decision_maker, company_id, companies(name, tier)"))
+        .select("id, full_name, relationship_strength, is_decision_maker, company_id, companies!contacts_company_id_fkey(name, tier)"))
         .not_.is_("relationship_strength", "null")
         .execute()
     )
@@ -105,7 +105,7 @@ async def list_contacts(
     """List all contacts across companies with optional filters."""
     db = get_db()
     query = db._filter_ws(db.client.table("contacts").select(
-        "*, companies(id, name, tier, status, pqs_total, domain)"
+        "*, companies!contacts_company_id_fkey(id, name, tier, status, pqs_total, domain)"
     ))
     if persona_type:
         query = query.eq("persona_type", persona_type)
@@ -134,7 +134,7 @@ async def get_contact(contact_id: str):
     db = get_db()
     contact_result = (
         db._filter_ws(db.client.table("contacts")
-        .select("*, companies(id, name, tier, status, pqs_total, domain)"))
+        .select("*, companies!contacts_company_id_fkey(id, name, tier, status, pqs_total, domain)"))
         .eq("id", contact_id)
         .execute()
     )
