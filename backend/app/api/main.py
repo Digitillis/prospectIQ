@@ -356,7 +356,7 @@ def _run_research() -> None:
     try:
         from backend.app.agents.research import ResearchAgent
         agent = ResearchAgent()
-        result = agent.run(batch_size=20)
+        result = agent.run(batch_size=25)
         logger.info(f"Scheduled research: processed={result.processed} errors={result.errors}")
     except Exception as e:
         logger.error(f"Scheduled research failed: {e}", exc_info=True)
