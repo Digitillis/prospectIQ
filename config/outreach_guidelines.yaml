@@ -5,6 +5,23 @@
 
 version: "1.0"
 
+# Multi-sender rotation pool — all replies route to reply_to address.
+# Selection is deterministic per contact (hash of contact email), so every
+# email in a thread always comes from the same sender address.
+sender_pool:
+  reply_to: "avi@digitillis.io"
+  senders:
+    - name: "Avanish Mehrotra"
+      email: "avi@digitillis.io"
+    - name: "Avanish Mehrotra"
+      email: "avanish@getdigitillis.com"
+    - name: "Avanish Mehrotra"
+      email: "avanish@meetdigitillis.com"
+    - name: "Avanish Mehrotra"
+      email: "avanish@trydigitillis.com"
+    - name: "Avanish Mehrotra"
+      email: "avanish@usedigitillis.com"
+
 # Who is sending the emails
 sender:
   name: "Avanish Mehrotra"

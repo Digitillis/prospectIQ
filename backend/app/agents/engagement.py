@@ -140,23 +140,42 @@ class EngagementAgent(BaseAgent):
             )
             return result
 
+        import hashlib
         import resend
         resend.api_key = settings.resend_api_key
 
-        # Resolve sender identity from outreach_guidelines config
-        _from_address = "noreply@example.com"
-        _from_display = "ProspectIQ"
+        # Load sender pool from outreach_guidelines config.
+        # Falls back to single sender if pool is not configured.
+        _reply_to = "avi@digitillis.io"
+        _sender_pool: list[dict] = []
+        _fallback_address = "avi@digitillis.io"
+        _fallback_display = "Avanish Mehrotra <avi@digitillis.io>"
         try:
             from backend.app.core.config import get_outreach_guidelines
             _guidelines = get_outreach_guidelines()
-            _sender = _guidelines.get("sender", {})
-            _email = _sender.get("email", "")
-            _name = _sender.get("name", "")
-            if _email:
-                _from_address = _email
-                _from_display = f"{_name} <{_email}>" if _name else _email
+            _pool_cfg = _guidelines.get("sender_pool", {})
+            _reply_to = _pool_cfg.get("reply_to", _reply_to)
+            _sender_pool = _pool_cfg.get("senders", [])
+            # Also load the canonical sender as ultimate fallback
+            _s = _guidelines.get("sender", {})
+            _e = _s.get("email", "")
+            _n = _s.get("name", "")
+            if _e:
+                _fallback_address = _e
+                _fallback_display = f"{_n} <{_e}>" if _n else _e
         except Exception:
             pass
+
+        def _pick_sender(contact_email: str) -> tuple[str, str]:
+            """Return (from_address, from_display) deterministically from pool."""
+            if not _sender_pool:
+                return _fallback_address, _fallback_display
+            idx = int(hashlib.md5(contact_email.lower().encode()).hexdigest(), 16) % len(_sender_pool)
+            s = _sender_pool[idx]
+            addr = s.get("email", _fallback_address)
+            name = s.get("name", "")
+            display = f"{name} <{addr}>" if name else addr
+            return addr, display
 
         # Ensure workspace_id is set on the DB instance so outreach_state_log
         # inserts (which have a NOT NULL workspace_id constraint) succeed in
@@ -264,6 +283,7 @@ class EngagementAgent(BaseAgent):
                     continue
 
                 from backend.app.utils.email_html import plain_to_html
+                _from_address, _from_display = _pick_sender(contact_email)
                 # Pass draft ID as idempotency key — Resend will deduplicate on
                 # their end if this exact key was already sent (belt-and-suspenders
                 # on top of the DB atomic claim above).
@@ -271,6 +291,7 @@ class EngagementAgent(BaseAgent):
                     {
                         "from": _from_display,
                         "to": [contact_email],
+                        "reply_to": [_reply_to],
                         "subject": subject,
                         "html": plain_to_html(body),
                         "text": body,
@@ -303,6 +324,7 @@ class EngagementAgent(BaseAgent):
                     "workspace_id": _settings.default_workspace_id,
                     "metadata": {
                         "from": _from_address,
+                        "reply_to": _reply_to,
                         "sequence_name": draft.get("sequence_name"),
                         "sequence_step": draft.get("sequence_step"),
                     },
