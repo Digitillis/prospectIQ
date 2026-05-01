@@ -53,6 +53,57 @@ from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
 logger = logging.getLogger(__name__)
 
+# Module-level scheduler reference — set during lifespan startup.
+# Used by _schedule_pipeline_advance() to queue one-shot reactive checks
+# without requiring callers to hold a reference to the scheduler.
+_scheduler = None
+
+
+def _schedule_pipeline_advance(delay_seconds: int = 60) -> None:
+    """Schedule a one-shot pipeline advance run, debounced by replace_existing.
+
+    Calling this multiple times within the delay window collapses to a single
+    run — the last call wins. This prevents stacking when multiple send batches
+    or reply events fire in quick succession.
+    """
+    if _scheduler is None:
+        return
+    try:
+        from datetime import datetime, timezone, timedelta
+        _scheduler.add_job(
+            _run_pipeline_advance,
+            "date",
+            run_date=datetime.now(timezone.utc) + timedelta(seconds=delay_seconds),
+            id="pipeline_advance_reactive",
+            replace_existing=True,
+        )
+    except Exception as exc:
+        logger.warning("_schedule_pipeline_advance failed: %s", exc)
+
+
+def _pipeline_advance_workspace(ws: dict) -> None:
+    from backend.app.core.pipeline_orchestrator import PipelineOrchestrator
+    result = PipelineOrchestrator(workspace_id=ws["id"]).advance()
+    status = result.get("pipeline_status", {})
+    actions = result.get("actions", [])
+    logger.info(
+        "Pipeline advance [%s]: pending=%d in_flight=%d days_left=%.1f actions=%s",
+        ws.get("name", ws["id"]),
+        status.get("outreach_pending", 0),
+        status.get("in_flight", 0),
+        status.get("days_remaining", 0),
+        actions or "none",
+    )
+
+
+def _run_pipeline_advance() -> None:
+    """Heartbeat + reactive trigger: advance the pipeline for all active workspaces."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_pipeline_advance_workspace, "pipeline_advance")
+    except Exception as exc:
+        logger.error("Pipeline advance failed: %s", exc, exc_info=True)
+
 
 # ---------------------------------------------------------------------------
 # Rate limiting middleware
@@ -113,6 +164,9 @@ def _send_approved_workspace(ws: dict) -> None:
     agent = EngagementAgent(db=Database(workspace_id=ws["id"]))
     result = agent.run(action="send_approved")
     logger.info("Send [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+    # Reactive: consumed pipeline capacity — check depth immediately
+    if result.processed > 0:
+        _schedule_pipeline_advance(delay_seconds=60)
 
 
 def _run_send_approved() -> None:
@@ -197,178 +251,261 @@ def _run_jit_pregenerate() -> None:
 
 
 def _gmail_intake_workspace(ws: dict) -> None:
-    """Run Gmail IMAP intake for a single workspace."""
+    """Run Gmail IMAP intake for a single workspace.
+
+    Loops over all active accounts in sender_pool so replies landing in any
+    sending mailbox are captured, not just the primary account.
+    """
     from backend.app.core.credential_store import CredentialStore
     from backend.app.core.database import Database
     from backend.app.integrations.gmail_imap import GmailImapClient, _classify_intent
     from datetime import datetime, timezone, timedelta
 
     ws_id = ws["id"]
+    ws_settings = ws.get("settings") or {}
     creds = CredentialStore(ws_id)
 
-    # Try workspace credentials first, then fall back to env
-    gmail_user = creds.get("gmail", "user")
-    gmail_password = creds.get("gmail", "app_password")
-    if not gmail_user or not gmail_password:
-        return  # Not configured for this workspace
+    # Build list of (email, password) pairs to poll.
+    # Primary account lives under the "gmail" credential key.
+    # Additional sender_pool accounts are stored under "gmail_{safe_email}" key.
+    accounts_to_poll: list[tuple[str, str]] = []
+
+    primary_user = creds.get("gmail", "user")
+    primary_password = creds.get("gmail", "app_password")
+    if primary_user and primary_password:
+        accounts_to_poll.append((primary_user, primary_password))
+
+    sender_pool = ws_settings.get("sender_pool") or []
+    for acct in sender_pool:
+        if not acct.get("active", True):
+            continue
+        acct_email = acct.get("email", "")
+        if not acct_email or acct_email == primary_user:
+            continue
+        safe_key = acct_email.replace("@", "_at_").replace(".", "_")
+        acct_password = creds.get(f"gmail_{safe_key}", "app_password")
+        if acct_password:
+            accounts_to_poll.append((acct_email, acct_password))
+
+    if not accounts_to_poll:
+        return
 
     db = Database(workspace_id=ws_id)
     processed = 0
     skipped = 0
 
-    with GmailImapClient(gmail_user, gmail_password) as gmail:
-        replies = gmail.fetch_unseen_replies()
-        if not replies:
-            return
+    for gmail_user, gmail_password in accounts_to_poll:
+        try:
+            with GmailImapClient(gmail_user, gmail_password) as gmail:
+                replies = gmail.fetch_unseen_replies()
+                if not replies:
+                    continue
 
-        for reply in replies:
-            from_email = reply["from_email"]
-            subject = reply["subject"]
-            body = reply["body"]
-            received_at = reply["received_at"]
+                for reply in replies:
+                    from_email = reply["from_email"]
+                    subject = reply["subject"]
+                    body = reply["body"]
+                    received_at = reply["received_at"]
 
-            clean_subject = subject.strip()
-            if clean_subject.lower().startswith("re:"):
-                clean_subject = clean_subject[3:].strip()
+                    clean_subject = subject.strip()
+                    if clean_subject.lower().startswith("re:"):
+                        clean_subject = clean_subject[3:].strip()
 
-            match = (
-                db.client.table("outreach_drafts")
-                .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
-                .ilike("subject", clean_subject)
-                .not_.is_("sent_at", "null")
-                .eq("workspace_id", ws_id)
-                .limit(1)
-                .execute()
-            ).data
-
-            if not match:
-                contact_row = (
-                    db.client.table("contacts")
-                    .select("id, company_id")
-                    .eq("email", from_email)
-                    .eq("workspace_id", ws_id)
-                    .limit(1)
-                    .execute()
-                ).data
-                if contact_row:
                     match = (
                         db.client.table("outreach_drafts")
                         .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
-                        .eq("contact_id", contact_row[0]["id"])
+                        .ilike("subject", clean_subject)
                         .not_.is_("sent_at", "null")
                         .eq("workspace_id", ws_id)
-                        .order("sent_at", desc=True)
                         .limit(1)
                         .execute()
                     ).data
 
-            if not match:
-                gmail.mark_as_read(reply["uid"])
-                skipped += 1
-                continue
+                    if not match:
+                        contact_row = (
+                            db.client.table("contacts")
+                            .select("id, company_id")
+                            .eq("email", from_email)
+                            .eq("workspace_id", ws_id)
+                            .limit(1)
+                            .execute()
+                        ).data
+                        if contact_row:
+                            match = (
+                                db.client.table("outreach_drafts")
+                                .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
+                                .eq("contact_id", contact_row[0]["id"])
+                                .not_.is_("sent_at", "null")
+                                .eq("workspace_id", ws_id)
+                                .order("sent_at", desc=True)
+                                .limit(1)
+                                .execute()
+                            ).data
 
-            draft = match[0]
-            company_id = draft["company_id"]
-            contact_id = draft["contact_id"]
+                    if not match:
+                        gmail.mark_as_read(reply["uid"])
+                        skipped += 1
+                        continue
 
-            existing = (
-                db.client.table("thread_messages")
-                .select("id")
-                .eq("contact_id", contact_id)
-                .eq("direction", "inbound")
-                .gte("created_at", (
-                    datetime.fromisoformat(received_at.replace("Z", "+00:00")) - timedelta(minutes=5)
-                ).isoformat())
-                .limit(1)
-                .execute()
-            ).data
-            if existing:
-                gmail.mark_as_read(reply["uid"])
-                skipped += 1
-                continue
+                    draft = match[0]
+                    company_id = draft["company_id"]
+                    contact_id = draft["contact_id"]
 
-            intent = _classify_intent(body, subject)
+                    existing = (
+                        db.client.table("thread_messages")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .eq("direction", "inbound")
+                        .gte("created_at", (
+                            datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+                            - timedelta(minutes=5)
+                        ).isoformat())
+                        .limit(1)
+                        .execute()
+                    ).data
+                    if existing:
+                        gmail.mark_as_read(reply["uid"])
+                        skipped += 1
+                        continue
 
-            thread_id = None
-            try:
-                existing_thread = (
-                    db.client.table("campaign_threads")
-                    .select("id")
-                    .eq("contact_id", contact_id)
-                    .limit(1)
-                    .execute()
-                ).data
-                if existing_thread:
-                    thread_id = existing_thread[0]["id"]
-                    db.client.table("campaign_threads").update({
-                        "status": "replied",
-                        "last_replied_at": received_at,
-                    }).eq("id", thread_id).execute()
-                else:
-                    new_thread = db.client.table("campaign_threads").insert({
-                        "company_id": company_id,
-                        "contact_id": contact_id,
-                        "status": "replied",
-                        "last_replied_at": received_at,
-                        "workspace_id": ws_id,
-                        "sequence_name": draft.get("sequence_name", "email_value_first"),
-                        "current_step": draft.get("sequence_step", 1),
-                    }).execute()
-                    if new_thread.data:
-                        thread_id = new_thread.data[0]["id"]
-            except Exception as e:
-                logger.warning(f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}")
+                    intent = _classify_intent(body, subject)
 
-            try:
-                db.client.table("thread_messages").insert({
-                    "thread_id": thread_id,
-                    "company_id": company_id,
-                    "contact_id": contact_id,
-                    "direction": "inbound",
-                    "body": body[:4000],
-                    "subject": subject,
-                    "classification": intent,
-                    "source": "gmail_imap",
-                    "workspace_id": ws_id,
-                }).execute()
-            except Exception as e:
-                logger.warning(f"Gmail intake [{ws['name']}]: thread_message insert failed: {e}")
+                    thread_id = None
+                    try:
+                        existing_thread = (
+                            db.client.table("campaign_threads")
+                            .select("id")
+                            .eq("contact_id", contact_id)
+                            .limit(1)
+                            .execute()
+                        ).data
+                        if existing_thread:
+                            thread_id = existing_thread[0]["id"]
+                            db.client.table("campaign_threads").update({
+                                "status": "replied",
+                                "last_replied_at": received_at,
+                            }).eq("id", thread_id).execute()
+                        else:
+                            new_thread = db.client.table("campaign_threads").insert({
+                                "company_id": company_id,
+                                "contact_id": contact_id,
+                                "status": "replied",
+                                "last_replied_at": received_at,
+                                "workspace_id": ws_id,
+                                "sequence_name": draft.get("sequence_name", "email_value_first"),
+                                "current_step": draft.get("sequence_step", 1),
+                            }).execute()
+                            if new_thread.data:
+                                thread_id = new_thread.data[0]["id"]
+                    except Exception as e:
+                        logger.warning(f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}")
 
-            try:
-                db.client.table("interactions").insert({
-                    "company_id": company_id,
-                    "contact_id": contact_id,
-                    "type": "email_replied",
-                    "channel": "email",
-                    "subject": subject,
-                    "body": body[:4000],
-                    "source": "gmail_imap",
-                    "metadata": {"intent": intent, "from": from_email},
-                    "workspace_id": ws_id,
-                }).execute()
-            except Exception as e:
-                logger.warning(f"Gmail intake [{ws['name']}]: interaction insert failed: {e}")
+                    try:
+                        db.client.table("thread_messages").insert({
+                            "thread_id": thread_id,
+                            "company_id": company_id,
+                            "contact_id": contact_id,
+                            "direction": "inbound",
+                            "body": body[:4000],
+                            "subject": subject,
+                            "classification": intent,
+                            "source": "gmail_imap",
+                            "workspace_id": ws_id,
+                        }).execute()
+                    except Exception as e:
+                        logger.warning(f"Gmail intake [{ws['name']}]: thread_message insert failed: {e}")
 
-            try:
-                if intent == "not_interested":
-                    db.client.table("engagement_sequences").update({"status": "paused"}).eq(
-                        "contact_id", contact_id).eq("status", "active").execute()
-                elif intent == "interested":
-                    expedite_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-                    db.client.table("engagement_sequences").update({"next_action_at": expedite_at}).eq(
-                        "contact_id", contact_id).eq("status", "active").execute()
-                elif intent == "ooo":
-                    delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
-                    db.client.table("engagement_sequences").update({"next_action_at": delay_at}).eq(
-                        "contact_id", contact_id).eq("status", "active").execute()
-            except Exception as e:
-                logger.warning(f"Gmail intake [{ws['name']}]: sequence update failed: {e}")
+                    try:
+                        db.client.table("interactions").insert({
+                            "company_id": company_id,
+                            "contact_id": contact_id,
+                            "type": "email_replied",
+                            "channel": "email",
+                            "subject": subject,
+                            "body": body[:4000],
+                            "source": "gmail_imap",
+                            "metadata": {"intent": intent, "from": from_email},
+                            "workspace_id": ws_id,
+                        }).execute()
+                    except Exception as e:
+                        logger.warning(f"Gmail intake [{ws['name']}]: interaction insert failed: {e}")
 
-            gmail.mark_as_read(reply["uid"])
-            processed += 1
+                    try:
+                        if intent == "not_interested":
+                            db.client.table("engagement_sequences").update({"status": "paused"}).eq(
+                                "contact_id", contact_id).eq("status", "active").execute()
+                        elif intent == "interested":
+                            expedite_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+                            db.client.table("engagement_sequences").update({"next_action_at": expedite_at}).eq(
+                                "contact_id", contact_id).eq("status", "active").execute()
+                        elif intent == "ooo":
+                            delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+                            db.client.table("engagement_sequences").update({"next_action_at": delay_at}).eq(
+                                "contact_id", contact_id).eq("status", "active").execute()
+                    except Exception as e:
+                        logger.warning(f"Gmail intake [{ws['name']}]: sequence update failed: {e}")
+
+                    # For reply-worthy intents, draft a response and queue for approval.
+                    if intent in ("interested", "question", "objection", "referral"):
+                        try:
+                            draft_row = (
+                                db.client.table("outreach_drafts")
+                                .select("id")
+                                .eq("contact_id", contact_id)
+                                .not_.is_("sent_at", "null")
+                                .eq("workspace_id", ws_id)
+                                .order("sent_at", desc=True)
+                                .limit(1)
+                                .execute()
+                            ).data
+                            original_draft_id = draft_row[0]["id"] if draft_row else None
+                            if original_draft_id:
+                                from backend.app.agents.reply import ReplyAgent
+                                from backend.app.core.database import Database as _Database
+                                reply_agent = ReplyAgent(db=_Database(workspace_id=ws_id))
+                                reply_result = reply_agent.run(reply_data={
+                                    "company_id": company_id,
+                                    "contact_id": contact_id,
+                                    "subject": subject,
+                                    "body": body,
+                                    "outreach_draft_id": original_draft_id,
+                                })
+                                if reply_result.success and thread_id:
+                                    _push_reply_to_hitl(db, thread_id, ws_id, intent)
+                                    logger.info(
+                                        "Gmail intake [%s]: reply draft queued for %s (intent=%s)",
+                                        ws["name"], from_email, intent,
+                                    )
+                        except Exception as e:
+                            logger.warning(f"Gmail intake [{ws['name']}]: reply draft failed: {e}")
+
+                    gmail.mark_as_read(reply["uid"])
+                    processed += 1
+
+        except Exception as e:
+            logger.error(f"Gmail intake [{ws['name']}]: account {gmail_user} failed: {e}", exc_info=True)
 
     if processed or skipped:
         logger.info("Gmail intake [%s]: %d processed, %d skipped", ws["name"], processed, skipped)
+
+    if processed > 0:
+        _schedule_pipeline_advance(delay_seconds=30)
+
+
+def _push_reply_to_hitl(db, thread_id: str, workspace_id: str, intent: str) -> None:
+    """Push a reply needing approval into the HITL queue."""
+    priority_map = {"interested": 1, "referral": 2, "objection": 3, "question": 3}
+    try:
+        db.client.table("hitl_queue").insert({
+            "thread_id": thread_id,
+            "workspace_id": workspace_id,
+            "classification": intent,
+            "classification_confidence": 0.85,
+            "priority": priority_map.get(intent, 3),
+            "status": "pending",
+        }).execute()
+    except Exception as e:
+        logger.warning("_push_reply_to_hitl failed: %s", e)
 
 
 def _run_gmail_intake() -> None:
@@ -997,8 +1134,10 @@ def _run_auto_action_low_priority() -> None:
 async def lifespan(app: FastAPI):
     """Start background scheduler on startup, shut down gracefully."""
     try:
+        global _scheduler
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler(timezone="America/Chicago")
+        _scheduler = scheduler
         scheduler.add_job(_run_health_snapshot, "interval", minutes=15, id="health_snapshot")
         # send_approved: Tue/Wed/Thu only, 8am-11am Chicago at :00 and :30
         # Ticks: 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00 (7 per day)
@@ -1057,20 +1196,19 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="limit_ramp",
         )
-        # F&B discovery: Monday 7am Chicago — runs before research wave so new companies
-        # enter research/qualification on the same day they're discovered.
+        # Pipeline advance heartbeat: every 4 hours.
+        # The orchestrator checks pipeline depth vs. capacity-aware watermark and fires
+        # discovery + learning only when needed. Reactive triggers (post-send, post-reply)
+        # schedule one-shot advances via _schedule_pipeline_advance(); this is the backstop.
         scheduler.add_job(
-            _run_fb_discovery, "cron",
-            day_of_week="mon", hour=7, minute=0,
-            timezone="America/Chicago",
-            id="fb_discovery",
+            _run_pipeline_advance, "interval", hours=4, id="pipeline_advance_heartbeat",
         )
-        # Mfg discovery: Wednesday 7am Chicago — staggered from F&B to spread Apollo quota
+        # Fire one advance immediately at startup to catch any pipeline gaps.
         scheduler.add_job(
-            _run_mfg_discovery, "cron",
-            day_of_week="wed", hour=7, minute=0,
-            timezone="America/Chicago",
-            id="mfg_discovery",
+            _run_pipeline_advance, "date",
+            run_date=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            + __import__("datetime").timedelta(seconds=90),
+            id="pipeline_advance_startup",
         )
         # Weekly post-send audit: Sunday 7am Chicago
         scheduler.add_job(
@@ -1078,15 +1216,6 @@ async def lifespan(app: FastAPI):
             day_of_week="sun", hour=7, minute=0,
             timezone="America/Chicago",
             id="weekly_post_send_audit",
-        )
-        # Weekly learning: Sunday 8am Chicago — runs after post_send_audit (7am).
-        # LEARNING_AUTO_APPLY=false (default): surfaces insights without writing to config.
-        # Flip to true after 50+ replies and one manual review of suggested adjustments.
-        scheduler.add_job(
-            _run_weekly_learning, "cron",
-            day_of_week="sun", hour=8, minute=0,
-            timezone="America/Chicago",
-            id="weekly_learning",
         )
         # Weekly contact backup: Saturday 5am Chicago → /Volumes/Digitillis/Data/prospectiq_backups/
         scheduler.add_job(
@@ -1118,17 +1247,16 @@ async def lifespan(app: FastAPI):
         )
         scheduler.start()
         logger.info(
-            "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
-            "send_approved cron Mon-Fri 8:00-11:00 Chicago, gmail_intake every 15m, "
-            "process_due/hitl_auto_archive every 1h, "
-            "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
-            "fb_discovery Mon 7am → mfg_discovery Wed 7am, "
-            "research 9/12/3/6pm → qualification +30m → enrichment 9:45am+2:45pm Mon-Fri (credit-gated), "
-            "daily_report 6am Chicago Mon-Fri, "
-            "weekly_learning Sun 8am Chicago (auto_apply gated by LEARNING_AUTO_APPLY env var), "
-            "weekly_contact_backup Sat 5am Chicago → /Volumes/Digitillis/Data/, "
-            "weekly_post_send_audit Sun 7am Chicago, "
-            "weekly_cost_summary Mon 8am Chicago"
+            "APScheduler started — "
+            "pipeline_advance every 4h (event-driven: capacity-aware discovery + learning trigger), "
+            "send_approved cron Mon-Fri 8:00-11:00 Chicago (reactive advance after each batch), "
+            "gmail_intake every 15m across all sender_pool mailboxes (reply draft + HITL on interested/question/objection), "
+            "research 9/12/3/6pm → qualification +30m → enrichment 9:45am+2:45pm Mon-Fri (Apollo credit-gated), "
+            "process_due/hitl_auto_archive every 1h, poll_instantly every 6h, "
+            "personalization_refresh/jit_pregenerate every 24h, "
+            "daily_report 6am Mon-Fri, "
+            "weekly_post_send_audit Sun 7am, weekly_contact_backup Sat 5am, "
+            "weekly_cost_summary Mon 8am, weekly_signal_scrapers Sat 6am"
         )
     except ImportError:
         logger.warning("APScheduler not installed — background jobs disabled")

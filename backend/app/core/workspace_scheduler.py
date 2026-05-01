@@ -159,6 +159,45 @@ def workspace_budget_ok(workspace: dict, job_name: str) -> bool:
     return True
 
 
+def get_total_daily_capacity(workspace_id: str) -> int:
+    """Return total daily send capacity for a workspace.
+
+    Sums per-account daily_limit from workspace.settings.sender_pool.
+    Falls back to workspace.settings.daily_send_limit if no sender_pool defined.
+    Falls back to 125 if neither is set.
+
+    sender_pool format (stored in workspace.settings):
+        [{"email": "avi@...", "daily_limit": 30, "active": true}, ...]
+    """
+    try:
+        from backend.app.core.database import get_supabase_client
+        ws = (
+            get_supabase_client()
+            .table("workspaces")
+            .select("settings")
+            .eq("id", workspace_id)
+            .limit(1)
+            .execute()
+        ).data
+        if not ws:
+            return 125
+
+        settings = ws[0].get("settings") or {}
+
+        sender_pool = settings.get("sender_pool") or []
+        if sender_pool:
+            return sum(
+                int(acct.get("daily_limit", 30))
+                for acct in sender_pool
+                if acct.get("active", True)
+            )
+
+        return int(settings.get("daily_send_limit", 125))
+    except Exception as exc:
+        logger.warning("get_total_daily_capacity failed: %s", exc)
+        return 125
+
+
 def apollo_credits_ok(workspace_id: str | None = None, min_buffer: int = 200) -> bool:
     """Return False if Apollo remaining credits are at or below min_buffer.
 
