@@ -34,53 +34,80 @@ from backend.app.core.database import Database
 console = Console()
 logger = logging.getLogger(__name__)
 
-# Points awarded per persona type (out of 35 max)
-# Digitillis is manufacturing intelligence — operations/maintenance personas
-# are PRIMARY buyers. F&B quality/food safety personas are SECONDARY.
+# Points awarded per persona type (out of 35 max).
+# Loaded from icp.yaml persona_priority at startup via _load_weights_from_icp().
+# These defaults are used as fallback if config loading fails.
 _PERSONA_POINTS: dict[str, int] = {
     # PRIMARY — manufacturing/industrial buyers
-    "vp_ops": 35,           # VP Operations, VP Manufacturing, VP Engineering
-    "coo": 33,              # COO / Chief Operating Officer
-    "maintenance_leader": 32,  # Director of Maintenance, Reliability Manager — high urgency
-    "plant_manager": 30,    # Plant Manager, General Manager, Site Manager
-    "director_ops": 24,     # Director of Operations, Director of Manufacturing
+    "vp_ops": 35,
+    "coo": 33,
+    "maintenance_leader": 32,
+    "plant_manager": 30,
+    "director_ops": 24,
     "digital_transformation": 20,
     "vp_supply_chain": 18,
     "cio": 15,
-    # SECONDARY — F&B compliance personas (door-opener, not core buyer)
-    "vp_quality_food_safety": 16,
-    "director_quality_food_safety": 13,
+    # F&B FSMA 204 — elevated to co-primary (Contact 2 simultaneous with VP Ops)
+    "vp_food_safety": 30,
+    "regulatory_affairs_director": 28,
+    "vp_quality_food_safety": 28,
+    "director_quality_food_safety": 22,
+    "compliance_manager_fb": 15,
 }
-_PERSONA_DEFAULT = 8  # unknown / uncategorised persona
+_PERSONA_DEFAULT = 8
 
-# Points awarded per tier (out of 15 max)
-# mfg tiers are primary (score higher), fb tiers are secondary (score lower)
+# Points awarded per tier (out of 15 max).
+# Loaded from icp.yaml tier_scoring at startup via _load_weights_from_icp().
 _TIER_POINTS: dict[str, int] = {
-    # Discrete manufacturing (primary)
-    "mfg1": 15,   # Industrial Machinery & Heavy Equipment
-    "mfg2": 14,   # Metal Fabrication & Precision Machining
-    "mfg3": 14,   # Automotive Parts & Transportation Equipment
-    "mfg6": 13,   # Aerospace & Defense
-    "mfg7": 12,   # Primary Metals (steel, aluminum)
-    "mfg4": 12,   # Electrical Equipment
-    "mfg8": 11,   # Plastics & Rubber
-    "mfg5": 11,   # Electronics / Semiconductor
-    # Process manufacturing (primary)
-    "pmfg1": 14,  # Chemical Manufacturing
-    "pmfg2": 13,  # Oil & Gas Extraction
-    "pmfg3": 13,  # Petroleum Refining
-    "pmfg6": 13,  # Pharmaceutical & Biotech
-    "pmfg4": 12,  # Mining & Quarrying
-    "pmfg5": 11,  # Utilities / Power
-    "pmfg7": 10,  # Paper & Pulp
-    "pmfg8": 10,  # Non-Metallic Mineral (cement, glass)
-    # Food & Beverage (secondary)
-    "fb1": 6,     # Food Manufacturing
-    "fb2": 5,     # Beverage
-    "fb3": 4,     # Meat & Poultry
-    "fb4": 4,     # Dairy
+    # Discrete manufacturing
+    "mfg1": 15, "mfg2": 14, "mfg3": 14, "mfg6": 13,
+    "mfg7": 12, "mfg4": 12, "mfg8": 11, "mfg5": 11,
+    # Process manufacturing
+    "pmfg1": 14, "pmfg2": 13, "pmfg3": 13, "pmfg6": 13,
+    "pmfg4": 12, "pmfg5": 11, "pmfg7": 10, "pmfg8": 10,
+    # F&B FSMA 204 (elevated — enforcement is live)
+    "fb_dairy": 12, "fb_seafood": 12, "fb_produce": 12,
+    "fb_meat": 11, "fb_bev": 11, "fb_food_general": 9, "fb_bakery": 8,
+    # Legacy tier keys (backward compat)
+    "fb1": 6, "fb2": 5, "fb3": 4, "fb4": 4,
 }
 _TIER_DEFAULT = 3
+
+# F&B tier keys — used to apply FSMA intent multiplier
+_FB_TIERS = frozenset({
+    "fb_dairy", "fb_seafood", "fb_produce", "fb_meat",
+    "fb_bev", "fb_food_general", "fb_bakery",
+    "fb1", "fb2", "fb3", "fb4",
+})
+
+# FSMA-specific signal types that get a 1.5x multiplier for F&B companies
+_FSMA_SIGNAL_TYPES = frozenset({
+    "fda_warning_letter", "fda_warning_letter_fsma", "fda_recall", "osha_citation",
+})
+
+
+def _load_weights_from_icp() -> None:
+    """Refresh _PERSONA_POINTS and _TIER_POINTS from the active ICP config.
+
+    Called once at module import. Safe to call again after ICP version switch.
+    Fails silently — hardcoded defaults remain intact if config is unavailable.
+    """
+    global _PERSONA_POINTS, _TIER_POINTS
+    try:
+        from backend.app.core.config import get_icp_config
+        icp = get_icp_config()
+        persona_cfg = icp.get("persona_priority", {})
+        tier_cfg = icp.get("tier_scoring", {})
+        if persona_cfg:
+            _PERSONA_POINTS = {**_PERSONA_POINTS, **{k: int(v) for k, v in persona_cfg.items()}}
+        if tier_cfg:
+            _TIER_POINTS = {**_TIER_POINTS, **{k: int(v) for k, v in tier_cfg.items()}}
+    except Exception as exc:
+        logger.warning("[queue] Could not load ICP weights — using defaults: %s", exc)
+
+
+# Load at import time
+_load_weights_from_icp()
 
 
 def _persona_points(persona_type: str | None) -> int:
@@ -127,12 +154,28 @@ def _recency_penalty(last_contacted_at: str | None) -> int:
 
 
 def compute_priority_score(contact: dict, company: dict | None = None) -> int:
-    """Compute a 0–100 priority score for a single contact dict."""
+    """Compute a 0–100 priority score for a single contact dict.
+
+    For F&B tier companies, FSMA-specific signals (FDA recalls, warning letters,
+    OSHA citations) carry a 1.5x multiplier — enforcement is live post-Jan 2026.
+    """
     comp = _completeness_points(contact.get("completeness_score"))
     persona = _persona_points(contact.get("persona_type"))
-    tier = _tier_points((company or {}).get("tier") if company else contact.get("_tier"))
+    company_tier = (company or {}).get("tier") if company else contact.get("_tier")
+    tier = _tier_points(company_tier)
     penalty = _recency_penalty(contact.get("last_contacted_at") or contact.get("updated_at"))
-    intent = min((company or {}).get("intent_score", 0), 15)  # cap intent contribution at 15
+
+    raw_intent = (company or {}).get("intent_score", 0)
+    # F&B FSMA intent multiplier: signals post Jan-20-2026 enforcement carry 1.5x
+    if str(company_tier or "") in _FB_TIERS and raw_intent > 0:
+        signals = (company or {}).get("active_signals", [])
+        has_fsma_signal = any(
+            s.get("signal_type") in _FSMA_SIGNAL_TYPES for s in signals
+        )
+        if has_fsma_signal:
+            raw_intent = raw_intent * 1.5
+
+    intent = min(int(raw_intent), 15)  # cap intent contribution at 15
     raw = comp + persona + tier + intent - penalty
     return max(0, min(100, raw))
 

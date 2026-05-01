@@ -156,37 +156,90 @@ company_filters:
       segment: 2   # activated — kilns/crushers, 24/7 ops, expensive downtime
 
     # ================================================================
-    # SECONDARY VERTICAL — Food & Beverage
-    # NAICS 311–312
-    # Door-opener: FSMA compliance urgency. Secondary GTM angle.
+    # F&B FSMA 204 VERTICAL — Co-Primary (Segment 2)
+    # NAICS 311–312 + sub-codes
+    # Revenue: $50M–$500M (lower floor than mfg — asset intensity justifies)
+    # Door-opener: FSMA 204 compliance enforcement is LIVE (deadline passed Jan 20 2026)
+    # Two-touch cold outreach: VP Ops (Contact 1) + VP Food Safety (Contact 2) simultaneously
+    # Ranked by FTL exposure + asset intensity:
+    #   Dairy > Seafood > Produce > Meat > Beverage > General > Bakery
     # ================================================================
-    - naics_prefix: "311"
-      tier: "fb1"
-      label: "Food Manufacturing"
-      apollo_industry: "food production"
-      priority: "secondary"
-      segment: 3   # ops/uptime messaging — target VP Ops, Plant Manager only
+    - naics_prefix: "3115"
+      tier: "fb_dairy"
+      label: "Dairy Processing — Yogurt, Cheese, Fluid Milk, Cream"
+      apollo_industry: "dairy"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 500000000}
+      tranche_map: {T1: [50000000, 150000000], T2: [150000000, 500000000]}
+      campaign_cluster: "fsma_dairy"
+      fsma_exposure: "high"    # Soft cheeses, ricotta, queso fresco on FTL
 
-    - naics_prefix: "312"
-      tier: "fb2"
-      label: "Beverage Manufacturing"
-      apollo_industry: "food & beverages"
-      priority: "secondary"
-      segment: 3
+    - naics_prefix: "3117"
+      tier: "fb_seafood"
+      label: "Seafood Processing — Finfish, Crustaceans, Mollusks"
+      apollo_industry: "food production"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 300000000}
+      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
+      campaign_cluster: "fsma_seafood"
+      fsma_exposure: "high"    # Finfish + crustaceans directly on FTL
+
+    - naics_prefix: "3114"
+      tier: "fb_produce"
+      label: "Fruit, Vegetable & Fresh-Cut Produce Processing"
+      apollo_industry: "food production"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 300000000}
+      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
+      campaign_cluster: "fsma_produce"
+      fsma_exposure: "high"    # Leafy greens, peppers, sprouts, herbs, melons on FTL
 
     - naics_prefix: "3116"
-      tier: "fb3"
+      tier: "fb_meat"
       label: "Meat & Poultry Processing"
       apollo_industry: "food production"
-      priority: "secondary"
-      segment: 3
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 300000000}
+      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
+      campaign_cluster: "fsma_meat"
+      fsma_exposure: "high"
 
-    - naics_prefix: "3115"
-      tier: "fb4"
-      label: "Dairy Product Manufacturing"
-      apollo_industry: "dairy"
+    - naics_prefix: "312"
+      tier: "fb_bev"
+      label: "Beverage Manufacturing — Juice, RTD, Aseptic, Energy"
+      apollo_industry: "beverages"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 500000000}
+      tranche_map: {T1: [50000000, 150000000], T2: [150000000, 500000000]}
+      campaign_cluster: "fsma_beverage"
+      fsma_exposure: "medium"  # Aseptic/juice less FTL exposure; OEE is primary wedge
+
+    - naics_prefix: "311"
+      tier: "fb_food_general"
+      label: "Food Manufacturing — General (nut butters, condiments, canned)"
+      apollo_industry: "food production"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 500000000}
+      tranche_map: {T1: [50000000, 150000000], T2: [150000000, 500000000]}
+      campaign_cluster: "fsma_food"
+      fsma_exposure: "medium"  # Nut butters on FTL; general 311 varies
+
+    - naics_prefix: "3119"
+      tier: "fb_bakery"
+      label: "Bakery, Snack & Specialty Food"
+      apollo_industry: "food & beverages"
       priority: "secondary"
-      segment: 3
+      segment: 2
+      revenue: {min: 50000000, max: 300000000}
+      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
+      campaign_cluster: "fsma_bakery"
+      fsma_exposure: "low"     # Allergen changeover is the wedge, not FTL
 
   revenue:
     min: 100000000    # $100M minimum — below this, overhead too high to sell
@@ -296,15 +349,30 @@ contact_filters:
       - "Director of Industry 4.0"
       - "Chief Digital Officer"
       # ============================================================
-      # SECONDARY — F&B Quality/Compliance titles
-      # Use only for F&B tier campaigns
+      # F&B FSMA 204 — Quality, Food Safety, Regulatory, Compliance
+      # Two-touch simultaneous: VP Ops (Contact 1) + VP Food Safety (Contact 2)
       # ============================================================
       - "VP Quality"
       - "VP Food Safety"
+      - "Vice President Food Safety"
+      - "VP Quality and Food Safety"
       - "Director of Quality"
       - "Director of Food Safety"
       - "Director Quality Assurance"
       - "VP Quality Assurance"
+      - "Head of Food Safety"
+      - "Chief Food Safety Officer"
+      - "Director of Quality and Food Safety"
+      - "VP Regulatory Affairs"
+      - "Vice President Regulatory Affairs"
+      - "Director Regulatory Affairs"
+      - "Director of Regulatory Affairs"
+      - "Regulatory Affairs Manager"
+      - "Director of Compliance"
+      - "Food Safety Manager"
+      - "Quality Assurance Director"
+      - "FSMA Compliance Manager"
+      - "Food Safety Compliance Manager"
     exclude:
       - "Marketing"
       - "Sales"
@@ -386,22 +454,56 @@ persona_classification:
       - "IIoT"
     priority: "primary"
 
-  # SECONDARY — F&B specific
+  # ============================================================
+  # F&B FSMA 204 — Primary buyer personas
+  # Contact 1: vp_ops / plant_manager (economic buyer — OEE + downtime)
+  # Contact 2: vp_food_safety / regulatory_affairs_director (FSMA compliance)
+  # Both targeted simultaneously for F&B companies
+  # ============================================================
+  vp_food_safety:
+    title_keywords:
+      - "VP Food Safety"
+      - "Vice President Food Safety"
+      - "VP Quality and Food Safety"
+      - "Head of Food Safety"
+      - "Chief Food Safety Officer"
+      - "Director of Quality and Food Safety"
+    priority: "primary_fb"
+
+  regulatory_affairs_director:
+    title_keywords:
+      - "VP Regulatory Affairs"
+      - "Vice President Regulatory Affairs"
+      - "Director Regulatory Affairs"
+      - "Director of Regulatory Affairs"
+      - "Regulatory Affairs Manager"
+      - "Regulatory Affairs Director"
+    priority: "primary_fb"
+
   vp_quality_food_safety:
     title_keywords:
       - "VP Quality"
-      - "VP Food Safety"
       - "Vice President Quality"
-      - "Vice President Food Safety"
       - "VP Quality Assurance"
-    priority: "secondary"
+    priority: "primary_fb"
 
   director_quality_food_safety:
     title_keywords:
       - "Director of Quality"
       - "Director of Food Safety"
       - "Director Quality Assurance"
-    priority: "secondary"
+      - "Quality Assurance Director"
+    priority: "primary_fb"
+
+  compliance_manager_fb:
+    title_keywords:
+      - "Compliance Manager"
+      - "Compliance Director"
+      - "Director of Compliance"
+      - "Food Safety Compliance Manager"
+      - "FSMA Compliance Manager"
+      - "Food Safety Manager"
+    priority: "secondary_fb"
 
 # Persona priority scores (see queue_manager.py for point values)
 persona_priority:
@@ -413,8 +515,12 @@ persona_priority:
   digital_transformation: 72
   vp_supply_chain: 60
   cio: 50
-  vp_quality_food_safety: 45      # secondary — F&B
-  director_quality_food_safety: 40  # secondary — F&B
+  # F&B FSMA 204 personas — elevated to co-primary (Contact 2 simultaneous)
+  vp_food_safety: 85                  # primary F&B — FSMA decision maker
+  regulatory_affairs_director: 78    # primary F&B — owns FDA relationship
+  vp_quality_food_safety: 75         # primary F&B — elevated from 45
+  director_quality_food_safety: 68   # primary F&B — elevated from 40
+  compliance_manager_fb: 55          # secondary F&B
 
 # Tier scoring (for queue_manager.py _TIER_POINTS)
 # Primary mfg/pmfg tiers score higher than secondary fb tiers
@@ -437,7 +543,15 @@ tier_scoring:
   pmfg6: 13  # Pharma
   pmfg7: 10  # Paper & Pulp
   pmfg8: 10  # Non-Metallic Mineral
-  # Food & Beverage (secondary)
+  # F&B FSMA 204 (co-primary — elevated from segment 3)
+  fb_dairy:        12   # highest — HTST pasteurizer density, direct FTL (soft cheeses)
+  fb_seafood:      12   # highest — finfish + crustaceans directly on FTL
+  fb_produce:      12   # highest — leafy greens, peppers, sprouts on FTL
+  fb_meat:         11   # high — strong FTL exposure, cold chain complexity
+  fb_bev:          11   # high — aseptic filler OEE pain, $150K+/hr production value
+  fb_food_general: 9    # medium — general 311; nut butters on FTL
+  fb_bakery:       8    # medium — allergen changeover wedge; lower FTL exposure
+  # Legacy tiers — retired but kept for backward compat with existing DB rows
   fb1: 6
   fb2: 5
   fb3: 4
@@ -449,14 +563,15 @@ discovery:
   pages_per_tier: 5
   default_campaign_name: "prospectiq_discovery"
 
-  # ── Active discovery order (Segments 1–3 only) ──────────────────────────
-  # Segment 1 (~55% of sends): Discrete manufacturing — clearest PdM ROI,
-  #   shortest sales cycle, correct buyer persona already in market.
-  # Segment 2 (~25% of sends): Process/chemical — strong fit, slightly
-  #   longer cycle due to regulatory overlay.
-  # Segment 3 (~15% of sends): F&B — ops/uptime angle only (NOT FSMA).
-  #   Target VP Ops and Plant Manager, not VP Quality.
-  #
+  # ── Active discovery order ──────────────────────────────────────────────
+  # Segment 1 (~45% of sends): Discrete manufacturing — clearest PdM ROI,
+  #   shortest sales cycle.
+  # Segment 2 (~30% of sends): F&B FSMA 204 — elevated to co-primary.
+  #   FSMA enforcement is live (deadline passed Jan 20, 2026). FDA now in
+  #   active enforcement mode. Two-touch cold outreach: VP Ops + VP Food Safety
+  #   contacted simultaneously per company.
+  # Segment 2 (~20% of sends): Process/chemical — regulatory overlay, slightly
+  #   longer cycle.
   # Segment 4 (watchlist — NOT in tier_run_order):
   #   mfg6  (Aerospace)   — vendor qualification wall, long cycle
   #   pmfg2 (Oil & Gas)   — enterprise procurement, safety reg complexity
@@ -465,21 +580,24 @@ discovery:
   #   campaign_cluster=watchlist, outreach_mode=manual for all segment 4
   tier_run_order:
     # Segment 1 — Discrete manufacturing (run first, highest volume)
-    - "mfg1"   # Industrial Machinery & Heavy Equipment
-    - "mfg2"   # Metal Fabrication & Precision Machining
-    - "mfg3"   # Automotive Parts & Transportation Equipment
-    - "mfg8"   # Plastics & Rubber Manufacturing
-    - "mfg4"   # Electrical Equipment & Components
-    - "mfg5"   # Electronics / Semiconductor
+    - "mfg1"          # Industrial Machinery & Heavy Equipment
+    - "mfg2"          # Metal Fabrication & Precision Machining
+    - "mfg3"          # Automotive Parts & Transportation Equipment
+    - "mfg8"          # Plastics & Rubber Manufacturing
+    - "mfg4"          # Electrical Equipment & Components
+    - "mfg5"          # Electronics / Semiconductor
+    # Segment 2 — F&B FSMA 204 (ELEVATED to co-primary — enforcement is live)
+    - "fb_dairy"      # Dairy — HTST pasteurizers, soft cheeses on FTL
+    - "fb_seafood"    # Seafood — finfish + crustaceans on FTL
+    - "fb_produce"    # Produce/Fresh-Cut — leafy greens, peppers on FTL
+    - "fb_meat"       # Meat & Poultry — strong FTL, cold chain
+    - "fb_bev"        # Beverage — aseptic filler OEE pain
+    - "fb_food_general"  # General food mfg (nut butters on FTL)
+    - "fb_bakery"     # Bakery/Snack — allergen changeover wedge
     # Segment 2 — Process manufacturing
-    - "pmfg1"  # Chemical Manufacturing
-    - "mfg7"   # Primary Metals (steel, aluminum)
-    - "pmfg3"  # Petroleum Refining & Coal Products
-    - "pmfg4"  # Mining & Quarrying
-    - "pmfg7"  # Paper & Pulp Manufacturing
-    - "pmfg8"  # Non-Metallic Mineral Products (cement, glass, ceramics)
-    # Segment 3 — Food & Beverage (ops/uptime messaging only)
-    - "fb1"    # Food Manufacturing
-    - "fb2"    # Beverage Manufacturing
-    - "fb3"    # Meat & Poultry Processing
-    - "fb4"    # Dairy Product Manufacturing
+    - "pmfg1"         # Chemical Manufacturing
+    - "mfg7"          # Primary Metals (steel, aluminum)
+    - "pmfg3"         # Petroleum Refining & Coal Products
+    - "pmfg4"         # Mining & Quarrying
+    - "pmfg7"         # Paper & Pulp Manufacturing
+    - "pmfg8"         # Non-Metallic Mineral Products (cement, glass, ceramics)

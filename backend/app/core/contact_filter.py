@@ -51,10 +51,9 @@ _EXCLUDED_SIGNALS = frozenset({
     "talent development", "talent management",
     "people operations", "people partner",
     "compensation manager", "benefits manager", "payroll manager",
-    # Legal & compliance (unless specifically EHS/safety which is borderline)
+    # Legal
     "legal counsel", "general counsel", "attorney", "lawyer",
     "associate counsel", "deputy general counsel",
-    "compliance officer", "compliance manager", "compliance director",
     # Finance & accounting
     "controller", "accounting manager", "accounts payable",
     "accounts receivable", "payroll", "treasurer", "tax manager",
@@ -87,6 +86,15 @@ _BORDERLINE_SIGNALS = frozenset({
     "logistics manager", "logistics director",
     # R&D (sometimes sponsors process intelligence tools)
     "r&d manager", "r&d director", "research and development",
+    # Compliance — borderline by default; upgraded to target when food-safety context present
+    "compliance officer", "compliance manager", "compliance director",
+    "regulatory affairs",
+})
+
+# F&B food-safety context keywords — upgrade compliance titles to target in this context
+_FOOD_SAFETY_COMPLIANCE_UPGRADE = frozenset({
+    "food safety", "fsma", "haccp", "food quality", "sanitation", "sqa",
+    "food", "quality assurance", "fda",
 })
 
 # Seniority tokens that override wrong-function signals (VP/C-level have budget authority)
@@ -164,9 +172,14 @@ def classify_contact_tier(title: str | None) -> str:
         if signal in t:
             return "excluded"
 
-    # Check borderline signals
+    # Check borderline signals — with food-safety upgrade for compliance titles
     for signal in _BORDERLINE_SIGNALS:
         if signal in t:
+            # Compliance titles with food-safety context are target buyers (FSMA 204)
+            if signal in ("compliance officer", "compliance manager", "compliance director",
+                          "regulatory affairs"):
+                if any(fs in t for fs in _FOOD_SAFETY_COMPLIANCE_UPGRADE):
+                    return "target"
             return "borderline"
 
     return "target"
