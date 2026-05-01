@@ -416,6 +416,31 @@ class ApolloClient:
             "last_refreshed_at": person.get("last_refreshed_at"),
         }
 
+    def get_credits(self) -> dict:
+        """Return Apollo account credit usage for the current month.
+
+        Calls GET /auth/health — free, does not consume credits.
+
+        Returns:
+            Dict with keys:
+              credits_used      — credits consumed this billing month
+              credit_limit      — monthly credit cap
+              credits_remaining — credit_limit - credits_used (0 if uncapped)
+        """
+        try:
+            self._rate_limit()
+            response = self.client.get("/auth/health")
+            response.raise_for_status()
+            data = response.json()
+            user = data.get("user") or {}
+            used = int(user.get("credits_used_for_the_month") or 0)
+            limit = int(user.get("credit_limit_for_the_month") or 0)
+            remaining = max(limit - used, 0) if limit else 9999
+            return {"credits_used": used, "credit_limit": limit, "credits_remaining": remaining}
+        except Exception as exc:
+            logger.warning("get_credits failed: %s", exc)
+            return {"credits_used": 0, "credit_limit": 0, "credits_remaining": 9999}
+
     def close(self):
         """Close the HTTP client."""
         self.client.close()

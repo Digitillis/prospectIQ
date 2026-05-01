@@ -768,6 +768,100 @@ def _run_enrichment() -> None:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
 
 
+# ---------------------------------------------------------------------------
+# Discovery jobs — scheduled weekly to keep the pipeline full
+# ---------------------------------------------------------------------------
+
+def _fb_discovery_workspace(ws: dict) -> None:
+    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    if not workspace_budget_ok(ws, "fb_discovery"):
+        return
+    from backend.app.agents.discovery import DiscoveryAgent
+    from backend.app.core.database import Database
+    agent = DiscoveryAgent(db=Database(workspace_id=ws["id"]))
+    result = agent.run(
+        campaign_name="fsma204-fb",
+        tiers=["fb_dairy", "fb_bev", "fb_seafood", "fb_meat", "fb_produce", "fb_bakery"],
+        max_pages=3,
+    )
+    logger.info(
+        "F&B discovery [%s]: processed=%d skipped=%d errors=%d",
+        ws["name"], result.processed, result.skipped, result.errors,
+    )
+
+
+def _run_fb_discovery() -> None:
+    """Monday 7am: discover new F&B FSMA 204 companies across all sub-segments."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_fb_discovery_workspace, "fb_discovery")
+    except Exception as e:
+        logger.error("Scheduled F&B discovery failed: %s", e, exc_info=True)
+
+
+def _mfg_discovery_workspace(ws: dict) -> None:
+    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    if not workspace_budget_ok(ws, "mfg_discovery"):
+        return
+    from backend.app.agents.discovery import DiscoveryAgent
+    from backend.app.core.database import Database
+    agent = DiscoveryAgent(db=Database(workspace_id=ws["id"]))
+    result = agent.run(
+        campaign_name="mfg-fsma",
+        tiers=["mfg1", "mfg2", "mfg3", "pmfg1"],
+        max_pages=3,
+    )
+    logger.info(
+        "Mfg discovery [%s]: processed=%d skipped=%d errors=%d",
+        ws["name"], result.processed, result.skipped, result.errors,
+    )
+
+
+def _run_mfg_discovery() -> None:
+    """Wednesday 7am: discover new discrete/process manufacturing companies."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_mfg_discovery_workspace, "mfg_discovery")
+    except Exception as e:
+        logger.error("Scheduled mfg discovery failed: %s", e, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Learning job — weekly self-improvement loop
+# ---------------------------------------------------------------------------
+
+def _learning_workspace(ws: dict) -> None:
+    import os
+    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    if not workspace_budget_ok(ws, "weekly_learning"):
+        return
+    from backend.app.agents.learning import LearningAgent
+    from backend.app.core.database import Database
+    # auto_apply=True only when explicitly enabled via env var.
+    # Default is False (observation mode) until 50+ replies have been collected
+    # and a human has reviewed one cycle of suggested adjustments.
+    auto_apply = os.environ.get("LEARNING_AUTO_APPLY", "false").lower() == "true"
+    agent = LearningAgent(db=Database(workspace_id=ws["id"]))
+    result = agent.run(period_days=30, auto_apply=auto_apply)
+    logger.info(
+        "Weekly learning [%s]: processed=%d errors=%d (auto_apply=%s)",
+        ws["name"], result.processed, result.errors, auto_apply,
+    )
+
+
+def _run_weekly_learning() -> None:
+    """Sunday 8am: analyse 30 days of outreach outcomes and surface insights.
+
+    Runs after post_send_audit (7am). auto_apply is env-var gated so scoring
+    changes are opt-in until the signal is trusted.
+    """
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_learning_workspace, "weekly_learning")
+    except Exception as e:
+        logger.error("Scheduled weekly learning failed: %s", e, exc_info=True)
+
+
 def _run_weekly_post_send_audit() -> None:
     """Sunday 7am job: audit sends from the past 7 days for data quality issues."""
     try:
@@ -963,12 +1057,36 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="limit_ramp",
         )
+        # F&B discovery: Monday 7am Chicago — runs before research wave so new companies
+        # enter research/qualification on the same day they're discovered.
+        scheduler.add_job(
+            _run_fb_discovery, "cron",
+            day_of_week="mon", hour=7, minute=0,
+            timezone="America/Chicago",
+            id="fb_discovery",
+        )
+        # Mfg discovery: Wednesday 7am Chicago — staggered from F&B to spread Apollo quota
+        scheduler.add_job(
+            _run_mfg_discovery, "cron",
+            day_of_week="wed", hour=7, minute=0,
+            timezone="America/Chicago",
+            id="mfg_discovery",
+        )
         # Weekly post-send audit: Sunday 7am Chicago
         scheduler.add_job(
             _run_weekly_post_send_audit, "cron",
             day_of_week="sun", hour=7, minute=0,
             timezone="America/Chicago",
             id="weekly_post_send_audit",
+        )
+        # Weekly learning: Sunday 8am Chicago — runs after post_send_audit (7am).
+        # LEARNING_AUTO_APPLY=false (default): surfaces insights without writing to config.
+        # Flip to true after 50+ replies and one manual review of suggested adjustments.
+        scheduler.add_job(
+            _run_weekly_learning, "cron",
+            day_of_week="sun", hour=8, minute=0,
+            timezone="America/Chicago",
+            id="weekly_learning",
         )
         # Weekly contact backup: Saturday 5am Chicago → /Volumes/Digitillis/Data/prospectiq_backups/
         scheduler.add_job(
@@ -1001,11 +1119,13 @@ async def lifespan(app: FastAPI):
         scheduler.start()
         logger.info(
             "APScheduler started — health_snapshot/hitl_snoozed every 15m, "
-            "send_approved cron Tue-Thu 8:00-11:00 Chicago, gmail_intake every 30m, "
+            "send_approved cron Mon-Fri 8:00-11:00 Chicago, gmail_intake every 15m, "
             "process_due/hitl_auto_archive every 1h, "
             "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
-            "research 9/12/3pm → qualification 9:30/12:30/3:30pm → enrichment 9:45am Mon-Fri Chicago (budget-gated), "
+            "fb_discovery Mon 7am → mfg_discovery Wed 7am, "
+            "research 9/12/3/6pm → qualification +30m → enrichment 9:45am+2:45pm Mon-Fri (credit-gated), "
             "daily_report 6am Chicago Mon-Fri, "
+            "weekly_learning Sun 8am Chicago (auto_apply gated by LEARNING_AUTO_APPLY env var), "
             "weekly_contact_backup Sat 5am Chicago → /Volumes/Digitillis/Data/, "
             "weekly_post_send_audit Sun 7am Chicago, "
             "weekly_cost_summary Mon 8am Chicago"

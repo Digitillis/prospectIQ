@@ -36,11 +36,21 @@ _PERSONA_PRIORITY = {
 }
 
 
+# F&B tier prefix — companies in these tiers get C1+C3 dual enrichment per cycle
+_FB_TIER_PREFIX = "fb"
+
+# C1 personas for F&B (ops/economic buyer — enriched first)
+_FB_C1_PERSONAS = frozenset({"vp_ops", "coo", "director_ops", "vp_supply_chain"})
+# C3 personas for F&B (plant-level champion — enriched in same cycle as C1)
+_FB_C3_PERSONAS = frozenset({"plant_manager"})
+
+
 class EnrichmentAgent(BaseAgent):
     """Enrich contacts at qualified companies via Apollo People Match.
 
-    Only enriches the top-priority contact per company to conserve
-    Apollo credits. Skips contacts that already have an email address.
+    For fb* tier companies: enriches C1 (ops) + C3 (plant manager) in a single
+    cycle so both contacts are email-ready before outreach routing runs.
+    For all other tiers: enriches the single highest-priority contact per cycle.
     """
 
     agent_name = "enrichment"
@@ -62,6 +72,16 @@ class EnrichmentAgent(BaseAgent):
             AgentResult with enrichment stats.
         """
         result = AgentResult()
+
+        # Apollo credit guard — halt before the batch if buffer is low
+        workspace_id = getattr(self.db, "workspace_id", None)
+        from backend.app.core.workspace_scheduler import apollo_credits_ok
+        if not apollo_credits_ok(workspace_id=workspace_id, min_buffer=200):
+            console.print(
+                "[red]Apollo credit guard: fewer than 200 credits remaining — enrichment halted.[/red]"
+            )
+            result.add_detail("credit_guard", "halted", "Apollo credits <= 200 — skipping this run")
+            return result
 
         # Get companies that need enrichment
         if company_ids:
@@ -178,14 +198,35 @@ class EnrichmentAgent(BaseAgent):
                     # reports has_email=false but enrichment/match finds the email.
                     # We do NOT filter by has_email here. Always try enrichment.
 
-                    # Find the best contact to enrich (highest persona priority, no email yet)
-                    contact = self._select_contact_to_enrich(contacts)
+                    # Domain verification — check MX records once per company before
+                    # spending any credits on its contacts.
+                    company_domain = company.get("domain")
+                    if company_domain:
+                        from backend.app.core.domain_verify import verify_domain
+                        domain_valid, domain_reason = verify_domain(company_domain)
+                        if not domain_valid:
+                            console.print(
+                                f"  [yellow]{company_name}: Domain {company_domain} invalid "
+                                f"({domain_reason}). Skipping enrichment.[/yellow]"
+                            )
+                            result.skipped += 1
+                            result.add_detail(
+                                company_name, "domain_invalid",
+                                f"{company_domain}: {domain_reason}"
+                            )
+                            continue
 
-                    if not contact:
-                        # All contacts already have email — count them as ready
+                    # Select which contacts to enrich this cycle.
+                    # F&B tier: enrich C1 (ops) + C3 (plant manager) in one pass so both
+                    # slots are email-ready before outreach routing runs.
+                    # All other tiers: enrich the single highest-priority unenriched contact.
+                    company_tier = company.get("tier") or ""
+                    contacts_to_enrich = self._select_contacts_to_enrich(contacts, company_tier)
+
+                    if not contacts_to_enrich:
+                        # All contacts already have email — mark as enriched and move on
                         contacts_with_email = [c for c in contacts if c.get("email")]
                         if contacts_with_email:
-                            # Mark contacts as enriched if they have email but status is still "identified"
                             for c in contacts_with_email:
                                 if c.get("status") != "enriched":
                                     self.db.update_contact(c["id"], {"status": "enriched"})
@@ -208,156 +249,138 @@ class EnrichmentAgent(BaseAgent):
                             result.add_detail(company_name, "skipped", "Contacts exist but no emails found")
                         continue
 
-                    contact_name = contact.get("full_name") or contact.get("first_name") or "Unknown"
-                    apollo_id = contact.get("apollo_id")
+                    # Enrich each selected contact (1 credit each if Apollo returns a match)
+                    for contact in contacts_to_enrich:
+                        contact_name = contact.get("full_name") or contact.get("first_name") or "Unknown"
+                        apollo_id = contact.get("apollo_id")
 
-                    if not apollo_id:
-                        console.print(
-                            f"  [yellow]{company_name}: Contact {contact_name} has no Apollo ID. Skipping.[/yellow]"
-                        )
-                        result.skipped += 1
-                        result.add_detail(company_name, "skipped", f"No Apollo ID for {contact_name}")
-                        continue
-
-                    # Domain verification — check MX records before spending credits
-                    company_domain = company.get("domain")
-                    if company_domain:
-                        from backend.app.core.domain_verify import verify_domain
-                        domain_valid, domain_reason = verify_domain(company_domain)
-                        if not domain_valid:
+                        if not apollo_id:
                             console.print(
-                                f"  [yellow]{company_name}: Domain {company_domain} invalid "
-                                f"({domain_reason}). Skipping enrichment.[/yellow]"
+                                f"  [yellow]{company_name}: {contact_name} has no Apollo ID. Skipping.[/yellow]"
+                            )
+                            result.skipped += 1
+                            result.add_detail(company_name, "skipped", f"No Apollo ID for {contact_name}")
+                            continue
+
+                        # Call Apollo enrichment (1 credit if matched, 0 if no match)
+                        console.print(
+                            f"  [dim]{company_name} → enriching {contact_name} "
+                            f"({contact.get('title', '')}, persona={contact.get('persona_type','?')})...[/dim]"
+                        )
+
+                        enriched = apollo.enrich_person(
+                            person_id=apollo_id,
+                            reveal_personal_emails=True,
+                            reveal_phone_number=include_phone,
+                        )
+
+                        # 1 Apollo credit per people/match call
+                        self.track_cost(
+                            provider="apollo",
+                            model="people_match",
+                            endpoint="/people/match",
+                            company_id=company_id,
+                            input_tokens=0,
+                            output_tokens=0,
+                        )
+
+                        # Extract enriched data
+                        person = enriched.get("person", {})
+                        if not person:
+                            console.print(
+                                f"  [yellow]{company_name}: No person data returned for {contact_name}.[/yellow]"
+                            )
+                            result.skipped += 1
+                            result.add_detail(company_name, "no_match", f"{contact_name}: no Apollo record")
+                            continue
+
+                        # Build update payload
+                        update_data: dict = {}
+
+                        email = person.get("email")
+                        if email:
+                            update_data["email"] = email
+
+                        phone = person.get("phone_number") or person.get("sanitized_phone")
+                        if phone:
+                            update_data["phone"] = phone
+
+                        full_name = person.get("name")
+                        if full_name and "***" not in full_name:
+                            update_data["full_name"] = full_name
+                            parts = full_name.split(" ", 1)
+                            update_data["first_name"] = parts[0]
+                            if len(parts) > 1:
+                                update_data["last_name"] = parts[1]
+
+                        linkedin = person.get("linkedin_url")
+                        if linkedin:
+                            update_data["linkedin_url"] = linkedin
+
+                        # email_status: verified / unverified / catch_all / invalid / bounce
+                        email_status = person.get("email_status")
+                        if email_status:
+                            update_data["email_status"] = email_status
+                            if email_status in ("invalid", "bounce"):
+                                update_data["is_outreach_eligible"] = False
+                                console.print(
+                                    f"  [red]{company_name}: {contact_name} → email_status={email_status},"
+                                    f" blocking outreach[/red]"
+                                )
+
+                        # Email-name consistency check (catches false-match artifacts like Dave Horton)
+                        if email and (full_name or (contact.get("first_name") and contact.get("last_name"))):
+                            from backend.app.core.contact_filter import check_email_name_consistency
+                            first = (update_data.get("first_name") or contact.get("first_name") or "").strip()
+                            last = (update_data.get("last_name") or contact.get("last_name") or "").strip()
+                            consistent, cons_reason = check_email_name_consistency(first, last, email)
+                            update_data["email_name_verified"] = consistent
+                            if not consistent:
+                                update_data["is_outreach_eligible"] = False
+                                logger.warning(
+                                    "Email-name mismatch on enrichment: %s %s → %s (%s)",
+                                    first, last, email, cons_reason,
+                                )
+                                console.print(
+                                    f"  [red]{company_name}: {contact_name} → name/email mismatch,"
+                                    f" blocking outreach ({cons_reason})[/red]"
+                                )
+
+                        if update_data:
+                            update_data["status"] = "enriched"
+                            from backend.app.core.contact_filter import compute_ccs
+                            from datetime import datetime, timezone
+                            merged = {**contact, **update_data}
+                            update_data["ccs_score"] = compute_ccs(merged)
+                            update_data["ccs_computed_at"] = datetime.now(timezone.utc).isoformat()
+                            self.db.update_contact(contact["id"], update_data)
+
+                        if email:
+                            status_tag = f" [{email_status}]" if email_status else ""
+                            console.print(
+                                f"  [green]{company_name}: {full_name or contact_name} → {email}{status_tag}[/green]"
+                            )
+                            result.processed += 1
+                            result.add_detail(
+                                company_name,
+                                "enriched",
+                                f"{full_name or contact_name}: {email}"
+                                + (f", {phone}" if phone else "")
+                                + (f" [{email_status}]" if email_status else ""),
+                            )
+                        else:
+                            # Flag as attempted so the next run doesn't re-enrich — prevents
+                            # burning credits on a contact Apollo consistently doesn't match.
+                            self.db.update_contact(
+                                contact["id"], {"enrichment_status": "needs_enrichment"}
+                            )
+                            console.print(
+                                f"  [yellow]{company_name}: No email found for {contact_name}.[/yellow]"
                             )
                             result.skipped += 1
                             result.add_detail(
-                                company_name, "domain_invalid",
-                                f"{company_domain}: {domain_reason}"
+                                company_name, "no_email", f"{contact_name}: no email in Apollo"
                             )
-                            continue
-
-                    # Call Apollo enrichment
-                    console.print(
-                        f"  [dim]{company_name} → enriching {contact_name} ({contact.get('title', '')})...[/dim]"
-                    )
-
-                    enriched = apollo.enrich_person(
-                        person_id=apollo_id,
-                        reveal_personal_emails=True,
-                        reveal_phone_number=include_phone,
-                    )
-
-                    # 1 Apollo credit per people/match call — $114/4000 = $0.02850/credit
-                    self.track_cost(
-                        provider="apollo",
-                        model="people_match",
-                        endpoint="/people/match",
-                        company_id=company_id,
-                        input_tokens=0,
-                        output_tokens=0,
-                    )
-
-                    # Extract enriched data
-                    person = enriched.get("person", {})
-                    if not person:
-                        console.print(
-                            f"  [yellow]{company_name}: Enrichment returned no person data.[/yellow]"
-                        )
-                        result.skipped += 1
-                        result.add_detail(company_name, "skipped", "Enrichment returned empty")
-                        continue
-
-                    # Update contact with enriched fields
-                    update_data: dict = {}
-
-                    email = person.get("email")
-                    if email:
-                        update_data["email"] = email
-
-                    phone = person.get("phone_number") or person.get("sanitized_phone")
-                    if phone:
-                        update_data["phone"] = phone
-
-                    # Update name if we only had obfuscated version
-                    full_name = person.get("name")
-                    if full_name and "***" not in full_name:
-                        update_data["full_name"] = full_name
-                        # Split into first/last
-                        parts = full_name.split(" ", 1)
-                        update_data["first_name"] = parts[0]
-                        if len(parts) > 1:
-                            update_data["last_name"] = parts[1]
-
-                    linkedin = person.get("linkedin_url")
-                    if linkedin:
-                        update_data["linkedin_url"] = linkedin
-
-                    # Apollo email_status: free deliverability signal returned on every
-                    # people/match call. Block outreach for confirmed-invalid addresses
-                    # so we never spend send quota or damage domain reputation.
-                    # Possible values: verified, unverified, catch_all, accept_all,
-                    #                  invalid, bounce, unknown.
-                    email_status = person.get("email_status")
-                    if email_status:
-                        update_data["email_status"] = email_status
-                        if email_status in ("invalid", "bounce"):
-                            update_data["is_outreach_eligible"] = False
-                            console.print(
-                                f"  [red]{company_name}: {contact_name} → email_status={email_status},"
-                                f" blocking outreach[/red]"
-                            )
-
-                    # Run email-name consistency check now that we have a confirmed name+email
-                    if email and (full_name or (contact.get("first_name") and contact.get("last_name"))):
-                        from backend.app.core.contact_filter import check_email_name_consistency
-                        first = (update_data.get("first_name") or contact.get("first_name") or "").strip()
-                        last = (update_data.get("last_name") or contact.get("last_name") or "").strip()
-                        consistent, reason = check_email_name_consistency(first, last, email)
-                        update_data["email_name_verified"] = consistent
-                        if not consistent:
-                            update_data["is_outreach_eligible"] = False
-                            logger.warning(
-                                "Email-name mismatch on enrichment: %s %s → %s (%s)",
-                                first, last, email, reason,
-                            )
-                            console.print(
-                                f"  [red]{company_name}: {contact_name} → name/email mismatch,"
-                                f" blocking outreach ({reason})[/red]"
-                            )
-
-                    if update_data:
-                        update_data["status"] = "enriched"
-                        # Recompute CCS with updated gate fields
-                        from backend.app.core.contact_filter import compute_ccs
-                        from datetime import datetime, timezone
-                        merged = {**contact, **update_data}
-                        update_data["ccs_score"] = compute_ccs(merged)
-                        update_data["ccs_computed_at"] = datetime.now(timezone.utc).isoformat()
-                        self.db.update_contact(contact["id"], update_data)
-
-                    if email:
-                        status_tag = f" [{email_status}]" if email_status else ""
-                        console.print(
-                            f"  [green]{company_name}: {full_name or contact_name} → {email}{status_tag}[/green]"
-                        )
-                        result.processed += 1
-                        result.add_detail(
-                            company_name,
-                            "enriched",
-                            f"{full_name or contact_name}: {email}"
-                            + (f", {phone}" if phone else "")
-                            + (f" [{email_status}]" if email_status else ""),
-                        )
-                    else:
-                        # Mark contact so it's not retried on the next run —
-                        # repeated Apollo calls on the same contact with no result
-                        # burn credits without benefit.
-                        self.db.update_contact(contact["id"], {"enrichment_status": "needs_enrichment"})
-                        console.print(
-                            f"  [yellow]{company_name}: No email found for {contact_name}.[/yellow]"
-                        )
-                        result.skipped += 1
-                        result.add_detail(company_name, "no_email", f"{contact_name}: no email in Apollo")
 
                 except Exception as e:
                     logger.error(f"Error enriching {company_name}: {e}", exc_info=True)
@@ -379,18 +402,26 @@ class EnrichmentAgent(BaseAgent):
 
         return result
 
-    def _select_contact_to_enrich(self, contacts: list[dict]) -> dict | None:
-        """Select the highest-priority contact that needs enrichment.
+    def _select_contacts_to_enrich(
+        self, contacts: list[dict], company_tier: str
+    ) -> list[dict]:
+        """Return the ordered list of contacts to enrich in this cycle.
 
-        Tries all contacts without an email, sorted by persona priority.
-        We do not skip previously-attempted contacts — Apollo data changes and
-        we have credits to burn (6,050 expiring May 27).
+        F&B tier companies: returns up to 2 contacts — the best C1 (ops persona)
+        and the best C3 (plant manager), so both slots are email-ready before
+        the outreach agent runs. This eliminates the 1-cycle lag where C3 was
+        never enriched until the next scheduled run.
+
+        All other tiers: returns the single highest-priority unenriched contact
+        (original behaviour preserved).
+
+        Contacts that already have an email are excluded from the selection —
+        they don't need re-enrichment.
         """
         needs_enrichment = [c for c in contacts if not c.get("email")]
         if not needs_enrichment:
-            return None
+            return []
 
-        # Sort by persona priority (highest first), then decision maker
         def score(c: dict) -> int:
             persona = c.get("persona_type", "")
             priority = _PERSONA_PRIORITY.get(persona, 0)
@@ -398,4 +429,20 @@ class EnrichmentAgent(BaseAgent):
             return priority + dm_bonus
 
         needs_enrichment.sort(key=score, reverse=True)
-        return needs_enrichment[0]
+
+        is_fb = company_tier.startswith(_FB_TIER_PREFIX)
+        if not is_fb:
+            return [needs_enrichment[0]]
+
+        # F&B: pick best C1 + best C3 separately so persona slots are filled optimally
+        c1 = next(
+            (c for c in needs_enrichment if c.get("persona_type") in _FB_C1_PERSONAS),
+            None,
+        )
+        c3 = next(
+            (c for c in needs_enrichment if c.get("persona_type") in _FB_C3_PERSONAS),
+            None,
+        )
+        selected = [c for c in [c1, c3] if c is not None]
+        # Fall back to highest-priority contact if neither persona slot has a candidate
+        return selected if selected else [needs_enrichment[0]]
