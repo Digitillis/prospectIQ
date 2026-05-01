@@ -798,8 +798,48 @@ def _run_qualification() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_qualify_workspace, "qualification")
+        # Flywheel fast-path: newly qualified companies should generate drafts
+        # immediately rather than waiting up to 30 min for the next draft cron.
+        try:
+            _run_draft_generation()
+        except Exception as exc:
+            logger.warning("qualification → draft fast-path failed: %s", exc)
     except Exception as e:
         logger.error(f"Scheduled qualification failed: {e}", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Draft generation — closes the gap between enriched contacts and outreach
+# ---------------------------------------------------------------------------
+
+def _draft_workspace(ws: dict) -> None:
+    """Generate initial outreach drafts for qualified companies with enriched contacts.
+
+    OutreachAgent.run() with no company_ids defaults to status='qualified'.
+    After drafting, companies move to 'outreach_pending' so they aren't picked
+    up again on the next tick.
+    """
+    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    if not workspace_budget_ok(ws, "drafting"):
+        return
+    from backend.app.core.database import Database
+    from backend.app.agents.outreach import OutreachAgent
+    db = Database(workspace_id=ws["id"])
+    agent = OutreachAgent(db=db)
+    result = agent.run(limit=50)
+    logger.info(
+        "Draft generation [%s]: drafted=%d skipped=%d errors=%d",
+        ws["name"], result.processed, result.skipped, result.errors,
+    )
+
+
+def _run_draft_generation() -> None:
+    """Every-30-min job: generate initial outreach drafts for qualified-but-undrafted companies."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_draft_workspace, "drafting")
+    except Exception as e:
+        logger.error(f"Draft generation failed: {e}", exc_info=True)
 
 
 def _research_workspace(ws: dict) -> None:
@@ -1316,6 +1356,9 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_research, "interval", minutes=20, id="research")
         # Qualification: every 15 min 24/7 — stays ahead of research output
         scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
+        # Draft generation: every 30 min — drains qualified-but-undrafted companies
+        # (closes the gap where enriched contacts had no scheduled path to a sent email)
+        scheduler.add_job(_run_draft_generation, "interval", minutes=30, id="draft_generation")
         # Enrichment: every 45 min 24/7 — Apollo credit-gated (1 credit/contact)
         # 45-min spacing keeps rate limits comfortable; credit guard halts if < 200 remaining
         scheduler.add_job(_run_enrichment, "interval", minutes=45, id="enrichment")
