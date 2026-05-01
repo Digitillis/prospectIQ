@@ -18,6 +18,64 @@ from backend.app.core.models import ResearchResult
 console = Console()
 logger = logging.getLogger(__name__)
 
+# Sonnet for high-PQS, Haiku for low-PQS firmographic match.
+# Threshold is firmographic-only PQS (the cheap dimension). Companies whose
+# firmographic match alone is strong get the full research treatment.
+RESEARCH_PQS_PROMOTE_THRESHOLD = 6
+SONNET_MODEL = "claude-sonnet-4-6"
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _select_research_model(company: dict) -> tuple[str, str]:
+    """Return (model_id, prompt_variant) based on firmographic score.
+
+    Low-PQS companies get Haiku with a slim extraction prompt to save cost.
+    High-PQS companies get Sonnet with the full intelligence prompt.
+    """
+    pqs_firmographic = (
+        company.get("pqs_firmographic")
+        or company.get("pqs_firm")
+        or 0
+    )
+    try:
+        pqs_firmographic = int(pqs_firmographic)
+    except (TypeError, ValueError):
+        pqs_firmographic = 0
+
+    if pqs_firmographic >= RESEARCH_PQS_PROMOTE_THRESHOLD:
+        return SONNET_MODEL, "full"
+    return HAIKU_MODEL, "slim"
+
+
+# Slim Haiku prompt — just enough fields to decide whether to promote
+SLIM_RESEARCH_SYSTEM = """You are a manufacturing analyst doing a quick triage scan.
+Return ONLY valid JSON. No markdown, no explanation."""
+
+SLIM_RESEARCH_USER = """Quickly scan this manufacturing company and decide whether it
+merits deep research for B2B AI manufacturing intelligence sales.
+
+COMPANY: {company_name}
+INDUSTRY: {industry}
+LOCATION: {city}, {state}, {country}
+WEBSITE: {website}
+EMPLOYEE COUNT: {employee_count}
+
+Output ONLY this JSON:
+{{
+    "manufacturing_type": "discrete" | "process" | "hybrid" | "food" | "unknown",
+    "equipment_types": ["list", "of", "equipment", "types"],
+    "employee_estimate": <integer or null>,
+    "is_real_manufacturer": true | false,
+    "confidence_level": "high" | "medium" | "low",
+    "promote_to_full_research": true | false
+}}
+
+Rules:
+- promote_to_full_research=true ONLY if this looks like a genuine ICP fit
+  (real manufacturer with operations complex enough to need predictive maintenance
+   or AI-driven plant intelligence). Default to false when in doubt.
+- Output ONLY valid JSON. No markdown, no preamble."""
+
 # Combined research + extraction system prompt
 RESEARCH_SYSTEM = """You are a senior manufacturing industry analyst conducting deep research on
 companies for B2B sales intelligence and prospecting.
@@ -194,6 +252,57 @@ class ResearchAgent(BaseAgent):
             console.print(f"\n  [bold]{company_name}[/bold]")
 
             try:
+                # Tier model by firmographic PQS — Haiku for low-PQS, Sonnet for >=6
+                model_id, prompt_variant = _select_research_model(company)
+
+                if prompt_variant == "slim":
+                    console.print(f"    [dim]Quick scan via Haiku (low PQS)...[/dim]")
+                    slim = self._slim_research(client=client, company=company)
+
+                    if slim is None:
+                        console.print("    [red]Slim research failed. Skipping.[/red]")
+                        result.errors += 1
+                        result.add_detail(company_name, "error", "Haiku slim returned no valid JSON")
+                        if self._monitor:
+                            self._monitor.log_error(
+                                "Haiku slim research failed",
+                                company_id=company_id,
+                                error_type="parse_error",
+                            )
+                        continue
+
+                    if not slim.get("promote_to_full_research"):
+                        # Mark as researched with low-confidence flag — saves a Sonnet call
+                        existing_tags = company.get("custom_tags") or {}
+                        if isinstance(existing_tags, str):
+                            try:
+                                existing_tags = json.loads(existing_tags)
+                            except (json.JSONDecodeError, TypeError):
+                                existing_tags = {}
+                        existing_tags["research_path"] = "haiku_only"
+                        existing_tags["promote_to_full_research"] = False
+
+                        self.db.update_company(company_id, {
+                            "status": "researched",
+                            "manufacturing_profile": {
+                                "type": slim.get("manufacturing_type", "unknown"),
+                                "equipment": slim.get("equipment_types", []),
+                                "is_real_manufacturer": slim.get("is_real_manufacturer", False),
+                            },
+                            "custom_tags": existing_tags,
+                        })
+                        confidence = slim.get("confidence_level", "low")
+                        console.print(
+                            f"    [yellow]Haiku-only path: {confidence} confidence, "
+                            f"not promoted to full research.[/yellow]"
+                        )
+                        result.processed += 1
+                        result.add_detail(company_name, "haiku_only", f"confidence={confidence}")
+                        continue
+
+                    # Promoted — fall through to Sonnet research
+                    console.print("    [dim]Haiku promoted to full research → Sonnet...[/dim]")
+
                 console.print("    [dim]Researching via Claude...[/dim]")
                 structured = self._research_with_claude(
                     client=client,
@@ -293,6 +402,55 @@ class ResearchAgent(BaseAgent):
 
         return result
 
+    def _slim_research(self, client, company: dict) -> dict | None:
+        """Quick Haiku triage call. Returns a dict with `promote_to_full_research`.
+
+        Used for low-PQS companies to decide whether they're worth a full
+        Sonnet research call. ~10x cheaper than Sonnet research.
+        """
+        prompt = SLIM_RESEARCH_USER.format(
+            company_name=company.get("name", ""),
+            industry=company.get("industry", "Manufacturing"),
+            city=company.get("city", ""),
+            state=company.get("state", ""),
+            country=company.get("country", "US"),
+            website=company.get("website", "Not available"),
+            employee_count=company.get("employee_count", "Not available"),
+        )
+
+        try:
+            response = client.messages.create(
+                model=HAIKU_MODEL,
+                max_tokens=400,
+                system=SLIM_RESEARCH_SYSTEM,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            usage = response.usage
+            self.track_cost(
+                provider="anthropic",
+                model=HAIKU_MODEL,
+                endpoint="/messages",
+                company_id=company.get("id"),
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+            )
+
+            content = response.content[0].text.strip()
+            if content.startswith("```"):
+                content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
+
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Slim research JSON parse failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Slim research error: {e}")
+            return None
+
     def _research_with_claude(
         self, client, company: dict,
     ) -> dict | None:
@@ -319,7 +477,7 @@ class ResearchAgent(BaseAgent):
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model=SONNET_MODEL,
                 max_tokens=2000,
                 system=RESEARCH_SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
@@ -329,7 +487,7 @@ class ResearchAgent(BaseAgent):
             usage = response.usage
             self.track_cost(
                 provider="anthropic",
-                model="claude-sonnet-4-6",
+                model=SONNET_MODEL,
                 endpoint="/messages",
                 company_id=company.get("id"),
                 input_tokens=usage.input_tokens,
