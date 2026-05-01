@@ -291,7 +291,7 @@ PROSPECT AWARENESS LEVEL: {awareness_level}
 
 SEQUENCE: {sequence_name}, Step {sequence_step}
 CHANNEL: {channel}
-{reply_context_block}
+{time_gap_block}{reply_context_block}
 STEP INSTRUCTIONS:
 {step_instructions}
 
@@ -352,6 +352,7 @@ class OutreachAgent(BaseAgent):
         max_contacts_per_company: int = 2,
         tiers: list[str] | None = None,
         reply_context: str | None = None,
+        time_gap_days: int | None = None,
     ) -> AgentResult:
         """Generate outreach drafts for qualified companies.
 
@@ -361,6 +362,8 @@ class OutreachAgent(BaseAgent):
             reply_context: Optional reply text from prospect to inject into prompt.
             sequence_step: Which step in the sequence.
             limit: Max companies to process.
+            time_gap_days: Days since step 1 was sent. Used to adjust follow-up
+                framing when the gap is unusually long (>14 days).
 
         Returns:
             AgentResult with draft creation stats.
@@ -596,6 +599,7 @@ class OutreachAgent(BaseAgent):
                         global_principles=seq_config.get("global_principles", {}),
                         channel=resolved_channel,
                         reply_context=reply_context,
+                        time_gap_days=time_gap_days,
                     )
 
                     # Call Claude
@@ -819,6 +823,7 @@ class OutreachAgent(BaseAgent):
         global_principles: dict,
         channel: str = "email",
         reply_context: str | None = None,
+        time_gap_days: int | None = None,
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -908,6 +913,28 @@ class OutreachAgent(BaseAgent):
         except Exception:
             company_signals_text = "None available"
 
+        # Build time-gap framing block for follow-ups with an unusually long gap
+        if time_gap_days is not None and time_gap_days >= 14 and step_config.get("step", 1) > 1:
+            weeks = round(time_gap_days / 7)
+            if time_gap_days >= 45:
+                time_gap_block = (
+                    f"\n⏱️  TIME GAP: It has been approximately {time_gap_days} days (~{weeks} weeks) "
+                    f"since the first email. This is a re-introduction, not a standard follow-up.\n"
+                    "Your email must NOT assume they remember the previous message. Open with fresh "
+                    "context as if restarting the conversation — reference something current and specific "
+                    "about their company or sub-sector. Do not say 'following up on my last email'.\n"
+                )
+            else:
+                time_gap_block = (
+                    f"\n⏱️  TIME GAP: It has been approximately {time_gap_days} days (~{weeks} weeks) "
+                    f"since the first email — longer than a standard follow-up cadence.\n"
+                    "Acknowledge the gap naturally in one brief phrase (e.g. 'circling back after a few weeks', "
+                    "'wanted to reconnect', 'checking back in'). Do NOT say 'just following up' or imply "
+                    "only a few days have passed. Keep it light — one phrase is enough, do not over-explain.\n"
+                )
+        else:
+            time_gap_block = ""
+
         # Build reply context block if a prospect reply was logged
         if reply_context:
             reply_context_block = (
@@ -943,6 +970,7 @@ class OutreachAgent(BaseAgent):
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
             channel=channel,
+            time_gap_block=time_gap_block,
             reply_context_block=reply_context_block,
             step_instructions=step_text,
             anti_patterns=anti_text,
