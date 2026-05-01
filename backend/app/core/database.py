@@ -873,7 +873,7 @@ class Database:
     def get_companies_for_intent_scan(self, campaign_name: str | None = None) -> list[dict]:
         """Fetch companies with their Apollo org ID for intent scanning."""
         query = self.client.table("companies").select(
-            "id, name, domain, apollo_id, campaign_name, intent_score"
+            "id, name, domain, apollo_id, campaign_name, intent_score, tier"
         )
         if campaign_name:
             query = query.eq("campaign_name", campaign_name)

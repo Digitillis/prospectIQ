@@ -3,9 +3,14 @@
 Signal types and point values:
   - job_posting (maintenance/quality/ops role):  +15 pts
   - fda_warning_letter (last 24 months):          +25 pts
+  - fda_warning_letter_fsma (last 24 months):     +45 pts  — FSMA 204 enforcement
+  - fda_recall (last 18 months):                  +20 pts
   - osha_citation (last 12 months):               +15 pts
   - funding_event (last 18 months):               +10 pts
   - linkedin_activity (manual log):               +10 pts
+
+FSMA enforcement multiplier: for F&B tier companies, signals with FSMA context
+score 1.3x above the base value (enforcement is live post-Jan 20, 2026).
 
 Intent score is added on top of contact priority_score at queue time.
 Companies with intent_score >= 20 are considered "hot" and get prioritised.
@@ -31,13 +36,23 @@ logger = logging.getLogger(__name__)
 SIGNAL_POINTS: dict[str, int] = {
     "job_posting": 15,
     "fda_warning_letter": 25,
+    "fda_warning_letter_fsma": 45,   # FSMA 204 enforcement — highest-value signal
+    "fda_recall": 20,
     "osha_citation": 15,
     "funding_event": 10,
     "linkedin_activity": 10,
 }
 
-MAX_INTENT_SCORE = 50
+MAX_INTENT_SCORE = 60   # raised from 50 to accommodate FSMA signal value
 HOT_THRESHOLD = 20
+
+# F&B tier prefixes — FSMA enforcement multiplier applies to these
+_FB_TIER_PREFIXES = ("fb_", "fb1", "fb2", "fb3", "fb4")
+
+# Signals that qualify for the FSMA enforcement multiplier on F&B companies
+_FSMA_ENFORCEMENT_SIGNALS = frozenset({
+    "fda_warning_letter_fsma", "fda_warning_letter", "fda_recall",
+})
 
 # ------------------------------------------------------------------
 # Buyer-signal job titles (case-insensitive keyword matching)
@@ -303,6 +318,46 @@ class IntentEngine:
         self._refresh_company_score(company_id)
         return result
 
+    def log_fda_warning_letter_fsma(
+        self,
+        company_id: str,
+        company_name: str,
+        letter_date: str,
+        detail: str | None = None,
+    ) -> dict:
+        """Log an FSMA 204 / traceability-specific FDA warning letter.
+
+        Scores 45 pts (vs 25 for a general warning letter) and gets a 1.3x
+        multiplier when the company is an F&B tier, making this the highest-
+        value single signal in the system for F&B prospects.
+
+        Args:
+            company_id: Company UUID.
+            company_name: Company name (for log messages).
+            letter_date: ISO date string of the letter (e.g. "2026-02-14").
+            detail: Human-readable description (e.g. "FSMA 204 traceability records violation").
+        """
+        try:
+            issued = datetime.fromisoformat(letter_date).replace(tzinfo=timezone.utc)
+        except Exception:
+            issued = _now_utc()
+        expires_at = (issued + timedelta(days=730)).isoformat()
+
+        signal = {
+            "company_id": company_id,
+            "signal_type": "fda_warning_letter_fsma",
+            "signal_detail": detail or f"FSMA 204 warning letter issued {letter_date}",
+            "detected_at": _now_utc().isoformat(),
+            "source": "manual",
+            "raw_data": {"letter_date": letter_date},
+            "is_active": True,
+            "expires_at": expires_at,
+        }
+        result = self.db.upsert_intent_signal(signal)
+        logger.info(f"[intent] FSMA warning letter logged for {company_name}")
+        self._refresh_company_score(company_id)
+        return result
+
     def log_osha_citation(
         self,
         company_id: str,
@@ -412,8 +467,11 @@ class IntentEngine:
     # Scoring
     # ------------------------------------------------------------------
 
-    def compute_company_intent_score(self, company_id: str) -> int:
+    def compute_company_intent_score(self, company_id: str, company_tier: str | None = None) -> int:
         """Sum active intent signals and return the total score (capped at MAX_INTENT_SCORE).
+
+        For F&B tier companies, FSMA-related signals carry a 1.3x multiplier —
+        enforcement is live post-Jan 20, 2026 and urgency is materially higher.
 
         Also updates companies.intent_score, intent_score_updated_at, and
         last_intent_signal_at on the company record.
@@ -422,6 +480,24 @@ class IntentEngine:
             The computed intent score (0–MAX_INTENT_SCORE).
         """
         signals = self.db.get_active_intent_signals(company_id)
+
+        # Resolve tier if not passed in — needed for FSMA multiplier
+        tier = company_tier or ""
+        if not tier:
+            try:
+                row = (
+                    self.db.client.table("companies")
+                    .select("tier")
+                    .eq("id", company_id)
+                    .limit(1)
+                    .execute()
+                    .data or [{}]
+                )[0]
+                tier = row.get("tier") or ""
+            except Exception:
+                pass
+
+        is_fb = any(tier.startswith(p) for p in _FB_TIER_PREFIXES)
 
         # Expire signals whose expires_at has passed
         now = _now_utc()
@@ -450,10 +526,13 @@ class IntentEngine:
             except Exception as exc:
                 logger.warning(f"[intent] Failed to deactivate expired signal {sid}: {exc}")
 
-        # Sum points
+        # Sum points — apply FSMA multiplier for F&B companies
         raw_score = 0
         for s in active_signals:
-            raw_score += SIGNAL_POINTS.get(s.get("signal_type", ""), 0)
+            pts = SIGNAL_POINTS.get(s.get("signal_type", ""), 0)
+            if is_fb and s.get("signal_type") in _FSMA_ENFORCEMENT_SIGNALS:
+                pts = int(pts * 1.3)
+            raw_score += pts
 
         score = min(raw_score, MAX_INTENT_SCORE)
 
@@ -477,10 +556,11 @@ class IntentEngine:
 
         for company in companies:
             cid = company["id"]
+            tier = company.get("tier") or ""
             try:
                 signals = self.db.get_active_intent_signals(cid)
                 total_signals += len(signals)
-                self.compute_company_intent_score(cid)
+                self.compute_company_intent_score(cid, company_tier=tier)
                 updated += 1
             except Exception as exc:
                 logger.warning(
