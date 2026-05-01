@@ -43,11 +43,19 @@ PERSONA_PRIORITY = {
 _WRONG_PERSONA_TITLE_SIGNALS = (
     "sales", "business development", " bd ", "account manager",
     "account executive", "marketing", "advertising", "public relations",
-    " hr ", "human resources", "recrui", "talent acquisition",
+    "human resources", "hr manager", "hr director", "hr business", "hr generalist",
+    "recrui", "talent acquisition",
     "finance", "financial", "controller", "accounting", "treasurer",
     "legal", "counsel", "attorney", "compliance officer",
     "procurement", "purchasing",  # borderline — exclude; they don't sponsor AI
     "customer service", "customer success",
+)
+
+# Suffix patterns that flag Apollo data scraping artifacts embedded in title fields.
+_TITLE_ARTIFACT_PATTERNS = (
+    "related to search",
+    "at the company",
+    " at ",  # "Operations Manager at Acme" — company name leaked into title
 )
 
 _REQUIRED_OPS_SIGNALS = (
@@ -61,9 +69,18 @@ _REQUIRED_OPS_SIGNALS = (
 
 def _is_wrong_persona(contact: dict) -> bool:
     """Return True if this contact's title signals a non-buyer persona."""
-    title = (contact.get("title") or "").lower()
+    title = (contact.get("title") or "").lower().strip()
     if not title:
         return False  # Unknown title: give benefit of the doubt
+
+    # Catch Apollo artifact titles (scraping noise, not real job titles)
+    for artifact in _TITLE_ARTIFACT_PATTERNS:
+        if artifact in title:
+            return True
+
+    # Title starts with "hr " or is exactly "hr" — handles "HR Manager", "HR Director"
+    if title == "hr" or title.startswith("hr "):
+        return True
 
     # Explicit disqualifying signals
     for signal in _WRONG_PERSONA_TITLE_SIGNALS:
@@ -592,10 +609,11 @@ class OutreachAgent(BaseAgent):
         if not contacts:
             return []
 
-        # Filter wrong personas first; fall back to all contacts if none pass
+        # Filter wrong personas — return empty list if nobody qualifies.
+        # Never fall back to wrong-persona contacts; callers will skip the company.
         eligible = [c for c in contacts if not _is_wrong_persona(c)]
         if not eligible:
-            eligible = contacts
+            return []
         contacts = eligible
 
         # Score and sort all contacts
@@ -635,14 +653,14 @@ class OutreachAgent(BaseAgent):
         if not contacts:
             return None
 
-        # Filter contacts with email addresses, excluding wrong personas
+        # Filter contacts with email addresses, excluding wrong personas.
+        # Do NOT fall back to wrong-persona contacts — return None so callers skip.
         emailable = [
             c for c in contacts
             if c.get("email") and not _is_wrong_persona(c)
         ]
         if not emailable:
-            # Fall back to anyone with an email (better than nothing)
-            emailable = [c for c in contacts if c.get("email")] or contacts
+            return None
 
         # Sort by persona priority (highest first), then decision_maker
         def contact_score(c):
