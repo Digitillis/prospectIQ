@@ -161,12 +161,64 @@ def _send_approved_workspace(ws: dict) -> None:
         return
     from backend.app.agents.engagement import EngagementAgent
     from backend.app.core.database import Database
-    agent = EngagementAgent(db=Database(workspace_id=ws["id"]))
+    db = Database(workspace_id=ws["id"])
+    agent = EngagementAgent(db=db)
     result = agent.run(action="send_approved")
     logger.info("Send [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
     # Reactive: consumed pipeline capacity — check depth immediately
     if result.processed > 0:
         _schedule_pipeline_advance(delay_seconds=60)
+        # Flywheel: schedule a 24-hour-out one-shot intent refresh for the
+        # companies we just emailed. Prospects who just received outreach
+        # often post relevant job openings within the next day.
+        try:
+            _schedule_post_send_intent_refresh(ws["id"], db, lookback_minutes=15)
+        except Exception as exc:
+            logger.debug("post-send intent refresh scheduling failed: %s", exc)
+
+
+def _schedule_post_send_intent_refresh(
+    workspace_id: str, db, lookback_minutes: int = 15,
+) -> None:
+    """Schedule a one-shot intent refresh in 24h for companies just emailed.
+
+    Reads outreach_drafts sent in the last `lookback_minutes` for this
+    workspace, dedupes the company set, and queues a one-shot job 24h out.
+    """
+    if _scheduler is None:
+        return
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)).isoformat()
+    try:
+        rows = (
+            db.client.table("outreach_drafts")
+            .select("company_id")
+            .eq("workspace_id", workspace_id)
+            .gte("sent_at", cutoff)
+            .execute()
+            .data or []
+        )
+    except Exception:
+        return
+    company_ids = list({r["company_id"] for r in rows if r.get("company_id")})
+    if not company_ids:
+        return
+    run_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    try:
+        _scheduler.add_job(
+            _run_intent_refresh_for_companies,
+            "date",
+            run_date=run_at,
+            args=[company_ids, workspace_id],
+            id=f"intent_post_send_{workspace_id}_{int(run_at.timestamp())}",
+            replace_existing=True,
+        )
+        logger.info(
+            "Scheduled 24h post-send intent refresh for %d companies (ws=%s)",
+            len(company_ids), workspace_id,
+        )
+    except Exception as exc:
+        logger.debug("post-send intent refresh add_job failed: %s", exc)
 
 
 def _run_send_approved() -> None:
@@ -854,10 +906,20 @@ def _research_workspace(ws: dict) -> None:
 
 
 def _run_research() -> None:
-    """Runs every 20 min 24/7 — 150 companies per run, budget-gated."""
+    """Runs every 20 min 24/7 — 150 companies per run, budget-gated.
+
+    Flywheel: immediately fires qualification at the end so research output
+    is qualified within ~2 minutes instead of waiting up to 15 min for the
+    qualification cron tick.
+    """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_research_workspace, "research")
+        # Fast-path: research → qualify, closes 35-min gap to ~2 min
+        try:
+            _run_qualification()
+        except Exception as exc:
+            logger.warning("research → qualify fast-path failed: %s", exc)
     except Exception as e:
         logger.error(f"Scheduled research failed: {e}", exc_info=True)
 
