@@ -789,12 +789,12 @@ def _qualify_workspace(ws: dict) -> None:
     from backend.app.agents.qualification import QualificationAgent
     from backend.app.core.database import Database
     agent = QualificationAgent(db=Database(workspace_id=ws["id"]))
-    result = agent.run(batch_size=100)
+    result = agent.run(limit=300)
     logger.info("Qualification [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
 
 
 def _run_qualification() -> None:
-    """Daily job: score researched companies and promote to qualified/disqualified."""
+    """Every-15-min job: score researched companies and promote to qualified/disqualified."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_qualify_workspace, "qualification")
@@ -809,12 +809,12 @@ def _research_workspace(ws: dict) -> None:
     from backend.app.agents.research import ResearchAgent
     from backend.app.core.database import Database
     agent = ResearchAgent(db=Database(workspace_id=ws["id"]))
-    result = agent.run(batch_size=50)
+    result = agent.run(batch_size=150)
     logger.info("Research [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
 
 
 def _run_research() -> None:
-    """Runs 4× daily (9am / 12pm / 3pm / 6pm Mon-Fri) — 50 companies per run, budget-gated."""
+    """Runs every 20 min 24/7 — 150 companies per run, budget-gated."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_research_workspace, "research")
@@ -892,12 +892,12 @@ def _enrich_workspace(ws: dict) -> None:
     from backend.app.agents.enrichment import EnrichmentAgent
     from backend.app.core.database import Database
     agent = EnrichmentAgent(db=Database(workspace_id=ws["id"]))
-    result = agent.run(limit=100)
+    result = agent.run(limit=200)
     logger.info("Enrichment [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
 
 
 def _run_enrichment() -> None:
-    """2× daily job: enrich up to 100 contacts per run via Apollo (burns Apollo credits)."""
+    """Every-45-min job: enrich up to 200 contacts per run via Apollo (burns Apollo credits)."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_enrich_workspace, "enrichment")
@@ -1159,28 +1159,14 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         # Gmail intake: every 15 min so replies surface quickly for triage
         scheduler.add_job(_run_gmail_intake, "interval", minutes=15, id="gmail_intake")
-        # Research: 4× daily Mon-Fri (9am / 12pm / 3pm / 6pm) — 50 companies per run
-        # 200 companies/day max; budget gate stops early if monthly limit hit
-        scheduler.add_job(
-            _run_research, "cron",
-            day_of_week="mon-fri", hour="9,12,15,18", minute=0,
-            timezone="America/Chicago",
-            id="research",
-        )
-        # Qualification: runs 30 min after each research wave
-        scheduler.add_job(
-            _run_qualification, "cron",
-            day_of_week="mon-fri", hour="9,12,15,18", minute=30,
-            timezone="America/Chicago",
-            id="qualification",
-        )
-        # Enrichment: 2× daily Mon-Fri (9:45am + 2:45pm) — 100 contacts per run via Apollo
-        scheduler.add_job(
-            _run_enrichment, "cron",
-            day_of_week="mon-fri", hour="9,14", minute=45,
-            timezone="America/Chicago",
-            id="enrichment",
-        )
+        # Research: every 20 min 24/7 — 150 companies per run, budget-gated
+        # Aggressive cadence to clear 7K+ reclaimed + 1.5K discovered backlog fast
+        scheduler.add_job(_run_research, "interval", minutes=20, id="research")
+        # Qualification: every 15 min 24/7 — stays ahead of research output
+        scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
+        # Enrichment: every 45 min 24/7 — Apollo credit-gated (1 credit/contact)
+        # 45-min spacing keeps rate limits comfortable; credit guard halts if < 200 remaining
+        scheduler.add_job(_run_enrichment, "interval", minutes=45, id="enrichment")
         # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
         # Runs hourly Mon-Fri during business hours so drafts are ready for morning send
         scheduler.add_job(

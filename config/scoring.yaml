@@ -4,7 +4,7 @@
 #
 # ICP alignment (updated 2026-04-01):
 #   Revenue: $100M-$2B (T1: $100M-$400M, T2: $400M-$1B bullseye, T3: $1B-$2B manual)
-#   Employees: 300-3,500
+#   Employees: 200-3,500
 #   Primary: ALL industrial manufacturing (discrete + process)
 #   Secondary: Food & Beverage (ops/uptime angle only, NOT FSMA)
 
@@ -41,6 +41,14 @@ dimensions:
         min: 100000000
         max: 400000000
 
+      revenue_extended:
+        points: 4
+        description: "Revenue $75M-$100M — extended floor (strong F&B and smaller mfg)"
+        source: "apollo"
+        evaluation: "revenue_range"
+        min: 75000000
+        max: 100000000
+
       revenue_t3:
         points: 3
         description: "Revenue $1B-$2B — T3 qualifies but manual outreach only"
@@ -51,10 +59,10 @@ dimensions:
 
       employee_count:
         points: 4
-        description: "300-3,500 employees (ICP sweet spot)"
+        description: "200-3,500 employees (ICP sweet spot)"
         source: "apollo"
         evaluation: "employee_range"
-        min: 300
+        min: 200
         max: 3500
 
       us_midwest_primary:

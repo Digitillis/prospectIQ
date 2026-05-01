@@ -18,15 +18,15 @@
 #   T3: $1B–$2B      — manual motion only, not cold email
 #   watchlist        — pharma, aerospace, utilities — vendor qual wall
 #
-# Sweet spot: $100M–$2B revenue, 300–3,500 employees
+# Sweet spot: $75M–$2B revenue, 200–3,500 employees
 
 version: "3.0"
 
 target_market:
-  name: "US Mid-Market Industrial Manufacturing — $100M–$2B Revenue"
+  name: "US Mid-Market Industrial Manufacturing — $75M–$2B Revenue"
   description: >
     Mid-market manufacturers across ALL industrial sectors (discrete and process),
-    $100M–$2B revenue, 300–3,500 employees. Three tranches: T1 ($100M–$400M, fast pilots),
+    $75M–$2B revenue, 200–3,500 employees. Three tranches: T1 ($75M–$400M, fast pilots),
     T2 ($400M–$1B, bullseye), T3 ($1B–$2B, manual outreach only).
     Core value prop: prevent unplanned downtime, improve OEE, detect equipment
     anomalies before they become failures. F&B is secondary.
@@ -242,14 +242,15 @@ company_filters:
       fsma_exposure: "low"     # Allergen changeover is the wedge, not FTL
 
   revenue:
-    min: 100000000    # $100M minimum — below this, overhead too high to sell
+    min: 75000000     # $75M minimum — lowered to capture mid-market manufacturers
     max: 2000000000   # $2B maximum — T3 cap; above $2B is Fortune 100 / different motion
 
   employee_count:
-    min: 300
+    min: 200
     max: 3500
     apollo_ranges:
-      - "201,500"     # 201–500 employees (covers 300+ floor)
+      - "101,200"     # 101–200 employees (captures F&B processors at $50M–$100M)
+      - "201,500"     # 201–500 employees
       - "501,1000"
       - "1001,2000"
       - "2001,5000"   # captures T3 upper bound (~3,500)
