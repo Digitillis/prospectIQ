@@ -38,8 +38,13 @@ DISCOVERY_YIELD_RATE = 0.35
 # Number of days of pipeline capacity to maintain ahead of sends
 LEAD_TIME_DAYS = 3
 
-# Trigger a learning run after this many new replies since last run
-LEARNING_MIN_REPLIES = 10
+# Trigger a learning run after this many new replies since last run.
+# Lowered from 10 → 5 so the loop closes faster while volume ramps.
+LEARNING_MIN_REPLIES = 5
+
+# Once cumulative outcomes pass this threshold, auto-apply switches on by default
+# (graduated rollout). Set LEARNING_AUTO_APPLY=false in env to keep it off.
+LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD = 50
 
 # Maximum Apollo pages per discovery run (prevents runaway credit spend)
 MAX_DISCOVERY_PAGES_PER_RUN = 10
@@ -224,8 +229,8 @@ class PipelineOrchestrator:
         from backend.app.core.database import Database
 
         try:
-            auto_apply = os.environ.get("LEARNING_AUTO_APPLY", "false").lower() == "true"
             db = Database(workspace_id=self.workspace_id)
+            auto_apply = _resolve_auto_apply(db, self.workspace_id)
             result = LearningAgent(db=db).run(period_days=30, auto_apply=auto_apply)
 
             # Stamp last_learning_at in workspace settings
@@ -298,3 +303,68 @@ class PipelineOrchestrator:
                 actions.append(f"{label}_discovery: failed ({exc})")
 
         return actions
+
+
+# ---------------------------------------------------------------------------
+# Graduated auto-apply rollout
+# ---------------------------------------------------------------------------
+
+def _resolve_auto_apply(db, workspace_id: str) -> bool:
+    """Decide whether the LearningAgent may write changes back to YAML.
+
+    Rollout policy:
+      - LEARNING_AUTO_APPLY=true    → always on (manual override).
+      - LEARNING_AUTO_APPLY=false   → always off (manual kill switch).
+      - LEARNING_AUTO_APPLY unset   → on once cumulative outcomes >= threshold.
+
+    Logs a one-time "auto-apply activated" line the first time a workspace
+    crosses the threshold so it's traceable.
+    """
+    env_val = os.environ.get("LEARNING_AUTO_APPLY")
+    if env_val is not None:
+        env_lower = env_val.strip().lower()
+        if env_lower == "true":
+            return True
+        if env_lower == "false":
+            return False
+        # Unrecognized value — fall through to graduated logic
+
+    # Graduated: count outcomes, switch on past threshold
+    try:
+        outcomes_q = (
+            db.client.table("outreach_outcomes")
+            .select("send_id", count="exact")
+            .eq("workspace_id", workspace_id)
+        )
+        total_outcomes = outcomes_q.execute().count or 0
+
+        if total_outcomes < LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD:
+            return False
+
+        # Crossed threshold — write a marker so we only log once
+        ws_rows = (
+            db.client.table("workspaces")
+            .select("settings")
+            .eq("id", workspace_id)
+            .limit(1)
+            .execute()
+        ).data
+        settings = (ws_rows[0].get("settings") or {}) if ws_rows else {}
+        if not settings.get("learning_auto_apply_activated_at"):
+            from datetime import datetime, timezone
+            settings["learning_auto_apply_activated_at"] = datetime.now(timezone.utc).isoformat()
+            settings["learning_auto_apply_activated_outcomes"] = total_outcomes
+            try:
+                db.client.table("workspaces").update({"settings": settings}).eq(
+                    "id", workspace_id
+                ).execute()
+            except Exception:
+                pass
+            logger.info(
+                "Learning auto-apply activated: %d outcomes accumulated (threshold=%d, ws=%s)",
+                total_outcomes, LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD, workspace_id,
+            )
+        return True
+    except Exception as exc:
+        logger.warning("auto_apply resolution failed (defaulting to off): %s", exc)
+        return False

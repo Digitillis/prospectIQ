@@ -1160,17 +1160,18 @@ def _run_mfg_discovery() -> None:
 # ---------------------------------------------------------------------------
 
 def _learning_workspace(ws: dict) -> None:
-    import os
     from backend.app.core.workspace_scheduler import workspace_budget_ok
     if not workspace_budget_ok(ws, "weekly_learning"):
         return
     from backend.app.agents.learning import LearningAgent
     from backend.app.core.database import Database
-    # auto_apply=True only when explicitly enabled via env var.
-    # Default is False (observation mode) until 50+ replies have been collected
-    # and a human has reviewed one cycle of suggested adjustments.
-    auto_apply = os.environ.get("LEARNING_AUTO_APPLY", "false").lower() == "true"
-    agent = LearningAgent(db=Database(workspace_id=ws["id"]))
+    from backend.app.core.pipeline_orchestrator import _resolve_auto_apply
+    # Graduated rollout: env var explicit override wins; otherwise auto-apply
+    # turns on once cumulative outcomes for this workspace cross the threshold
+    # (LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD = 50).
+    db = Database(workspace_id=ws["id"])
+    auto_apply = _resolve_auto_apply(db, ws["id"])
+    agent = LearningAgent(db=db)
     result = agent.run(period_days=30, auto_apply=auto_apply)
     logger.info(
         "Weekly learning [%s]: processed=%d errors=%d (auto_apply=%s)",
