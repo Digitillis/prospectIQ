@@ -46,7 +46,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals, targeting, intent_signals, memory, llm_qualify, composer
+from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals, targeting, intent_signals, memory, llm_qualify, composer, onboarding
+from backend.app.api.routes import quality_dashboard
 from backend.app.webhooks import instantly as instantly_webhooks
 from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
@@ -100,20 +101,28 @@ def _run_health_snapshot() -> None:
         logger.error(f"Scheduled health_snapshot failed: {e}")
 
 
+def _send_approved_workspace(ws: dict) -> None:
+    from backend.app.core.workspace_scheduler import workspace_daily_sends_ok
+    if not workspace_daily_sends_ok(ws, "send_approved"):
+        return
+    from backend.app.core.config import get_settings
+    if not get_settings().send_enabled:
+        return
+    from backend.app.agents.engagement import EngagementAgent
+    from backend.app.core.database import Database
+    agent = EngagementAgent(db=Database(workspace_id=ws["id"]))
+    result = agent.run(action="send_approved")
+    logger.info("Send [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+
+
 def _run_send_approved() -> None:
-    """Cron job: push approved drafts to Instantly (gated by SEND_ENABLED).
+    """Cron job: send approved drafts via Resend for all active workspaces.
 
     Scheduled Mon-Fri at :00 and :30 past each hour from 8 AM–11 AM Chicago time.
-    Timing is enforced by the cron trigger; no additional window check needed here.
     """
     try:
-        from backend.app.core.config import get_settings
-        settings = get_settings()
-        if not settings.send_enabled:
-            return  # Silently skip — send not enabled
-        from backend.app.agents.engagement import EngagementAgent
-        agent = EngagementAgent()
-        agent.run(action="send_approved")
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_send_approved_workspace, "send_approved")
     except Exception as e:
         logger.error(f"Scheduled send_approved failed: {e}")
 
@@ -187,8 +196,192 @@ def _run_jit_pregenerate() -> None:
         logger.error(f"Scheduled jit_pregenerate failed: {e}")
 
 
+def _gmail_intake_workspace(ws: dict) -> None:
+    """Run Gmail IMAP intake for a single workspace."""
+    from backend.app.core.credential_store import CredentialStore
+    from backend.app.core.database import Database
+    from backend.app.integrations.gmail_imap import GmailImapClient, _classify_intent
+    from datetime import datetime, timezone, timedelta
+
+    ws_id = ws["id"]
+    creds = CredentialStore(ws_id)
+
+    # Try workspace credentials first, then fall back to env
+    gmail_user = creds.get("gmail", "user")
+    gmail_password = creds.get("gmail", "app_password")
+    if not gmail_user or not gmail_password:
+        return  # Not configured for this workspace
+
+    db = Database(workspace_id=ws_id)
+    processed = 0
+    skipped = 0
+
+    with GmailImapClient(gmail_user, gmail_password) as gmail:
+        replies = gmail.fetch_unseen_replies()
+        if not replies:
+            return
+
+        for reply in replies:
+            from_email = reply["from_email"]
+            subject = reply["subject"]
+            body = reply["body"]
+            received_at = reply["received_at"]
+
+            clean_subject = subject.strip()
+            if clean_subject.lower().startswith("re:"):
+                clean_subject = clean_subject[3:].strip()
+
+            match = (
+                db.client.table("outreach_drafts")
+                .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
+                .ilike("subject", clean_subject)
+                .not_.is_("sent_at", "null")
+                .eq("workspace_id", ws_id)
+                .limit(1)
+                .execute()
+            ).data
+
+            if not match:
+                contact_row = (
+                    db.client.table("contacts")
+                    .select("id, company_id")
+                    .eq("email", from_email)
+                    .eq("workspace_id", ws_id)
+                    .limit(1)
+                    .execute()
+                ).data
+                if contact_row:
+                    match = (
+                        db.client.table("outreach_drafts")
+                        .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
+                        .eq("contact_id", contact_row[0]["id"])
+                        .not_.is_("sent_at", "null")
+                        .eq("workspace_id", ws_id)
+                        .order("sent_at", desc=True)
+                        .limit(1)
+                        .execute()
+                    ).data
+
+            if not match:
+                gmail.mark_as_read(reply["uid"])
+                skipped += 1
+                continue
+
+            draft = match[0]
+            company_id = draft["company_id"]
+            contact_id = draft["contact_id"]
+
+            existing = (
+                db.client.table("thread_messages")
+                .select("id")
+                .eq("contact_id", contact_id)
+                .eq("direction", "inbound")
+                .gte("created_at", (
+                    datetime.fromisoformat(received_at.replace("Z", "+00:00")) - timedelta(minutes=5)
+                ).isoformat())
+                .limit(1)
+                .execute()
+            ).data
+            if existing:
+                gmail.mark_as_read(reply["uid"])
+                skipped += 1
+                continue
+
+            intent = _classify_intent(body, subject)
+
+            thread_id = None
+            try:
+                existing_thread = (
+                    db.client.table("campaign_threads")
+                    .select("id")
+                    .eq("contact_id", contact_id)
+                    .limit(1)
+                    .execute()
+                ).data
+                if existing_thread:
+                    thread_id = existing_thread[0]["id"]
+                    db.client.table("campaign_threads").update({
+                        "status": "replied",
+                        "last_replied_at": received_at,
+                    }).eq("id", thread_id).execute()
+                else:
+                    new_thread = db.client.table("campaign_threads").insert({
+                        "company_id": company_id,
+                        "contact_id": contact_id,
+                        "status": "replied",
+                        "last_replied_at": received_at,
+                        "workspace_id": ws_id,
+                        "sequence_name": draft.get("sequence_name", "email_value_first"),
+                        "current_step": draft.get("sequence_step", 1),
+                    }).execute()
+                    if new_thread.data:
+                        thread_id = new_thread.data[0]["id"]
+            except Exception as e:
+                logger.warning(f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}")
+
+            try:
+                db.client.table("thread_messages").insert({
+                    "thread_id": thread_id,
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "direction": "inbound",
+                    "body": body[:4000],
+                    "subject": subject,
+                    "classification": intent,
+                    "source": "gmail_imap",
+                    "workspace_id": ws_id,
+                }).execute()
+            except Exception as e:
+                logger.warning(f"Gmail intake [{ws['name']}]: thread_message insert failed: {e}")
+
+            try:
+                db.client.table("interactions").insert({
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "type": "email_replied",
+                    "channel": "email",
+                    "subject": subject,
+                    "body": body[:4000],
+                    "source": "gmail_imap",
+                    "metadata": {"intent": intent, "from": from_email},
+                    "workspace_id": ws_id,
+                }).execute()
+            except Exception as e:
+                logger.warning(f"Gmail intake [{ws['name']}]: interaction insert failed: {e}")
+
+            try:
+                if intent == "not_interested":
+                    db.client.table("engagement_sequences").update({"status": "paused"}).eq(
+                        "contact_id", contact_id).eq("status", "active").execute()
+                elif intent == "interested":
+                    expedite_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+                    db.client.table("engagement_sequences").update({"next_action_at": expedite_at}).eq(
+                        "contact_id", contact_id).eq("status", "active").execute()
+                elif intent == "ooo":
+                    delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+                    db.client.table("engagement_sequences").update({"next_action_at": delay_at}).eq(
+                        "contact_id", contact_id).eq("status", "active").execute()
+            except Exception as e:
+                logger.warning(f"Gmail intake [{ws['name']}]: sequence update failed: {e}")
+
+            gmail.mark_as_read(reply["uid"])
+            processed += 1
+
+    if processed or skipped:
+        logger.info("Gmail intake [%s]: %d processed, %d skipped", ws["name"], processed, skipped)
+
+
 def _run_gmail_intake() -> None:
-    """Every-30-min job: poll Gmail IMAP for reply emails to avi@digitillis.io."""
+    """Every-15-min job: poll Gmail IMAP for replies across all active workspaces."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_gmail_intake_workspace, "gmail_intake")
+    except Exception as e:
+        logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
+
+
+def _run_gmail_intake_LEGACY() -> None:
+    """LEGACY — kept for reference only. Replaced by workspace-aware version above."""
     try:
         from backend.app.core.config import get_settings
         from backend.app.core.database import Database
@@ -373,7 +566,7 @@ def _run_gmail_intake() -> None:
             logger.info(f"Gmail intake: {processed} processed, {skipped} skipped/unmatched")
 
     except Exception as e:
-        logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
+        logger.error(f"Scheduled gmail_intake_legacy failed: {e}", exc_info=True)
 
 
 MONTHLY_API_BUDGET_USD = 200.0  # Hard stop for automated research/enrichment
@@ -455,60 +648,77 @@ def _check_budget(job_name: str) -> bool:
     return True
 
 
+def _qualify_workspace(ws: dict) -> None:
+    from backend.app.agents.qualification import QualificationAgent
+    from backend.app.core.database import Database
+    agent = QualificationAgent(db=Database(workspace_id=ws["id"]))
+    result = agent.run(batch_size=100)
+    logger.info("Qualification [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+
+
 def _run_qualification() -> None:
     """Daily job: score researched companies and promote to qualified/disqualified."""
     try:
-        from backend.app.agents.qualification import QualificationAgent
-        agent = QualificationAgent()
-        result = agent.run(batch_size=100)
-        logger.info(f"Scheduled qualification: processed={result.processed} errors={result.errors}")
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_qualify_workspace, "qualification")
     except Exception as e:
         logger.error(f"Scheduled qualification failed: {e}", exc_info=True)
 
 
+def _research_workspace(ws: dict) -> None:
+    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    if not workspace_budget_ok(ws, "research"):
+        return
+    from backend.app.agents.research import ResearchAgent
+    from backend.app.core.database import Database
+    agent = ResearchAgent(db=Database(workspace_id=ws["id"]))
+    result = agent.run(batch_size=50)
+    logger.info("Research [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+
+
 def _run_research() -> None:
     """Runs 4× daily (9am / 12pm / 3pm / 6pm Mon-Fri) — 50 companies per run, budget-gated."""
-    if not _check_budget("research"):
-        return
     try:
-        from backend.app.agents.research import ResearchAgent
-        agent = ResearchAgent()
-        result = agent.run(batch_size=50)
-        logger.info(f"Scheduled research: processed={result.processed} errors={result.errors}")
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_research_workspace, "research")
     except Exception as e:
         logger.error(f"Scheduled research failed: {e}", exc_info=True)
 
 
+def _auto_approve_workspace(ws: dict) -> None:
+    from backend.app.core.database import get_supabase_client
+    client = get_supabase_client()
+    ws_id = ws["id"]
+    ws_settings = ws.get("settings") or {}
+    pqs_threshold = int(ws_settings.get("auto_approve_pqs_threshold", 70))
+
+    rows = (
+        client.table("outreach_drafts")
+        .select("id, company_id, companies(pqs_total)")
+        .eq("approval_status", "pending")
+        .is_("sent_at", "null")
+        .eq("workspace_id", ws_id)
+        .limit(200)
+        .execute()
+        .data or []
+    )
+
+    approved = 0
+    for r in rows:
+        pqs = (r.get("companies") or {}).get("pqs_total") or 0
+        if pqs >= pqs_threshold:
+            client.table("outreach_drafts").update({"approval_status": "approved"}).eq("id", r["id"]).execute()
+            approved += 1
+
+    if approved:
+        logger.info("Auto-approve [%s]: approved %d drafts (PQS >= %d)", ws["name"], approved, pqs_threshold)
+
+
 def _run_auto_approve() -> None:
-    """Auto-approve high-PQS pending drafts (PQS >= 70) to reduce manual bottleneck."""
+    """Auto-approve high-PQS pending drafts across all active workspaces."""
     try:
-        from backend.app.core.database import get_supabase_client
-        from backend.app.core.config import get_settings
-        client = get_supabase_client()
-        ws = get_settings().default_workspace_id
-
-        rows = (
-            client.table("outreach_drafts")
-            .select("id, company_id, companies(pqs_total)")
-            .eq("approval_status", "pending")
-            .is_("sent_at", "null")
-            .eq("workspace_id", ws)
-            .limit(200)
-            .execute()
-            .data or []
-        )
-
-        approved = 0
-        for r in rows:
-            pqs = (r.get("companies") or {}).get("pqs_total") or 0
-            if pqs >= 70:
-                client.table("outreach_drafts").update(
-                    {"approval_status": "approved"}
-                ).eq("id", r["id"]).execute()
-                approved += 1
-
-        if approved:
-            logger.info(f"Auto-approve: approved {approved} high-PQS drafts (PQS >= 70)")
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_auto_approve_workspace, "auto_approve")
     except Exception as e:
         logger.error(f"Auto-approve failed: {e}", exc_info=True)
 
@@ -538,17 +748,91 @@ def _run_daily_report() -> None:
         logger.error(f"Daily report failed: {e}", exc_info=True)
 
 
+def _enrich_workspace(ws: dict) -> None:
+    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    if not workspace_budget_ok(ws, "enrichment"):
+        return
+    from backend.app.agents.enrichment import EnrichmentAgent
+    from backend.app.core.database import Database
+    agent = EnrichmentAgent(db=Database(workspace_id=ws["id"]))
+    result = agent.run(limit=100)
+    logger.info("Enrichment [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+
+
 def _run_enrichment() -> None:
     """2× daily job: enrich up to 100 contacts per run via Apollo (burns Apollo credits)."""
-    if not _check_budget("enrichment"):
-        return
     try:
-        from backend.app.agents.enrichment import EnrichmentAgent
-        agent = EnrichmentAgent()
-        result = agent.run(batch_size=100)
-        logger.info(f"Scheduled enrichment: processed={result.processed} errors={result.errors}")
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_enrich_workspace, "enrichment")
     except Exception as e:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
+
+
+def _run_weekly_post_send_audit() -> None:
+    """Sunday 7am job: audit sends from the past 7 days for data quality issues."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _audit_workspace(workspace_id: str) -> None:
+            from backend.app.agents.post_send_audit import PostSendAuditAgent
+            from backend.app.core.database import DatabaseClient
+            db = DatabaseClient(workspace_id=workspace_id)
+            PostSendAuditAgent(db=db).run(days=7)
+
+        for_each_workspace(_audit_workspace, "post_send_audit")
+    except Exception as e:
+        logger.error(f"Scheduled post-send audit failed: {e}", exc_info=True)
+
+
+def _run_weekly_contact_backup() -> None:
+    """Saturday 5am job: export all contact profiles to local JSON backup."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _backup_workspace(workspace_id: str) -> None:
+            from backend.app.agents.contact_backup import ContactBackupAgent
+            from backend.app.core.database import DatabaseClient
+            db = DatabaseClient(workspace_id=workspace_id)
+            ContactBackupAgent(db=db).run()
+
+        for_each_workspace(_backup_workspace, "contact_backup")
+    except Exception as e:
+        logger.error(f"Scheduled contact backup failed: {e}", exc_info=True)
+
+
+def _run_weekly_signal_scrapers() -> None:
+    """Saturday 6am job: refresh manufacturing-specific targeting signals (FDA, OSHA, MEP)."""
+    try:
+        from backend.app.core.database import get_supabase_client
+        from backend.app.core.database import Database
+
+        db = Database()  # workspace-agnostic — scrapers match by company name across all workspaces
+
+        from backend.app.agents.signal_scrapers.fda_scraper import FDARecallScraper
+        from backend.app.agents.signal_scrapers.osha_scraper import OSHACitationScraper
+        from backend.app.agents.signal_scrapers.mep_scraper import MEPGrantScraper
+
+        fda_result = FDARecallScraper(db).run(days_back=90)
+        logger.info("FDA scraper: %s", fda_result)
+
+        osha_result = OSHACitationScraper(db).run(days_back=60)
+        logger.info("OSHA scraper: %s", osha_result)
+
+        # MEP runs quarterly — only run when NIST publishes new data (annual release)
+        # Skipped in weekly run; trigger manually with: MEPGrantScraper(db).run()
+
+        try:
+            from backend.app.utils.notifications import notify_slack
+            notify_slack(
+                f"*Signal scrapers complete:* "
+                f"FDA {fda_result.get('matched', 0)} matched | "
+                f"OSHA {osha_result.get('matched', 0)} matched",
+                emoji=":satellite:",
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Scheduled signal scrapers failed: {e}", exc_info=True)
 
 
 def _run_weekly_cost_summary() -> None:
@@ -679,6 +963,27 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="limit_ramp",
         )
+        # Weekly post-send audit: Sunday 7am Chicago
+        scheduler.add_job(
+            _run_weekly_post_send_audit, "cron",
+            day_of_week="sun", hour=7, minute=0,
+            timezone="America/Chicago",
+            id="weekly_post_send_audit",
+        )
+        # Weekly contact backup: Saturday 5am Chicago → /Volumes/Digitillis/Data/prospectiq_backups/
+        scheduler.add_job(
+            _run_weekly_contact_backup, "cron",
+            day_of_week="sat", hour=5, minute=0,
+            timezone="America/Chicago",
+            id="weekly_contact_backup",
+        )
+        # Weekly signal scrapers: Saturday 6am Chicago (FDA + OSHA)
+        scheduler.add_job(
+            _run_weekly_signal_scrapers, "cron",
+            day_of_week="sat", hour=6, minute=0,
+            timezone="America/Chicago",
+            id="weekly_signal_scrapers",
+        )
         # Weekly cost summary: Monday 8am Chicago
         scheduler.add_job(
             _run_weekly_cost_summary, "cron",
@@ -701,6 +1006,8 @@ async def lifespan(app: FastAPI):
             "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
             "research 9/12/3pm → qualification 9:30/12:30/3:30pm → enrichment 9:45am Mon-Fri Chicago (budget-gated), "
             "daily_report 6am Chicago Mon-Fri, "
+            "weekly_contact_backup Sat 5am Chicago → /Volumes/Digitillis/Data/, "
+            "weekly_post_send_audit Sun 7am Chicago, "
             "weekly_cost_summary Mon 8am Chicago"
         )
     except ImportError:
@@ -777,7 +1084,9 @@ app.include_router(targeting.router)
 app.include_router(intent_signals.router)
 app.include_router(memory.router)
 app.include_router(llm_qualify.router)
+app.include_router(onboarding.router)
 app.include_router(composer.router)
+app.include_router(quality_dashboard.router)
 
 
 @app.get("/health")

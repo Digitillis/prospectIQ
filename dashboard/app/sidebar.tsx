@@ -4,65 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Building2,
-  MessageSquare,
-  Wand2,
   Zap,
   Users,
-  Filter,
-  GitBranch,
   Send,
-  PenTool,
-  BarChart3,
-  History,
+  ShieldCheck,
+  Activity,
   Settings,
   Search,
-  Activity,
-  UserPlus,
-  Ban,
-  CheckCircle2,
-  BookOpen,
   Moon,
   Sun,
-  Inbox,
-  Sparkles,
-  Mic2,
-  Linkedin,
-  TrendingUp,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { listThreads, getHitlStats } from "@/lib/api";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "https://prospectiq-production-4848.up.railway.app";
-
-/** Fetch threads needing action for the badge count. */
-function useThreadsBadge(): number {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    listThreads({ needs_action: true, limit: 200 })
-      .then((res) => setCount(res.needs_action_count ?? 0))
-      .catch(() => {});
-  }, []);
-
-  return count;
-}
-
-/** HITL queue pending badge count. */
-function useHitlBadge(): number {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    getHitlStats()
-      .then((res) => setCount(res.pending ?? 0))
-      .catch(() => {});
-  }, []);
-
-  return count;
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://prospectiq-production-4848.up.railway.app";
 
 /** Hot signals badge — companies with intent_score > 15. */
 function useSignalsBadge(): number {
@@ -102,8 +57,6 @@ interface NavSection {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const threadsBadge = useThreadsBadge();
-  const hitlBadge = useHitlBadge();
   const signalsBadge = useSignalsBadge();
 
   const [dark, setDark] = useState(false);
@@ -130,56 +83,19 @@ export function Sidebar() {
 
   const sections: NavSection[] = [
     {
-      title: "OPERATE",
+      title: "WORK",
       items: [
         { label: "Command Center", href: "/", icon: LayoutDashboard, exactMatch: true },
         { label: "Pipeline", href: "/pipeline", icon: Activity },
-        { label: "Reply Queue", href: "/hitl", icon: Inbox, badge: hitlBadge > 0 ? hitlBadge : undefined },
-        { label: "Threads", href: "/threads", icon: MessageSquare, badge: threadsBadge > 0 ? threadsBadge : undefined },
         { label: "Signals", href: "/signals", icon: Zap, badge: signalsBadge > 0 ? signalsBadge : undefined },
+        { label: "Outreach", href: "/outreach", icon: Send },
       ],
     },
     {
-      title: "BUILD",
+      title: "DATA",
       items: [
-        { label: "Prospects", href: "/prospects", icon: Building2 },
-        { label: "Lookalike Discovery", href: "/lookalike", icon: Sparkles },
         { label: "Contacts", href: "/contacts", icon: Users },
-        { label: "Segments", href: "/segments", icon: Filter },
-      ],
-    },
-    {
-      title: "ENGAGE",
-      items: [
-        { label: "Campaign Composer", href: "/composer", icon: Wand2 },
-        { label: "Sequences", href: "/sequences", icon: GitBranch },
-        { label: "Seq. Timeline", href: "/sequences/timeline", icon: GitBranch },
-        { label: "LinkedIn", href: "/linkedin", icon: Linkedin },
-        { label: "Multi-Thread", href: "/multi-thread", icon: GitBranch },
-        { label: "Outreach Hub", href: "/outreach", icon: Send },
-        { label: "Email Engagement", href: "/outreach/engagement", icon: TrendingUp },
-        { label: "Content", href: "/content", icon: PenTool },
-        { label: "Ghostwriting", href: "/ghostwriting", icon: PenTool },
-      ],
-    },
-    {
-      title: "INTELLIGENCE",
-      items: [
-        { label: "Intelligence", href: "/intelligence", icon: BarChart3 },
-        { label: "Voice of Prospect", href: "/voice-of-prospect", icon: Mic2 },
-        { label: "Analytics", href: "/analytics", icon: BarChart3 },
-        { label: "History", href: "/history", icon: History },
-      ],
-    },
-    {
-      title: "SYSTEM",
-      items: [
-        { label: "Run Pipeline", href: "/actions", icon: Zap },
-        { label: "Enrichment", href: "/enrichment", icon: UserPlus },
-        { label: "Automations", href: "/automations", icon: Zap },
-        { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
-        { label: "DNC List", href: "/dnc", icon: Ban },
-        { label: "Knowledge Base", href: "/settings/knowledge-base", icon: BookOpen },
+        { label: "Quality", href: "/quality", icon: ShieldCheck },
         { label: "Settings", href: "/settings/workspace", icon: Settings },
       ],
     },

@@ -204,6 +204,43 @@ class Database:
         )
         return result.data
 
+    def get_outbound_eligible_contacts_for_company(self, company_id: str) -> list[dict]:
+        """Get contacts that passed the outbound_eligible_contacts hard SQL gate.
+
+        Falls back to contacts with is_outreach_eligible=True if the gate table
+        is not yet available (e.g., migration hasn't run).
+        """
+        try:
+            eligible_rows = (
+                self.client.table("outbound_eligible_contacts")
+                .select("contact_id")
+                .eq("company_id", company_id)
+                .execute()
+                .data or []
+            )
+            if not eligible_rows:
+                return []
+            contact_ids = [r["contact_id"] for r in eligible_rows]
+            result = (
+                self.client.table("contacts")
+                .select("*")
+                .in_("id", contact_ids)
+                .order("is_decision_maker", desc=True)
+                .execute()
+            )
+            return result.data or []
+        except Exception as exc:
+            logger.warning("get_outbound_eligible_contacts_for_company fell back to contacts table: %s", exc)
+            query = self._filter_ws(self.client.table("contacts").select("*"))
+            return (
+                query
+                .eq("company_id", company_id)
+                .eq("is_outreach_eligible", True)
+                .order("is_decision_maker", desc=True)
+                .execute()
+                .data or []
+            )
+
     def get_contact_by_apollo_id(self, apollo_id: str) -> dict | None:
         """Get a contact by Apollo ID (for deduplication)."""
         result = (

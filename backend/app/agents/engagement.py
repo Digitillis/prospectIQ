@@ -121,8 +121,11 @@ class EngagementAgent(BaseAgent):
             )
             return result
 
-        if not settings.resend_api_key:
-            console.print("[red]RESEND_API_KEY not configured. Cannot send.[/red]")
+        # Load Resend API key: workspace credential store first, then env var
+        from backend.app.core.credential_store import get_credential
+        resend_api_key = get_credential("resend", "api_key", self.db.workspace_id) or settings.resend_api_key
+        if not resend_api_key:
+            console.print("[red]Resend API key not configured. Cannot send.[/red]")
             result.success = False
             return result
 
@@ -142,29 +145,47 @@ class EngagementAgent(BaseAgent):
 
         import hashlib
         import resend
-        resend.api_key = settings.resend_api_key
+        resend.api_key = resend_api_key
 
-        # Load sender pool from outreach_guidelines config.
-        # Falls back to single sender if pool is not configured.
+        # Load sender pool: DB (outreach_send_config) → YAML → hardcoded fallback
+        # Priority: workspace DB config > outreach_guidelines.yaml > defaults
         _reply_to = "avi@digitillis.io"
         _sender_pool: list[dict] = []
         _fallback_address = "avi@digitillis.io"
         _fallback_display = "Avanish Mehrotra <avi@digitillis.io>"
+
+        # 1. Try DB send config (set per workspace via API/UI)
         try:
-            from backend.app.core.config import get_outreach_guidelines
-            _guidelines = get_outreach_guidelines()
-            _pool_cfg = _guidelines.get("sender_pool", {})
-            _reply_to = _pool_cfg.get("reply_to", _reply_to)
-            _sender_pool = _pool_cfg.get("senders", [])
-            # Also load the canonical sender as ultimate fallback
-            _s = _guidelines.get("sender", {})
-            _e = _s.get("email", "")
-            _n = _s.get("name", "")
-            if _e:
-                _fallback_address = _e
-                _fallback_display = f"{_n} <{_e}>" if _n else _e
+            db_cfg_row = (
+                self.db.client.table("outreach_send_config")
+                .select("sender_pool, reply_to")
+                .eq("workspace_id", self.db.workspace_id)
+                .limit(1)
+                .execute()
+            ).data
+            if db_cfg_row and db_cfg_row[0].get("sender_pool"):
+                _sender_pool = db_cfg_row[0]["sender_pool"] or []
+            if db_cfg_row and db_cfg_row[0].get("reply_to"):
+                _reply_to = db_cfg_row[0]["reply_to"]
         except Exception:
             pass
+
+        # 2. Fall back to YAML if DB pool is empty
+        if not _sender_pool:
+            try:
+                from backend.app.core.config import get_outreach_guidelines
+                _guidelines = get_outreach_guidelines()
+                _pool_cfg = _guidelines.get("sender_pool", {})
+                _reply_to = _pool_cfg.get("reply_to", _reply_to)
+                _sender_pool = _pool_cfg.get("senders", [])
+                _s = _guidelines.get("sender", {})
+                _e = _s.get("email", "")
+                _n = _s.get("name", "")
+                if _e:
+                    _fallback_address = _e
+                    _fallback_display = f"{_n} <{_e}>" if _n else _e
+            except Exception:
+                pass
 
         def _pick_sender(contact_email: str) -> tuple[str, str]:
             """Return (from_address, from_display) deterministically from pool."""
