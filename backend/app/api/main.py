@@ -764,6 +764,22 @@ def _run_enrichment() -> None:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
 
 
+def _run_weekly_post_send_audit() -> None:
+    """Sunday 7am job: audit sends from the past 7 days for data quality issues."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _audit_workspace(workspace_id: str) -> None:
+            from backend.app.agents.post_send_audit import PostSendAuditAgent
+            from backend.app.core.database import DatabaseClient
+            db = DatabaseClient(workspace_id=workspace_id)
+            PostSendAuditAgent(db=db).run(days=7)
+
+        for_each_workspace(_audit_workspace, "post_send_audit")
+    except Exception as e:
+        logger.error(f"Scheduled post-send audit failed: {e}", exc_info=True)
+
+
 def _run_weekly_cost_summary() -> None:
     """Monday 8am job: log a weekly API cost summary."""
     try:
@@ -892,6 +908,13 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="limit_ramp",
         )
+        # Weekly post-send audit: Sunday 7am Chicago
+        scheduler.add_job(
+            _run_weekly_post_send_audit, "cron",
+            day_of_week="sun", hour=7, minute=0,
+            timezone="America/Chicago",
+            id="weekly_post_send_audit",
+        )
         # Weekly cost summary: Monday 8am Chicago
         scheduler.add_job(
             _run_weekly_cost_summary, "cron",
@@ -914,6 +937,7 @@ async def lifespan(app: FastAPI):
             "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
             "research 9/12/3pm → qualification 9:30/12:30/3:30pm → enrichment 9:45am Mon-Fri Chicago (budget-gated), "
             "daily_report 6am Chicago Mon-Fri, "
+            "weekly_post_send_audit Sun 7am Chicago, "
             "weekly_cost_summary Mon 8am Chicago"
         )
     except ImportError:

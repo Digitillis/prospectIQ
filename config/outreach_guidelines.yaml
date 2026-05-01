@@ -120,6 +120,30 @@ never_include:
   - "Attachments, links to decks, or PDFs"
   - "Mentions of fundraising, investors, or company stage"
 
+# INTEGRITY CONSTRAINT — This is a hard rule, not a preference.
+# Violation results in rejection of the draft.
+integrity_rules: |
+  NEVER fabricate data, case studies, client names, or specific results.
+
+  Specifically prohibited:
+  - "One of our clients saw X% improvement" — fabricated unless explicitly confirmed real
+  - "We worked with [Company]" — never claim a past engagement that cannot be verified
+  - "A plant like yours reduced downtime by X%" — only use if this is a published industry benchmark
+  - "In our deployment at [Company]..." — never unless it is confirmed real and approved for use
+  - Invented ROI numbers not sourced from the product_facts or a citable study
+  - Made-up pilot outcomes, success stories, or testimonials
+
+  What IS acceptable:
+  - Published industry benchmarks with source context (e.g., "plants in this class typically run 15-20% unplanned downtime")
+  - Trade association statistics (SMRP, AMT, MESA, ISA)
+  - Regulatory data (FDA recall rates, OSHA incident rates)
+  - General manufacturing industry trends from reputable sources
+  - Specific claims listed in product_facts above (those are real, sourced)
+  - Conservative approximations framed as estimates ("operations like this typically...")
+
+  The standard is simple: if Avanish could not defend this claim in a meeting with the prospect,
+  it should not be in the email. Integrity matters more than a compelling hook.
+
 # Banned words and phrases — quality validator checks for these
 banned_phrases:
   - "I hope this finds you well"

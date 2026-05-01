@@ -391,17 +391,20 @@ class DiscoveryAgent(BaseAgent):
                                 else self.db.get_contact_by_apollo_id(contact_data["apollo_id"])
                             )
                             if not existing_contact:
+                                from backend.app.core.contact_filter import screen_contact_at_import
                                 persona_type, is_dm = classify_persona(contact_data.get("title"))
-                                contact_insert = {
+                                contact_insert = screen_contact_at_import({
                                     **contact_data,
                                     "company_id": company_id,
                                     "persona_type": persona_type,
                                     "is_decision_maker": is_dm,
-                                }
+                                })
                                 if dry_run:
+                                    tier = contact_insert.get("contact_tier", "?")
                                     console.print(
                                         f"    [DRY-RUN] Would insert contact: "
-                                        f"{contact_data.get('full_name', '?')} ({contact_data.get('title', '?')})"
+                                        f"{contact_data.get('full_name', '?')} "
+                                        f"({contact_data.get('title', '?')}) [tier={tier}]"
                                     )
                                 else:
                                     self.db.insert_contact(contact_insert)

@@ -146,6 +146,16 @@ def _build_system_prompt() -> str:
         "WHAT TO NEVER INCLUDE:",
         *[f"- {item}" for item in never_include],
         "",
+        "## INTEGRITY CONSTRAINT (HARD RULE — NOT A PREFERENCE)",
+        g.get("integrity_rules", (
+            "NEVER fabricate client names, case studies, specific ROI numbers, or past deployments. "
+            "Do not claim 'we worked with [Company]' or 'a client reduced downtime by X%' unless "
+            "that is a published, verifiable industry benchmark. "
+            "Industry trends, trade association statistics, regulatory data, and conservative "
+            "approximations framed as estimates are acceptable. "
+            "If the sender could not defend the claim in a meeting with the prospect, remove it."
+        )),
+        "",
         "SUBJECT LINE RULES:",
         subject_rules,
         "",
@@ -460,6 +470,24 @@ class OutreachAgent(BaseAgent):
 
                 # Generate drafts for each valid contact
                 for contact in valid_contacts:
+                    # Hard gate: DB-level eligibility flag (set at import by contact_filter)
+                    # This catches contacts that slipped through before the filter existed.
+                    if contact.get("is_outreach_eligible") is False:
+                        console.print(
+                            f"  [dim]{company_name}: {contact.get('full_name', '?')} — "
+                            f"is_outreach_eligible=False (tier={contact.get('contact_tier','?')}). Skipping.[/dim]"
+                        )
+                        continue
+
+                    # Email-name consistency gate: block if email was flagged as belonging
+                    # to a different person (email_name_verified=False from import check)
+                    if contact.get("email_name_verified") is False:
+                        console.print(
+                            f"  [dim]{company_name}: {contact.get('full_name', '?')} — "
+                            f"email_name_verified=False. Email may belong to different person. Skipping.[/dim]"
+                        )
+                        continue
+
                     # Warm intro collision detection — skip cold outreach if a warm
                     # intro is in progress for this contact
                     contact_status = contact.get("linkedin_status", "") or ""

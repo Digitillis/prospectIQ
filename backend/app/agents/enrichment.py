@@ -124,6 +124,7 @@ class EnrichmentAgent(BaseAgent):
                             ]
                             resp = apollo.search_people(**search_kwargs)
                             people = resp.get("people", [])
+                            from backend.app.core.contact_filter import screen_contact_at_import
                             for person in people[:10]:  # cap at 10 per company
                                 contact_data = ApolloClient.extract_contact_data(person)
                                 if not contact_data.get("apollo_id"):
@@ -137,12 +138,12 @@ class EnrichmentAgent(BaseAgent):
                                 persona_type, is_dm = classify_persona(
                                     contact_data.get("title")
                                 )
-                                contact_insert = {
+                                contact_insert = screen_contact_at_import({
                                     **contact_data,
                                     "company_id": company_id,
                                     "persona_type": persona_type,
                                     "is_decision_maker": is_dm,
-                                }
+                                })
                                 self.db.insert_contact(contact_insert)
                                 discovered_contacts.append(contact_insert)
                             console.print(
