@@ -111,6 +111,55 @@ class ThreadingCoordinator:
 
         return True, "ok"
 
+    # F&B FSMA 204 tier prefixes — simultaneous dual-persona applies to these
+    _FB_TIER_PREFIXES = ("fb_", "fb1", "fb2", "fb3", "fb4")
+
+    # F&B quality/food-safety personas targeted as Contact 2 (simultaneous)
+    _FB_CONTACT_2_PERSONAS = frozenset({
+        "vp_food_safety", "regulatory_affairs_director",
+        "vp_quality_food_safety", "director_quality_food_safety",
+        "compliance_manager_fb",
+    })
+    # F&B operational personas targeted as Contact 1
+    _FB_CONTACT_1_PERSONAS = frozenset({
+        "vp_ops", "plant_manager", "coo", "director_ops", "maintenance_leader",
+    })
+
+    def assign_fb_simultaneous_contacts(
+        self, company: dict, eligible_contacts: list[dict]
+    ) -> tuple[str | None, str | None]:
+        """For F&B FSMA 204 companies, assign ops persona as Contact 1 and
+        quality/food-safety persona as Contact 2 to be sent simultaneously.
+
+        Returns (contact_1_id, contact_2_id). Either may be None if no
+        suitable contact exists for that slot.
+
+        Only activates for fb_* tier companies. Non-F&B tiers return (None, None).
+        """
+        tier = str(company.get("tier") or "")
+        if not any(tier.startswith(p) for p in self._FB_TIER_PREFIXES):
+            return None, None
+
+        contact_1 = next(
+            (c for c in eligible_contacts
+             if c.get("persona_type") in self._FB_CONTACT_1_PERSONAS),
+            None,
+        )
+        contact_2 = next(
+            (c for c in eligible_contacts
+             if c.get("persona_type") in self._FB_CONTACT_2_PERSONAS),
+            None,
+        )
+        c1_id = contact_1["id"] if contact_1 else None
+        c2_id = contact_2["id"] if contact_2 else None
+        logger.debug(
+            "F&B simultaneous assign: company=%s tier=%s c1=%s(%s) c2=%s(%s)",
+            company.get("id"), tier,
+            (contact_1 or {}).get("persona_type"), c1_id,
+            (contact_2 or {}).get("persona_type"), c2_id,
+        )
+        return c1_id, c2_id
+
     def record_contact_1_sent(self, company_id: str, contact_id: str, pqs: float | None = None) -> None:
         now = datetime.now(timezone.utc).isoformat()
         update: dict = {
