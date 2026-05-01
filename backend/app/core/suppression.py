@@ -128,7 +128,44 @@ def is_suppressed(
         if pending.data:
             return True, "duplicate_draft_pending"
 
-    # 6. Cross-channel coordination — check if the requested channel is blocked
+    # 6. Email-level dedup across duplicate company records — block if this exact
+    # email address has already been sent to under ANY company record in the workspace.
+    # This catches the case where the same real person was enriched under two different
+    # company UUIDs (duplicate discovery runs) and both records reached the send queue.
+    if contact_id:
+        try:
+            contact_row = (
+                db.client.table("contacts")
+                .select("email")
+                .eq("id", contact_id)
+                .limit(1)
+                .execute()
+            )
+            email = (contact_row.data[0].get("email") or "") if contact_row.data else ""
+            if email:
+                # Find all contact IDs that share this email address (case-insensitive)
+                sibling_rows = (
+                    db.client.table("contacts")
+                    .select("id")
+                    .ilike("email", email)
+                    .execute()
+                )
+                sibling_ids = [r["id"] for r in sibling_rows.data if r["id"] != contact_id]
+                if sibling_ids:
+                    already_sent = (
+                        db.client.table("outreach_drafts")
+                        .select("id")
+                        .in_("contact_id", sibling_ids)
+                        .not_.is_("sent_at", "null")
+                        .limit(1)
+                        .execute()
+                    )
+                    if already_sent.data:
+                        return True, f"email_already_contacted:{email}"
+        except Exception as _e:
+            logger.warning("Email dedup check failed (non-fatal): %s", _e)
+
+    # 7. Cross-channel coordination — check if the requested channel is blocked
     # This is checked by the outreach and linkedin agents before generating drafts
     # (not here, because suppression.py doesn't know which channel is being requested)
 

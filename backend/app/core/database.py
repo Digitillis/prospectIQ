@@ -361,6 +361,47 @@ class Database:
                 )
                 return existing.data[0]
 
+        # Cross-company email dedup guard (step 1 only).
+        # If the same email was already sent to under a different company record,
+        # do not create another step-1 draft. Follow-up steps (>1) are allowed
+        # because they belong to an existing active sequence.
+        if contact_id and int(sequence_step or 0) <= 1:
+            try:
+                contact_row = (
+                    self.client.table("contacts")
+                    .select("email")
+                    .eq("id", contact_id)
+                    .limit(1)
+                    .execute()
+                )
+                email = (contact_row.data[0].get("email") or "") if contact_row.data else ""
+                if email:
+                    sibling_rows = (
+                        self.client.table("contacts")
+                        .select("id")
+                        .ilike("email", email)
+                        .execute()
+                    )
+                    sibling_ids = [r["id"] for r in sibling_rows.data if r["id"] != contact_id]
+                    if sibling_ids:
+                        already_sent = (
+                            self.client.table("outreach_drafts")
+                            .select("id")
+                            .in_("contact_id", sibling_ids)
+                            .not_.is_("sent_at", "null")
+                            .limit(1)
+                            .execute()
+                        )
+                        if already_sent.data:
+                            import logging as _log
+                            _log.getLogger(__name__).info(
+                                "insert_outreach_draft: skipping step-1 draft — email %s already sent under a sibling contact",
+                                email,
+                            )
+                            return {}
+            except Exception:
+                pass
+
         result = self.client.table("outreach_drafts").insert(self._inject_ws(data)).execute()
         return result.data[0] if result.data else {}
 
