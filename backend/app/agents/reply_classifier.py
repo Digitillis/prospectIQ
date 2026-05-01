@@ -187,6 +187,25 @@ class ReplyClassifierAgent:
         if classification.get("intent") == "not_interested" and classification.get("key_objection") == "not_a_fit":
             self._handle_not_fit(company_id)
 
+        # Propagate positive-reply signal to look-alike companies — closes
+        # the loop where we learn from a single positive reply by boosting
+        # similar prospects' PQS so they get drafted sooner.
+        if classification.get("intent") in ("interested", "meeting_request"):
+            try:
+                from backend.app.core.lookalike_engine import LookalikeEngine
+                workspace_id = getattr(self._db, "workspace_id", None)
+                engine = LookalikeEngine(workspace_id=workspace_id)
+                boosted = engine.boost_similar_companies(
+                    source_company_id=company_id, boost_pts=10,
+                )
+                if boosted > 0:
+                    logger.info(
+                        "Look-alike boost: %d similar companies boosted after positive reply from %s",
+                        boosted, company_id,
+                    )
+            except Exception as exc:
+                logger.warning("Look-alike boost failed (non-fatal): %s", exc)
+
         logger.info(
             "Classified reply from %s at %s: intent=%s, sentiment=%s, wrong_person=%s",
             contact.get("full_name"), company.get("name"),
