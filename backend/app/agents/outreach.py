@@ -493,9 +493,23 @@ class OutreachAgent(BaseAgent):
 
                 # Generate drafts for each valid contact
                 for _contact_idx, contact in enumerate(valid_contacts):
-                    # Threading gate for second contact
+                    # Threading gate for second contact.
+                    # F&B simultaneous mode (workspace.settings.fb_simultaneous_outreach=true):
+                    # bypasses the 5-business-day sequential wait so C1+C3 go out same week.
+                    # Sequential mode (default): enforces MIN_DAYS_BETWEEN_CONTACTS.
                     if _contact_idx > 0:
-                        _tc2_ok, _tc2_reason = _tc.can_send_contact_2(company)
+                        ws_settings = getattr(self.db, "_workspace_settings", None) or {}
+                        fb_simultaneous = str(
+                            ws_settings.get("fb_simultaneous_outreach", "false")
+                        ).lower() == "true"
+                        tier = company.get("tier") or ""
+                        use_simultaneous = fb_simultaneous and tier.startswith("fb")
+
+                        if use_simultaneous:
+                            _tc2_ok, _tc2_reason = _tc.can_send_contact_2_fb_simultaneous(company)
+                        else:
+                            _tc2_ok, _tc2_reason = _tc.can_send_contact_2(company)
+
                         if not _tc2_ok:
                             console.print(f"  [dim]{company_name}: contact 2 threading gate — {_tc2_reason}[/dim]")
                             continue

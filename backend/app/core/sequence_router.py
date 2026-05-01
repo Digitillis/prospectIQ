@@ -201,8 +201,17 @@ def get_campaign_id(
         logger.info("Skipping contact — campaign_cluster=watchlist")
         return None
 
-    # Resolve cluster
+    # Normalize FSMA sub-clusters → "fb" (all share the same Instantly sequences).
+    # DB stores campaign_cluster as "fsma_dairy", "fsma_beverage", etc., but the
+    # CLUSTER_SEQUENCE_MAP only has ("fb", ...) keys.
+    _FSMA_CLUSTER_ALIASES = frozenset({
+        "fsma_dairy", "fsma_beverage", "fsma_meat", "fsma_seafood",
+        "fsma_produce", "fsma_bakery", "fsma_food",
+    })
     cluster = campaign_cluster or "other"
+    if cluster in _FSMA_CLUSTER_ALIASES:
+        cluster = "fb"
+
     key = (cluster, persona_type)
     env_var = CLUSTER_SEQUENCE_MAP.get(key)
 

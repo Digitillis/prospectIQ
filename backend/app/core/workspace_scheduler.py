@@ -157,3 +157,40 @@ def workspace_budget_ok(workspace: dict, job_name: str) -> bool:
         )
         return False
     return True
+
+
+def apollo_credits_ok(workspace_id: str | None = None, min_buffer: int = 200) -> bool:
+    """Return False if Apollo remaining credits are at or below min_buffer.
+
+    Calls GET /auth/health (free, no credit cost). Fails open on any error
+    so enrichment is never blocked by a transient network issue.
+
+    Args:
+        workspace_id: Used to resolve the correct Apollo API key.
+        min_buffer: Halt enrichment when remaining credits fall at or below this.
+                    Default 200 — keeps a safety margin for manual sessions.
+
+    Returns:
+        True if enrichment may proceed; False if credit guard triggered.
+    """
+    try:
+        from backend.app.integrations.apollo import ApolloClient
+        with ApolloClient(workspace_id=workspace_id) as apollo:
+            info = apollo.get_credits()
+            remaining = info.get("credits_remaining", 9999)
+            used = info.get("credits_used", 0)
+            limit = info.get("credit_limit", 0)
+            logger.info(
+                "Apollo credits: %d used / %d limit (%d remaining)",
+                used, limit, remaining,
+            )
+            if remaining <= min_buffer:
+                logger.warning(
+                    "Apollo credit guard triggered: %d remaining (min_buffer=%d) — enrichment halted",
+                    remaining, min_buffer,
+                )
+                return False
+        return True
+    except Exception as exc:
+        logger.warning("apollo_credits_ok check failed (%s) — allowing enrichment", exc)
+        return True  # Fail open

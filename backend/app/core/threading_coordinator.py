@@ -114,22 +114,54 @@ class ThreadingCoordinator:
     # F&B FSMA 204 tier prefixes — simultaneous dual-persona applies to these
     _FB_TIER_PREFIXES = ("fb_", "fb1", "fb2", "fb3", "fb4")
 
-    # F&B quality/food-safety personas targeted as Contact 2 (simultaneous)
+    # F&B Contact 2 slot: plant_manager (our confirmed C3) is primary.
+    # VP Quality / Regulatory fall back if no plant_manager is enriched yet.
     _FB_CONTACT_2_PERSONAS = frozenset({
+        "plant_manager",
         "vp_food_safety", "regulatory_affairs_director",
         "vp_quality_food_safety", "director_quality_food_safety",
         "compliance_manager_fb",
     })
-    # F&B operational personas targeted as Contact 1
+    # F&B Contact 1 slot: economic buyer (VP Ops, COO, Director Ops)
     _FB_CONTACT_1_PERSONAS = frozenset({
-        "vp_ops", "plant_manager", "coo", "director_ops", "maintenance_leader",
+        "vp_ops", "coo", "director_ops", "vp_supply_chain",
     })
+
+    def can_send_contact_2_fb_simultaneous(
+        self, company: dict
+    ) -> tuple[bool, str]:
+        """Gate check for F&B simultaneous dual-touch (Contact 2 sent same week as Contact 1).
+
+        Bypasses the 5-business-day wait that sequential threading requires, but
+        still enforces the state=not_started guard and PQS threshold. This method
+        is only called when workspace.settings.fb_simultaneous_outreach=true.
+
+        Returns (ok, reason).
+        """
+        state = self.get_state(company["id"])
+        current = state.get("state", "not_started")
+
+        if current in ("paused", "closed_won", "closed_lost", "excluded"):
+            return False, f"company state is {current}"
+        if current in ("contact_1_sent", "contact_1_engaged",
+                       "contact_2_queued", "contact_2_sent"):
+            return False, f"contacts already in flight (state={current})"
+
+        pqs = company.get("priority_score") or 0
+        if pqs < PQS_THREADING_THRESHOLD:
+            return False, f"PQS {pqs} below threading threshold {PQS_THREADING_THRESHOLD}"
+
+        return True, "ok"
 
     def assign_fb_simultaneous_contacts(
         self, company: dict, eligible_contacts: list[dict]
     ) -> tuple[str | None, str | None]:
         """For F&B FSMA 204 companies, assign ops persona as Contact 1 and
         quality/food-safety persona as Contact 2 to be sent simultaneously.
+
+        C1 slot: VP Ops / COO / Director Ops (economic buyer)
+        C2 slot: Plant Manager (day-to-day champion, our confirmed C3 persona)
+                 Falls back to VP Quality/Food Safety if plant_manager not found.
 
         Returns (contact_1_id, contact_2_id). Either may be None if no
         suitable contact exists for that slot.
