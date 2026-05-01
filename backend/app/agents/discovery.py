@@ -43,20 +43,43 @@ _TIER_TO_CLUSTER: dict[str, str] = {
     "pmfg2": "watchlist",  # Oil & Gas — enterprise procurement
     "pmfg5": "watchlist",  # Utilities — regulated monopoly
     "pmfg6": "watchlist",  # Pharma — vendor qual wall
-    # Food & Beverage
-    "fb1": "fb",
-    "fb2": "fb",
-    "fb3": "fb",
-    "fb4": "fb",
-    "fb5": "fb",
+    # Food & Beverage FSMA 204 (campaign_cluster overrides from YAML preferred;
+    # this dict is the fallback for legacy tier keys)
+    "fb1": "fsma_food",
+    "fb2": "fsma_beverage",
+    "fb3": "fsma_meat",
+    "fb4": "fsma_dairy",
+    "fb5": "fsma_food",
+    "fb_dairy": "fsma_dairy",
+    "fb_seafood": "fsma_seafood",
+    "fb_produce": "fsma_produce",
+    "fb_meat": "fsma_meat",
+    "fb_bev": "fsma_beverage",
+    "fb_food_general": "fsma_food",
+    "fb_bakery": "fsma_bakery",
 }
 
 # Employee count → tranche proxy (used when revenue data is unavailable)
 # T1: $100M–$400M ≈ 300–1,000 employees
 # T2: $400M–$1B   ≈ 1,001–3,000 employees
 # T3: $1B–$2B     ≈ 3,001–5,000 employees
-def _assign_tranche(employee_count: int | None, revenue: float | None = None) -> str | None:
-    """Assign revenue tranche based on employee count (proxy) or revenue."""
+def _assign_tranche(
+    employee_count: int | None,
+    revenue: float | None = None,
+    tranche_map: dict | None = None,
+) -> str | None:
+    """Assign revenue tranche based on employee count (proxy) or revenue.
+
+    For F&B tiers, a per-tier tranche_map is provided from the ICP config
+    (e.g., {T1: [50M, 150M], T2: [150M, 500M]}) which uses a lower revenue
+    floor than the default mfg tranches.
+    """
+    if revenue and tranche_map:
+        for tranche, bounds in tranche_map.items():
+            lo, hi = bounds[0], bounds[1]
+            if lo <= revenue < hi:
+                return tranche
+        return "T2"  # revenue outside defined bounds → default T2
     if revenue:
         if revenue < 400_000_000:
             return "T1"
@@ -118,9 +141,24 @@ def classify_persona(title: str | None) -> tuple[str | None, bool]:
           "food safety and quality director", "food safety and qa director",
           "director of production, quality", "director of production quality"],
          "director_quality_food_safety", True),
-        # F&B — Regulatory
-        (["vp regulatory", "director regulatory", "director of regulatory"],
-         "director_quality_food_safety", True),
+        # F&B — Food Safety VP (Contact 2 for simultaneous F&B dual-touch)
+        (["vp food safety", "vice president food safety", "vp of food safety",
+          "head of food safety", "chief food safety officer",
+          "vp quality and food safety", "vp food safety and quality",
+          "vp food safety & quality"],
+         "vp_food_safety", True),
+        # F&B — Regulatory Affairs (owns FDA relationship — key FSMA buyer)
+        (["vp regulatory affairs", "vice president regulatory affairs",
+          "director regulatory affairs", "director of regulatory affairs",
+          "regulatory affairs director", "regulatory affairs manager",
+          "director of regulatory", "vp regulatory"],
+         "regulatory_affairs_director", True),
+        # F&B — Compliance (food-safety context = borderline→target)
+        (["fsma compliance manager", "food safety compliance manager",
+          "food safety compliance director", "director of compliance",
+          "compliance director food", "food safety manager",
+          "quality assurance director"],
+         "compliance_manager_fb", False),
         # Maintenance / Reliability (discrete mfg buyer)
         (["director of maintenance", "vp maintenance", "director maintenance",
           "maintenance manager", "reliability manager", "director of reliability",
@@ -217,6 +255,12 @@ class DiscoveryAgent(BaseAgent):
         pages = max_pages or icp.get("discovery", {}).get("pages_per_tier", 5)
         target_tiers = tiers or [ind["tier"] for ind in icp["company_filters"]["industries"]]
 
+        # Build fsma_exposure lookup from ICP tier configs (used in firmographic scoring)
+        icp["_tier_fsma_exposure"] = {
+            ind["tier"]: ind.get("fsma_exposure", "medium")
+            for ind in icp["company_filters"]["industries"]
+        }
+
         console.print(f"[cyan]Campaign: {campaign}[/cyan]")
         console.print(f"[cyan]Tiers: {target_tiers}[/cyan]")
         console.print(f"[cyan]Max pages per tier: {pages}[/cyan]")
@@ -234,15 +278,16 @@ class DiscoveryAgent(BaseAgent):
                 contact_filters = icp["contact_filters"]
                 company_filters = icp["company_filters"]
 
-                # Build revenue filter from ICP config
-                revenue_config = company_filters.get("revenue", {})
-                revenue_filter = None
-                if revenue_config.get("min") or revenue_config.get("max"):
-                    revenue_filter = {}
-                    if revenue_config.get("min"):
-                        revenue_filter["min"] = revenue_config["min"]
-                    if revenue_config.get("max"):
-                        revenue_filter["max"] = revenue_config["max"]
+                # Revenue filter: per-tier override takes precedence over global config.
+                # F&B tiers use $50M floor; mfg tiers use $100M floor.
+                global_revenue = company_filters.get("revenue", {})
+                tier_revenue = industry_config.get("revenue", {})
+                revenue_filter = {
+                    "min": tier_revenue.get("min") or global_revenue.get("min"),
+                    "max": tier_revenue.get("max") or global_revenue.get("max"),
+                }
+                if not revenue_filter.get("min") and not revenue_filter.get("max"):
+                    revenue_filter = None
 
                 # Use "United States" as location instead of individual states
                 # — individual states create an OR filter that's too broad
@@ -335,10 +380,16 @@ class DiscoveryAgent(BaseAgent):
                                 )
 
                                 effective_tier = classification.get("tier") or tier
-                                cluster = _TIER_TO_CLUSTER.get(effective_tier, "other")
+                                # campaign_cluster: prefer explicit YAML value; fall back to dict
+                                cluster = (
+                                    industry_config.get("campaign_cluster")
+                                    or _TIER_TO_CLUSTER.get(effective_tier, "other")
+                                )
+                                tranche_map = industry_config.get("tranche_map")
                                 tranche = _assign_tranche(
                                     company_data.get("employee_count"),
                                     company_data.get("estimated_revenue"),
+                                    tranche_map=tranche_map,
                                 )
                                 # outreach_mode: watchlist tiers go manual; all others auto
                                 outreach_mode = "manual" if cluster == "watchlist" else "auto"
@@ -391,20 +442,33 @@ class DiscoveryAgent(BaseAgent):
                                 else self.db.get_contact_by_apollo_id(contact_data["apollo_id"])
                             )
                             if not existing_contact:
+                                from backend.app.core.contact_filter import screen_contact_at_import
                                 persona_type, is_dm = classify_persona(contact_data.get("title"))
-                                contact_insert = {
+                                contact_insert = screen_contact_at_import({
                                     **contact_data,
                                     "company_id": company_id,
                                     "persona_type": persona_type,
                                     "is_decision_maker": is_dm,
-                                }
+                                }, db=self.db)
                                 if dry_run:
+                                    tier = contact_insert.get("contact_tier", "?")
                                     console.print(
                                         f"    [DRY-RUN] Would insert contact: "
-                                        f"{contact_data.get('full_name', '?')} ({contact_data.get('title', '?')})"
+                                        f"{contact_data.get('full_name', '?')} "
+                                        f"({contact_data.get('title', '?')}) [tier={tier}]"
                                     )
                                 else:
-                                    self.db.insert_contact(contact_insert)
+                                    _inserted_contact = self.db.insert_contact(contact_insert)
+                                    try:
+                                        self.db.client.table("raw_contacts").insert({
+                                            "source": "apollo",
+                                            "source_record_id": contact_data.get("apollo_id"),
+                                            "payload": contact_data,
+                                            "resolved_contact_id": (_inserted_contact or {}).get("id"),
+                                            "workspace_id": getattr(self.db, "workspace_id", None),
+                                        }).execute()
+                                    except Exception:
+                                        pass
 
                     except Exception as e:
                         result.errors += 1
@@ -427,12 +491,21 @@ class DiscoveryAgent(BaseAgent):
         score = 0
         scoring = icp.get("company_filters", {})
 
-        # Tier bonus — primary mfg tiers score higher than secondary F&B tiers
+        # Tier bonus — primary mfg and F&B FSMA tiers score equally high
         tier = classification.get("tier") or ""
-        if tier.startswith("mfg"):
-            score += 7   # Primary vertical — discrete manufacturing
+        if tier.startswith("mfg") or tier.startswith("pmfg"):
+            score += 7   # Primary vertical — discrete/process manufacturing
         elif tier.startswith("fb"):
-            score += 3   # Secondary vertical — F&B
+            # F&B: co-primary since FSMA 204 enforcement is live.
+            # High FTL exposure (dairy, seafood, produce) scores same as mfg.
+            # Lower exposure (bakery) scores slightly less.
+            fsma_exposure = icp.get("_tier_fsma_exposure", {}).get(tier, "medium")
+            if fsma_exposure == "high":
+                score += 7
+            elif fsma_exposure == "medium":
+                score += 5
+            else:
+                score += 3  # low exposure (bakery)
 
         # Revenue range
         revenue = company_data.get("estimated_revenue")

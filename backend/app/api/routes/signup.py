@@ -128,7 +128,12 @@ async def signup(body: SignupRequest) -> dict[str, Any]:
             "tier": "starter",
             "subscription_status": "active",
             "seats_limit": 1,
-            "settings": {},
+            "settings": {
+                "onboarding_complete": False,
+                "onboarding_step": 0,
+                "auto_approve_pqs_threshold": 70,
+                "monthly_api_budget_usd": 200,
+            },
         }).execute()
     except Exception as exc:
         logger.error("Failed to create workspace for user %s: %s", user_id, exc)
