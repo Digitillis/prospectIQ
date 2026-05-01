@@ -40,11 +40,14 @@ class ApolloClient:
     _enrich_cache: dict[str, dict | None] = {}  # key → result (None = confirmed no-match)
     _empty_streak: int = 0
 
-    def __init__(self):
-        settings = get_settings()
-        self.api_key = settings.apollo_api_key
+    def __init__(self, workspace_id: str | None = None):
+        from backend.app.core.credential_store import get_credential
+        self.api_key = get_credential("apollo", "api_key", workspace_id)
         if not self.api_key:
-            raise ValueError("APOLLO_API_KEY must be set in .env")
+            # Final fallback to settings
+            self.api_key = get_settings().apollo_api_key
+        if not self.api_key:
+            raise ValueError("Apollo API key not configured. Set APOLLO_API_KEY or add via workspace credentials.")
         self.client = httpx.Client(
             base_url=APOLLO_BASE_URL,
             headers={
