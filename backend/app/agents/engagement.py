@@ -351,8 +351,16 @@ class EngagementAgent(BaseAgent):
                     },
                 }).execute()
 
-                # Update company status
+                # Update company status and mark as having an active outreach thread.
+                # set_company_outreach_active() was previously only called in the
+                # deprecated push_to_sequences.py (Instantly path). Calling it here
+                # ensures the flag is set for all Resend-path sends, which is what
+                # the threading coordinator relies on to prevent re-contact.
                 self.db.update_company(draft["company_id"], {"status": "contacted"})
+                try:
+                    self.db.set_company_outreach_active(draft["company_id"], draft["contact_id"])
+                except Exception as _e:
+                    logger.warning("set_company_outreach_active failed (non-fatal): %s", _e)
 
                 # Create engagement sequence record
                 seq_config = get_sequences_config()
