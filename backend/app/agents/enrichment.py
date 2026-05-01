@@ -143,8 +143,18 @@ class EnrichmentAgent(BaseAgent):
                                     "company_id": company_id,
                                     "persona_type": persona_type,
                                     "is_decision_maker": is_dm,
-                                })
-                                self.db.insert_contact(contact_insert)
+                                }, db=self.db)
+                                _inserted_c = self.db.insert_contact(contact_insert)
+                                try:
+                                    self.db.client.table("raw_contacts").insert({
+                                        "source": "apollo",
+                                        "source_record_id": contact_data.get("apollo_id"),
+                                        "payload": contact_data,
+                                        "resolved_contact_id": (_inserted_c or {}).get("id"),
+                                        "workspace_id": getattr(self.db, "workspace_id", None),
+                                    }).execute()
+                                except Exception:
+                                    pass
                                 discovered_contacts.append(contact_insert)
                             console.print(
                                 f"  [green]{company_name}: Discovered {len(discovered_contacts)} contacts[/green]"
@@ -282,20 +292,61 @@ class EnrichmentAgent(BaseAgent):
                     if linkedin:
                         update_data["linkedin_url"] = linkedin
 
+                    # Apollo email_status: free deliverability signal returned on every
+                    # people/match call. Block outreach for confirmed-invalid addresses
+                    # so we never spend send quota or damage domain reputation.
+                    # Possible values: verified, unverified, catch_all, accept_all,
+                    #                  invalid, bounce, unknown.
+                    email_status = person.get("email_status")
+                    if email_status:
+                        update_data["email_status"] = email_status
+                        if email_status in ("invalid", "bounce"):
+                            update_data["is_outreach_eligible"] = False
+                            console.print(
+                                f"  [red]{company_name}: {contact_name} → email_status={email_status},"
+                                f" blocking outreach[/red]"
+                            )
+
+                    # Run email-name consistency check now that we have a confirmed name+email
+                    if email and (full_name or (contact.get("first_name") and contact.get("last_name"))):
+                        from backend.app.core.contact_filter import check_email_name_consistency
+                        first = (update_data.get("first_name") or contact.get("first_name") or "").strip()
+                        last = (update_data.get("last_name") or contact.get("last_name") or "").strip()
+                        consistent, reason = check_email_name_consistency(first, last, email)
+                        update_data["email_name_verified"] = consistent
+                        if not consistent:
+                            update_data["is_outreach_eligible"] = False
+                            logger.warning(
+                                "Email-name mismatch on enrichment: %s %s → %s (%s)",
+                                first, last, email, reason,
+                            )
+                            console.print(
+                                f"  [red]{company_name}: {contact_name} → name/email mismatch,"
+                                f" blocking outreach ({reason})[/red]"
+                            )
+
                     if update_data:
                         update_data["status"] = "enriched"
+                        # Recompute CCS with updated gate fields
+                        from backend.app.core.contact_filter import compute_ccs
+                        from datetime import datetime, timezone
+                        merged = {**contact, **update_data}
+                        update_data["ccs_score"] = compute_ccs(merged)
+                        update_data["ccs_computed_at"] = datetime.now(timezone.utc).isoformat()
                         self.db.update_contact(contact["id"], update_data)
 
                     if email:
+                        status_tag = f" [{email_status}]" if email_status else ""
                         console.print(
-                            f"  [green]{company_name}: {full_name or contact_name} → {email}[/green]"
+                            f"  [green]{company_name}: {full_name or contact_name} → {email}{status_tag}[/green]"
                         )
                         result.processed += 1
                         result.add_detail(
                             company_name,
                             "enriched",
                             f"{full_name or contact_name}: {email}"
-                            + (f", {phone}" if phone else ""),
+                            + (f", {phone}" if phone else "")
+                            + (f" [{email_status}]" if email_status else ""),
                         )
                     else:
                         # Mark contact so it's not retried on the next run —

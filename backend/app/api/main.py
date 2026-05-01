@@ -47,6 +47,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals, targeting, intent_signals, memory, llm_qualify, composer, onboarding
+from backend.app.api.routes import quality_dashboard
 from backend.app.webhooks import instantly as instantly_webhooks
 from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
@@ -101,6 +102,9 @@ def _run_health_snapshot() -> None:
 
 
 def _send_approved_workspace(ws: dict) -> None:
+    from backend.app.core.workspace_scheduler import workspace_daily_sends_ok
+    if not workspace_daily_sends_ok(ws, "send_approved"):
+        return
     from backend.app.core.config import get_settings
     if not get_settings().send_enabled:
         return
@@ -780,6 +784,57 @@ def _run_weekly_post_send_audit() -> None:
         logger.error(f"Scheduled post-send audit failed: {e}", exc_info=True)
 
 
+def _run_weekly_contact_backup() -> None:
+    """Saturday 5am job: export all contact profiles to local JSON backup."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _backup_workspace(workspace_id: str) -> None:
+            from backend.app.agents.contact_backup import ContactBackupAgent
+            from backend.app.core.database import DatabaseClient
+            db = DatabaseClient(workspace_id=workspace_id)
+            ContactBackupAgent(db=db).run()
+
+        for_each_workspace(_backup_workspace, "contact_backup")
+    except Exception as e:
+        logger.error(f"Scheduled contact backup failed: {e}", exc_info=True)
+
+
+def _run_weekly_signal_scrapers() -> None:
+    """Saturday 6am job: refresh manufacturing-specific targeting signals (FDA, OSHA, MEP)."""
+    try:
+        from backend.app.core.database import get_supabase_client
+        from backend.app.core.database import Database
+
+        db = Database()  # workspace-agnostic — scrapers match by company name across all workspaces
+
+        from backend.app.agents.signal_scrapers.fda_scraper import FDARecallScraper
+        from backend.app.agents.signal_scrapers.osha_scraper import OSHACitationScraper
+        from backend.app.agents.signal_scrapers.mep_scraper import MEPGrantScraper
+
+        fda_result = FDARecallScraper(db).run(days_back=90)
+        logger.info("FDA scraper: %s", fda_result)
+
+        osha_result = OSHACitationScraper(db).run(days_back=60)
+        logger.info("OSHA scraper: %s", osha_result)
+
+        # MEP runs quarterly — only run when NIST publishes new data (annual release)
+        # Skipped in weekly run; trigger manually with: MEPGrantScraper(db).run()
+
+        try:
+            from backend.app.utils.notifications import notify_slack
+            notify_slack(
+                f"*Signal scrapers complete:* "
+                f"FDA {fda_result.get('matched', 0)} matched | "
+                f"OSHA {osha_result.get('matched', 0)} matched",
+                emoji=":satellite:",
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Scheduled signal scrapers failed: {e}", exc_info=True)
+
+
 def _run_weekly_cost_summary() -> None:
     """Monday 8am job: log a weekly API cost summary."""
     try:
@@ -915,6 +970,20 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="weekly_post_send_audit",
         )
+        # Weekly contact backup: Saturday 5am Chicago → /Volumes/Digitillis/Data/prospectiq_backups/
+        scheduler.add_job(
+            _run_weekly_contact_backup, "cron",
+            day_of_week="sat", hour=5, minute=0,
+            timezone="America/Chicago",
+            id="weekly_contact_backup",
+        )
+        # Weekly signal scrapers: Saturday 6am Chicago (FDA + OSHA)
+        scheduler.add_job(
+            _run_weekly_signal_scrapers, "cron",
+            day_of_week="sat", hour=6, minute=0,
+            timezone="America/Chicago",
+            id="weekly_signal_scrapers",
+        )
         # Weekly cost summary: Monday 8am Chicago
         scheduler.add_job(
             _run_weekly_cost_summary, "cron",
@@ -937,6 +1006,7 @@ async def lifespan(app: FastAPI):
             "poll_instantly every 6h, personalization_refresh/jit_pregenerate every 24h, "
             "research 9/12/3pm → qualification 9:30/12:30/3:30pm → enrichment 9:45am Mon-Fri Chicago (budget-gated), "
             "daily_report 6am Chicago Mon-Fri, "
+            "weekly_contact_backup Sat 5am Chicago → /Volumes/Digitillis/Data/, "
             "weekly_post_send_audit Sun 7am Chicago, "
             "weekly_cost_summary Mon 8am Chicago"
         )
@@ -1016,6 +1086,7 @@ app.include_router(memory.router)
 app.include_router(llm_qualify.router)
 app.include_router(onboarding.router)
 app.include_router(composer.router)
+app.include_router(quality_dashboard.router)
 
 
 @app.get("/health")

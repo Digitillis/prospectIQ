@@ -341,7 +341,60 @@ def check_email_name_consistency(
 # Convenience function for agents
 # ---------------------------------------------------------------------------
 
-def screen_contact_at_import(contact_data: dict) -> dict:
+def compute_ccs(contact_data: dict) -> float:
+    """Compute Contact Confidence Score (0-100) for a contact dict.
+
+    Higher score = higher confidence that this email will reach the right human.
+    Threshold: CCS >= 70 → outbound_eligible_contacts. CCS >= 85 → preferred.
+
+    Gates and their weights:
+      Email deliverability (verified)   30 pts  — most important gate
+      Email-name consistency            20 pts  — wrong-person detection
+      Persona tier = target             15 pts  — buyer role confirmed
+      Is decision maker                 15 pts  — explicit DM flag
+      Multi-source agreement            10 pts  — (future: requires raw_contacts)
+      Employment recent (< 90 days)     10 pts  — (future: requires LinkedIn date)
+    """
+    score = 0.0
+
+    # Email deliverability
+    email_status = contact_data.get("email_status")
+    if email_status == "verified":
+        score += 30
+    elif email_status in ("catch_all", "accept_all", "unverified", "unknown", None):
+        score += 15  # Partial credit — not confirmed invalid
+    # invalid / bounce → 0 (contact will not be eligible anyway)
+
+    # Email-name consistency
+    email_name_verified = contact_data.get("email_name_verified")
+    if email_name_verified is True:
+        score += 20
+    elif email_name_verified is None:
+        score += 10  # Not checked yet — partial credit
+
+    # Persona tier
+    tier = contact_data.get("contact_tier") or classify_contact_tier(contact_data.get("title"))
+    if tier == "target":
+        score += 15
+    elif tier == "borderline":
+        score += 7
+
+    # Decision maker flag
+    if contact_data.get("is_decision_maker"):
+        score += 15
+
+    # Has verified email (base email quality)
+    if contact_data.get("email"):
+        score += 5
+
+    # Future gates (not yet implemented — reserved points)
+    # multi_source_agreement: 10 pts (requires raw_contacts resolver)
+    # employment_recency: 10 pts (requires LinkedIn last-active)
+
+    return min(round(score, 2), 100.0)
+
+
+def screen_contact_at_import(contact_data: dict, db=None) -> dict:
     """Apply all screening logic to a contact dict at import time.
 
     Adds 'contact_tier', 'is_outreach_eligible', and optionally
@@ -350,16 +403,32 @@ def screen_contact_at_import(contact_data: dict) -> dict:
     Args:
         contact_data: Dict with at minimum 'title', and optionally
                       'first_name', 'last_name', 'email'.
+        db: Optional Database instance. When provided, uses the three-pass
+            TitleClassifier (keyword → Haiku cached → human review queue)
+            for borderline titles. Without db, falls back to deterministic only.
 
     Returns:
         The input dict augmented with screening fields.
     """
     title = contact_data.get("title")
-    tier = classify_contact_tier(title)
+    if db is not None:
+        from backend.app.core.title_classifier import TitleClassifier
+        industry = contact_data.get("industry", "")
+        tier, _confidence, _source = TitleClassifier(db).classify(title, industry)
+    else:
+        tier = classify_contact_tier(title)
     eligible = tier != "excluded"
 
     contact_data["contact_tier"] = tier
     contact_data["is_outreach_eligible"] = eligible
+
+    # Apollo email_status gate: block confirmed-invalid/bounced addresses immediately.
+    # This field is populated by the enrichment agent from Apollo's people/match
+    # response. If present at import time (bulk upload with prior enrichment data),
+    # apply the same gate here.
+    email_status = contact_data.get("email_status")
+    if email_status in ("invalid", "bounce"):
+        contact_data["is_outreach_eligible"] = False
 
     # Email-name consistency check (only if we have both name and email)
     first = contact_data.get("first_name") or ""
@@ -378,5 +447,10 @@ def screen_contact_at_import(contact_data: dict) -> dict:
             contact_data["is_outreach_eligible"] = False
     else:
         contact_data["email_name_verified"] = None  # not enough data to check
+
+    # Compute CCS now that all gate fields are set
+    from datetime import datetime, timezone
+    contact_data["ccs_score"] = compute_ccs(contact_data)
+    contact_data["ccs_computed_at"] = datetime.now(timezone.utc).isoformat()
 
     return contact_data

@@ -4,24 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Building2,
-  Wand2,
   Zap,
   Users,
-  GitBranch,
   Send,
-  BarChart3,
+  ShieldCheck,
+  Activity,
   Settings,
   Search,
-  Activity,
-  UserPlus,
-  Ban,
   Moon,
   Sun,
-  Sparkles,
-  Mic2,
-  Linkedin,
-  TrendingUp,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -97,39 +88,15 @@ export function Sidebar() {
         { label: "Command Center", href: "/", icon: LayoutDashboard, exactMatch: true },
         { label: "Pipeline", href: "/pipeline", icon: Activity },
         { label: "Signals", href: "/signals", icon: Zap, badge: signalsBadge > 0 ? signalsBadge : undefined },
-      ],
-    },
-    {
-      title: "BUILD",
-      items: [
-        { label: "Prospects", href: "/prospects", icon: Building2 },
-        { label: "Contacts", href: "/contacts", icon: Users },
-        { label: "Lookalike", href: "/lookalike", icon: Sparkles },
-        { label: "Import", href: "/import", icon: UserPlus },
-      ],
-    },
-    {
-      title: "ENGAGE",
-      items: [
-        { label: "Sequences", href: "/sequences", icon: GitBranch },
-        { label: "Composer", href: "/composer", icon: Wand2 },
         { label: "Outreach", href: "/outreach", icon: Send },
-        { label: "LinkedIn", href: "/linkedin", icon: Linkedin },
       ],
     },
     {
-      title: "INTEL",
+      title: "DATA",
       items: [
-        { label: "Intelligence", href: "/intelligence", icon: BarChart3 },
-        { label: "Analytics", href: "/analytics", icon: TrendingUp },
-        { label: "Voice of Prospect", href: "/voice-of-prospect", icon: Mic2 },
-      ],
-    },
-    {
-      title: "SETTINGS",
-      items: [
-        { label: "Workspace", href: "/settings/workspace", icon: Settings },
-        { label: "DNC List", href: "/dnc", icon: Ban },
+        { label: "Contacts", href: "/contacts", icon: Users },
+        { label: "Quality", href: "/quality", icon: ShieldCheck },
+        { label: "Settings", href: "/settings/workspace", icon: Settings },
       ],
     },
   ];

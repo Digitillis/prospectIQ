@@ -362,6 +362,29 @@ class ReplyAgent(BaseAgent):
                 "pqs_at_time": pqs_total,
             })
 
+            # Structured outcome classification — updates outreach_outcomes, handles
+            # wrong_person and unsubscribe by blocking contact in outbound_eligible_contacts,
+            # and adds not-a-fit companies to icp_exclusions.
+            try:
+                from backend.app.agents.reply_classifier import ReplyClassifierAgent
+                ReplyClassifierAgent(self.db).classify_reply(
+                    reply_text=reply_body or reply_subject or "",
+                    contact_id=contact_id,
+                    company_id=company_id,
+                    send_id=outreach_draft_id,
+                    contact=contact,
+                    company=company,
+                )
+            except Exception as _rce:
+                logger.warning("ReplyClassifierAgent failed (non-blocking): %s", _rce)
+
+            # Update threading state — reply moves company to engaged/paused
+            try:
+                from backend.app.core.threading_coordinator import ThreadingCoordinator
+                ThreadingCoordinator(self.db).record_reply(company_id, contact_id)
+            except Exception as _tce:
+                logger.warning("ThreadingCoordinator.record_reply failed (non-blocking): %s", _tce)
+
             result.processed += 1
             result.add_detail(
                 company_name,

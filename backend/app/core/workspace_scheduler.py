@@ -102,6 +102,45 @@ def get_workspace_monthly_spend(workspace_id: str) -> float:
         return 0.0
 
 
+def workspace_daily_sends_ok(workspace: dict, job_name: str = "outreach") -> bool:
+    """Return True if workspace is under its daily outreach send limit.
+
+    Limit is read from workspace.settings.daily_send_limit (default 125).
+    Counts approved + sent drafts created today UTC. Fails open on DB error.
+    """
+    ws_id = workspace["id"]
+    settings = workspace.get("settings") or {}
+    daily_limit = int(settings.get("daily_send_limit", 125))
+    try:
+        from backend.app.core.database import get_supabase_client
+        from datetime import datetime, timezone
+        today_start = (
+            datetime.now(timezone.utc)
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .isoformat()
+        )
+        rows = (
+            get_supabase_client()
+            .table("outreach_drafts")
+            .select("id", count="exact")
+            .eq("workspace_id", ws_id)
+            .in_("approval_status", ["approved", "sent"])
+            .gte("created_at", today_start)
+            .execute()
+        )
+        today_count = rows.count or 0
+        if today_count >= daily_limit:
+            logger.warning(
+                "%s: workspace %s daily limit reached (%d/%d) — skipping",
+                job_name, workspace.get("name", ws_id), today_count, daily_limit,
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.warning("workspace_daily_sends_ok check failed: %s", exc)
+        return True  # Fail open — don't block sends on a check failure
+
+
 def workspace_budget_ok(workspace: dict, job_name: str) -> bool:
     """Return True if this workspace is under its monthly API budget.
 

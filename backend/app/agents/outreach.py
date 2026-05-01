@@ -268,6 +268,9 @@ TECHNOLOGY STACK:
 PAIN SIGNALS:
 {pain_signals}
 
+COMPANY SIGNALS (FDA recalls, OSHA citations, MEP grants — use as personalization hooks if relevant):
+{company_signals}
+
 MANUFACTURING PROFILE:
 {manufacturing_profile}
 
@@ -422,6 +425,17 @@ class OutreachAgent(BaseAgent):
                     result.add_detail(company_name, "suppressed", reason or "")
                     continue
 
+                # ICP exclusion check — skip companies explicitly excluded from pipeline
+                from backend.app.core.icp_manager import ICPManager
+                _icp_excluded, _icp_reason = ICPManager(self.db).is_company_excluded(company_id)
+                if _icp_excluded:
+                    console.print(
+                        f"  [dim]{company_name}: ICP excluded ({_icp_reason}). Skipping.[/dim]"
+                    )
+                    result.skipped += 1
+                    result.add_detail(company_name, "icp_excluded", _icp_reason or "")
+                    continue
+
                 # Company-level send lock — prevent multi-contact collision
                 from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
                 locked, lock_reason = is_company_locked(self.db, company_id)
@@ -430,8 +444,17 @@ class OutreachAgent(BaseAgent):
                     result.skipped += 1
                     continue
 
-                # Select contacts — multi-thread if enabled
-                contacts = self.db.get_contacts_for_company(company_id)
+                # Threading state gate — check before any contact work
+                from backend.app.core.threading_coordinator import ThreadingCoordinator
+                _tc = ThreadingCoordinator(self.db)
+                _tc_ok, _tc_reason = _tc.can_send_contact_1(company)
+                if not _tc_ok:
+                    console.print(f"  [dim]{company_name}: threading gate — {_tc_reason}[/dim]")
+                    result.skipped += 1
+                    continue
+
+                # Select contacts from hard SQL gate (outbound_eligible_contacts)
+                contacts = self.db.get_outbound_eligible_contacts_for_company(company_id)
 
                 if multi_thread and max_contacts_per_company > 1:
                     target_contacts = self._select_contacts_for_threading(
@@ -469,7 +492,14 @@ class OutreachAgent(BaseAgent):
                 research = self.db.get_research(company_id)
 
                 # Generate drafts for each valid contact
-                for contact in valid_contacts:
+                for _contact_idx, contact in enumerate(valid_contacts):
+                    # Threading gate for second contact
+                    if _contact_idx > 0:
+                        _tc2_ok, _tc2_reason = _tc.can_send_contact_2(company)
+                        if not _tc2_ok:
+                            console.print(f"  [dim]{company_name}: contact 2 threading gate — {_tc2_reason}[/dim]")
+                            continue
+
                     # Hard gate: DB-level eligibility flag (set at import by contact_filter)
                     # This catches contacts that slipped through before the filter existed.
                     if contact.get("is_outreach_eligible") is False:
@@ -512,6 +542,26 @@ class OutreachAgent(BaseAgent):
                     recent, activity_desc = has_recent_activity(self.db, contact["id"])
                     if recent:
                         console.print(f"  [dim]{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}[/dim]")
+                        continue
+
+                    # Pre-send invariant library — hard block before any draft generation
+                    from backend.app.core.pre_send_assertions import (
+                        run_pre_send_assertions, AssertionFailure,
+                    )
+                    _guidelines = get_outreach_guidelines()
+                    _sender_email = _guidelines.get("sender", {}).get("email", "")
+                    try:
+                        run_pre_send_assertions(
+                            self.db, contact, company, _sender_email,
+                            daily_cap=getattr(settings, "daily_send_limit", 125),
+                        )
+                    except AssertionFailure as _af:
+                        console.print(
+                            f"  [red]{company_name}: {contact.get('full_name', '?')} — "
+                            f"assertion failed: {_af.assertion} ({_af.detail}). Skipping.[/red]"
+                        )
+                        result.skipped += 1
+                        result.add_detail(company_name, "assertion_failed", str(_af))
                         continue
 
                     # Build value messaging for this tier
@@ -579,7 +629,51 @@ class OutreachAgent(BaseAgent):
                         "approval_status": "pending",
                     }
 
-                    self.db.insert_outreach_draft(draft_data)
+                    inserted_draft = self.db.insert_outreach_draft(draft_data)
+
+                    # Threading state update — mark contact queued/sent
+                    try:
+                        if _contact_idx == 0:
+                            _tc.record_contact_1_sent(
+                                company_id, contact["id"],
+                                pqs=company.get("priority_score"),
+                            )
+                        else:
+                            _tc.record_contact_2_sent(company_id, contact["id"])
+                    except Exception as _tc_err:
+                        logger.warning("Threading record failed for %s: %s", company_name, _tc_err)
+
+                    # Outcome record — populate static send-time context now.
+                    # Reply classification, meeting, and deal data fill in later.
+                    try:
+                        _draft_id = (inserted_draft or {}).get("id") if isinstance(inserted_draft, dict) else None
+                        _active_icp = None
+                        try:
+                            _icp_row = (
+                                self.db.client.table("icp_definitions")
+                                .select("id")
+                                .eq("is_active", True)
+                                .limit(1)
+                                .execute()
+                                .data or []
+                            )
+                            _active_icp = _icp_row[0]["id"] if _icp_row else None
+                        except Exception:
+                            pass
+                        self.db.client.table("outreach_outcomes").insert({
+                            "send_id":        _draft_id,
+                            "contact_id":     contact["id"],
+                            "company_id":     company_id,
+                            "workspace_id":   getattr(self.db, "workspace_id", None),
+                            "icp_version_id": _active_icp,
+                            "persona":        contact.get("contact_tier"),
+                            "sequence_step":  sequence_step,
+                            "pqs_at_send":    company.get("priority_score"),
+                            "ccs_at_send":    contact.get("ccs_score"),
+                            "sender_email":   _sender_email,
+                        }).execute()
+                    except Exception as _oe:
+                        logger.warning("Could not create outreach_outcome record: %s", _oe)
 
                     # A/B variant tracking — stable assignment by contact ID hash
                     try:
@@ -782,6 +876,24 @@ class OutreachAgent(BaseAgent):
 
         max_words = instructions.get("max_words", 150)
 
+        # Fetch company signals (FDA recalls, OSHA, MEP grants) for personalization
+        try:
+            _sig_rows = (
+                self.db.client.table("company_signals")
+                .select("signal_type,signal_text,observed_at")
+                .eq("company_id", company["id"])
+                .order("observed_at", desc=True)
+                .limit(5)
+                .execute()
+                .data or []
+            )
+            company_signals_text = (
+                "\n".join(f"- [{s['signal_type']}] {s.get('signal_text', '')}" for s in _sig_rows)
+                if _sig_rows else "None available"
+            )
+        except Exception:
+            company_signals_text = "None available"
+
         # Build reply context block if a prospect reply was logged
         if reply_context:
             reply_context_block = (
@@ -809,6 +921,7 @@ class OutreachAgent(BaseAgent):
             personalization_hooks="\n".join(f"- {h}" for h in hooks) if hooks else "None available",
             technology_stack=", ".join(tech_stack) if tech_stack else "Not identified",
             pain_signals="\n".join(f"- {p}" for p in pain_signals) if pain_signals else "Not identified",
+            company_signals=company_signals_text,
             manufacturing_profile=json.dumps(mfg_profile, indent=2) if mfg_profile else "Not profiled",
             existing_solutions=", ".join(existing) if existing else "None identified",
             value_messaging=value_text or "No tier-specific messaging available",

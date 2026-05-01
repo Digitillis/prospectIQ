@@ -52,7 +52,7 @@ Clay          ─┘        ▼
                         │
                         ▼
                    verification gates:
-                   ├── email deliverability (NeverBounce / ZeroBounce)
+                   ├── email deliverability (Apollo email_status, free at enrichment time)
                    ├── email-name consistency (heuristic + nickname mapping)
                    ├── role classification (3-tier: target / borderline / excluded)
                    ├── employment recency (LinkedIn last-seen < 90 days)
@@ -79,9 +79,13 @@ Clay          ─┘        ▼
 
 - `contact_filter.py`: three-tier classifier, VP override, artifact stripping, email-name check with nickname mapping
 - Import-time screening in discovery and enrichment agents
-- DB-column hard gate (`is_outreach_eligible`, `email_name_verified`) in outreach agent
-- Weekly post-send audit job
-- Migration 031: `is_outreach_eligible`, `contact_tier`, `email_name_verified` columns on contacts table
+- DB-column hard gate (`is_outreach_eligible`, `email_name_verified`, `email_status`) in outreach agent
+- Apollo `email_status` captured at enrichment time; `invalid` / `bounce` contacts blocked immediately
+- Email-name consistency check now also runs at enrichment time (when Apollo returns a confirmed name+email pair)
+- Weekly post-send audit job (Sunday 7am Chicago)
+- Weekly contact profile backup to NAS (Saturday 5am Chicago, 12-week retention)
+- Migration 031: `is_outreach_eligible`, `contact_tier`, `email_name_verified` columns on contacts
+- Migration 032: `email_status` column + deliverability index
 
 ### P0.1 — `outbound_eligible_contacts` as a Hard SQL Gate
 
@@ -94,14 +98,39 @@ A boolean column on contacts is a foot-gun. Someone writes a query that forgets 
 
 **Implementation:** One schema migration, one stored procedure, one agent refactor. ~2 days. Deploy behind a dual-read feature flag for one week before cutting over.
 
-### P0.2 — Email Deliverability Gate (NeverBounce / ZeroBounce)
+### P0.2 — Email Deliverability Gate (Apollo `email_status`, implemented)
 
-Apollo's email data is often guesses on catch-all domains. A deliverability check is the industry-standard hard gate before any send.
+Apollo's people/match enrichment endpoint returns an `email_status` field at no extra cost on every API call. This makes a paid third-party verifier (NeverBounce, ZeroBounce) unnecessary at current scale.
 
-- Cost: ~$0.008/check. For 8,077 contacts: ~$65 one-time. Cache results 90 days.
-- Block all sends to anything not `valid` or `catch-all + high_confidence`
-- Result stored on contact record as `deliverability_status` and factored into CCS (see P1.3)
-- **This is the single highest-ROI action that is not yet implemented.**
+**Apollo `email_status` values and gate behavior:**
+
+| Status | Action |
+|---|---|
+| `verified` | Allow — email confirmed deliverable |
+| `catch_all` | Allow — server accepts all addresses, cannot verify individual |
+| `accept_all` | Allow — same as catch_all |
+| `unverified` | Allow — insufficient data but not known-bad |
+| `unknown` | Allow — cannot check |
+| `invalid` | **Block** — confirmed undeliverable; set `is_outreach_eligible=False` |
+| `bounce` | **Block** — confirmed hard bounce; set `is_outreach_eligible=False` |
+
+**Implemented (2026-04-30):**
+- `enrichment.py`: captures `email_status` from Apollo person payload, stores to DB, sets `is_outreach_eligible=False` for `invalid` / `bounce`
+- `contact_filter.py` `screen_contact_at_import()`: applies the same gate if `email_status` is present at import time (e.g., bulk uploads with prior enrichment data)
+- Migration 032: `email_status` column + partial index on `('invalid', 'bounce')` for fast outreach gate queries
+
+**When to revisit NeverBounce:** If rolling 7-day hard bounce rate exceeds 2%, engage ZeroBounce for a one-time batch scrub (~$65 for current contact list at $0.008/check). Until then, Apollo `email_status` + existing domain MX check in `domain_verify.py` provides sufficient protection.
+
+### P0.3 — Weekly Local Contact Profile Backup (implemented)
+
+All contact records (with linked company data) are exported to JSON every Saturday at 5am Chicago time.
+
+- **Path:** `/Volumes/Digitillis/Data/prospectiq_backups/contacts/`
+- **Format:** `YYYY-MM-DD_<workspace_id>.json` — complete JSON with all DB fields and inline company record
+- **Retention:** 12 weeks (older files auto-pruned by the agent)
+- **Implementation:** `ContactBackupAgent` in `backend/app/agents/contact_backup.py`, scheduled via APScheduler
+
+This provides an offline, human-readable audit trail independent of Supabase availability — useful for incident investigation and historical targeting analysis.
 
 ---
 
@@ -134,7 +163,7 @@ Do not subscribe to everything. Pick by function:
 |---|---|---|---|
 | Company discovery (ICP search) | Apollo | — | Already have |
 | Decision-maker existence | LinkedIn via PhantomBuster | Apollo | ~$69/mo |
-| Email accuracy | NeverBounce | Apollo | $0.008/check |
+| Email accuracy | Apollo `email_status` (free) | Domain MX check | Already included |
 | Title / role accuracy | LinkedIn current title | Apollo title | Included in Phantom |
 | Employment recency | LinkedIn last-active | — | Included |
 | Direct dial (later) | ZoomInfo or Clay | — | Defer |
@@ -147,7 +176,7 @@ Replace the binary `is_outreach_eligible` flag with a numeric score. Weights:
 
 | Gate | Points | Notes |
 |---|---|---|
-| Email deliverability (NeverBounce `valid`) | 30 | Most important: email reaches a human |
+| Email deliverability (Apollo `email_status=verified`) | 30 | Most important: email reaches a human |
 | Email-name consistency | 20 | Now implemented in `contact_filter.py` |
 | LinkedIn current title matches Apollo title | 15 | Requires LinkedIn enrichment (P1.2) |
 | LinkedIn last-active < 90 days | 15 | Person still works there |
@@ -432,7 +461,8 @@ The standard: if Avanish could not defend the claim in a meeting with the prospe
 | Week | Workstream | Deliverable |
 |---|---|---|
 | 1 (done) | P0 | contact_filter.py, import-time screening, post-send audit, outreach integrity rules |
-| 2 | P0.1 + P0.2 | outbound_eligible_contacts table, NeverBounce gate live |
+| 1 (done) | P0.2 + P0.3 | Apollo email_status gate wired in enrichment + import; weekly local contact backup |
+| 2 | P0.1 | outbound_eligible_contacts as hard SQL table (replaces boolean column) |
 | 3 | P8.1 + P8.2 | Pre-send invariant library, quality dashboard, alerting |
 | 4 | P1.2 | Clay subscription, raw_contacts table, identity resolver |
 | 5 | P1.3 | CCS scoring, threshold tuning, backfill existing contacts |
@@ -451,7 +481,7 @@ Sequences (P5) are deferred until `outreach_outcomes` is live and generating tra
 
 ## Risks
 
-**Sender reputation is a one-way door.** A burned domain takes months to recover. The NeverBounce gate and pre-send invariant library are the highest-priority protective investments because the cost of inaction compounds faster than any other risk.
+**Sender reputation is a one-way door.** A burned domain takes months to recover. The Apollo `email_status` deliverability gate and pre-send invariant library are the highest-priority protective investments because the cost of inaction compounds faster than any other risk. If hard bounce rate exceeds 2%, engage ZeroBounce immediately for a full batch scrub.
 
 **Apollo dependency is structural.** Have a quarterly sanity check: can you rebuild your ICP company list from LinkedIn + a manufacturing database without Apollo? You do not want to discover the answer is no when Apollo raises prices or degrades quality.
 
