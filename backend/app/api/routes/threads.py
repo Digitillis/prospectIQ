@@ -7,7 +7,7 @@ Endpoints:
     GET  /api/threads                — list threads with last message + classification
     GET  /api/threads/{id}           — full thread with all messages + pending draft
     POST /api/threads/{id}/confirm   — confirm or override classification
-    POST /api/threads/{id}/send      — approve draft and send reply via Instantly
+    POST /api/threads/{id}/send      — approve draft and send reply via Resend
     POST /api/threads/{id}/regenerate — regenerate next draft with optional instruction
 """
 
@@ -343,7 +343,7 @@ async def confirm_classification(thread_id: str, body: ConfirmClassificationRequ
 
 @router.post("/{thread_id}/send")
 async def send_draft(thread_id: str, body: SendDraftRequest):
-    """Approve a pending draft and push to Instantly."""
+    """Approve a pending draft and send via Resend."""
     db = get_db()
 
     # Verify thread
@@ -408,7 +408,7 @@ async def send_draft(thread_id: str, body: SendDraftRequest):
         logger.warning(f"Could not record outbound in thread: {exc}")
 
     return {
-        "message": "Draft approved" + (" and sent to Instantly" if sent else " — queued for next scheduler run"),
+        "message": "Draft approved" + (" and sent via Resend" if sent else " — queued for next scheduler run"),
         "sent_immediately": sent,
         "draft_id": body.draft_id,
     }
