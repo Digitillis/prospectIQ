@@ -18,9 +18,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 
 from backend.app.core.database import Database
-from backend.app.api.dependencies import get_db
+from backend.app.core.workspace import get_workspace_id
 
 router = APIRouter(prefix="/api/quality", tags=["quality"])
+
+
+def get_db() -> Database:
+    return Database(workspace_id=get_workspace_id())
 
 
 @router.get("/metrics")
