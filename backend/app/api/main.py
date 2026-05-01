@@ -1272,6 +1272,49 @@ def _run_weekly_contact_backup() -> None:
         logger.error(f"Scheduled contact backup failed: {e}", exc_info=True)
 
 
+def _run_signal_monitor() -> None:
+    """Weekly job: re-research qualified/outreach companies for new buying signals."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _signal_monitor_workspace(ws: dict) -> None:
+            from backend.app.core.workspace_scheduler import workspace_budget_ok
+            if not workspace_budget_ok(ws, "signal_monitor"):
+                return
+            from backend.app.agents.signal_monitor import SignalMonitorAgent
+            from backend.app.core.database import Database
+            agent = SignalMonitorAgent(db=Database(workspace_id=ws["id"]))
+            result = agent.run(limit=50, min_pqs=30)
+            logger.info(
+                "Signal monitor [%s]: refreshed=%d skipped=%d errors=%d",
+                ws["name"], result.processed, result.skipped, result.errors,
+            )
+
+        for_each_workspace(_signal_monitor_workspace, "signal_monitor")
+    except Exception as e:
+        logger.error(f"Signal monitor failed: {e}", exc_info=True)
+
+
+def _run_reengagement() -> None:
+    """Weekly job: re-queue contacts whose sequence completed with no reply (90-day cooldown)."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _reengagement_workspace(ws: dict) -> None:
+            from backend.app.agents.reengagement import ReengagementAgent
+            from backend.app.core.database import Database
+            agent = ReengagementAgent(db=Database(workspace_id=ws["id"]))
+            result = agent.run(limit=50)
+            logger.info(
+                "Reengagement [%s]: requeued=%d errors=%d",
+                ws["name"], result.processed, result.errors,
+            )
+
+        for_each_workspace(_reengagement_workspace, "reengagement")
+    except Exception as e:
+        logger.error(f"Reengagement failed: {e}", exc_info=True)
+
+
 def _run_weekly_signal_scrapers() -> None:
     """Saturday 6am job: refresh manufacturing-specific targeting signals (FDA, OSHA, MEP)."""
     try:
@@ -1462,6 +1505,24 @@ async def lifespan(app: FastAPI):
             day_of_week="sat", hour=6, minute=0,
             timezone="America/Chicago",
             id="weekly_signal_scrapers",
+        )
+        # Weekly signal monitor: Sunday 6am Chicago — re-research tracked
+        # companies for new buying signals (leadership changes, capex, etc.)
+        scheduler.add_job(
+            _run_signal_monitor, "cron",
+            day_of_week="sun", hour=6, minute=0,
+            timezone="America/Chicago",
+            id="signal_monitor",
+        )
+        # Weekly re-engagement: Sunday 8am Chicago — find sequences that
+        # completed without a reply past the cooldown window and re-queue
+        # them with fresh messaging instead of letting them fall off pipeline.
+        # Slot one hour after post_send_audit to avoid contention.
+        scheduler.add_job(
+            _run_reengagement, "cron",
+            day_of_week="sun", hour=8, minute=0,
+            timezone="America/Chicago",
+            id="reengagement",
         )
         # Weekly cost summary: Monday 8am Chicago
         scheduler.add_job(
