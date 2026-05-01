@@ -925,6 +925,54 @@ def _run_daily_report() -> None:
         logger.error(f"Daily report failed: {e}", exc_info=True)
 
 
+def _run_intent_refresh() -> None:
+    """Daily job: recompute intent scores from Apollo job postings for all pipeline companies."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _intent_refresh_workspace(ws: dict) -> None:
+            from backend.app.core.workspace_scheduler import workspace_budget_ok
+            if not workspace_budget_ok(ws, "intent_refresh"):
+                return
+            from backend.app.core.database import Database
+            from backend.app.core.intent_engine import IntentEngine
+            db = Database(workspace_id=ws["id"])
+            engine = IntentEngine(db)
+            result = engine.recompute_all_intent_scores()
+            logger.info("Intent refresh [%s]: %s", ws["name"], result)
+
+        for_each_workspace(_intent_refresh_workspace, "intent_refresh")
+    except Exception as e:
+        logger.error(f"Intent refresh failed: {e}", exc_info=True)
+
+
+def _run_intent_refresh_for_companies(company_ids: list[str], workspace_id: str) -> None:
+    """One-shot intent refresh for a specific set of companies.
+
+    Called from the post-send fast-path: prospects who just received an email
+    might post relevant job openings within the next day, so we re-check
+    those companies specifically rather than waiting for the daily cron.
+    """
+    try:
+        from backend.app.core.database import Database
+        from backend.app.core.intent_engine import IntentEngine
+        db = Database(workspace_id=workspace_id)
+        engine = IntentEngine(db)
+        refreshed = 0
+        for cid in company_ids:
+            try:
+                company = db.get_company(cid)
+                if not company:
+                    continue
+                engine.compute_company_intent_score(cid, company_tier=company.get("tier") or "")
+                refreshed += 1
+            except Exception as exc:
+                logger.debug("intent rescore for %s failed: %s", cid, exc)
+        logger.info("Intent post-send refresh: %d companies rescored", refreshed)
+    except Exception as e:
+        logger.error("Intent post-send refresh failed: %s", e, exc_info=True)
+
+
 def _run_pipeline_monitor_email() -> None:
     """Every-6-hour job: email pipeline stats to Avanish."""
     try:
@@ -1428,6 +1476,15 @@ async def lifespan(app: FastAPI):
             day_of_week="mon-fri", hour=6, minute=0,
             timezone="America/Chicago",
             id="daily_report",
+        )
+        # Daily intent refresh: 5am Chicago — recompute intent scores from
+        # Apollo job postings + fresh signals so any overnight buying signal
+        # is reflected in PQS before the morning send window opens.
+        scheduler.add_job(
+            _run_intent_refresh, "cron",
+            hour=5, minute=0,
+            timezone="America/Chicago",
+            id="intent_refresh",
         )
         scheduler.start()
         logger.info(
