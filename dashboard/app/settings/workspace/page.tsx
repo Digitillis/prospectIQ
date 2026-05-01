@@ -15,6 +15,7 @@ import {
   ClipboardList,
   ChevronLeft,
   ChevronRight,
+  Gauge,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -710,11 +711,152 @@ export default function WorkspaceSettingsPage() {
     <div>
       <SettingsNav active="workspace" />
       <WorkspaceInfoSection />
+      <SendLimitsSection />
       <MembersSection />
       <ApiKeysSection />
       <UsageSection />
       <AuditLogSection />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section: Send Limits
+// ---------------------------------------------------------------------------
+
+interface SendLimits {
+  daily_send_limit: number;
+  monthly_api_budget_usd: number;
+}
+
+function SendLimitsSection() {
+  const [limits, setLimits] = useState<SendLimits>({
+    daily_send_limit: 125,
+    monthly_api_budget_usd: 50,
+  });
+  const [original, setOriginal] = useState<SendLimits>({
+    daily_send_limit: 125,
+    monthly_api_budget_usd: 50,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    authFetch("/api/workspaces/me")
+      .then((data: { data?: { settings?: Record<string, unknown> } } | { settings?: Record<string, unknown> }) => {
+        const ws =
+          (data as { data: { settings?: Record<string, unknown> } }).data ??
+          (data as { settings?: Record<string, unknown> });
+        const s = (ws.settings as Partial<SendLimits>) ?? {};
+        const loaded: SendLimits = {
+          daily_send_limit: (s.daily_send_limit as number) ?? 125,
+          monthly_api_budget_usd: (s.monthly_api_budget_usd as number) ?? 50,
+        };
+        setLimits(loaded);
+        setOriginal(loaded);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const isDirty =
+    limits.daily_send_limit !== original.daily_send_limit ||
+    limits.monthly_api_budget_usd !== original.monthly_api_budget_usd;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await authFetch("/api/workspaces/me", {
+        method: "PATCH",
+        body: JSON.stringify({ settings: limits }),
+      });
+      setOriginal(limits);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SectionCard icon={<Gauge className="h-5 w-5" />} title="Send Limits">
+      {error && <ErrorBanner message={error} />}
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+              Daily send limit
+            </label>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+              Maximum outreach emails the agent will send per day across this workspace.
+            </p>
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={limits.daily_send_limit}
+              onChange={(e) =>
+                setLimits((prev) => ({
+                  ...prev,
+                  daily_send_limit: Math.max(1, parseInt(e.target.value, 10) || 1),
+                }))
+              }
+              className="w-36 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+              Monthly AI budget (USD)
+            </label>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+              The agent pauses new discovery and enrichment runs when this threshold is reached.
+            </p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-gray-500 dark:text-gray-400">$</span>
+              <input
+                type="number"
+                min={0}
+                step={5}
+                value={limits.monthly_api_budget_usd}
+                onChange={(e) =>
+                  setLimits((prev) => ({
+                    ...prev,
+                    monthly_api_budget_usd: Math.max(0, parseFloat(e.target.value) || 0),
+                  }))
+                }
+                className="w-28 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+              />
+              <span className="text-xs text-gray-400 dark:text-gray-500">/ month</span>
+            </div>
+          </div>
+
+          <div>
+            <button
+              onClick={handleSave}
+              disabled={saving || !isDirty}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-medium text-white transition-colors"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : saved ? (
+                <Check className="h-4 w-4" />
+              ) : null}
+              {saved ? "Saved" : "Save limits"}
+            </button>
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
