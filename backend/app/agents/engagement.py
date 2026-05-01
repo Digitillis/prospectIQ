@@ -678,6 +678,29 @@ class EngagementAgent(BaseAgent):
                         result.add_detail(company_name, "stopped", reply_ctx["reason"])
                         continue
 
+                    # Calculate days since step 1 was sent so the prompt can
+                    # use natural "circling back after a few weeks" framing when
+                    # the gap is longer than the normal cadence.
+                    time_gap_days: int | None = None
+                    try:
+                        step1_row = (
+                            self.db.client.table("outreach_drafts")
+                            .select("sent_at")
+                            .eq("contact_id", seq["contact_id"])
+                            .eq("sequence_step", 1)
+                            .not_.is_("sent_at", "null")
+                            .order("sent_at")
+                            .limit(1)
+                            .execute()
+                        )
+                        if step1_row.data and step1_row.data[0].get("sent_at"):
+                            step1_sent = datetime.fromisoformat(
+                                step1_row.data[0]["sent_at"].replace("Z", "+00:00")
+                            )
+                            time_gap_days = (datetime.now(timezone.utc) - step1_sent).days
+                    except Exception:
+                        pass
+
                     from backend.app.agents.outreach import OutreachAgent
                     outreach = OutreachAgent(batch_id=self.batch_id)
                     outreach_result = outreach.run(
@@ -685,10 +708,12 @@ class EngagementAgent(BaseAgent):
                         sequence_name=seq_name,
                         sequence_step=next_step,
                         reply_context=reply_ctx.get("context_str") if reply_ctx else None,
+                        time_gap_days=time_gap_days,
                     )
                     if outreach_result.processed > 0:
+                        gap_label = f" [{time_gap_days}d gap]" if time_gap_days and time_gap_days >= 14 else ""
                         label = "reply-aware " if reply_ctx else ""
-                        console.print(f"  [green]{company_name}: {label}Follow-up draft created (step {next_step}, email)[/green]")
+                        console.print(f"  [green]{company_name}: {label}Follow-up draft created (step {next_step}, email){gap_label}[/green]")
                     else:
                         console.print(f"  [yellow]{company_name}: Could not generate follow-up[/yellow]")
 
@@ -895,6 +920,27 @@ class EngagementAgent(BaseAgent):
                     result.processed += 1
                     continue
 
+                # Calculate days since step 1 for time-gap-aware copy
+                jit_time_gap_days: int | None = None
+                try:
+                    step1_row = (
+                        self.db.client.table("outreach_drafts")
+                        .select("sent_at")
+                        .eq("contact_id", contact_id)
+                        .eq("sequence_step", 1)
+                        .not_.is_("sent_at", "null")
+                        .order("sent_at")
+                        .limit(1)
+                        .execute()
+                    )
+                    if step1_row.data and step1_row.data[0].get("sent_at"):
+                        step1_sent = datetime.fromisoformat(
+                            step1_row.data[0]["sent_at"].replace("Z", "+00:00")
+                        )
+                        jit_time_gap_days = (datetime.now(timezone.utc) - step1_sent).days
+                except Exception:
+                    pass
+
                 # Generate the draft JIT
                 from backend.app.agents.outreach import OutreachAgent
                 outreach = OutreachAgent(batch_id=self.batch_id)
@@ -903,6 +949,7 @@ class EngagementAgent(BaseAgent):
                     sequence_name=seq_name,
                     sequence_step=next_step,
                     reply_context=reply_ctx.get("context_str") if reply_ctx else None,
+                    time_gap_days=jit_time_gap_days,
                 )
 
                 if outreach_result.processed > 0:
