@@ -362,6 +362,30 @@ class ResearchAgent(BaseAgent):
                     **({"trigger_types": [e.get("type") for e in trigger_events]} if trigger_events else {}),
                 }
 
+                # Web-search trigger event extraction — only for high-PQS where
+                # personalization actually matters. Adds factual recent-news hooks
+                # that go beyond Claude's training cutoff.
+                personalization_hooks = list(structured.get("personalization_hooks", []) or [])
+                pqs_firm = company.get("pqs_firmographic") or company.get("pqs_firm") or 0
+                try:
+                    pqs_firm_int = int(pqs_firm)
+                except (TypeError, ValueError):
+                    pqs_firm_int = 0
+                if pqs_firm_int >= RESEARCH_PQS_PROMOTE_THRESHOLD and company.get("name"):
+                    web_triggers = self._extract_trigger_events_with_web(
+                        client=client, company_name=company["name"]
+                    )
+                    if web_triggers:
+                        # Merge into trigger_events + personalization_hooks
+                        for t in web_triggers:
+                            if t and t not in personalization_hooks:
+                                personalization_hooks.insert(0, t)  # prepend — more recent
+                        # Keep the first 3 web-sourced as the headline hooks
+                        logger.info(
+                            "Web search added %d trigger events for %s",
+                            len(web_triggers), company["name"],
+                        )
+
                 self.db.update_company(company_id, {
                     "research_summary": structured.get("company_description", ""),
                     "technology_stack": structured.get("known_systems", []),
@@ -372,7 +396,7 @@ class ResearchAgent(BaseAgent):
                         "iot_maturity": structured.get("iot_maturity", "unknown"),
                         "maintenance_approach": structured.get("maintenance_approach", "unknown"),
                     },
-                    "personalization_hooks": structured.get("personalization_hooks", []),
+                    "personalization_hooks": personalization_hooks,
                     "custom_tags": updated_tags,
                     "status": "researched",
                 })
@@ -401,6 +425,98 @@ class ResearchAgent(BaseAgent):
             pass
 
         return result
+
+    def _extract_trigger_events_with_web(
+        self, client, company_name: str, max_results: int = 5,
+    ) -> list[str]:
+        """Use Anthropic's web-search tool to surface recent trigger events.
+
+        Returns a list of factual trigger-event strings suitable for use as
+        personalization hooks. Returns an empty list on any error so a web
+        search failure never blocks research.
+
+        Only callers should invoke this for high-PQS companies — it adds
+        a second Sonnet call per research run.
+        """
+        if not company_name:
+            return []
+
+        prompt = (
+            f"Search for recent news about {company_name} in the last 12 months. "
+            f"Focus on: new executive hires (VP Operations, Plant Manager, "
+            f"Maintenance/Reliability roles), capital investment announcements, "
+            f"plant expansions, equipment upgrades, downtime incidents, or "
+            f"digital transformation initiatives. Return only factual findings "
+            f"with source dates.\n\n"
+            f"Output ONLY a JSON object with this exact shape:\n"
+            f'{{"events": ["one-line factual finding with date", "another finding"]}}\n'
+            f"If you find nothing, return {{\"events\": []}}. "
+            f"Do not include speculation, marketing copy, or stale information."
+        )
+
+        try:
+            response = client.messages.create(
+                model=SONNET_MODEL,
+                max_tokens=800,
+                tools=[{
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 3,
+                }],
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                self.track_cost(
+                    provider="anthropic",
+                    model=f"{SONNET_MODEL}+web_search",
+                    endpoint="/messages",
+                    input_tokens=getattr(usage, "input_tokens", 0),
+                    output_tokens=getattr(usage, "output_tokens", 0),
+                )
+
+            # Walk the content blocks looking for the final text answer
+            text_parts: list[str] = []
+            for block in (response.content or []):
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    text_parts.append(getattr(block, "text", ""))
+            full_text = "\n".join(t for t in text_parts if t).strip()
+
+            if not full_text:
+                return []
+
+            # Strip markdown fences if present
+            if full_text.startswith("```"):
+                full_text = full_text.split("\n", 1)[1] if "\n" in full_text else full_text[3:]
+                if full_text.endswith("```"):
+                    full_text = full_text[:-3]
+                full_text = full_text.strip()
+
+            # Try strict JSON first; fall back to extracting bullet lines
+            try:
+                parsed = json.loads(full_text)
+                events = parsed.get("events") or []
+                if isinstance(events, list):
+                    return [str(e).strip() for e in events if e][:max_results]
+            except json.JSONDecodeError:
+                pass
+
+            # Loose fallback: split on lines, keep non-empty
+            lines = [
+                line.strip("- *•").strip()
+                for line in full_text.splitlines()
+                if line.strip() and not line.strip().startswith("{")
+            ]
+            return lines[:max_results]
+        except Exception as exc:
+            # Any error (including web_search tool unavailable) → graceful no-op
+            logger.warning(
+                "Web search trigger extraction failed for %s: %s",
+                company_name, exc,
+            )
+            return []
 
     def _slim_research(self, client, company: dict) -> dict | None:
         """Quick Haiku triage call. Returns a dict with `promote_to_full_research`.
