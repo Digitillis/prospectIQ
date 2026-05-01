@@ -1319,8 +1319,8 @@ async def lifespan(app: FastAPI):
         # Enrichment: every 45 min 24/7 — Apollo credit-gated (1 credit/contact)
         # 45-min spacing keeps rate limits comfortable; credit guard halts if < 200 remaining
         scheduler.add_job(_run_enrichment, "interval", minutes=45, id="enrichment")
-        # Pipeline monitor: email hourly stats (researched/qualified/enriched/credits/outreach)
-        scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=6, id="pipeline_monitor")
+        # Pipeline monitor: email pipeline stats every hour (researched/qualified/enriched/credits/outreach)
+        scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
         # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
         # Runs hourly Mon-Fri during business hours so drafts are ready for morning send
         scheduler.add_job(
