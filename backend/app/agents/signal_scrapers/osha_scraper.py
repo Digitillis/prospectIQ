@@ -150,29 +150,48 @@ class OSHACitationScraper:
         if not establishment_name:
             return None
         name_lower = establishment_name.lower().strip()
-        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited"):
+        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited",
+                       " manufacturing", " industries", " group"):
             name_lower = name_lower.replace(suffix, "")
         name_lower = name_lower.strip(" ,.")
+
+        def _best(rows: list) -> str | None:
+            if not rows:
+                return None
+            if state:
+                for row in rows:
+                    if (row.get("hq_state") or row.get("state") or "").upper() == state.upper():
+                        return row["id"]
+            return rows[0]["id"]
 
         try:
             rows = (
                 self._db.client.table("companies")
-                .select("id,name,hq_city,hq_state")
+                .select("id,name,domain,hq_state,state")
                 .ilike("name", f"%{name_lower[:40]}%")
                 .limit(5)
                 .execute()
                 .data or []
             )
-            if not rows:
-                return None
-            if state:
-                for row in rows:
-                    if (row.get("hq_state") or "").upper() == state.upper():
-                        return row["id"]
-            return rows[0]["id"]
+            hit = _best(rows)
+            if hit:
+                return hit
+            # Domain keyword fallback
+            for kw in [w for w in name_lower.split() if len(w) >= 5][:2]:
+                rows = (
+                    self._db.client.table("companies")
+                    .select("id,name,domain,hq_state,state")
+                    .ilike("domain", f"%{kw}%")
+                    .limit(5)
+                    .execute()
+                    .data or []
+                )
+                hit = _best(rows)
+                if hit:
+                    return hit
         except Exception as e:
             logger.warning("Company match failed for %r: %s", establishment_name, e)
-            return None
+        return None
 
     def _upsert_signal(self, company_id: str, signal_type: str, source: str,
                        source_id: str, signal_text: str, value: dict,

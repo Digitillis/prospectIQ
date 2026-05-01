@@ -352,8 +352,8 @@ def compute_ccs(contact_data: dict) -> float:
       Email-name consistency            20 pts  — wrong-person detection
       Persona tier = target             15 pts  — buyer role confirmed
       Is decision maker                 15 pts  — explicit DM flag
-      Multi-source agreement            10 pts  — (future: requires raw_contacts)
-      Employment recent (< 90 days)     10 pts  — (future: requires LinkedIn date)
+      Multi-source agreement            10 pts  — 2+ raw_contacts sources agree
+      Has email (base quality)           5 pts
     """
     score = 0.0
 
@@ -387,9 +387,15 @@ def compute_ccs(contact_data: dict) -> float:
     if contact_data.get("email"):
         score += 5
 
-    # Future gates (not yet implemented — reserved points)
-    # multi_source_agreement: 10 pts (requires raw_contacts resolver)
-    # employment_recency: 10 pts (requires LinkedIn last-active)
+    # Multi-source agreement — raw_source_count populated by backfill_ccs.py
+    # and on each new contact insert after raw_contacts tracking was added.
+    raw_source_count = contact_data.get("raw_source_count")
+    if raw_source_count is None:
+        pass  # Not yet computed — no penalty, no bonus
+    elif raw_source_count >= 2:
+        score += 10  # Two or more independent sources confirm this person
+    elif raw_source_count >= 1:
+        score += 5   # Single source verified
 
     return min(round(score, 2), 100.0)
 

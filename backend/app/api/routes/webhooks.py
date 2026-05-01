@@ -1117,3 +1117,55 @@ async def meeting_transcript_webhook(request: Request):
     except Exception as exc:
         logger.error("Meeting transcript webhook error: %s", exc, exc_info=True)
         return {"status": "error", "reason": str(exc)[:200]}
+
+
+# ---------------------------------------------------------------------------
+# Apollo async phone webhook
+# ---------------------------------------------------------------------------
+
+@router.post("/apollo/phone")
+async def apollo_phone_webhook(request: Request):
+    """Receive async phone results from Apollo People Match.
+
+    Apollo delivers phone numbers asynchronously when reveal_phone_number=True
+    in the people/match request. Configure this URL in Apollo webhook settings.
+
+    Expected payload structure (Apollo webhook format):
+        { "person": { "id": "...", "phone_number": "...", ... } }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "ignored", "reason": "invalid json"}
+
+    person = body.get("person") or body  # tolerate bare payload
+    apollo_id = person.get("id") or person.get("apollo_id")
+    phone = person.get("phone_number") or person.get("sanitized_phone")
+
+    if not apollo_id or not phone:
+        return {"status": "ignored", "reason": "missing apollo_id or phone"}
+
+    try:
+        from backend.app.core.database import get_supabase_client
+        db = get_supabase_client()
+        rows = (
+            db.table("contacts")
+            .select("id")
+            .eq("apollo_id", apollo_id)
+            .limit(1)
+            .execute()
+            .data or []
+        )
+        if not rows:
+            return {"status": "not_found", "apollo_id": apollo_id}
+
+        contact_id = rows[0]["id"]
+        db.table("contacts").update({
+            "phone": phone,
+        }).eq("id", contact_id).execute()
+
+        logger.info("Apollo phone webhook: updated contact %s with phone", contact_id)
+        return {"status": "updated", "contact_id": contact_id}
+    except Exception as exc:
+        logger.error("Apollo phone webhook error: %s", exc)
+        return {"status": "error", "reason": str(exc)[:200]}

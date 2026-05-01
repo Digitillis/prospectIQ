@@ -322,3 +322,192 @@ def get_contact_quality(
             "preferred_vp_clevel": 85,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# ICP Exclusions
+# ---------------------------------------------------------------------------
+
+from fastapi import Body
+from typing import Optional
+
+
+@router.get("/icp-exclusions")
+def list_icp_exclusions(
+    db: Database = Depends(get_db),
+):
+    """List all ICP-excluded companies."""
+    rows = (
+        db.client.table("icp_exclusions")
+        .select("id,company_id,domain,reason,detail,excluded_by,excluded_at,companies(name)")
+        .order("excluded_at", desc=True)
+        .limit(200)
+        .execute()
+        .data or []
+    )
+    return {"exclusions": rows, "total": len(rows)}
+
+
+@router.post("/icp-exclusions")
+def add_icp_exclusion(
+    company_id: Optional[str] = Body(None),
+    domain: Optional[str] = Body(None),
+    reason: str = Body(...),
+    detail: Optional[str] = Body(None),
+    excluded_by: str = Body("manual"),
+    db: Database = Depends(get_db),
+):
+    """Manually exclude a company from the ICP pipeline."""
+    if not company_id and not domain:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Either company_id or domain is required.")
+
+    from backend.app.core.icp_manager import ICPManager
+    mgr = ICPManager(db)
+    if company_id:
+        mgr.exclude_company(
+            company_id=company_id,
+            reason=reason,
+            detail=detail or "",
+            excluded_by=excluded_by,
+        )
+    else:
+        # Domain-only exclusion (no matching company in DB yet)
+        db.client.table("icp_exclusions").insert({
+            "domain": domain,
+            "reason": reason,
+            "detail": detail or "",
+            "excluded_by": excluded_by,
+        }).execute()
+    return {"status": "excluded"}
+
+
+@router.delete("/icp-exclusions/{exclusion_id}")
+def remove_icp_exclusion(
+    exclusion_id: str,
+    db: Database = Depends(get_db),
+):
+    """Remove an ICP exclusion (re-admits the company to the pipeline)."""
+    db.client.table("icp_exclusions").delete().eq("id", exclusion_id).execute()
+    return {"status": "removed"}
+
+
+# ---------------------------------------------------------------------------
+# Title Review Queue
+# ---------------------------------------------------------------------------
+
+@router.get("/title-review")
+def list_title_review(
+    status: str = Query(default="pending"),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Database = Depends(get_db),
+):
+    """List titles pending human classification review."""
+    rows = (
+        db.client.table("title_review_queue")
+        .select("*")
+        .eq("status", status)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+        .data or []
+    )
+    return {"items": rows, "total": len(rows)}
+
+
+@router.post("/title-review/{item_id}")
+def resolve_title_review(
+    item_id: str,
+    human_tier: str = Body(...),
+    reviewed_by: str = Body("manual"),
+    db: Database = Depends(get_db),
+):
+    """Approve a queued title with a human-confirmed tier.
+
+    Writes to title_classifications as source='human' so future
+    occurrences skip Haiku and use the confirmed tier immediately.
+    """
+    import hashlib
+    import re
+
+    VALID_TIERS = {"target", "borderline", "excluded"}
+    if human_tier not in VALID_TIERS:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail=f"human_tier must be one of {VALID_TIERS}")
+
+    # Fetch the queued item
+    rows = (
+        db.client.table("title_review_queue")
+        .select("*")
+        .eq("id", item_id)
+        .limit(1)
+        .execute()
+        .data or []
+    )
+    if not rows:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item = rows[0]
+    title = item["title"]
+    industry = item.get("industry", "")
+
+    # Compute cache key (same logic as TitleClassifier)
+    normalized = re.sub(r"\s+", " ", title.lower().strip())
+    raw_key = f"{normalized}|{industry.lower().strip()}"
+    cache_key = hashlib.sha256(raw_key.encode()).hexdigest()[:32]
+
+    # Write human override to title_classifications
+    db.client.table("title_classifications").upsert({
+        "cache_key": cache_key,
+        "title": title[:255],
+        "industry": industry,
+        "tier": human_tier,
+        "confidence": 1.0,
+        "source": "human",
+        "reasoning": f"Human review by {reviewed_by}",
+    }, on_conflict="cache_key").execute()
+
+    # Mark queue item resolved
+    db.client.table("title_review_queue").update({
+        "status": "reviewed",
+        "human_tier": human_tier,
+        "reviewed_by": reviewed_by,
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", item_id).execute()
+
+    return {"status": "resolved", "tier": human_tier, "cache_key": cache_key}
+
+
+# ---------------------------------------------------------------------------
+# Threading State
+# ---------------------------------------------------------------------------
+
+@router.get("/threading")
+def get_threading_state(
+    state: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Database = Depends(get_db),
+):
+    """Company outreach threading state summary."""
+    q = (
+        db.client.table("company_outreach_state")
+        .select("*,companies(name,domain,tier,pqs_total)")
+        .order("updated_at", desc=True)
+        .limit(limit)
+    )
+    if state:
+        q = q.eq("state", state)
+    rows = q.execute().data or []
+
+    # State distribution summary
+    state_counts: dict[str, int] = {}
+    for row in rows:
+        s = row.get("state", "unknown")
+        state_counts[s] = state_counts.get(s, 0) + 1
+
+    return {
+        "companies": rows,
+        "total": len(rows),
+        "state_distribution": state_counts,
+    }

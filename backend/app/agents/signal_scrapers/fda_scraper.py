@@ -131,43 +131,64 @@ class FDARecallScraper:
         return result
 
     def _match_company(self, firm_name: str, city: str, state: str) -> str | None:
-        """Fuzzy match firm name to companies in DB. Returns company_id or None."""
+        """Fuzzy match firm name to companies in DB. Returns company_id or None.
+
+        Pass 1: ilike name match + state filter.
+        Pass 2: domain keyword match — extracts significant words from firm name
+                and searches company.domain for them (catches name variants).
+        """
         if not firm_name:
             return None
 
-        # Normalize firm name for search
+        # Normalize firm name
         firm_lower = firm_name.lower().strip()
-        # Remove common suffixes that differ between FDA records and CRM names
-        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited"):
+        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited",
+                       " foods", " food", " industries", " group"):
             firm_lower = firm_lower.replace(suffix, "")
         firm_lower = firm_lower.strip(" ,.")
 
+        def _best(rows: list, state: str) -> str | None:
+            if not rows:
+                return None
+            if state:
+                for row in rows:
+                    if (row.get("hq_state") or row.get("state") or "").upper() == state.upper():
+                        return row["id"]
+            return rows[0]["id"]
+
         try:
-            # Search by partial name match — Supabase ilike
+            # Pass 1: name ilike
             rows = (
                 self._db.client.table("companies")
-                .select("id,name,hq_city,hq_state")
+                .select("id,name,domain,hq_state,state")
                 .ilike("name", f"%{firm_lower[:40]}%")
                 .limit(5)
                 .execute()
                 .data or []
             )
+            hit = _best(rows, state)
+            if hit:
+                return hit
 
-            if not rows:
-                return None
-
-            # Prefer city+state match when multiple candidates
-            if state:
-                for row in rows:
-                    if (row.get("hq_state") or "").upper() == state.upper():
-                        return row["id"]
-
-            # Fall back to first name match
-            return rows[0]["id"]
+            # Pass 2: domain keyword — take first meaningful word (>=5 chars)
+            keywords = [w for w in firm_lower.split() if len(w) >= 5]
+            for kw in keywords[:2]:
+                rows = (
+                    self._db.client.table("companies")
+                    .select("id,name,domain,hq_state,state")
+                    .ilike("domain", f"%{kw}%")
+                    .limit(5)
+                    .execute()
+                    .data or []
+                )
+                hit = _best(rows, state)
+                if hit:
+                    return hit
 
         except Exception as e:
             logger.warning("Company match failed for %r: %s", firm_name, e)
-            return None
+
+        return None
 
     def _upsert_signal(self, company_id: str, signal_type: str, source: str,
                        source_id: str, signal_text: str, value: dict,
