@@ -270,19 +270,8 @@ async def _async_main(args: argparse.Namespace) -> int:
         logger.exception("[daily] Stalled contacts check failed")
         errors += 1
 
-    # ------------------------------------------------------------------
-    # Step 5: Push to sequences
-    # ------------------------------------------------------------------
-    if not args.skip_push:
-        _header(5, f"Push to Instantly Sequences (limit={args.push_limit})")
-        try:
-            _run_sequence_push(campaign, args.push_limit, args.dry_run)
-        except Exception as exc:
-            console.print(f"  [red]Sequence push failed: {exc}[/red]")
-            logger.exception("[daily] Sequence push failed")
-            errors += 1
-    else:
-        console.print("\n[dim]Step 5: Sequence push skipped (--skip-push)[/dim]")
+    # Step 5 (Push to Instantly) removed — outreach sends via Resend/engagement.py.
+    # See docs/SENDING_ARCHITECTURE.md.
 
     # ------------------------------------------------------------------
     # Step 6: Pipeline summary

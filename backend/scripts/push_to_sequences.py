@@ -1,22 +1,22 @@
 """Push ready contacts into Instantly sequences.
 
-Finds enriched contacts not yet sequenced, applies account-level
-deduplication (one active thread per company), resolves the correct
-Instantly campaign via sequence_router, pushes via the Instantly API,
-and updates each contact's outreach state to 'sequenced'.
-
-Usage:
-    python -m backend.scripts.push_to_sequences
-    python -m backend.scripts.push_to_sequences --campaign fsma_q1 --limit 50
-    python -m backend.scripts.push_to_sequences --dry-run
+DEPRECATED: ProspectIQ sends outreach via Resend, not Instantly.
+Instantly is used for inbox warming only. Running this script would
+enroll real prospects into Instantly campaigns and cause double-contact.
 """
+
+import sys
+sys.exit(
+    "DEPRECATED: ProspectIQ sends outreach via Resend (engagement.py), not Instantly. "
+    "This script is disabled to prevent double-contact. "
+    "See docs/SENDING_ARCHITECTURE.md for the correct send path."
+)
 
 from __future__ import annotations
 
 import argparse
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Optional
 
