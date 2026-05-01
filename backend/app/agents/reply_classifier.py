@@ -187,6 +187,29 @@ class ReplyClassifierAgent:
         if classification.get("intent") == "not_interested" and classification.get("key_objection") == "not_a_fit":
             self._handle_not_fit(company_id)
 
+        # Propagate positive-reply signal to look-alike companies — closes
+        # the loop where we learn from a single positive reply by boosting
+        # similar prospects' PQS so they get drafted sooner.
+        if classification.get("intent") in ("interested", "meeting_request"):
+            try:
+                from backend.app.core.lookalike_engine import LookalikeEngine
+                workspace_id = getattr(self._db, "workspace_id", None)
+                engine = LookalikeEngine(workspace_id=workspace_id)
+                boosted = engine.boost_similar_companies(
+                    source_company_id=company_id, boost_pts=10,
+                )
+                if boosted > 0:
+                    logger.info(
+                        "Look-alike boost: %d similar companies boosted after positive reply from %s",
+                        boosted, company_id,
+                    )
+                    # Flywheel: any boosted discovered-status companies whose
+                    # new pqs_total now exceeds the qualification floor should
+                    # jump the queue for priority research.
+                    self._queue_priority_research_for_boosted(company_id, workspace_id)
+            except Exception as exc:
+                logger.warning("Look-alike boost failed (non-fatal): %s", exc)
+
         logger.info(
             "Classified reply from %s at %s: intent=%s, sentiment=%s, wrong_person=%s",
             contact.get("full_name"), company.get("name"),
@@ -271,3 +294,71 @@ class ReplyClassifierAgent:
             )
         except Exception as e:
             logger.warning("Could not add ICP exclusion for company %s: %s", company_id, e)
+
+    def _queue_priority_research_for_boosted(
+        self,
+        source_company_id: str,
+        workspace_id: str | None,
+        priority_threshold: int = 40,
+    ) -> None:
+        """Find recently-boosted discovered-status companies and prioritize them.
+
+        Reads lookalike_boosts (last 5 min, dedup window) and bumps the
+        custom_tags.research_priority flag on any discovered-status company
+        whose post-boost pqs_total >= priority_threshold. The next research
+        cron will pick them up first because get_companies orders by pqs_total
+        descending.
+        """
+        try:
+            from datetime import datetime, timezone, timedelta
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+            boost_rows = (
+                self._db.client.table("lookalike_boosts")
+                .select("target_company_id")
+                .eq("source_company_id", source_company_id)
+                .gte("boosted_at", cutoff)
+                .execute()
+                .data or []
+            )
+            target_ids = [r["target_company_id"] for r in boost_rows if r.get("target_company_id")]
+            if not target_ids:
+                return
+
+            # Pull only discovered-status targets that now exceed the threshold
+            comps = (
+                self._db.client.table("companies")
+                .select("id, status, pqs_total, custom_tags")
+                .in_("id", target_ids)
+                .eq("status", "discovered")
+                .gte("pqs_total", priority_threshold)
+                .execute()
+                .data or []
+            )
+            if not comps:
+                return
+
+            from datetime import datetime as _dt, timezone as _tz
+            now_iso = _dt.now(_tz.utc).isoformat()
+            for c in comps:
+                tags = c.get("custom_tags") or {}
+                if isinstance(tags, str):
+                    import json as _json
+                    try:
+                        tags = _json.loads(tags)
+                    except Exception:
+                        tags = {}
+                tags["research_priority"] = True
+                tags["research_priority_at"] = now_iso
+                tags["research_priority_source"] = source_company_id
+                try:
+                    self._db.client.table("companies").update({
+                        "custom_tags": tags,
+                    }).eq("id", c["id"]).execute()
+                except Exception:
+                    continue
+            logger.info(
+                "Queued %d boosted-discovered companies for priority research (source=%s)",
+                len(comps), source_company_id,
+            )
+        except Exception as exc:
+            logger.debug("priority-research queue failed: %s", exc)

@@ -176,6 +176,16 @@ class LearningAgent(BaseAgent):
         # Display insights
         self._print_insights(analysis)
 
+        # Variant performance analysis — runs every cycle regardless of auto_apply
+        try:
+            variant_analysis = self._analyze_variant_performance(auto_apply=auto_apply)
+            if variant_analysis.get("findings"):
+                for finding in variant_analysis["findings"]:
+                    console.print(f"  [bold cyan]A/B finding:[/bold cyan] {finding}")
+        except Exception as exc:
+            logger.warning("Variant analysis failed (non-fatal): %s", exc)
+            variant_analysis = {"findings": [], "errors": [str(exc)]}
+
         # Apply scoring adjustments back to config if auto_apply is set
         applied_count = 0
         if auto_apply:
@@ -570,6 +580,168 @@ class LearningAgent(BaseAgent):
             console.print(icp_table)
 
         console.print()
+
+    # ------------------------------------------------------------------
+    # A/B variant performance analyzer
+    # ------------------------------------------------------------------
+
+    def _analyze_variant_performance(
+        self,
+        min_sends_per_variant: int = 20,
+        meaningful_ratio: float = 2.0,
+        auto_apply: bool = False,
+    ) -> dict:
+        """Read ab_test_events, group by variant, surface winners.
+
+        Returns a dict with:
+          - findings: human-readable strings logged on each cycle
+          - per_sequence: per-sequence stats {sequence_id: {a:..., b:..., winner}}
+          - applied: count of recommendations written to workspace settings
+
+        Auto-apply (auto_apply=True AND ratio >= meaningful_ratio):
+          - Writes a `variant_analysis` block to workspace.settings so the
+            outreach agent can read the preferred default on next run.
+        """
+        findings: list[str] = []
+        per_sequence: dict[str, dict] = {}
+        applied = 0
+
+        # Pull events for this workspace
+        try:
+            ws_id = getattr(self.db, "workspace_id", None)
+            q = self.db.client.table("ab_test_events").select(
+                "sequence_id, variant, event_type"
+            )
+            if ws_id:
+                q = q.eq("workspace_id", ws_id)
+            rows = q.execute().data or []
+        except Exception as exc:
+            logger.warning("variant_performance: query failed: %s", exc)
+            return {"findings": [], "per_sequence": {}, "applied": 0, "errors": [str(exc)]}
+
+        if not rows:
+            return {"findings": [], "per_sequence": {}, "applied": 0}
+
+        # Group by sequence_id then variant
+        by_seq: dict[str, dict[str, dict[str, int]]] = {}
+        for row in rows:
+            seq_id = row.get("sequence_id") or "default"
+            variant = (row.get("variant") or "").lower()
+            if variant not in ("a", "b"):
+                continue
+            event = row.get("event_type") or ""
+            bucket = by_seq.setdefault(seq_id, {
+                "a": {"sent": 0, "opened": 0, "replied": 0},
+                "b": {"sent": 0, "opened": 0, "replied": 0},
+            })
+            if event in bucket[variant]:
+                bucket[variant][event] += 1
+
+        for seq_id, stats in by_seq.items():
+            a, b = stats["a"], stats["b"]
+            a_sent, b_sent = a["sent"], b["sent"]
+            if a_sent == 0 or b_sent == 0:
+                continue
+
+            a_open_rate = (a["opened"] / a_sent) * 100 if a_sent else 0.0
+            b_open_rate = (b["opened"] / b_sent) * 100 if b_sent else 0.0
+            a_reply_rate = (a["replied"] / a_sent) * 100 if a_sent else 0.0
+            b_reply_rate = (b["replied"] / b_sent) * 100 if b_sent else 0.0
+
+            seq_record = {
+                "sequence_id": seq_id,
+                "a": {**a, "open_rate": round(a_open_rate, 2), "reply_rate": round(a_reply_rate, 2)},
+                "b": {**b, "open_rate": round(b_open_rate, 2), "reply_rate": round(b_reply_rate, 2)},
+                "winner": None,
+            }
+
+            if a_sent >= min_sends_per_variant and b_sent >= min_sends_per_variant:
+                # Use chi-squared via ABTracker for rigorous winner check
+                winner = None
+                try:
+                    from backend.app.analytics.ab_tracker import ABTracker
+                    winner = ABTracker(self.db).get_winning_variant(seq_id, min_sends=min_sends_per_variant * 2)
+                except Exception:
+                    pass
+
+                # Loose-but-meaningful ratio check (independent of significance)
+                ratio = None
+                loser_label = None
+                winner_label = None
+                if a_reply_rate > 0 and b_reply_rate > 0:
+                    if b_reply_rate >= a_reply_rate * meaningful_ratio:
+                        ratio = b_reply_rate / max(a_reply_rate, 0.01)
+                        winner_label, loser_label = "B", "A"
+                    elif a_reply_rate >= b_reply_rate * meaningful_ratio:
+                        ratio = a_reply_rate / max(b_reply_rate, 0.01)
+                        winner_label, loser_label = "A", "B"
+                elif b_reply_rate > 0 and a_reply_rate == 0:
+                    winner_label, loser_label = "B", "A"
+                    ratio = float("inf")
+                elif a_reply_rate > 0 and b_reply_rate == 0:
+                    winner_label, loser_label = "A", "B"
+                    ratio = float("inf")
+
+                if winner_label:
+                    seq_record["winner"] = winner_label.lower()
+                    finding = (
+                        f"sequence={seq_id} | Variant {winner_label} reply rate "
+                        f"{(b_reply_rate if winner_label == 'B' else a_reply_rate):.2f}% vs "
+                        f"Variant {loser_label} {(a_reply_rate if winner_label == 'B' else b_reply_rate):.2f}% "
+                        f"-- recommend retiring {loser_label}"
+                    )
+                    findings.append(finding)
+                    if winner is not None:
+                        findings.append(
+                            f"sequence={seq_id} | chi-squared winner: variant {winner.upper()}"
+                        )
+
+                    if auto_apply and (ratio is None or ratio >= meaningful_ratio):
+                        try:
+                            self._persist_variant_recommendation(seq_id, seq_record)
+                            applied += 1
+                        except Exception as exc:
+                            logger.warning("variant auto-apply persistence failed: %s", exc)
+
+            per_sequence[seq_id] = seq_record
+
+        return {
+            "findings": findings,
+            "per_sequence": per_sequence,
+            "applied": applied,
+        }
+
+    def _persist_variant_recommendation(self, sequence_id: str, record: dict) -> None:
+        """Write the per-sequence variant winner into workspace.settings.variant_analysis.
+
+        Outreach can read this to pick the preferred default variant on
+        future sends. Best-effort: silently no-ops if the workspace row
+        cannot be updated.
+        """
+        ws_id = getattr(self.db, "workspace_id", None)
+        if not ws_id:
+            return
+        ws_rows = (
+            self.db.client.table("workspaces")
+            .select("settings")
+            .eq("id", ws_id)
+            .limit(1)
+            .execute()
+        ).data
+        if not ws_rows:
+            return
+        settings = ws_rows[0].get("settings") or {}
+        variant_analysis = settings.get("variant_analysis") or {}
+        variant_analysis[sequence_id] = {
+            "winner": record.get("winner"),
+            "a_reply_rate": record["a"]["reply_rate"],
+            "b_reply_rate": record["b"]["reply_rate"],
+            "a_sent": record["a"]["sent"],
+            "b_sent": record["b"]["sent"],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        settings["variant_analysis"] = variant_analysis
+        self.db.client.table("workspaces").update({"settings": settings}).eq("id", ws_id).execute()
 
     # ------------------------------------------------------------------
     # Feedback loop — apply insights back to config

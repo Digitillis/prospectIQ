@@ -161,12 +161,64 @@ def _send_approved_workspace(ws: dict) -> None:
         return
     from backend.app.agents.engagement import EngagementAgent
     from backend.app.core.database import Database
-    agent = EngagementAgent(db=Database(workspace_id=ws["id"]))
+    db = Database(workspace_id=ws["id"])
+    agent = EngagementAgent(db=db)
     result = agent.run(action="send_approved")
     logger.info("Send [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
     # Reactive: consumed pipeline capacity — check depth immediately
     if result.processed > 0:
         _schedule_pipeline_advance(delay_seconds=60)
+        # Flywheel: schedule a 24-hour-out one-shot intent refresh for the
+        # companies we just emailed. Prospects who just received outreach
+        # often post relevant job openings within the next day.
+        try:
+            _schedule_post_send_intent_refresh(ws["id"], db, lookback_minutes=15)
+        except Exception as exc:
+            logger.debug("post-send intent refresh scheduling failed: %s", exc)
+
+
+def _schedule_post_send_intent_refresh(
+    workspace_id: str, db, lookback_minutes: int = 15,
+) -> None:
+    """Schedule a one-shot intent refresh in 24h for companies just emailed.
+
+    Reads outreach_drafts sent in the last `lookback_minutes` for this
+    workspace, dedupes the company set, and queues a one-shot job 24h out.
+    """
+    if _scheduler is None:
+        return
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)).isoformat()
+    try:
+        rows = (
+            db.client.table("outreach_drafts")
+            .select("company_id")
+            .eq("workspace_id", workspace_id)
+            .gte("sent_at", cutoff)
+            .execute()
+            .data or []
+        )
+    except Exception:
+        return
+    company_ids = list({r["company_id"] for r in rows if r.get("company_id")})
+    if not company_ids:
+        return
+    run_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    try:
+        _scheduler.add_job(
+            _run_intent_refresh_for_companies,
+            "date",
+            run_date=run_at,
+            args=[company_ids, workspace_id],
+            id=f"intent_post_send_{workspace_id}_{int(run_at.timestamp())}",
+            replace_existing=True,
+        )
+        logger.info(
+            "Scheduled 24h post-send intent refresh for %d companies (ws=%s)",
+            len(company_ids), workspace_id,
+        )
+    except Exception as exc:
+        logger.debug("post-send intent refresh add_job failed: %s", exc)
 
 
 def _run_send_approved() -> None:
@@ -798,8 +850,48 @@ def _run_qualification() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_qualify_workspace, "qualification")
+        # Flywheel fast-path: newly qualified companies should generate drafts
+        # immediately rather than waiting up to 30 min for the next draft cron.
+        try:
+            _run_draft_generation()
+        except Exception as exc:
+            logger.warning("qualification → draft fast-path failed: %s", exc)
     except Exception as e:
         logger.error(f"Scheduled qualification failed: {e}", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Draft generation — closes the gap between enriched contacts and outreach
+# ---------------------------------------------------------------------------
+
+def _draft_workspace(ws: dict) -> None:
+    """Generate initial outreach drafts for qualified companies with enriched contacts.
+
+    OutreachAgent.run() with no company_ids defaults to status='qualified'.
+    After drafting, companies move to 'outreach_pending' so they aren't picked
+    up again on the next tick.
+    """
+    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    if not workspace_budget_ok(ws, "drafting"):
+        return
+    from backend.app.core.database import Database
+    from backend.app.agents.outreach import OutreachAgent
+    db = Database(workspace_id=ws["id"])
+    agent = OutreachAgent(db=db)
+    result = agent.run(limit=50)
+    logger.info(
+        "Draft generation [%s]: drafted=%d skipped=%d errors=%d",
+        ws["name"], result.processed, result.skipped, result.errors,
+    )
+
+
+def _run_draft_generation() -> None:
+    """Every-30-min job: generate initial outreach drafts for qualified-but-undrafted companies."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_draft_workspace, "drafting")
+    except Exception as e:
+        logger.error(f"Draft generation failed: {e}", exc_info=True)
 
 
 def _research_workspace(ws: dict) -> None:
@@ -814,10 +906,20 @@ def _research_workspace(ws: dict) -> None:
 
 
 def _run_research() -> None:
-    """Runs every 20 min 24/7 — 150 companies per run, budget-gated."""
+    """Runs every 20 min 24/7 — 150 companies per run, budget-gated.
+
+    Flywheel: immediately fires qualification at the end so research output
+    is qualified within ~2 minutes instead of waiting up to 15 min for the
+    qualification cron tick.
+    """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_research_workspace, "research")
+        # Fast-path: research → qualify, closes 35-min gap to ~2 min
+        try:
+            _run_qualification()
+        except Exception as exc:
+            logger.warning("research → qualify fast-path failed: %s", exc)
     except Exception as e:
         logger.error(f"Scheduled research failed: {e}", exc_info=True)
 
@@ -883,6 +985,54 @@ def _run_daily_report() -> None:
         run_daily_report()
     except Exception as e:
         logger.error(f"Daily report failed: {e}", exc_info=True)
+
+
+def _run_intent_refresh() -> None:
+    """Daily job: recompute intent scores from Apollo job postings for all pipeline companies."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _intent_refresh_workspace(ws: dict) -> None:
+            from backend.app.core.workspace_scheduler import workspace_budget_ok
+            if not workspace_budget_ok(ws, "intent_refresh"):
+                return
+            from backend.app.core.database import Database
+            from backend.app.core.intent_engine import IntentEngine
+            db = Database(workspace_id=ws["id"])
+            engine = IntentEngine(db)
+            result = engine.recompute_all_intent_scores()
+            logger.info("Intent refresh [%s]: %s", ws["name"], result)
+
+        for_each_workspace(_intent_refresh_workspace, "intent_refresh")
+    except Exception as e:
+        logger.error(f"Intent refresh failed: {e}", exc_info=True)
+
+
+def _run_intent_refresh_for_companies(company_ids: list[str], workspace_id: str) -> None:
+    """One-shot intent refresh for a specific set of companies.
+
+    Called from the post-send fast-path: prospects who just received an email
+    might post relevant job openings within the next day, so we re-check
+    those companies specifically rather than waiting for the daily cron.
+    """
+    try:
+        from backend.app.core.database import Database
+        from backend.app.core.intent_engine import IntentEngine
+        db = Database(workspace_id=workspace_id)
+        engine = IntentEngine(db)
+        refreshed = 0
+        for cid in company_ids:
+            try:
+                company = db.get_company(cid)
+                if not company:
+                    continue
+                engine.compute_company_intent_score(cid, company_tier=company.get("tier") or "")
+                refreshed += 1
+            except Exception as exc:
+                logger.debug("intent rescore for %s failed: %s", cid, exc)
+        logger.info("Intent post-send refresh: %d companies rescored", refreshed)
+    except Exception as e:
+        logger.error("Intent post-send refresh failed: %s", e, exc_info=True)
 
 
 def _run_pipeline_monitor_email() -> None:
@@ -1120,17 +1270,18 @@ def _run_mfg_discovery() -> None:
 # ---------------------------------------------------------------------------
 
 def _learning_workspace(ws: dict) -> None:
-    import os
     from backend.app.core.workspace_scheduler import workspace_budget_ok
     if not workspace_budget_ok(ws, "weekly_learning"):
         return
     from backend.app.agents.learning import LearningAgent
     from backend.app.core.database import Database
-    # auto_apply=True only when explicitly enabled via env var.
-    # Default is False (observation mode) until 50+ replies have been collected
-    # and a human has reviewed one cycle of suggested adjustments.
-    auto_apply = os.environ.get("LEARNING_AUTO_APPLY", "false").lower() == "true"
-    agent = LearningAgent(db=Database(workspace_id=ws["id"]))
+    from backend.app.core.pipeline_orchestrator import _resolve_auto_apply
+    # Graduated rollout: env var explicit override wins; otherwise auto-apply
+    # turns on once cumulative outcomes for this workspace cross the threshold
+    # (LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD = 50).
+    db = Database(workspace_id=ws["id"])
+    auto_apply = _resolve_auto_apply(db, ws["id"])
+    agent = LearningAgent(db=db)
     result = agent.run(period_days=30, auto_apply=auto_apply)
     logger.info(
         "Weekly learning [%s]: processed=%d errors=%d (auto_apply=%s)",
@@ -1181,6 +1332,49 @@ def _run_weekly_contact_backup() -> None:
         for_each_workspace(_backup_workspace, "contact_backup")
     except Exception as e:
         logger.error(f"Scheduled contact backup failed: {e}", exc_info=True)
+
+
+def _run_signal_monitor() -> None:
+    """Weekly job: re-research qualified/outreach companies for new buying signals."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _signal_monitor_workspace(ws: dict) -> None:
+            from backend.app.core.workspace_scheduler import workspace_budget_ok
+            if not workspace_budget_ok(ws, "signal_monitor"):
+                return
+            from backend.app.agents.signal_monitor import SignalMonitorAgent
+            from backend.app.core.database import Database
+            agent = SignalMonitorAgent(db=Database(workspace_id=ws["id"]))
+            result = agent.run(limit=50, min_pqs=30)
+            logger.info(
+                "Signal monitor [%s]: refreshed=%d skipped=%d errors=%d",
+                ws["name"], result.processed, result.skipped, result.errors,
+            )
+
+        for_each_workspace(_signal_monitor_workspace, "signal_monitor")
+    except Exception as e:
+        logger.error(f"Signal monitor failed: {e}", exc_info=True)
+
+
+def _run_reengagement() -> None:
+    """Weekly job: re-queue contacts whose sequence completed with no reply (90-day cooldown)."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _reengagement_workspace(ws: dict) -> None:
+            from backend.app.agents.reengagement import ReengagementAgent
+            from backend.app.core.database import Database
+            agent = ReengagementAgent(db=Database(workspace_id=ws["id"]))
+            result = agent.run(limit=50)
+            logger.info(
+                "Reengagement [%s]: requeued=%d errors=%d",
+                ws["name"], result.processed, result.errors,
+            )
+
+        for_each_workspace(_reengagement_workspace, "reengagement")
+    except Exception as e:
+        logger.error(f"Reengagement failed: {e}", exc_info=True)
 
 
 def _run_weekly_signal_scrapers() -> None:
@@ -1316,6 +1510,9 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_research, "interval", minutes=20, id="research")
         # Qualification: every 15 min 24/7 — stays ahead of research output
         scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
+        # Draft generation: every 30 min — drains qualified-but-undrafted companies
+        # (closes the gap where enriched contacts had no scheduled path to a sent email)
+        scheduler.add_job(_run_draft_generation, "interval", minutes=30, id="draft_generation")
         # Enrichment: every 45 min 24/7 — Apollo credit-gated (1 credit/contact)
         # 45-min spacing keeps rate limits comfortable; credit guard halts if < 200 remaining
         scheduler.add_job(_run_enrichment, "interval", minutes=45, id="enrichment")
@@ -1371,6 +1568,24 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="weekly_signal_scrapers",
         )
+        # Weekly signal monitor: Sunday 6am Chicago — re-research tracked
+        # companies for new buying signals (leadership changes, capex, etc.)
+        scheduler.add_job(
+            _run_signal_monitor, "cron",
+            day_of_week="sun", hour=6, minute=0,
+            timezone="America/Chicago",
+            id="signal_monitor",
+        )
+        # Weekly re-engagement: Sunday 8am Chicago — find sequences that
+        # completed without a reply past the cooldown window and re-queue
+        # them with fresh messaging instead of letting them fall off pipeline.
+        # Slot one hour after post_send_audit to avoid contention.
+        scheduler.add_job(
+            _run_reengagement, "cron",
+            day_of_week="sun", hour=8, minute=0,
+            timezone="America/Chicago",
+            id="reengagement",
+        )
         # Weekly cost summary: Monday 8am Chicago
         scheduler.add_job(
             _run_weekly_cost_summary, "cron",
@@ -1384,6 +1599,15 @@ async def lifespan(app: FastAPI):
             day_of_week="mon-fri", hour=6, minute=0,
             timezone="America/Chicago",
             id="daily_report",
+        )
+        # Daily intent refresh: 5am Chicago — recompute intent scores from
+        # Apollo job postings + fresh signals so any overnight buying signal
+        # is reflected in PQS before the morning send window opens.
+        scheduler.add_job(
+            _run_intent_refresh, "cron",
+            hour=5, minute=0,
+            timezone="America/Chicago",
+            id="intent_refresh",
         )
         scheduler.start()
         logger.info(

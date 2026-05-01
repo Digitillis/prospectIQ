@@ -397,3 +397,143 @@ class LookalikeEngine:
             query = query.eq("workspace_id", ws)
         result = query.execute()
         return result.data[0] if result.data else None
+
+    # ------------------------------------------------------------------
+    # Reactive boost — propagate positive-reply signal to similar companies
+    # ------------------------------------------------------------------
+
+    def boost_similar_companies(
+        self,
+        source_company_id: str,
+        boost_pts: int = 10,
+        max_companies: int = 50,
+    ) -> int:
+        """Boost pqs_total for companies similar to one that produced a positive reply.
+
+        Similarity rule (intentionally simple — fast, deterministic, debuggable):
+          - Same NAICS prefix (first 3 digits) when present, else same sub_sector
+          - Same tier
+          - Same tranche
+          - Status in {discovered, researched, qualified, outreach_pending}
+
+        Caps:
+          - pqs_total cannot exceed 100
+          - Each company is boosted at most once per 30 days (lookalike_boosts table)
+          - max_companies caps the per-call fan-out
+
+        Returns:
+            Number of companies actually boosted.
+        """
+        from datetime import datetime, timezone, timedelta
+
+        # Fetch source company
+        try:
+            src_rows = (
+                self.db.client.table("companies")
+                .select("*")
+                .eq("id", source_company_id)
+                .limit(1)
+                .execute()
+                .data or []
+            )
+        except Exception as exc:
+            logger.warning("boost_similar_companies: source lookup failed: %s", exc)
+            return 0
+
+        if not src_rows:
+            return 0
+        src = src_rows[0]
+
+        naics = (src.get("naics_code") or "")
+        naics_prefix = naics[:3] if naics else ""
+        sub_sector = src.get("sub_sector") or ""
+        tier = src.get("tier") or ""
+        tranche = src.get("tranche") or ""
+
+        # Build candidate query
+        q = (
+            self.db.client.table("companies")
+            .select("id, name, pqs_total, naics_code, sub_sector, tier, tranche, status")
+            .neq("id", source_company_id)
+            .in_("status", ["discovered", "researched", "qualified", "outreach_pending"])
+        )
+        if self.workspace_id:
+            q = q.eq("workspace_id", self.workspace_id)
+        if tier:
+            q = q.eq("tier", tier)
+        if tranche:
+            q = q.eq("tranche", tranche)
+
+        try:
+            candidates = q.limit(max_companies * 4).execute().data or []
+        except Exception as exc:
+            logger.warning("boost_similar_companies: candidate query failed: %s", exc)
+            return 0
+
+        # Filter to NAICS prefix or sub_sector match
+        def _is_similar(c: dict) -> bool:
+            if naics_prefix and c.get("naics_code"):
+                return str(c["naics_code"])[:3] == naics_prefix
+            if sub_sector and c.get("sub_sector"):
+                return c["sub_sector"] == sub_sector
+            return False
+
+        matches = [c for c in candidates if _is_similar(c)]
+        if not matches:
+            return 0
+
+        # Dedup guard — skip companies boosted in the last 30 days
+        recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        recent_ids: set[str] = set()
+        try:
+            recent_rows = (
+                self.db.client.table("lookalike_boosts")
+                .select("target_company_id")
+                .gte("boosted_at", recent_cutoff)
+                .execute()
+                .data or []
+            )
+            recent_ids = {r["target_company_id"] for r in recent_rows if r.get("target_company_id")}
+        except Exception:
+            # Table may not exist yet — degrade to no dedup
+            pass
+
+        boosted = 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for c in matches:
+            if boosted >= max_companies:
+                break
+            cid = c["id"]
+            if cid in recent_ids:
+                continue
+            current = float(c.get("pqs_total") or 0)
+            new_total = min(100.0, current + boost_pts)
+            if new_total <= current:
+                continue
+            try:
+                self.db.client.table("companies").update({
+                    "pqs_total": new_total,
+                }).eq("id", cid).execute()
+                boosted += 1
+                # Best-effort audit row — non-fatal if table doesn't exist
+                try:
+                    self.db.client.table("lookalike_boosts").insert({
+                        "source_company_id": source_company_id,
+                        "target_company_id": cid,
+                        "boost_pts": boost_pts,
+                        "old_pqs": current,
+                        "new_pqs": new_total,
+                        "boosted_at": now_iso,
+                        "workspace_id": self.workspace_id,
+                    }).execute()
+                except Exception:
+                    pass
+            except Exception as exc:
+                logger.debug("boost_similar_companies: update failed for %s: %s", cid, exc)
+
+        if boosted > 0:
+            logger.info(
+                "Look-alike boost: %d companies +%d PQS from source %s",
+                boosted, boost_pts, source_company_id,
+            )
+        return boosted

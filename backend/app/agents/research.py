@@ -18,6 +18,64 @@ from backend.app.core.models import ResearchResult
 console = Console()
 logger = logging.getLogger(__name__)
 
+# Sonnet for high-PQS, Haiku for low-PQS firmographic match.
+# Threshold is firmographic-only PQS (the cheap dimension). Companies whose
+# firmographic match alone is strong get the full research treatment.
+RESEARCH_PQS_PROMOTE_THRESHOLD = 6
+SONNET_MODEL = "claude-sonnet-4-6"
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _select_research_model(company: dict) -> tuple[str, str]:
+    """Return (model_id, prompt_variant) based on firmographic score.
+
+    Low-PQS companies get Haiku with a slim extraction prompt to save cost.
+    High-PQS companies get Sonnet with the full intelligence prompt.
+    """
+    pqs_firmographic = (
+        company.get("pqs_firmographic")
+        or company.get("pqs_firm")
+        or 0
+    )
+    try:
+        pqs_firmographic = int(pqs_firmographic)
+    except (TypeError, ValueError):
+        pqs_firmographic = 0
+
+    if pqs_firmographic >= RESEARCH_PQS_PROMOTE_THRESHOLD:
+        return SONNET_MODEL, "full"
+    return HAIKU_MODEL, "slim"
+
+
+# Slim Haiku prompt — just enough fields to decide whether to promote
+SLIM_RESEARCH_SYSTEM = """You are a manufacturing analyst doing a quick triage scan.
+Return ONLY valid JSON. No markdown, no explanation."""
+
+SLIM_RESEARCH_USER = """Quickly scan this manufacturing company and decide whether it
+merits deep research for B2B AI manufacturing intelligence sales.
+
+COMPANY: {company_name}
+INDUSTRY: {industry}
+LOCATION: {city}, {state}, {country}
+WEBSITE: {website}
+EMPLOYEE COUNT: {employee_count}
+
+Output ONLY this JSON:
+{{
+    "manufacturing_type": "discrete" | "process" | "hybrid" | "food" | "unknown",
+    "equipment_types": ["list", "of", "equipment", "types"],
+    "employee_estimate": <integer or null>,
+    "is_real_manufacturer": true | false,
+    "confidence_level": "high" | "medium" | "low",
+    "promote_to_full_research": true | false
+}}
+
+Rules:
+- promote_to_full_research=true ONLY if this looks like a genuine ICP fit
+  (real manufacturer with operations complex enough to need predictive maintenance
+   or AI-driven plant intelligence). Default to false when in doubt.
+- Output ONLY valid JSON. No markdown, no preamble."""
+
 # Combined research + extraction system prompt
 RESEARCH_SYSTEM = """You are a senior manufacturing industry analyst conducting deep research on
 companies for B2B sales intelligence and prospecting.
@@ -194,6 +252,57 @@ class ResearchAgent(BaseAgent):
             console.print(f"\n  [bold]{company_name}[/bold]")
 
             try:
+                # Tier model by firmographic PQS — Haiku for low-PQS, Sonnet for >=6
+                model_id, prompt_variant = _select_research_model(company)
+
+                if prompt_variant == "slim":
+                    console.print(f"    [dim]Quick scan via Haiku (low PQS)...[/dim]")
+                    slim = self._slim_research(client=client, company=company)
+
+                    if slim is None:
+                        console.print("    [red]Slim research failed. Skipping.[/red]")
+                        result.errors += 1
+                        result.add_detail(company_name, "error", "Haiku slim returned no valid JSON")
+                        if self._monitor:
+                            self._monitor.log_error(
+                                "Haiku slim research failed",
+                                company_id=company_id,
+                                error_type="parse_error",
+                            )
+                        continue
+
+                    if not slim.get("promote_to_full_research"):
+                        # Mark as researched with low-confidence flag — saves a Sonnet call
+                        existing_tags = company.get("custom_tags") or {}
+                        if isinstance(existing_tags, str):
+                            try:
+                                existing_tags = json.loads(existing_tags)
+                            except (json.JSONDecodeError, TypeError):
+                                existing_tags = {}
+                        existing_tags["research_path"] = "haiku_only"
+                        existing_tags["promote_to_full_research"] = False
+
+                        self.db.update_company(company_id, {
+                            "status": "researched",
+                            "manufacturing_profile": {
+                                "type": slim.get("manufacturing_type", "unknown"),
+                                "equipment": slim.get("equipment_types", []),
+                                "is_real_manufacturer": slim.get("is_real_manufacturer", False),
+                            },
+                            "custom_tags": existing_tags,
+                        })
+                        confidence = slim.get("confidence_level", "low")
+                        console.print(
+                            f"    [yellow]Haiku-only path: {confidence} confidence, "
+                            f"not promoted to full research.[/yellow]"
+                        )
+                        result.processed += 1
+                        result.add_detail(company_name, "haiku_only", f"confidence={confidence}")
+                        continue
+
+                    # Promoted — fall through to Sonnet research
+                    console.print("    [dim]Haiku promoted to full research → Sonnet...[/dim]")
+
                 console.print("    [dim]Researching via Claude...[/dim]")
                 structured = self._research_with_claude(
                     client=client,
@@ -253,6 +362,30 @@ class ResearchAgent(BaseAgent):
                     **({"trigger_types": [e.get("type") for e in trigger_events]} if trigger_events else {}),
                 }
 
+                # Web-search trigger event extraction — only for high-PQS where
+                # personalization actually matters. Adds factual recent-news hooks
+                # that go beyond Claude's training cutoff.
+                personalization_hooks = list(structured.get("personalization_hooks", []) or [])
+                pqs_firm = company.get("pqs_firmographic") or company.get("pqs_firm") or 0
+                try:
+                    pqs_firm_int = int(pqs_firm)
+                except (TypeError, ValueError):
+                    pqs_firm_int = 0
+                if pqs_firm_int >= RESEARCH_PQS_PROMOTE_THRESHOLD and company.get("name"):
+                    web_triggers = self._extract_trigger_events_with_web(
+                        client=client, company_name=company["name"]
+                    )
+                    if web_triggers:
+                        # Merge into trigger_events + personalization_hooks
+                        for t in web_triggers:
+                            if t and t not in personalization_hooks:
+                                personalization_hooks.insert(0, t)  # prepend — more recent
+                        # Keep the first 3 web-sourced as the headline hooks
+                        logger.info(
+                            "Web search added %d trigger events for %s",
+                            len(web_triggers), company["name"],
+                        )
+
                 self.db.update_company(company_id, {
                     "research_summary": structured.get("company_description", ""),
                     "technology_stack": structured.get("known_systems", []),
@@ -263,7 +396,7 @@ class ResearchAgent(BaseAgent):
                         "iot_maturity": structured.get("iot_maturity", "unknown"),
                         "maintenance_approach": structured.get("maintenance_approach", "unknown"),
                     },
-                    "personalization_hooks": structured.get("personalization_hooks", []),
+                    "personalization_hooks": personalization_hooks,
                     "custom_tags": updated_tags,
                     "status": "researched",
                 })
@@ -293,6 +426,147 @@ class ResearchAgent(BaseAgent):
 
         return result
 
+    def _extract_trigger_events_with_web(
+        self, client, company_name: str, max_results: int = 5,
+    ) -> list[str]:
+        """Use Anthropic's web-search tool to surface recent trigger events.
+
+        Returns a list of factual trigger-event strings suitable for use as
+        personalization hooks. Returns an empty list on any error so a web
+        search failure never blocks research.
+
+        Only callers should invoke this for high-PQS companies — it adds
+        a second Sonnet call per research run.
+        """
+        if not company_name:
+            return []
+
+        prompt = (
+            f"Search for recent news about {company_name} in the last 12 months. "
+            f"Focus on: new executive hires (VP Operations, Plant Manager, "
+            f"Maintenance/Reliability roles), capital investment announcements, "
+            f"plant expansions, equipment upgrades, downtime incidents, or "
+            f"digital transformation initiatives. Return only factual findings "
+            f"with source dates.\n\n"
+            f"Output ONLY a JSON object with this exact shape:\n"
+            f'{{"events": ["one-line factual finding with date", "another finding"]}}\n'
+            f"If you find nothing, return {{\"events\": []}}. "
+            f"Do not include speculation, marketing copy, or stale information."
+        )
+
+        try:
+            response = client.messages.create(
+                model=SONNET_MODEL,
+                max_tokens=800,
+                tools=[{
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 3,
+                }],
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                self.track_cost(
+                    provider="anthropic",
+                    model=f"{SONNET_MODEL}+web_search",
+                    endpoint="/messages",
+                    input_tokens=getattr(usage, "input_tokens", 0),
+                    output_tokens=getattr(usage, "output_tokens", 0),
+                )
+
+            # Walk the content blocks looking for the final text answer
+            text_parts: list[str] = []
+            for block in (response.content or []):
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    text_parts.append(getattr(block, "text", ""))
+            full_text = "\n".join(t for t in text_parts if t).strip()
+
+            if not full_text:
+                return []
+
+            # Strip markdown fences if present
+            if full_text.startswith("```"):
+                full_text = full_text.split("\n", 1)[1] if "\n" in full_text else full_text[3:]
+                if full_text.endswith("```"):
+                    full_text = full_text[:-3]
+                full_text = full_text.strip()
+
+            # Try strict JSON first; fall back to extracting bullet lines
+            try:
+                parsed = json.loads(full_text)
+                events = parsed.get("events") or []
+                if isinstance(events, list):
+                    return [str(e).strip() for e in events if e][:max_results]
+            except json.JSONDecodeError:
+                pass
+
+            # Loose fallback: split on lines, keep non-empty
+            lines = [
+                line.strip("- *•").strip()
+                for line in full_text.splitlines()
+                if line.strip() and not line.strip().startswith("{")
+            ]
+            return lines[:max_results]
+        except Exception as exc:
+            # Any error (including web_search tool unavailable) → graceful no-op
+            logger.warning(
+                "Web search trigger extraction failed for %s: %s",
+                company_name, exc,
+            )
+            return []
+
+    def _slim_research(self, client, company: dict) -> dict | None:
+        """Quick Haiku triage call. Returns a dict with `promote_to_full_research`.
+
+        Used for low-PQS companies to decide whether they're worth a full
+        Sonnet research call. ~10x cheaper than Sonnet research.
+        """
+        prompt = SLIM_RESEARCH_USER.format(
+            company_name=company.get("name", ""),
+            industry=company.get("industry", "Manufacturing"),
+            city=company.get("city", ""),
+            state=company.get("state", ""),
+            country=company.get("country", "US"),
+            website=company.get("website", "Not available"),
+            employee_count=company.get("employee_count", "Not available"),
+        )
+
+        try:
+            response = client.messages.create(
+                model=HAIKU_MODEL,
+                max_tokens=400,
+                system=SLIM_RESEARCH_SYSTEM,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            usage = response.usage
+            self.track_cost(
+                provider="anthropic",
+                model=HAIKU_MODEL,
+                endpoint="/messages",
+                company_id=company.get("id"),
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+            )
+
+            content = response.content[0].text.strip()
+            if content.startswith("```"):
+                content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
+
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Slim research JSON parse failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Slim research error: {e}")
+            return None
+
     def _research_with_claude(
         self, client, company: dict,
     ) -> dict | None:
@@ -319,7 +593,7 @@ class ResearchAgent(BaseAgent):
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model=SONNET_MODEL,
                 max_tokens=2000,
                 system=RESEARCH_SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
@@ -329,7 +603,7 @@ class ResearchAgent(BaseAgent):
             usage = response.usage
             self.track_cost(
                 provider="anthropic",
-                model="claude-sonnet-4-6",
+                model=SONNET_MODEL,
                 endpoint="/messages",
                 company_id=company.get("id"),
                 input_tokens=usage.input_tokens,
