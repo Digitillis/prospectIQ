@@ -92,15 +92,19 @@ CLUSTER_SEQUENCE_MAP: dict[tuple[str, str | None], str] = {
     ("process", None):                 "INSTANTLY_SEQ_PROCESS_GENERAL",
 
     # ── Food & Beverage cluster ──────────────────────────────────────────────
-    # F&B: ops/uptime messaging only — NOT food safety / FSMA angle
-    ("fb", "vp_ops"):                  "INSTANTLY_SEQ_FB_VP_OPS",
-    ("fb", "coo"):                     "INSTANTLY_SEQ_FB_VP_OPS",
-    ("fb", "plant_manager"):           "INSTANTLY_SEQ_FB_PLANT_MANAGER",
-    ("fb", "director_ops"):            "INSTANTLY_SEQ_FB_PLANT_MANAGER",
-    ("fb", "maintenance_leader"):      "INSTANTLY_SEQ_FB_PLANT_MANAGER",
-    ("fb", "vp_quality_food_safety"):  "INSTANTLY_SEQ_FB_VP_OPS",   # ops angle
-    ("fb", "director_quality_food_safety"): "INSTANTLY_SEQ_FB_PLANT_MANAGER",
-    ("fb", None):                      "INSTANTLY_SEQ_FB_GENERAL",
+    ("fb", "vp_ops"):                       "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "coo"):                          "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "director_ops"):                 "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "vp_supply_chain"):              "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "plant_manager"):                "INSTANTLY_SEQ_FB_PLANT_MANAGER",
+    ("fb", "maintenance_leader"):           "INSTANTLY_SEQ_FB_PLANT_MANAGER",
+    # FSMA / food-safety angle — use the dedicated quality sequences
+    ("fb", "vp_food_safety"):               "INSTANTLY_SEQ_FB_VP_QUALITY",
+    ("fb", "vp_quality_food_safety"):       "INSTANTLY_SEQ_FB_VP_QUALITY",
+    ("fb", "regulatory_affairs_director"):  "INSTANTLY_SEQ_FB_DIR_QUALITY",
+    ("fb", "director_quality_food_safety"): "INSTANTLY_SEQ_FB_DIR_QUALITY",
+    ("fb", "compliance_manager_fb"):        "INSTANTLY_SEQ_FB_DIR_QUALITY",
+    ("fb", None):                           "INSTANTLY_SEQ_FB_GENERAL",
 
     # ── Other / unknown cluster ──────────────────────────────────────────────
     ("other", "vp_ops"):               "INSTANTLY_SEQ_GENERAL_VP_OPS",
