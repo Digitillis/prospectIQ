@@ -885,19 +885,171 @@ def _run_daily_report() -> None:
         logger.error(f"Daily report failed: {e}", exc_info=True)
 
 
+def _run_pipeline_monitor_email() -> None:
+    """Every-6-hour job: email pipeline stats to Avanish."""
+    try:
+        from backend.app.core.database import get_supabase_client
+        from backend.app.core.workspace_scheduler import apollo_credits_ok
+        from backend.app.core.notifications import send_email
+        from backend.app.integrations.apollo import ApolloClient
+        from datetime import datetime, timezone
+        import asyncio
+
+        client = get_supabase_client()
+        workspace_id = "00000000-0000-0000-0000-000000000001"
+        now_str = datetime.now(timezone.utc).strftime("%b %-d, %Y at %-I:%M %p UTC")
+
+        # Pipeline counts
+        def count(status):
+            r = client.table("companies").select("id", count="exact").eq("workspace_id", workspace_id).eq("status", status).execute()
+            return r.count or 0
+
+        def count_contacts(status):
+            r = client.table("contacts").select("id", count="exact").eq("workspace_id", workspace_id).eq("enrichment_status", status).execute()
+            return r.count or 0
+
+        discovered   = count("discovered")
+        researched   = count("researched")
+        qualified    = count("qualified")
+        disqualified = count("disqualified")
+        outreach     = count("outreach_pending")
+
+        contacts_enriched = count_contacts("enriched")
+        contacts_pending  = count_contacts("pending")
+
+        # Apollo credits
+        credits_remaining = "—"
+        try:
+            with ApolloClient(workspace_id=workspace_id) as apollo:
+                info = apollo.get_credits()
+                used = info.get("credits_used", 0)
+                limit = info.get("credit_limit", 0)
+                credits_remaining = f"{limit - used:,} of {limit:,} remaining"
+        except Exception:
+            pass
+
+        # Enrichment cap progress
+        ws_row = client.table("workspaces").select("settings").eq("id", workspace_id).single().execute()
+        ws_settings = (ws_row.data or {}).get("settings") or {}
+        cap = ws_settings.get("enrichment_company_cap")
+        processed = ws_settings.get("enrichment_companies_processed", 0)
+        cap_line = f"{processed} / {cap} companies (cap)" if cap else f"{processed} companies (no cap)"
+
+        html = f"""
+<html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#222">
+<h2 style="color:#1a56db;margin-bottom:4px">ProspectIQ Pipeline Report</h2>
+<p style="color:#666;margin-top:0">{now_str}</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0">
+  <tr style="background:#f3f4f6">
+    <th style="text-align:left;padding:8px 12px">Stage</th>
+    <th style="text-align:right;padding:8px 12px">Count</th>
+  </tr>
+  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Discovered (queue)</td>
+      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{discovered:,}</strong></td></tr>
+  <tr style="background:#f9fafb"><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Researched</td>
+      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{researched:,}</strong></td></tr>
+  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Qualified</td>
+      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{qualified:,}</strong></td></tr>
+  <tr style="background:#f9fafb"><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Outreach Pending</td>
+      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong style="color:#1a56db">{outreach:,}</strong></td></tr>
+  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Disqualified</td>
+      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#9ca3af">{disqualified:,}</td></tr>
+</table>
+<table style="width:100%;border-collapse:collapse;margin:16px 0">
+  <tr style="background:#f3f4f6">
+    <th style="text-align:left;padding:8px 12px">Contacts</th>
+    <th style="text-align:right;padding:8px 12px">Count</th>
+  </tr>
+  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Enriched (have email)</td>
+      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{contacts_enriched:,}</strong></td></tr>
+  <tr style="background:#f9fafb"><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Pending enrichment</td>
+      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">{contacts_pending:,}</td></tr>
+</table>
+<p style="background:#fef3c7;padding:10px 14px;border-radius:6px;margin:16px 0">
+  <strong>Apollo credits:</strong> {credits_remaining}<br>
+  <strong>Enrichment cap:</strong> {cap_line}
+</p>
+</body></html>"""
+
+        asyncio.run(send_email(
+            to="avanish.mehrotra@gmail.com",
+            subject=f"ProspectIQ pipeline: {outreach:,} outreach-ready | {qualified:,} qualified | {discovered:,} in queue",
+            html_body=html,
+        ))
+        logger.info("Pipeline monitor email sent.")
+    except Exception as e:
+        logger.error("Pipeline monitor email failed: %s", e, exc_info=True)
+
+
 def _enrich_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_budget_ok
     if not workspace_budget_ok(ws, "enrichment"):
         return
+
+    settings = ws.get("settings") or {}
+    cap = settings.get("enrichment_company_cap")  # None = unlimited
+    count_so_far = int(settings.get("enrichment_companies_processed", 0))
+
+    if cap is not None and count_so_far >= cap:
+        logger.info(
+            "Enrichment [%s]: cap of %d companies reached (%d processed) — paused. "
+            "Reset enrichment_companies_processed in workspace settings to resume.",
+            ws["name"], cap, count_so_far,
+        )
+        return
+
+    # Compute how many companies this run may process
+    if cap is not None:
+        run_limit = min(200, cap - count_so_far)
+    else:
+        run_limit = 200
+
     from backend.app.agents.enrichment import EnrichmentAgent
     from backend.app.core.database import Database
     agent = EnrichmentAgent(db=Database(workspace_id=ws["id"]))
-    result = agent.run(limit=200)
-    logger.info("Enrichment [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+    result = agent.run(limit=run_limit)
+    logger.info(
+        "Enrichment [%s]: processed=%d errors=%d (cap=%s used=%d)",
+        ws["name"], result.processed, result.errors,
+        cap, count_so_far + result.processed,
+    )
+
+    # Persist running total back to workspace settings
+    if result.processed > 0:
+        try:
+            from backend.app.core.database import get_supabase_client
+            client = get_supabase_client()
+            new_count = count_so_far + result.processed
+            updated_settings = dict(settings)
+            updated_settings["enrichment_companies_processed"] = new_count
+            client.table("workspaces").update({"settings": updated_settings}).eq("id", ws["id"]).execute()
+
+            # Alert when cap is hit
+            if cap is not None and new_count >= cap:
+                import asyncio
+                from backend.app.core.notifications import send_email
+                asyncio.run(send_email(
+                    to="avanish.mehrotra@gmail.com",
+                    subject=f"ProspectIQ: enrichment cap of {cap} companies reached",
+                    html_body=(
+                        f"<p>The enrichment run has processed <strong>{new_count}</strong> companies "
+                        f"(cap: {cap}).</p>"
+                        f"<p>Enrichment is now <strong>paused</strong>. Review the results, then "
+                        f"reset <code>enrichment_companies_processed</code> to 0 (or raise "
+                        f"<code>enrichment_company_cap</code>) in workspace settings to resume.</p>"
+                    ),
+                ))
+        except Exception as exc:
+            logger.warning("Could not update enrichment counter: %s", exc)
 
 
 def _run_enrichment() -> None:
-    """Every-45-min job: enrich up to 200 contacts per run via Apollo (burns Apollo credits)."""
+    """Every-45-min job: enrich up to enrichment_company_cap companies via Apollo (1 credit/contact).
+
+    Controlled by workspace settings:
+      enrichment_company_cap (int): pause after this many companies (None = unlimited)
+      enrichment_companies_processed (int): running total; reset to 0 to start a new batch
+    """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_enrich_workspace, "enrichment")
@@ -1167,6 +1319,8 @@ async def lifespan(app: FastAPI):
         # Enrichment: every 45 min 24/7 — Apollo credit-gated (1 credit/contact)
         # 45-min spacing keeps rate limits comfortable; credit guard halts if < 200 remaining
         scheduler.add_job(_run_enrichment, "interval", minutes=45, id="enrichment")
+        # Pipeline monitor: email hourly stats (researched/qualified/enriched/credits/outreach)
+        scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=6, id="pipeline_monitor")
         # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
         # Runs hourly Mon-Fri during business hours so drafts are ready for morning send
         scheduler.add_job(
