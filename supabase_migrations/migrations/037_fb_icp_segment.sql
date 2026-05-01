@@ -2,12 +2,13 @@
 -- Adds campaign_cluster and fsma_exposure to companies, segment tracking to
 -- outreach_pace_log, and extends icp_exclusions with F&B-specific reasons.
 
--- Add campaign_cluster to companies
--- campaign_cluster maps to the ICP tier run cluster
--- (fsma_dairy, fsma_seafood, fsma_produce, fsma_meat, fsma_beverage, fsma_food, fsma_bakery,
---  machinery, auto, metals, chemicals, process, watchlist, other)
+-- campaign_cluster already exists with a narrow check constraint — drop it
+-- so the new fsma_* cluster values are accepted.
 ALTER TABLE companies
-  ADD COLUMN IF NOT EXISTS campaign_cluster TEXT,
+  DROP CONSTRAINT IF EXISTS companies_campaign_cluster_check;
+
+-- Add fsma_exposure column (campaign_cluster column already exists)
+ALTER TABLE companies
   ADD COLUMN IF NOT EXISTS fsma_exposure TEXT
     CHECK (fsma_exposure IN ('high', 'medium', 'low'));
 

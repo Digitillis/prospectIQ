@@ -809,11 +809,16 @@ def _run_weekly_signal_scrapers() -> None:
         db = Database()  # workspace-agnostic — scrapers match by company name across all workspaces
 
         from backend.app.agents.signal_scrapers.fda_scraper import FDARecallScraper
+        from backend.app.agents.signal_scrapers.fda_warning_letter_scraper import FDAWarningLetterScraper
         from backend.app.agents.signal_scrapers.osha_scraper import OSHACitationScraper
         from backend.app.agents.signal_scrapers.mep_scraper import MEPGrantScraper
 
         fda_result = FDARecallScraper(db).run(days_back=90)
-        logger.info("FDA scraper: %s", fda_result)
+        logger.info("FDA recall scraper: %s", fda_result)
+
+        # F&B FSMA 204 warning letters — highest-value signal for food/bev targeting
+        wl_result = FDAWarningLetterScraper(db).run(days_back=90)
+        logger.info("FDA warning letter scraper: %s", wl_result)
 
         osha_result = OSHACitationScraper(db).run(days_back=60)
         logger.info("OSHA scraper: %s", osha_result)
@@ -825,7 +830,9 @@ def _run_weekly_signal_scrapers() -> None:
             from backend.app.utils.notifications import notify_slack
             notify_slack(
                 f"*Signal scrapers complete:* "
-                f"FDA {fda_result.get('matched', 0)} matched | "
+                f"FDA recalls {fda_result.get('matched', 0)} | "
+                f"FDA warning letters {wl_result.get('matched', 0)} "
+                f"({wl_result.get('fsma_signals', 0)} FSMA) | "
                 f"OSHA {osha_result.get('matched', 0)} matched",
                 emoji=":satellite:",
             )
