@@ -1506,18 +1506,25 @@ def _run_daily_financial_summary() -> None:
                 agg[key]["calls"] += 1
             return sorted(agg.items(), key=lambda x: -x[1]["cost"])
 
-        # Apollo credits — real data from Apollo API (not estimated from api_costs)
-        apollo_used = apollo_remaining = apollo_limit = None
-        try:
-            from backend.app.integrations.apollo import ApolloClient
-            workspace_id = "00000000-0000-0000-0000-000000000001"
-            with ApolloClient(workspace_id=workspace_id) as ac:
-                info = ac.get_credits()
-                apollo_used      = info.get("credits_used", 0)
-                apollo_limit     = info.get("credit_limit", 0)
-                apollo_remaining = apollo_limit - apollo_used
-        except Exception:
-            pass
+        # Apollo credit data is not available via REST API key — only visible in the dashboard.
+        # /auth/health returns {"healthy": true, "is_logged_in": true} only.
+        # Count enrichment API calls today as a proxy for credit activity (not 1:1 with credits).
+        apollo_calls_today = (
+            client.table("api_costs")
+            .select("id", count="exact")
+            .eq("provider", "apollo")
+            .gte("created_at", today_start)
+            .execute()
+            .count or 0
+        )
+        apollo_calls_mtd = (
+            client.table("api_costs")
+            .select("id", count="exact")
+            .eq("provider", "apollo")
+            .gte("created_at", month_start)
+            .execute()
+            .count or 0
+        )
 
         today_total   = sum_cost(today_rows)
         yesterday_total = sum_cost(yesterday_rows)
@@ -1684,30 +1691,31 @@ def _run_daily_financial_summary() -> None:
   </tr>
 </table>
 
-<h3 style="margin-bottom:8px;font-size:15px">Apollo Credits (live from API)</h3>
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+<h3 style="margin-bottom:8px;font-size:15px">Apollo Enrichment Activity</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:8px">
   <tr style="background:#f3f4f6">
     <th style="text-align:left;padding:8px 12px;font-size:13px">Metric</th>
-    <th style="text-align:right;padding:8px 12px;font-size:13px">Value</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">Today</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">MTD</th>
   </tr>
   <tr>
-    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Credits used (billing period)</td>
-    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{apollo_used if apollo_used is not None else '—'}</strong></td>
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Apollo API calls (enrichment proxy)</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{apollo_calls_today}</strong></td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">{apollo_calls_mtd}</td>
   </tr>
   <tr style="background:#f9fafb">
-    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Credits remaining</td>
-    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">
-      <strong style="color:{'#16a34a' if apollo_remaining and apollo_remaining > 1000 else '#d97706' if apollo_remaining else '#6b7280'}">{f'{apollo_remaining:,} of {apollo_limit:,}' if apollo_remaining is not None else '—'}</strong>
-    </td>
-  </tr>
-  <tr>
     <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Plan</td>
-    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#6b7280">Professional · $114/mo · 4,000 credits/mo</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#6b7280" colspan="2">Professional · $114/mo flat · 4,000 credits/mo included</td>
   </tr>
 </table>
+<p style="font-size:12px;color:#6b7280;margin:0 0 20px 0;padding:6px 12px;background:#fefce8;border-radius:4px">
+  Apollo credit balance is not available via REST API key — check the
+  <a href="https://app.apollo.io/#/settings/credits/current" style="color:#1a56db">Apollo dashboard</a>
+  for live credit usage. API call count above is a proxy only (not 1:1 with credits consumed).
+</p>
 
 <p style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;margin-top:20px">
-  Claude costs: real token counts from api_costs table. Apollo credits: live from Apollo API.
+  Claude costs: real token counts from api_costs table. Apollo: call count proxy only (credits via dashboard).
   Railway (~$50/mo) billed separately and not tracked here.
   Planned figures from docs/FINANCIAL_PROJECTIONS.md (approved 2026-05-02, ~50 sends/day baseline).
   This report runs daily at 7am Chicago for 30 days (through 2026-06-02), then switches to weekly.
