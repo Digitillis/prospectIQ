@@ -809,14 +809,25 @@ def _check_budget(job_name: str) -> bool:
                 from backend.app.core.notifications import send_email
                 asyncio.run(send_email(
                     to="avanish.mehrotra@gmail.com",
-                    subject=f"ProspectIQ spend alert: ${spend:.0f} of ${MONTHLY_API_BUDGET_USD:.0f} used this month",
+                    subject=f"[ProspectIQ] Budget alert: ${spend:.0f} of ${MONTHLY_API_BUDGET_USD:.0f} used this month — hold or increase?",
                     html_body=(
-                        f"<p>Monthly API spend is at <strong>${spend:.2f}</strong> "
-                        f"({spend / MONTHLY_API_BUDGET_USD * 100:.0f}% of the ${MONTHLY_API_BUDGET_USD:.0f} cap).</p>"
-                        f"<p>Hard stop activates at ${MONTHLY_API_BUDGET_USD:.0f}. "
-                        f"Remaining budget: <strong>${MONTHLY_API_BUDGET_USD - spend:.2f}</strong>.</p>"
-                        f"<p>Research and enrichment continue until the cap is hit. "
-                        f"Reply to this email or update the cap in Railway if you want to raise it.</p>"
+                        f"<html><body style='font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;color:#111;padding:20px'>"
+                        f"<h2 style='color:#b45309;margin-bottom:4px'>API Budget Alert</h2>"
+                        f"<p style='color:#6b7280;font-size:13px;margin-top:0'>Monthly spend has crossed the 75% warning threshold.</p>"
+                        f"<table style='width:100%;border-collapse:collapse;font-size:14px;margin:14px 0'>"
+                        f"<tr style='background:#fef3c7'><td style='padding:8px 12px;font-weight:600'>Spent this month</td><td style='text-align:right;padding:8px 12px'><strong>${spend:.2f}</strong></td></tr>"
+                        f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Monthly cap</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb'>${MONTHLY_API_BUDGET_USD:.2f}</td></tr>"
+                        f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Remaining</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#16a34a'><strong>${MONTHLY_API_BUDGET_USD - spend:.2f}</strong></td></tr>"
+                        f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Usage</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb'>{spend / MONTHLY_API_BUDGET_USD * 100:.0f}%</td></tr>"
+                        f"</table>"
+                        f"<div style='background:#fef9c3;border:1px solid #fde047;padding:12px 16px;border-radius:6px;font-size:14px;margin:16px 0'>"
+                        f"<strong>Action required:</strong> All automated jobs (research, enrichment, outreach drafting) will hard-stop at ${MONTHLY_API_BUDGET_USD:.0f}. "
+                        f"Reply to this email or update <code>workspace.settings.monthly_api_budget_usd</code> to increase the cap. "
+                        f"Otherwise jobs will pause automatically when the limit is reached."
+                        f"</div>"
+                        f"<p style='font-size:13px'>Should we <strong>hold at ${MONTHLY_API_BUDGET_USD:.0f}</strong> and let it stop, or <strong>increase the cap</strong> to keep the pipeline running?</p>"
+                        f"<p style='font-size:11px;color:#9ca3af'>This alert fires once per day while spend remains above the threshold.</p>"
+                        f"</body></html>"
                     ),
                 ))
                 client.table("api_costs").insert({
