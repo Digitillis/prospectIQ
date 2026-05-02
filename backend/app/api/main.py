@@ -1462,6 +1462,232 @@ def _run_weekly_cost_summary() -> None:
         logger.error(f"Weekly cost summary failed: {e}")
 
 
+def _run_daily_financial_summary() -> None:
+    """Daily 7am Chicago: email actual vs planned API costs to Avi.
+
+    Runs every day for the first month post cost-optimisation (2026-05-02).
+    Planned figures match docs/FINANCIAL_PROJECTIONS.md approved on 2026-05-02.
+    """
+    try:
+        from backend.app.core.database import get_supabase_client
+        from backend.app.core.notifications import send_email
+        from datetime import datetime, timezone, timedelta
+        import asyncio
+
+        client = get_supabase_client()
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+        def fetch_costs(since: str) -> list[dict]:
+            return (
+                client.table("api_costs")
+                .select("provider,model,estimated_cost_usd,input_tokens,output_tokens")
+                .gte("created_at", since)
+                .execute()
+                .data or []
+            )
+
+        today_rows     = fetch_costs(today_start)
+        yesterday_rows = fetch_costs(yesterday_start)
+        yesterday_rows = [r for r in yesterday_rows if r not in today_rows]  # exclude today
+        month_rows     = fetch_costs(month_start)
+
+        def sum_cost(rows): return sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+        def by_model(rows):
+            agg: dict[str, dict] = {}
+            for r in rows:
+                key = f"{r.get('provider','?')}/{r.get('model','?')}"
+                if key not in agg:
+                    agg[key] = {"cost": 0.0, "calls": 0}
+                agg[key]["cost"]  += float(r.get("estimated_cost_usd") or 0)
+                agg[key]["calls"] += 1
+            return sorted(agg.items(), key=lambda x: -x[1]["cost"])
+
+        today_total   = sum_cost(today_rows)
+        yesterday_total = sum_cost(yesterday_rows)
+        mtd_total     = sum_cost(month_rows)
+
+        # Planned amounts (approved 2026-05-02, current scale ~50 sends/day)
+        # Source: docs/FINANCIAL_PROJECTIONS.md
+        PLAN_CLAUDE_MONTHLY   = 21.0    # Claude API only
+        PLAN_TOTAL_MONTHLY    = 193.0   # All-in (Claude + Perplexity + Apollo + Infra)
+        PLAN_CLAUDE_DAILY     = PLAN_CLAUDE_MONTHLY / 30
+        BUDGET_CAP            = MONTHLY_API_BUDGET_USD  # $200 hard stop (Claude only)
+
+        # MTD Claude-only spend
+        mtd_claude = sum(
+            float(r.get("estimated_cost_usd") or 0)
+            for r in month_rows if r.get("provider") == "anthropic"
+        )
+        today_claude = sum(
+            float(r.get("estimated_cost_usd") or 0)
+            for r in today_rows if r.get("provider") == "anthropic"
+        )
+
+        # Check for banned model (web_search) sneaking back in
+        web_search_today = [r for r in today_rows if "web_search" in (r.get("model") or "")]
+        web_search_flag = ""
+        if web_search_today:
+            ws_cost = sum_cost(web_search_today)
+            web_search_flag = (
+                f"<p style='background:#fee2e2;padding:10px 14px;border-radius:6px;"
+                f"border-left:4px solid #dc2626;margin:12px 0'>"
+                f"<strong>ALERT: web_search triggered today</strong> — "
+                f"{len(web_search_today)} calls, ${ws_cost:.2f}. "
+                f"This model was disabled on 2026-05-02. Investigate immediately.</p>"
+            )
+
+        # Sends today
+        sends_result = (
+            client.table("outreach_drafts")
+            .select("id", count="exact")
+            .gte("sent_at", today_start)
+            .execute()
+        )
+        sends_today = sends_result.count or 0
+
+        # MTD sends
+        sends_mtd_result = (
+            client.table("outreach_drafts")
+            .select("id", count="exact")
+            .gte("sent_at", month_start)
+            .execute()
+        )
+        sends_mtd = sends_mtd_result.count or 0
+
+        # Drafts pending approval
+        pending_result = (
+            client.table("outreach_drafts")
+            .select("id", count="exact")
+            .eq("approval_status", "pending")
+            .execute()
+        )
+        pending = pending_result.count or 0
+
+        # Budget pct
+        budget_pct = (mtd_claude / BUDGET_CAP * 100) if BUDGET_CAP else 0
+        budget_color = "#16a34a" if budget_pct < 60 else "#d97706" if budget_pct < 85 else "#dc2626"
+
+        # Variance helpers
+        def variance_html(actual, plan, label=""):
+            if plan == 0:
+                return ""
+            diff = actual - plan
+            pct = (diff / plan * 100)
+            color = "#16a34a" if diff <= 0 else "#dc2626"
+            sign = "+" if diff > 0 else ""
+            return f"<span style='color:{color};font-size:12px'> ({sign}{pct:.0f}% vs plan{' ' + label if label else ''})</span>"
+
+        # Model breakdown rows for today
+        model_rows_html = ""
+        for model_key, stats in by_model(today_rows)[:6]:
+            flag = " <span style='color:#dc2626;font-size:11px'>DISABLED</span>" if "web_search" in model_key else ""
+            model_rows_html += (
+                f"<tr><td style='padding:6px 12px;border-top:1px solid #e5e7eb;font-size:13px'>"
+                f"{model_key}{flag}</td>"
+                f"<td style='text-align:right;padding:6px 12px;border-top:1px solid #e5e7eb;font-size:13px'>"
+                f"{stats['calls']}</td>"
+                f"<td style='text-align:right;padding:6px 12px;border-top:1px solid #e5e7eb;font-size:13px'>"
+                f"${stats['cost']:.4f}</td></tr>"
+            )
+
+        date_str = now.strftime("%A, %B %-d, %Y")
+        html = f"""
+<html><body style="font-family:-apple-system,sans-serif;max-width:580px;margin:0 auto;color:#111;padding:20px">
+
+<h2 style="color:#1a56db;margin-bottom:2px">ProspectIQ — Daily Financial Summary</h2>
+<p style="color:#6b7280;margin-top:0;margin-bottom:20px">{date_str}</p>
+
+{web_search_flag}
+
+<h3 style="margin-bottom:8px;font-size:15px">Claude API Spend (controlled budget)</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <tr style="background:#f3f4f6">
+    <th style="text-align:left;padding:8px 12px;font-size:13px">Period</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">Actual</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">Plan</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">Variance</th>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Today</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>${today_claude:.4f}</strong></td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#6b7280">${PLAN_CLAUDE_DAILY:.2f}</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">
+      {f'<span style="color:#16a34a">Under</span>' if today_claude <= PLAN_CLAUDE_DAILY else f'<span style="color:#dc2626">+${today_claude - PLAN_CLAUDE_DAILY:.4f}</span>'}
+    </td>
+  </tr>
+  <tr style="background:#f9fafb">
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Month-to-date</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>${mtd_claude:.2f}</strong></td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#6b7280">${PLAN_CLAUDE_MONTHLY:.2f}</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">
+      {f'<span style="color:#16a34a">Under</span>' if mtd_claude <= PLAN_CLAUDE_MONTHLY else f'<span style="color:#dc2626">+${mtd_claude - PLAN_CLAUDE_MONTHLY:.2f} over plan</span>'}
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Budget cap ({BUDGET_CAP:.0f}/mo)</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb" colspan="2">
+      <strong style="color:{budget_color}">${mtd_claude:.2f} used ({budget_pct:.0f}%)</strong>
+      &nbsp;·&nbsp; ${BUDGET_CAP - mtd_claude:.2f} remaining
+    </td>
+    <td></td>
+  </tr>
+</table>
+
+<h3 style="margin-bottom:8px;font-size:15px">Today's API Calls by Model</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <tr style="background:#f3f4f6">
+    <th style="text-align:left;padding:6px 12px;font-size:13px">Model</th>
+    <th style="text-align:right;padding:6px 12px;font-size:13px">Calls</th>
+    <th style="text-align:right;padding:6px 12px;font-size:13px">Cost</th>
+  </tr>
+  {model_rows_html if model_rows_html else '<tr><td colspan="3" style="padding:8px 12px;color:#9ca3af;font-size:13px">No API calls recorded today</td></tr>'}
+</table>
+
+<h3 style="margin-bottom:8px;font-size:15px">Pipeline Activity</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <tr style="background:#f3f4f6">
+    <th style="text-align:left;padding:8px 12px;font-size:13px">Metric</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">Today</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">MTD</th>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Emails sent</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{sends_today}</strong></td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">{sends_mtd}</td>
+  </tr>
+  <tr style="background:#f9fafb">
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Drafts pending your approval</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb" colspan="2"><strong style="color:#1a56db">{pending}</strong></td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Cost per email sent (MTD)</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb" colspan="2">
+      {'${:.4f}'.format(mtd_total / sends_mtd) if sends_mtd else '—'}
+    </td>
+  </tr>
+</table>
+
+<p style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;margin-top:20px">
+  Planned costs from docs/FINANCIAL_PROJECTIONS.md (approved 2026-05-02, current scale ~50 sends/day).
+  Budget cap: ${BUDGET_CAP:.0f}/mo Anthropic API hard stop.
+  Apollo ($114/mo flat) and Railway (~$50/mo) billed separately — not shown here.
+  This report runs daily at 7am Chicago for 30 days, then switches to weekly.
+</p>
+</body></html>"""
+
+        asyncio.run(send_email(
+            to="avi@digitillis.io",
+            subject=f"[ProspectIQ] Daily spend: ${today_claude:.4f} today · ${mtd_claude:.2f} MTD · {sends_today} sent · {pending} pending approval",
+            html_body=html,
+        ))
+        logger.info("Daily financial summary sent. Today Claude: $%.4f, MTD: $%.2f", today_claude, mtd_claude)
+    except Exception as e:
+        logger.error("Daily financial summary failed: %s", e, exc_info=True)
+
+
 def _run_auto_action_low_priority() -> None:
     """Hourly job: auto-archive soft_no items pending for >72 hours."""
     try:
@@ -1601,6 +1827,15 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="weekly_cost_summary",
         )
+        # Daily financial summary: 7am Chicago every day for first 30 days post cost-optimisation.
+        # Shows actual vs planned Claude API spend, model breakdown, sends, and pending approvals.
+        # Switches to weekly after 2026-06-02.
+        scheduler.add_job(
+            _run_daily_financial_summary, "cron",
+            hour=7, minute=0,
+            timezone="America/Chicago",
+            id="daily_financial_summary",
+        )
         # Daily GTM brief: 6am Chicago Mon-Fri — Claude-written analysis + email to Avi
         scheduler.add_job(
             _run_daily_report, "cron",
@@ -1626,6 +1861,7 @@ async def lifespan(app: FastAPI):
             "research 9/12/3/6pm → qualification +30m → enrichment 9:45am+2:45pm Mon-Fri (Apollo credit-gated), "
             "process_due/hitl_auto_archive every 1h, poll_instantly every 6h, "
             "personalization_refresh/jit_pregenerate every 24h, "
+            "daily_financial_summary 7am daily (first 30 days post 2026-05-02 cost optimisation), "
             "daily_report 6am Mon-Fri, "
             "weekly_post_send_audit Sun 7am, weekly_contact_backup Sat 5am, "
             "weekly_cost_summary Mon 8am, weekly_signal_scrapers Sat 6am"
