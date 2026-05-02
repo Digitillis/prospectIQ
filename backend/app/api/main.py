@@ -839,8 +839,7 @@ def _check_budget(job_name: str) -> bool:
 
 def _qualify_workspace(ws: dict) -> None:
     from backend.app.agents.qualification import QualificationAgent
-    from backend.app.core.database import Database
-    agent = QualificationAgent(db=Database(workspace_id=ws["id"]))
+    agent = QualificationAgent(workspace_id=ws["id"])
     result = agent.run(limit=300)
     logger.info("Qualification [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
 
@@ -899,8 +898,7 @@ def _research_workspace(ws: dict) -> None:
     if not workspace_budget_ok(ws, "research"):
         return
     from backend.app.agents.research import ResearchAgent
-    from backend.app.core.database import Database
-    agent = ResearchAgent(db=Database(workspace_id=ws["id"]))
+    agent = ResearchAgent(workspace_id=ws["id"])
     result = agent.run(batch_size=150)
     logger.info("Research [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
 
@@ -1155,8 +1153,7 @@ def _enrich_workspace(ws: dict) -> None:
         run_limit = 200
 
     from backend.app.agents.enrichment import EnrichmentAgent
-    from backend.app.core.database import Database
-    agent = EnrichmentAgent(db=Database(workspace_id=ws["id"]))
+    agent = EnrichmentAgent(workspace_id=ws["id"])
     result = agent.run(limit=run_limit)
     logger.info(
         "Enrichment [%s]: processed=%d errors=%d (cap=%s used=%d)",
@@ -1216,8 +1213,7 @@ def _fb_discovery_workspace(ws: dict) -> None:
     if not workspace_budget_ok(ws, "fb_discovery"):
         return
     from backend.app.agents.discovery import DiscoveryAgent
-    from backend.app.core.database import Database
-    agent = DiscoveryAgent(db=Database(workspace_id=ws["id"]))
+    agent = DiscoveryAgent(workspace_id=ws["id"])
     result = agent.run(
         campaign_name="fsma204-fb",
         tiers=["fb_dairy", "fb_bev", "fb_seafood", "fb_meat", "fb_produce", "fb_bakery"],
@@ -1243,8 +1239,7 @@ def _mfg_discovery_workspace(ws: dict) -> None:
     if not workspace_budget_ok(ws, "mfg_discovery"):
         return
     from backend.app.agents.discovery import DiscoveryAgent
-    from backend.app.core.database import Database
-    agent = DiscoveryAgent(db=Database(workspace_id=ws["id"]))
+    agent = DiscoveryAgent(workspace_id=ws["id"])
     result = agent.run(
         campaign_name="mfg-fsma",
         tiers=["mfg1", "mfg2", "mfg3", "pmfg1"],
@@ -1344,8 +1339,7 @@ def _run_signal_monitor() -> None:
             if not workspace_budget_ok(ws, "signal_monitor"):
                 return
             from backend.app.agents.signal_monitor import SignalMonitorAgent
-            from backend.app.core.database import Database
-            agent = SignalMonitorAgent(db=Database(workspace_id=ws["id"]))
+            agent = SignalMonitorAgent(workspace_id=ws["id"])
             result = agent.run(limit=50, min_pqs=30)
             logger.info(
                 "Signal monitor [%s]: refreshed=%d skipped=%d errors=%d",
@@ -1364,8 +1358,7 @@ def _run_reengagement() -> None:
 
         def _reengagement_workspace(ws: dict) -> None:
             from backend.app.agents.reengagement import ReengagementAgent
-            from backend.app.core.database import Database
-            agent = ReengagementAgent(db=Database(workspace_id=ws["id"]))
+            agent = ReengagementAgent(workspace_id=ws["id"])
             result = agent.run(limit=50)
             logger.info(
                 "Reengagement [%s]: requeued=%d errors=%d",
