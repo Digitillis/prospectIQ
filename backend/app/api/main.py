@@ -160,9 +160,7 @@ def _send_approved_workspace(ws: dict) -> None:
     if not get_settings().send_enabled:
         return
     from backend.app.agents.engagement import EngagementAgent
-    from backend.app.core.database import Database
-    db = Database(workspace_id=ws["id"])
-    agent = EngagementAgent(db=db)
+    agent = EngagementAgent(workspace_id=ws["id"])
     result = agent.run(action="send_approved")
     logger.info("Send [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
     # Reactive: consumed pipeline capacity — check depth immediately
@@ -513,8 +511,7 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             original_draft_id = draft_row[0]["id"] if draft_row else None
                             if original_draft_id:
                                 from backend.app.agents.reply import ReplyAgent
-                                from backend.app.core.database import Database as _Database
-                                reply_agent = ReplyAgent(db=_Database(workspace_id=ws_id))
+                                reply_agent = ReplyAgent(workspace_id=ws_id)
                                 reply_result = reply_agent.run(reply_data={
                                     "company_id": company_id,
                                     "contact_id": contact_id,
@@ -873,10 +870,8 @@ def _draft_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_budget_ok
     if not workspace_budget_ok(ws, "drafting"):
         return
-    from backend.app.core.database import Database
     from backend.app.agents.outreach import OutreachAgent
-    db = Database(workspace_id=ws["id"])
-    agent = OutreachAgent(db=db)
+    agent = OutreachAgent(workspace_id=ws["id"])
     result = agent.run(limit=50)
     logger.info(
         "Draft generation [%s]: drafted=%d skipped=%d errors=%d",
@@ -1274,9 +1269,10 @@ def _learning_workspace(ws: dict) -> None:
     # Graduated rollout: env var explicit override wins; otherwise auto-apply
     # turns on once cumulative outcomes for this workspace cross the threshold
     # (LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD = 50).
-    db = Database(workspace_id=ws["id"])
-    auto_apply = _resolve_auto_apply(db, ws["id"])
-    agent = LearningAgent(db=db)
+    from backend.app.core.database import Database
+    _db = Database(workspace_id=ws["id"])
+    auto_apply = _resolve_auto_apply(_db, ws["id"])
+    agent = LearningAgent(workspace_id=ws["id"])
     result = agent.run(period_days=30, auto_apply=auto_apply)
     logger.info(
         "Weekly learning [%s]: processed=%d errors=%d (auto_apply=%s)",
@@ -1302,11 +1298,9 @@ def _run_weekly_post_send_audit() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
 
-        def _audit_workspace(workspace_id: str) -> None:
+        def _audit_workspace(ws: dict) -> None:
             from backend.app.agents.post_send_audit import PostSendAuditAgent
-            from backend.app.core.database import DatabaseClient
-            db = DatabaseClient(workspace_id=workspace_id)
-            PostSendAuditAgent(db=db).run(days=7)
+            PostSendAuditAgent(workspace_id=ws["id"]).run(days=7)
 
         for_each_workspace(_audit_workspace, "post_send_audit")
     except Exception as e:
@@ -1318,11 +1312,9 @@ def _run_weekly_contact_backup() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
 
-        def _backup_workspace(workspace_id: str) -> None:
+        def _backup_workspace(ws: dict) -> None:
             from backend.app.agents.contact_backup import ContactBackupAgent
-            from backend.app.core.database import DatabaseClient
-            db = DatabaseClient(workspace_id=workspace_id)
-            ContactBackupAgent(db=db).run()
+            ContactBackupAgent(workspace_id=ws["id"]).run()
 
         for_each_workspace(_backup_workspace, "contact_backup")
     except Exception as e:
