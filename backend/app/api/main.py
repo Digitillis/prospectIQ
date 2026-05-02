@@ -1481,18 +1481,19 @@ def _run_daily_financial_summary() -> None:
         yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
         def fetch_costs(since: str) -> list[dict]:
-            return (
+            # Exclude Apollo: its estimated_cost_usd is a fake hardcoded figure ($0.0285/call),
+            # not real billing. Apollo credit data comes from the API directly below.
+            rows = (
                 client.table("api_costs")
                 .select("provider,model,estimated_cost_usd,input_tokens,output_tokens")
                 .gte("created_at", since)
                 .execute()
                 .data or []
             )
+            return [r for r in rows if r.get("provider") != "apollo"]
 
-        today_rows     = fetch_costs(today_start)
-        yesterday_rows = fetch_costs(yesterday_start)
-        yesterday_rows = [r for r in yesterday_rows if r not in today_rows]  # exclude today
-        month_rows     = fetch_costs(month_start)
+        today_rows  = fetch_costs(today_start)
+        month_rows  = fetch_costs(month_start)
 
         def sum_cost(rows): return sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
         def by_model(rows):
@@ -1504,6 +1505,19 @@ def _run_daily_financial_summary() -> None:
                 agg[key]["cost"]  += float(r.get("estimated_cost_usd") or 0)
                 agg[key]["calls"] += 1
             return sorted(agg.items(), key=lambda x: -x[1]["cost"])
+
+        # Apollo credits — real data from Apollo API (not estimated from api_costs)
+        apollo_used = apollo_remaining = apollo_limit = None
+        try:
+            from backend.app.integrations.apollo import ApolloClient
+            workspace_id = "00000000-0000-0000-0000-000000000001"
+            with ApolloClient(workspace_id=workspace_id) as ac:
+                info = ac.get_credits()
+                apollo_used      = info.get("credits_used", 0)
+                apollo_limit     = info.get("credit_limit", 0)
+                apollo_remaining = apollo_limit - apollo_used
+        except Exception:
+            pass
 
         today_total   = sum_cost(today_rows)
         yesterday_total = sum_cost(yesterday_rows)
@@ -1670,11 +1684,33 @@ def _run_daily_financial_summary() -> None:
   </tr>
 </table>
 
+<h3 style="margin-bottom:8px;font-size:15px">Apollo Credits (live from API)</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <tr style="background:#f3f4f6">
+    <th style="text-align:left;padding:8px 12px;font-size:13px">Metric</th>
+    <th style="text-align:right;padding:8px 12px;font-size:13px">Value</th>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Credits used (billing period)</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{apollo_used if apollo_used is not None else '—'}</strong></td>
+  </tr>
+  <tr style="background:#f9fafb">
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Credits remaining</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">
+      <strong style="color:{'#16a34a' if apollo_remaining and apollo_remaining > 1000 else '#d97706' if apollo_remaining else '#6b7280'}">{f'{apollo_remaining:,} of {apollo_limit:,}' if apollo_remaining is not None else '—'}</strong>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Plan</td>
+    <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#6b7280">Professional · $114/mo · 4,000 credits/mo</td>
+  </tr>
+</table>
+
 <p style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;margin-top:20px">
-  Planned costs from docs/FINANCIAL_PROJECTIONS.md (approved 2026-05-02, current scale ~50 sends/day).
-  Budget cap: ${BUDGET_CAP:.0f}/mo Anthropic API hard stop.
-  Apollo ($114/mo flat) and Railway (~$50/mo) billed separately — not shown here.
-  This report runs daily at 7am Chicago for 30 days, then switches to weekly.
+  Claude costs: real token counts from api_costs table. Apollo credits: live from Apollo API.
+  Railway (~$50/mo) billed separately and not tracked here.
+  Planned figures from docs/FINANCIAL_PROJECTIONS.md (approved 2026-05-02, ~50 sends/day baseline).
+  This report runs daily at 7am Chicago for 30 days (through 2026-06-02), then switches to weekly.
 </p>
 </body></html>"""
 
