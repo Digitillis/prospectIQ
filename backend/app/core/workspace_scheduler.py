@@ -159,6 +159,50 @@ def workspace_budget_ok(workspace: dict, job_name: str) -> bool:
     return True
 
 
+def research_budget_ok(workspace: dict) -> bool:
+    """Return True if research-specific monthly spend is under the research cap.
+
+    Cap is read from workspace.settings.research_monthly_budget_usd (default: no cap).
+    Spend is calculated from api_costs rows whose batch_id starts with 'research'.
+    """
+    settings = workspace.get("settings") or {}
+    cap = settings.get("research_monthly_budget_usd")
+    if cap is None:
+        return True  # No cap configured — allow
+    cap = float(cap)
+    ws_id = workspace["id"]
+    try:
+        from backend.app.core.database import get_supabase_client
+        from datetime import datetime, timezone
+        client = get_supabase_client()
+        month_start = datetime.now(timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+        rows = (
+            client.table("api_costs")
+            .select("estimated_cost_usd")
+            .eq("workspace_id", ws_id)
+            .gte("created_at", month_start)
+            .like("batch_id", "research%")
+            .execute()
+        ).data or []
+        research_spend = sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+        if research_spend >= cap:
+            logger.warning(
+                "research: workspace %s research budget exhausted ($%.2f / $%.2f) — pausing research",
+                workspace.get("name", ws_id), research_spend, cap,
+            )
+            return False
+        logger.info(
+            "research: workspace %s research spend $%.2f / $%.2f",
+            workspace.get("name", ws_id), research_spend, cap,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("research_budget_ok check failed (%s) — allowing research", exc)
+        return True  # Fail open
+
+
 def get_total_daily_capacity(workspace_id: str) -> int:
     """Return total daily send capacity for a workspace.
 

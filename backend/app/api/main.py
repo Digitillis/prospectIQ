@@ -889,8 +889,10 @@ def _run_draft_generation() -> None:
 
 
 def _research_workspace(ws: dict) -> None:
-    from backend.app.core.workspace_scheduler import workspace_budget_ok
+    from backend.app.core.workspace_scheduler import workspace_budget_ok, research_budget_ok
     if not workspace_budget_ok(ws, "research"):
+        return
+    if not research_budget_ok(ws):
         return
     from backend.app.agents.research import ResearchAgent
     agent = ResearchAgent(workspace_id=ws["id"])
