@@ -237,8 +237,8 @@ async def notify_hot_prospect(
     body = f"""
     {_heading(f"Hot prospect detected: {company_name}")}
     {_paragraph(
-        f"{company_name} just scored <strong>{pqs_score}</strong> on the Prospect Quality Score — "
-        f"well above the 70-point hot threshold. Time to personalise your outreach."
+        f"{company_name} scored <strong>{pqs_score} / 100</strong> on the Prospect Quality Score "
+        f"(hot threshold: 70+). Time to personalise your outreach."
     )}
     <p style="margin:0 0 8px;">
       {_badge(f"PQS {pqs_score}", color=score_color)}

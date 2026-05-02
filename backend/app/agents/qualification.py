@@ -145,7 +145,7 @@ class QualificationAgent(BaseAgent):
                 self.db.update_company(company_id, update_data)
 
                 # Send hot-prospect email notification
-                if pqs.classification in ("hot_prospect", "high_priority") and self.db.workspace_id:
+                if pqs.classification == "hot_prospect" and self.db.workspace_id:
                     try:
                         from backend.app.core.notifications import notify_hot_prospect
                         ws_row = (
