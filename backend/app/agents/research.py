@@ -19,9 +19,9 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 # Sonnet for high-PQS, Haiku for low-PQS firmographic match.
-# Threshold is firmographic-only PQS (the cheap dimension). Companies whose
-# firmographic match alone is strong get the full research treatment.
-RESEARCH_PQS_PROMOTE_THRESHOLD = 6
+# Threshold raised to 20 (out of 30 max) so Sonnet fires only for genuinely
+# strong prospects. At threshold=6 almost every company qualified, inflating cost.
+RESEARCH_PQS_PROMOTE_THRESHOLD = 20
 SONNET_MODEL = "claude-sonnet-4-6"
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
@@ -362,29 +362,13 @@ class ResearchAgent(BaseAgent):
                     **({"trigger_types": [e.get("type") for e in trigger_events]} if trigger_events else {}),
                 }
 
-                # Web-search trigger event extraction — only for high-PQS where
-                # personalization actually matters. Adds factual recent-news hooks
-                # that go beyond Claude's training cutoff.
+                # Web-search augmentation DISABLED (2026-05-02).
+                # Cost: $0.098/call vs $0.013/Perplexity — 7.5x premium with no reply
+                # rate data to justify it. Re-enable via workspace setting
+                # web_search_enabled=true once reply data proves ROI.
+                # Trigger events are already captured in the Perplexity + Sonnet research
+                # pass above (RESEARCH_USER prompt explicitly asks for trigger events).
                 personalization_hooks = list(structured.get("personalization_hooks", []) or [])
-                pqs_firm = company.get("pqs_firmographic") or company.get("pqs_firm") or 0
-                try:
-                    pqs_firm_int = int(pqs_firm)
-                except (TypeError, ValueError):
-                    pqs_firm_int = 0
-                if pqs_firm_int >= RESEARCH_PQS_PROMOTE_THRESHOLD and company.get("name"):
-                    web_triggers = self._extract_trigger_events_with_web(
-                        client=client, company_name=company["name"]
-                    )
-                    if web_triggers:
-                        # Merge into trigger_events + personalization_hooks
-                        for t in web_triggers:
-                            if t and t not in personalization_hooks:
-                                personalization_hooks.insert(0, t)  # prepend — more recent
-                        # Keep the first 3 web-sourced as the headline hooks
-                        logger.info(
-                            "Web search added %d trigger events for %s",
-                            len(web_triggers), company["name"],
-                        )
 
                 self.db.update_company(company_id, {
                     "research_summary": structured.get("company_description", ""),

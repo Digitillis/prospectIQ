@@ -318,9 +318,13 @@ class OutreachAgent(BaseAgent):
             sequence_step=sequence_step,
         )
 
-        # Call Claude
+        # Step-aware model routing: Sonnet for step-1 cold opens, Haiku for follow-ups.
+        from backend.app.core.model_router import get_model
+        _step_num = _step_to_int(sequence_step)
+        _draft_model = get_model("outreach_step1" if _step_num <= 1 else "outreach_step2plus")
+
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=_draft_model,
             max_tokens=600,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
@@ -328,7 +332,7 @@ class OutreachAgent(BaseAgent):
 
         self.track_cost(
             provider="anthropic",
-            model="claude-sonnet-4-6",
+            model=_draft_model,
             endpoint="/messages",
             company_id=company_id,
             input_tokens=response.usage.input_tokens,
@@ -472,8 +476,11 @@ class OutreachAgent(BaseAgent):
             pains=pains[:2],
         )
 
+        from backend.app.core.model_router import get_model
+        _score_model = get_model("draft_score")
+
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=_score_model,
             max_tokens=500,
             system=(
                 "You are a B2B outreach quality evaluator specializing in manufacturing sales. "
@@ -484,7 +491,7 @@ class OutreachAgent(BaseAgent):
 
         self.track_cost(
             provider="anthropic",
-            model="claude-sonnet-4-6",
+            model=_score_model,
             endpoint="/messages",
             company_id=draft.get("company_id"),
             input_tokens=response.usage.input_tokens,

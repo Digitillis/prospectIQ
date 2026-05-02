@@ -6,17 +6,19 @@ quality uplift is worth the cost.
 Cost profile (per 1M tokens, approximate):
   claude-haiku-4-5-20251001   $0.80 input / $4.00 output
   claude-sonnet-4-6           $3.00 input / $15.00 output
-  → Haiku is ~4× cheaper on input, ~3.75× cheaper on output.
+  → Haiku is ~6× cheaper per call at typical ProspectIQ token volumes.
 
-Task routing:
-  outreach      → Sonnet  (personalised cold emails — highest quality bar)
-  research      → Sonnet  (deep synthesis; errors here cascade downstream)
-  linkedin_msg  → Haiku   (short connection notes / DMs; constrained format)
-  thread_class  → Haiku   (intent classification, single-label output)
-  thread_gen    → Sonnet  (reply generation still benefits from quality)
-  content       → Sonnet  (thought leadership posts)
-  learning      → Sonnet  (analysis + recommendations)
-  default       → Sonnet  (fail-safe: prefer quality over cost when unsure)
+Approved routing policy (2026-05-02):
+  outreach_step1    → Sonnet  (cold opens — first impression, user cannot uplift)
+  outreach_step2plus → Haiku  (follow-ups — formulaic, prospect has context)
+  draft_score       → Haiku   (classification task, merged into draft call)
+  research          → Sonnet  (deep synthesis for high-PQS; Haiku for low-PQS via research.py)
+  linkedin_msg      → Haiku
+  thread_class      → Haiku
+  thread_gen        → Sonnet  (reply generation quality matters)
+  content           → Sonnet  (thought leadership)
+  learning          → Sonnet  (analysis + recommendations)
+  default           → Sonnet  (fail-safe)
 """
 
 from __future__ import annotations
@@ -26,19 +28,27 @@ HAIKU = "claude-haiku-4-5-20251001"
 
 # Explicit task → model mapping.  Add new task types here as needed.
 _TASK_MODEL: dict[str, str] = {
+    # Outreach drafts — step-aware routing
+    "outreach_step1": SONNET,         # Cold opens: first impression, highest quality bar
+    "outreach_step2plus": HAIKU,      # Follow-ups: shorter, formulaic, prospect has context
+    "draft_score": HAIKU,             # Quality scoring: classification task, merged into draft call
+    # Legacy key — kept for any callers not yet migrated
     "outreach": SONNET,
+    # Research
     "research": SONNET,
+    # Comms
     "linkedin_msg": HAIKU,
     "thread_class": HAIKU,
     "thread_gen": SONNET,
     "content": SONNET,
     "learning": SONNET,
-    # Phase 2-5 additions
-    "llm_qualify_title": HAIKU,       # Gate 3 title scoring — cheap classification
-    "llm_qualify_research": SONNET,   # Gates 4-7 — requires reasoning
-    "campaign_plan": SONNET,          # Campaign planning — quality matters
-    "template_compose": SONNET,       # Variant template generation
-    "confidence_summary": HAIKU,      # Summarising learnings — simple extraction
+    # LLM qualification gates
+    "llm_qualify_title": HAIKU,
+    "llm_qualify_research": SONNET,
+    # Planning
+    "campaign_plan": SONNET,
+    "template_compose": SONNET,
+    "confidence_summary": HAIKU,
 }
 
 

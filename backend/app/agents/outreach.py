@@ -618,8 +618,11 @@ class OutreachAgent(BaseAgent):
                     # Call Claude
                     console.print(f"  [dim]{company_name} → {contact.get('full_name', 'Unknown')}...[/dim]")
 
+                    from backend.app.core.model_router import get_model
+                    _draft_model = get_model("outreach_step1" if sequence_step <= 1 else "outreach_step2plus")
+
                     response = client.messages.create(
-                        model="claude-sonnet-4-6",
+                        model=_draft_model,
                         max_tokens=1000,
                         system=_build_system_prompt(sequence_step=sequence_step),
                         messages=[{"role": "user", "content": prompt}],
@@ -629,7 +632,7 @@ class OutreachAgent(BaseAgent):
                     usage = response.usage
                     self.track_cost(
                         provider="anthropic",
-                        model="claude-sonnet-4-6",
+                        model=_draft_model,
                         endpoint="/messages",
                         company_id=company_id,
                         input_tokens=usage.input_tokens,
