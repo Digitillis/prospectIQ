@@ -808,7 +808,7 @@ def _check_budget(job_name: str) -> bool:
                 import asyncio
                 from backend.app.core.notifications import send_email
                 asyncio.run(send_email(
-                    to="avanish.mehrotra@gmail.com",
+                    to="avi@digitillis.io",
                     subject=f"[ProspectIQ] Budget alert: ${spend:.0f} of ${MONTHLY_API_BUDGET_USD:.0f} used this month — hold or increase?",
                     html_body=(
                         f"<html><body style='font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;color:#111;padding:20px'>"
@@ -1128,7 +1128,7 @@ def _run_pipeline_monitor_email() -> None:
 </body></html>"""
 
         asyncio.run(send_email(
-            to="avanish.mehrotra@gmail.com",
+            to="avi@digitillis.io",
             subject=f"ProspectIQ pipeline: {outreach:,} outreach-ready | {qualified:,} qualified | {discovered:,} in queue",
             html_body=html,
         ))
@@ -1184,7 +1184,7 @@ def _enrich_workspace(ws: dict) -> None:
                 import asyncio
                 from backend.app.core.notifications import send_email
                 asyncio.run(send_email(
-                    to="avanish.mehrotra@gmail.com",
+                    to="avi@digitillis.io",
                     subject=f"ProspectIQ: enrichment cap of {cap} companies reached",
                     html_body=(
                         f"<p>The enrichment run has processed <strong>{new_count}</strong> companies "
@@ -1204,10 +1204,20 @@ def _run_enrichment() -> None:
     Controlled by workspace settings:
       enrichment_company_cap (int): pause after this many companies (None = unlimited)
       enrichment_companies_processed (int): running total; reset to 0 to start a new batch
+
+    Fast-path: immediately triggers draft generation after enrichment so companies
+    with newly found contacts are drafted within ~2 min instead of waiting up to
+    30 min for the next draft cron tick. Mirrors the research→qualify→draft chain.
     """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_enrich_workspace, "enrichment")
+        # Fast-path: enrichment → draft generation
+        # Closes the 30-min gap between a contact being found and a draft being created.
+        try:
+            _run_draft_generation()
+        except Exception as exc:
+            logger.warning("enrichment → draft fast-path failed: %s", exc)
     except Exception as e:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
 

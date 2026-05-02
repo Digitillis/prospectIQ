@@ -763,12 +763,16 @@ async def resend_webhook(
 
         # --- Handle each event type ---
 
+        # sender_email is in data.from for all Resend events
+        sender_email: str = data.get("from") or ""
+
         if event_type == "email.delivered":
-            # Update resend_status on the draft (by contact_id fallback since message_id may be null)
             try:
+                update = {"resend_status": "delivered"}
+                if sender_email:
+                    update["sender_email"] = sender_email
                 q = db._filter_ws(
-                    db.client.table("outreach_drafts")
-                    .update({"resend_status": "delivered"})
+                    db.client.table("outreach_drafts").update(update)
                 )
                 if draft_row:
                     q = q.eq("id", draft_row["id"])
@@ -783,6 +787,21 @@ async def resend_webhook(
             action = "opened" if event_type == "email.opened" else "clicked"
             count_col = "open_count" if action == "opened" else "click_count"
             time_col = "last_opened_at" if action == "opened" else "last_clicked_at"
+            draft_time_col = "opened_at" if action == "opened" else "clicked_at"
+
+            # Stamp timestamp on draft
+            try:
+                draft_update = {draft_time_col: now_iso}
+                if sender_email:
+                    draft_update["sender_email"] = sender_email
+                q = db._filter_ws(db.client.table("outreach_drafts").update(draft_update))
+                if draft_row:
+                    q = q.eq("id", draft_row["id"])
+                elif contact_id:
+                    q = q.eq("contact_id", contact_id).not_.is_("sent_at", "null")
+                q.execute()
+            except Exception as exc:
+                logger.debug("Draft timestamp update failed: %s", exc)
 
             # Increment signal counter on contact
             try:
@@ -820,6 +839,7 @@ async def resend_webhook(
                     "source": "resend_webhook",
                     "metadata": {
                         "resend_message_id": resend_message_id,
+                        "sender_email": sender_email,
                         "subject": data.get("subject"),
                     },
                 })
@@ -831,8 +851,23 @@ async def resend_webhook(
         elif event_type in ("email.bounced", "email.complained"):
             action = "bounced" if event_type == "email.bounced" else "complained"
             dnc_reason = "bounced" if action == "bounced" else "spam_complaint"
+            draft_time_col = "bounced_at" if action == "bounced" else "complained_at"
 
             try:
+                # Stamp draft with bounce/complaint time + sender
+                try:
+                    draft_update = {draft_time_col: now_iso}
+                    if sender_email:
+                        draft_update["sender_email"] = sender_email
+                    q = db._filter_ws(db.client.table("outreach_drafts").update(draft_update))
+                    if draft_row:
+                        q = q.eq("id", draft_row["id"])
+                    elif contact_id:
+                        q = q.eq("contact_id", contact_id).not_.is_("sent_at", "null")
+                    q.execute()
+                except Exception as exc:
+                    logger.debug("Draft bounce stamp failed: %s", exc)
+
                 db.update_contact(contact_id, {"outreach_state": action})
                 if company_id:
                     db.update_company(company_id, {"status": "bounced"}, allow_downgrade=True)

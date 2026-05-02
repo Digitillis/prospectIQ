@@ -33,6 +33,7 @@ sender:
   email: "avi@digitillis.io"
   phone: "224.355.4500"
   website: "www.digitillis.com"
+  # Default signature — used from step 2 onwards (links permitted).
   signature: |
     Best regards,
     Avanish
@@ -40,7 +41,17 @@ sender:
     Avanish Mehrotra
     Founder & CEO
     [Digitillis](https://www.digitillis.com) | avi@digitillis.io | 224.355.4500
-    Check [Demo](http://demo.digitillis.com)
+    Check [Preview](http://demo.digitillis.com)
+
+  # Step 1 signature — NO links. Links in first cold emails trigger spam filters.
+  # The outreach agent MUST use this variant for all step 1 / initial_outreach emails.
+  step_1_signature: |
+    Best regards,
+    Avanish
+
+    Avanish Mehrotra
+    Founder & CEO, Digitillis
+    avi@digitillis.io | 224.355.4500
 
 
 # Voice and tone instructions — injected into every outreach prompt
@@ -213,9 +224,36 @@ max_words:
   step_4: 100
   default: 150
 
+# Opening line rules — enforced at draft generation time
+opening_line_rules: |
+  HARD RULE: The opening sentence MUST reference a specific, verifiable fact about THIS
+  company — a named acquisition, a specific equipment class they run, a customer they
+  serve, a regulatory event, or a specific product line. The fact must be something that
+  could only be written about this company, not any company in their sector.
+
+  Model example (Waupaca): "Bain took Proterial private in 2023 — that level of PE
+  scrutiny usually means every maintenance dollar gets interrogated."
+
+  ANTI-PATTERN (hard block): Do NOT open with a category observation about the industry
+  or equipment type in general. Examples of forbidden openers:
+  - "Roll forming lines running at high utilization don't give much warning."
+  - "Plants running CNC equipment at high volumes face significant downtime risk."
+  - "X equipment is hard to maintain."
+  - "Plants running Y see Z."
+  These read as templated and signal no research was done. They are rejected.
+
 # Subject line rules
 subject_line_rules: |
   - Under 50 characters
   - Must reference their company name or specific situation
   - No generic subjects like "Quick question" or "Following up"
   - No ALL CAPS or excessive punctuation
+  - ROTATION RULE: No more than 1 in 3 subjects in a company's sequence may use the
+    "[asset class] + downtime + at + [company]" formula (e.g. "CNC downtime at Camcraft").
+    Use one of these alternative formulas for the remaining steps:
+    (a) Trigger event hook: "[Company]: [specific event implication]"
+        Example: "Waupaca: post-acquisition ops scrutiny"
+    (b) Business consequence hook: "[Company] [downstream business risk]"
+        Example: "Central States dealer network risk"
+    (c) Technical specificity hook: "[specific technical term] at [Company]"
+        Example: "Spindle health at Camcraft's CNC lines"

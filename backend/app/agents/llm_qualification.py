@@ -114,10 +114,21 @@ class LLMQualificationAgent(BaseAgent):
                     contact=contact,
                 )
                 # Persist result to companies table
-                self.db.client.table("companies").update({
+                _llm_update: dict = {
                     "llm_qualification_result": qual_result,
                     "llm_qualified_at": datetime.now(timezone.utc).isoformat(),
-                }).eq("id", company_id).execute()
+                    "qualification_decision": "qualified" if qual_result.get("passed") else "disqualified",
+                }
+                if not qual_result.get("passed"):
+                    _llm_update["disqualification_reason"] = "llm_gate_failed"
+                    # Preserve the specific gate that failed in qualification_notes
+                    fail_gate = qual_result.get("fail_gate") or "unknown"
+                    _llm_update["qualification_notes"] = (
+                        f"LLM gate failed: {fail_gate}. "
+                        f"Score: {qual_result.get('score', 0)}. "
+                        f"Reasoning: {str(qual_result.get('reasoning', ''))[:200]}"
+                    )
+                self.db.client.table("companies").update(_llm_update).eq("id", company_id).execute()
 
                 result.processed += 1
                 result.add_detail(

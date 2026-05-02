@@ -395,7 +395,7 @@ def _render_html(narrative: str, m: dict, date_str: str) -> str:
 def run_daily_report() -> bool:
     """Generate and email the daily GTM brief. Returns True on success."""
     settings = get_settings()
-    recipient = getattr(settings, "report_recipient_email", "") or "avanish.mehrotra@gmail.com"
+    recipient = getattr(settings, "report_recipient_email", "") or "avi@digitillis.io"
 
     try:
         client = get_supabase_client()

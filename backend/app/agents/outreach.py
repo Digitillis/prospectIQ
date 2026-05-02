@@ -89,11 +89,14 @@ def _is_wrong_persona(contact: dict) -> bool:
 
     return False
 
-def _build_system_prompt() -> str:
+def _build_system_prompt(sequence_step: int = 1) -> str:
     """Build the outreach system prompt from outreach_guidelines.yaml + offer_context.yaml.
 
     Reads both YAMLs every time so dashboard edits are picked up
     immediately without restarting the server.
+
+    Args:
+        sequence_step: The sequence step number. Step 1 uses a link-free signature.
     """
     try:
         g = get_outreach_guidelines()
@@ -119,7 +122,14 @@ def _build_system_prompt() -> str:
     banned_chars = g.get("banned_characters", [])
     facts = g.get("product_facts", g.get("digitillis_facts", []))
     subject_rules = g.get("subject_line_rules", "")
-    signature = sender.get("signature", "")
+    opening_rules = g.get("opening_line_rules", "")
+
+    # Step 1 uses a plain-text, link-free signature to avoid spam filters.
+    # Links are permitted from step 2 onwards.
+    if sequence_step <= 1:
+        signature = sender.get("step_1_signature", sender.get("signature", ""))
+    else:
+        signature = sender.get("signature", "")
 
     parts = [
         f"You are writing cold outreach emails on behalf of {sender.get('name', 'the sender')}, "
@@ -127,6 +137,9 @@ def _build_system_prompt() -> str:
         "",
         "VOICE & TONE:",
         voice,
+        "",
+        "OPENING LINE RULES (hard — not a preference):",
+        opening_rules,
         "",
         "STRUCTURE (every email must follow this):",
         structure,
@@ -608,7 +621,7 @@ class OutreachAgent(BaseAgent):
                     response = client.messages.create(
                         model="claude-sonnet-4-6",
                         max_tokens=1000,
-                        system=_build_system_prompt(),
+                        system=_build_system_prompt(sequence_step=sequence_step),
                         messages=[{"role": "user", "content": prompt}],
                     )
 

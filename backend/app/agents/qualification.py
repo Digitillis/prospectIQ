@@ -90,6 +90,8 @@ class QualificationAgent(BaseAgent):
                 # For discovered companies (no research yet) only apply the
                 # firmographic pre-filter using pre_research_thresholds.
                 # Full PQS classification uses post_research thresholds.
+                disq_reason: str | None = None
+
                 if is_discovered:
                     pre_thresholds = config.get("pre_research_thresholds", {})
                     disqualify_max = pre_thresholds.get("disqualify", {}).get("max_score", 4)
@@ -97,6 +99,7 @@ class QualificationAgent(BaseAgent):
                     if pqs.firmographic <= disqualify_max:
                         pqs.classification = "unqualified"
                         new_status = "disqualified"
+                        disq_reason = "firmographic_score_too_low"
                         priority = False
                         pqs.notes = (
                             f"Failed firmographic pre-filter (score {pqs.firmographic} "
@@ -117,6 +120,7 @@ class QualificationAgent(BaseAgent):
                         # Research returned nothing useful — don't waste outreach
                         pqs.classification = "research_needed"
                         new_status = None  # keep as researched, flag for re-research
+                        disq_reason = "low_confidence_research"
                         priority = False
                         pqs.notes = (
                             f"Low-confidence research with zero tech/timing signals. "
@@ -126,6 +130,8 @@ class QualificationAgent(BaseAgent):
                         # Full classification for researched companies
                         pqs.classification, new_status, priority = self._classify(pqs.total, config)
                         pqs.notes = self._generate_notes(pqs, company, research)
+                        if new_status == "disqualified":
+                            disq_reason = "pqs_score_too_low"
 
                 # Update database
                 update_data = {
@@ -135,10 +141,17 @@ class QualificationAgent(BaseAgent):
                     "pqs_engagement": pqs.engagement,
                     "pqs_total": pqs.total,
                     "qualification_notes": pqs.notes,
+                    "qualification_decision": (
+                        "disqualified" if new_status == "disqualified"
+                        else "qualified" if new_status in ("qualified", "outreach_pending")
+                        else None
+                    ),
                 }
 
                 if new_status:
                     update_data["status"] = new_status
+                if disq_reason:
+                    update_data["disqualification_reason"] = disq_reason
                 if priority:
                     update_data["priority_flag"] = True
 

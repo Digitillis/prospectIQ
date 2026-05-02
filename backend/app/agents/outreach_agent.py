@@ -594,6 +594,35 @@ def _build_generation_prompt(
     lines.append("- Body must feel hand-written, not templated")
     lines.append("- Do not open with 'I hope this email finds you well' or similar")
     lines.append("- Maximum 120 words in the body")
+    lines.append("")
+    lines.append("CRITICAL RULE — Opening sentence:")
+    lines.append(
+        f"The very first sentence of the email body MUST name a specific, verifiable fact about "
+        f"{company_name} specifically — a recent acquisition, a specific product they make, a customer "
+        f"they serve, a specific equipment class they run, or a recent business event. "
+        f"Do NOT open with a category observation about the industry or equipment type in general. "
+        f"The opening sentence must be something that could ONLY be written about this specific company, "
+        f"not any company in their sector."
+    )
+    lines.append(
+        "Example of WRONG opening: 'Roll forming lines running at high utilization don't give much warning.'"
+    )
+    lines.append(
+        "Example of RIGHT opening: 'Central States ships to 3,500 dealers — a forming line going down "
+        "mid-week becomes a supply commitment problem by Friday.'"
+    )
+    lines.append("")
+    lines.append("SUBJECT LINE ROTATION RULE:")
+    lines.append(
+        "Do NOT use the format '[asset class] downtime at [company]' for more than 1 email in the sequence. "
+        "Use one of these formulas instead:"
+    )
+    lines.append("  (a) Trigger event: '[Company]: [specific event implication]'")
+    lines.append("      Example: 'Waupaca: post-acquisition ops scrutiny'")
+    lines.append("  (b) Business consequence: '[Company] [downstream risk]'")
+    lines.append("      Example: 'Central States dealer network risk'")
+    lines.append("  (c) Technical hook: '[specific technical term] at [Company]'")
+    lines.append("      Example: 'Spindle health at Camcraft's CNC lines'")
 
     return "\n".join(lines)
 

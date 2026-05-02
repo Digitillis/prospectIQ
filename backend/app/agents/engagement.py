@@ -351,16 +351,66 @@ class EngagementAgent(BaseAgent):
                     },
                 }).execute()
 
-                # Update company status and mark as having an active outreach thread.
-                # set_company_outreach_active() was previously only called in the
-                # deprecated push_to_sequences.py (Instantly path). Calling it here
-                # ensures the flag is set for all Resend-path sends, which is what
-                # the threading coordinator relies on to prevent re-contact.
-                self.db.update_company(draft["company_id"], {"status": "contacted"})
+                # Update company status — non-fatal so a DB hiccup doesn't orphan
+                # a sent draft (sent_at is already claimed above).
+                try:
+                    self.db.update_company(draft["company_id"], {"status": "contacted"})
+                except Exception as _e:
+                    logger.warning("update_company status=contacted failed (non-fatal): %s", _e)
                 try:
                     self.db.set_company_outreach_active(draft["company_id"], draft["contact_id"])
                 except Exception as _e:
                     logger.warning("set_company_outreach_active failed (non-fatal): %s", _e)
+
+                # Create / update campaign_thread so IMAP reply routing can match
+                # incoming replies to this contact+company pair.
+                try:
+                    _ws_id = getattr(self.db, "workspace_id", None) or _settings.default_workspace_id
+                    _thread_row = (
+                        self.db.client.table("campaign_threads")
+                        .select("id, current_step")
+                        .eq("contact_id", draft["contact_id"])
+                        .eq("company_id", draft["company_id"])
+                        .in_("status", ["active", "paused"])
+                        .order("updated_at", desc=True)
+                        .limit(1)
+                        .execute()
+                        .data or []
+                    )
+                    _seq_step = int(draft.get("sequence_step") or 1)
+                    if _thread_row:
+                        _thread_id = _thread_row[0]["id"]
+                        self.db.client.table("campaign_threads").update({
+                            "current_step": _seq_step,
+                            "last_sent_at": now,
+                            "status": "active",
+                        }).eq("id", _thread_id).execute()
+                    else:
+                        _insert = {
+                            "company_id": draft["company_id"],
+                            "contact_id": draft["contact_id"],
+                            "sequence_name": draft.get("sequence_name") or "email_value_first",
+                            "status": "active",
+                            "current_step": _seq_step,
+                            "last_sent_at": now,
+                        }
+                        if _ws_id:
+                            _insert["workspace_id"] = _ws_id
+                        _tresult = self.db.client.table("campaign_threads").insert(_insert).execute()
+                        _thread_id = (_tresult.data[0]["id"] if _tresult.data else None)
+                    # Record the outbound message in thread_messages for reply context
+                    if _thread_id:
+                        self.db.client.table("thread_messages").insert({
+                            "thread_id": _thread_id,
+                            "direction": "outbound",
+                            "subject": subject,
+                            "body": body,
+                            "sent_at": now,
+                            "outreach_draft_id": draft["id"],
+                            "source": "gmail_webhook",
+                        }).execute()
+                except Exception as _te:
+                    logger.warning("campaign_thread creation failed (non-fatal): %s", _te)
 
                 # Create engagement sequence record
                 seq_config = get_sequences_config()

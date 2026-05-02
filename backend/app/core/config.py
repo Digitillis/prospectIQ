@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     gmail_app_password: str = ""      # App Password from myaccount.google.com/apppasswords
 
     # Daily GTM report recipient (defaults to founder email)
-    report_recipient_email: str = "avanish.mehrotra@gmail.com"
+    report_recipient_email: str = "avi@digitillis.io"
 
     # HubSpot CRM sync (optional)
     hubspot_api_key: str = ""           # Private app access token

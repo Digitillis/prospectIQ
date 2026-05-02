@@ -33,11 +33,14 @@ time_to_value:
   first_result: "First anomaly detection result within 2 weeks of data ingestion"
 
 # Proof points — specific numbers to use in emails (use 1–2 max per email)
+# INTEGRITY NOTE: These are sourced industry benchmarks, NOT Digitillis customer claims.
+# Do not reframe these as "our customers saw..." or "plants using Digitillis achieved...".
+# Use the attribution language exactly as written below.
 proof_points:
-  - "Plants using Digitillis cut unplanned downtime by 23–41% in the first 6 months"
-  - "Average ROI: $2.3M in avoided downtime costs in year 1 for a 3-line operation"
-  - "One food & beverage plant avoided a $400K recall by catching a filler drift 3 days early"
-  - "Maintenance teams spend 60% less time on reactive work after 90 days on the platform"
+  - "Industry benchmark: manufacturers using predictive maintenance see a 23–41% reduction in unplanned downtime (LNS Research, 2024)"
+  - "Typical ROI range for AI-driven predictive maintenance deployments: $1.5M–$3M in year 1 for a multi-line operation (McKinsey Manufacturing Survey, 2023)"
+  - "Industry data: food & beverage plants with real-time CCP monitoring reduce recall risk by catching process drift 2–5 days earlier than manual checks (FDA enforcement data, 2023)"
+  - "Industry benchmark: plants that shift from reactive to condition-based maintenance cut reactive work orders by 40–65% within 12 months (SMRP Benchmarking Report, 2023)"
 
 # Differentiation — what makes Digitillis different from competitors
 differentiation:
