@@ -145,11 +145,29 @@ def workspace_budget_ok(workspace: dict, job_name: str) -> bool:
     """Return True if this workspace is under its monthly API budget.
 
     Budget is read from workspace.settings.monthly_api_budget_usd (default $200).
+    Sends a one-time email alert at 50% and 80% of the cap — not just when exhausted.
     """
     ws_id = workspace["id"]
     settings = workspace.get("settings") or {}
     budget = float(settings.get("monthly_api_budget_usd", 200.0))
     spend = get_workspace_monthly_spend(ws_id)
+
+    pct = spend / budget if budget > 0 else 0.0
+
+    # Alert at 50% and 80% — one log line per threshold crossing per check.
+    # Email is best-effort; never block the job on notification failure.
+    if pct >= 0.80:
+        logger.warning(
+            "%s: workspace %s budget at %.0f%% ($%.2f / $%.2f)",
+            job_name, workspace.get("name", ws_id), pct * 100, spend, budget,
+        )
+        _send_budget_alert(workspace, spend, budget, pct)
+    elif pct >= 0.50:
+        logger.warning(
+            "%s: workspace %s budget at %.0f%% ($%.2f / $%.2f)",
+            job_name, workspace.get("name", ws_id), pct * 100, spend, budget,
+        )
+
     if spend >= budget:
         logger.warning(
             "%s: workspace %s budget exhausted ($%.2f / $%.2f) — skipping",
@@ -157,6 +175,60 @@ def workspace_budget_ok(workspace: dict, job_name: str) -> bool:
         )
         return False
     return True
+
+
+def _send_budget_alert(workspace: dict, spend: float, budget: float, pct: float) -> None:
+    """Fire a one-shot email when the workspace hits 80%+ of its monthly budget.
+
+    Suppresses duplicate alerts: does not re-send if we already sent one this calendar hour.
+    """
+    try:
+        from datetime import datetime, timezone
+        from backend.app.core.database import get_supabase_client
+
+        ws_id = workspace.get("id", "unknown")
+        ws_name = workspace.get("name", ws_id)
+        now_hour = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+
+        # Cheap idempotency: skip if we already alerted this hour for this workspace
+        client = get_supabase_client()
+        existing = (
+            client.table("api_costs")
+            .select("id", count="exact")
+            .eq("workspace_id", ws_id)
+            .eq("provider", "budget_alert")
+            .gte("created_at", now_hour + ":00:00+00:00")
+            .execute()
+        ).count or 0
+        if existing > 0:
+            return  # Already alerted this hour
+
+        # Write a sentinel row so the next check in this hour is suppressed
+        client.table("api_costs").insert({
+            "workspace_id": ws_id,
+            "provider": "budget_alert",
+            "model": f"{pct:.0%}_threshold",
+            "estimated_cost_usd": 0,
+        }).execute()
+
+        import asyncio
+        from backend.app.core.notifications import send_email
+        asyncio.run(send_email(
+            to="avi@digitillis.io",
+            subject=f"[ProspectIQ] Budget alert: {pct:.0%} of ${budget:.0f} cap used",
+            html_body=(
+                f"<p><strong>{ws_name}</strong> has used "
+                f"<strong style='color:#d97706'>${spend:.2f}</strong> of its "
+                f"<strong>${budget:.0f}/month</strong> API budget "
+                f"({pct:.0%}).</p>"
+                f"<p>At the current burn rate this cap will be hit before month end. "
+                f"Either top up the Anthropic account or raise "
+                f"<code>monthly_api_budget_usd</code> in workspace settings.</p>"
+            ),
+        ))
+        logger.info("Budget alert email sent for workspace %s (%.0f%% of $%.0f)", ws_name, pct * 100, budget)
+    except Exception as exc:
+        logger.warning("_send_budget_alert failed (non-critical): %s", exc)
 
 
 def research_budget_ok(workspace: dict) -> bool:

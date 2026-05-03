@@ -1117,6 +1117,16 @@ def _run_pipeline_monitor_email() -> None:
         contacted    = co_count("contacted")
         discovered   = co_count("discovered")
 
+        # Staleness check: outreach_pending companies not updated in >3 days = stuck
+        three_days_ago = (now - timedelta(days=3)).isoformat()
+        stuck_pending = (
+            client.table("companies").select("id", count="exact")
+            .eq("workspace_id", WS)
+            .eq("status", "outreach_pending")
+            .lt("updated_at", three_days_ago)
+            .execute()
+        ).count or 0
+
         # Burn rate projection
         burn_rate_hr = spend_1h  # $/hr based on last hour
         hrs_to_stop  = (acct_remaining / burn_rate_hr) if burn_rate_hr > 0.01 else 999
@@ -1213,7 +1223,9 @@ def _run_pipeline_monitor_email() -> None:
   <tr><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Qualified (draft gen queue)</td>
       <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{qualified:,}</td></tr>
   <tr style="background:#f9fafb"><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Outreach pending</td>
-      <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{outreach_pnd:,}</td></tr>
+      <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{outreach_pnd:,}
+        {"&nbsp;<span style='color:#dc2626;font-size:11px'>⚠ " + str(stuck_pending) + " stuck &gt;3d — reset to qualified?</span>" if stuck_pending > 10 else ""}
+      </td></tr>
   <tr><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Contacted</td>
       <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{contacted:,}</td></tr>
   <tr style="background:#f9fafb"><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Discovered (research paused)</td>
@@ -1856,9 +1868,61 @@ def _run_auto_action_low_priority() -> None:
         logger.error(f"Scheduled auto_action_low_priority failed: {e}")
 
 
+def _validate_scheduler_signatures() -> None:
+    """Crash at startup if any scheduler→agent kwarg is wrong.
+
+    Catches the class of bug where a scheduler wrapper passes a kwarg that
+    doesn't exist on the agent's run() method — previously silent TypeErrors
+    caught by for_each_workspace() would let the scheduler tick endlessly
+    while doing nothing.
+    """
+    import inspect
+
+    checks = [
+        ("ResearchAgent", "backend.app.agents.research", {"limit": True, "batch_size": False}),
+        ("OutreachAgent", "backend.app.agents.outreach", {"limit": True}),
+        ("EnrichmentAgent", "backend.app.agents.enrichment", {"limit": True}),
+        ("DiscoveryAgent", "backend.app.agents.discovery", {"max_pages": True, "campaign_name": True, "tiers": True}),
+        ("LearningAgent", "backend.app.agents.learning", {"period_days": True, "auto_apply": True}),
+    ]
+
+    for class_name, module_path, param_checks in checks:
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            cls = getattr(mod, class_name)
+            sig = inspect.signature(cls.run)
+            params = set(sig.parameters.keys())
+            for param, must_exist in param_checks.items():
+                if must_exist and param not in params:
+                    raise RuntimeError(
+                        f"STARTUP VALIDATION FAILED: {class_name}.run() is missing "
+                        f"expected kwarg '{param}'. The scheduler will call it but it "
+                        f"will silently fail. Fix the scheduler call or the agent signature."
+                    )
+                if not must_exist and param in params:
+                    raise RuntimeError(
+                        f"STARTUP VALIDATION FAILED: {class_name}.run() unexpectedly "
+                        f"has kwarg '{param}'. A scheduler call may be using an outdated "
+                        f"signature. Audit scheduler wrappers before deploying."
+                    )
+        except ImportError:
+            logger.warning("_validate_scheduler_signatures: could not import %s — skipping check", module_path)
+        except RuntimeError:
+            raise  # Re-raise so startup fails loudly
+
+    logger.info("Scheduler signature validation passed — all agent.run() kwarg contracts verified")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start background scheduler on startup, shut down gracefully."""
+    try:
+        _validate_scheduler_signatures()
+    except RuntimeError as _sig_err:
+        logger.error("FATAL: scheduler signature validation failed — %s", _sig_err)
+        raise
+
     try:
         global _scheduler
         from apscheduler.schedulers.background import BackgroundScheduler
