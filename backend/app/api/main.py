@@ -1954,12 +1954,14 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_research, "interval", minutes=20, id="research")
         # Qualification: every 15 min 24/7 — stays ahead of research output
         scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
-        # Draft generation: every 30 min — drains qualified-but-undrafted companies
-        # (closes the gap where enriched contacts had no scheduled path to a sent email)
-        scheduler.add_job(_run_draft_generation, "interval", minutes=30, id="draft_generation")
-        # Enrichment: every 45 min 24/7 — Apollo credit-gated (1 credit/contact)
-        # 45-min spacing keeps rate limits comfortable; credit guard halts if < 200 remaining
-        scheduler.add_job(_run_enrichment, "interval", minutes=45, id="enrichment")
+        # Draft generation: every 5 min — drains qualified-but-undrafted companies fast.
+        # Enrichment now runs every 3 min; draft gen follows at 5 min to close the gap
+        # between a contact being found and a draft existing for it.
+        scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
+        # Enrichment: every 3 min 24/7 — Apollo credit-gated (1 credit/contact)
+        # Aggressive cadence to drain the uncontacted qualified backlog fast.
+        # Credit guard (200 remaining) and enrichment_company_cap hard-stop prevent overspend.
+        scheduler.add_job(_run_enrichment, "interval", minutes=3, id="enrichment")
         # Pipeline monitor: email pipeline stats every hour (researched/qualified/enriched/credits/outreach)
         scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
         # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
