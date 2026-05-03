@@ -1982,13 +1982,7 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="auto_approve",
         )
-        # Limit ramp: bump daily_limit to 150 on 2026-05-07 (one week out, 30/account/day × 5)
-        scheduler.add_job(
-            _run_limit_ramp, "date",
-            run_date="2026-05-07 08:00:00",
-            timezone="America/Chicago",
-            id="limit_ramp",
-        )
+        # Limit ramp job removed 2026-05-03 — daily_limit set to 500 directly in outreach_send_config.
         # Pipeline advance heartbeat: every 4 hours.
         # The orchestrator checks pipeline depth vs. capacity-aware watermark and fires
         # discovery + learning only when needed. Reactive triggers (post-send, post-reply)
