@@ -907,7 +907,7 @@ def _research_workspace(ws: dict) -> None:
         return
     from backend.app.agents.research import ResearchAgent
     agent = ResearchAgent(workspace_id=ws["id"])
-    result = agent.run(batch_size=150)
+    result = agent.run(limit=150)
     logger.info("Research [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
 
 
