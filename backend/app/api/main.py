@@ -1952,9 +1952,15 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         # Gmail intake: every 15 min so replies surface quickly for triage
         scheduler.add_job(_run_gmail_intake, "interval", minutes=15, id="gmail_intake")
-        # Research: every 20 min 24/7 — 150 companies per run, budget-gated
-        # Aggressive cadence to clear 7K+ reclaimed + 1.5K discovered backlog fast
-        scheduler.add_job(_run_research, "interval", minutes=20, id="research")
+        # Research: every 20 min 24/7 — 150 companies per run, budget-gated.
+        # 5-min startup delay prevents first tick from firing into cold DB connection
+        # on Railway deploy (cold connection causes research_budget_ok to throw and
+        # fail-open, bypassing the cap — now fail-closed, but delay is belt-and-suspenders).
+        from datetime import datetime, timezone, timedelta as _td
+        scheduler.add_job(
+            _run_research, "interval", minutes=20, id="research",
+            next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
+        )
         # Qualification: every 15 min 24/7 — stays ahead of research output
         scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
         # Draft generation: every 5 min — drains qualified-but-undrafted companies fast.

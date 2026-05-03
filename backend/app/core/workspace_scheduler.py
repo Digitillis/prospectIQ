@@ -271,8 +271,8 @@ def research_budget_ok(workspace: dict) -> bool:
         )
         return True
     except Exception as exc:
-        logger.warning("research_budget_ok check failed (%s) — allowing research", exc)
-        return True  # Fail open
+        logger.warning("research_budget_ok check failed (%s) — blocking research (fail-closed)", exc)
+        return False  # Fail CLOSED — budget checks must pass; transient DB errors block research
 
 
 def get_total_daily_capacity(workspace_id: str) -> int:
