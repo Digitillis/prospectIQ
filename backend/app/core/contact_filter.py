@@ -326,15 +326,31 @@ def check_email_name_consistency(
 
     # Pass 2: Last name appears in local part
     if ln_norm and len(ln_norm) >= 3 and ln_norm in local_clean:
-        # Also verify first initial matches (avoids false positive where
-        # two people at the same company have the same last name)
+        # Collect all first-name initials (including nickname variants: Bill → William → 'w')
+        fn_initials = {v[0] for v in fn_variants if v}
+
+        # 2a: Exact last-name-only email — unique surname is sufficient (e.g. korbecki@)
+        if local_clean == ln_norm:
+            return True, "lastname_only_match"
+
+        # 2b: Standard initial-prefix format (rbodensteiner, jsmith)
         if fn_norm and local_clean[0] == fn_norm[0]:
             return True, "last_name_match+initial_match"
-        # Last name matches but different first initial — suspicious
+
+        # 2c: Nickname/variant initial (wupton → Bill → William → initial 'w')
+        if fn_initials and local_clean[0] in fn_initials:
+            return True, "last_name_match+variant_initial_match"
+
+        # 2d: lastname+initial_at_end format (havasij, bodensteinerr)
+        if local_clean.startswith(ln_norm):
+            suffix = local_clean[len(ln_norm):]
+            if suffix and len(suffix) <= 2 and fn_initials and suffix[0] in fn_initials:
+                return True, "lastname_plus_initial_at_end"
+
+        # Last name matches but the leading character is not a known initial — likely
+        # a different person at the same company (e.g. michael.belcher for Kade Belcher)
         first_char = local_clean[0] if local_clean else ""
-        if fn_norm and first_char and first_char != fn_norm[0]:
-            # Different initial spelled out in email (e.g., michael.belcher for Kade Belcher)
-            # Check if the initial could be a different person's name
+        if fn_norm and first_char and first_char not in fn_initials:
             return False, f"last_name_match_but_wrong_initial:{first_char}!={fn_norm[0]}"
 
     # Pass 3: First initial appears at start of local part

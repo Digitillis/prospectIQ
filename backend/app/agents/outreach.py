@@ -409,7 +409,7 @@ class OutreachAgent(BaseAgent):
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         else:
-            companies = self.db.get_companies(status="qualified", tiers=tiers, limit=limit)
+            companies = self.db.get_companies(status="qualified", tiers=tiers, limit=limit, oec_only=True)
 
         if not companies:
             console.print("[yellow]No companies ready for outreach.[/yellow]")
