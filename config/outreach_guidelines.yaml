@@ -33,7 +33,7 @@ sender:
   email: "avi@digitillis.io"
   phone: "224.355.4500"
   website: "www.digitillis.com"
-  # Default signature — used from step 2 onwards (links permitted).
+  # Unified signature — used for all steps including step 1.
   signature: |
     Best regards,
     Avanish
@@ -41,17 +41,17 @@ sender:
     Avanish Mehrotra
     Founder & CEO
     [Digitillis](https://www.digitillis.com) | avi@digitillis.io | 224.355.4500
-    Check [Preview](http://demo.digitillis.com)
+    [Preview](http://demo.digitillis.com)
 
-  # Step 1 signature — NO links. Links in first cold emails trigger spam filters.
-  # The outreach agent MUST use this variant for all step 1 / initial_outreach emails.
+  # Step 1 signature — same as default per Avanish's direction (2026-05-02).
   step_1_signature: |
     Best regards,
     Avanish
 
     Avanish Mehrotra
-    Founder & CEO, Digitillis
-    avi@digitillis.io | 224.355.4500
+    Founder & CEO
+    [Digitillis](https://www.digitillis.com) | avi@digitillis.io | 224.355.4500
+    [Preview](http://demo.digitillis.com)
 
 
 # Voice and tone instructions — injected into every outreach prompt
