@@ -1055,8 +1055,10 @@ def _run_pipeline_monitor_email() -> None:
         now = datetime.now(timezone.utc)
         one_hour_ago = (now - timedelta(hours=1)).isoformat()
         # Top-up reference: $24.85 added at ~21:00 UTC May 2 2026
-        TOPUP_TS   = "2026-05-02T21:00:00+00:00"
-        TOPUP_AMOUNT = 24.85
+        # Top-up history (cumulative — add new entries as credits are purchased):
+        # May 2 9PM CT: $24.85 | May 3: $28.75 grant added → $24.41 confirmed balance
+        TOPUP_TS   = "2026-05-03T03:00:00+00:00"  # ~10PM CT May 2 / 3AM UTC May 3 baseline
+        TOPUP_AMOUNT = 24.41   # confirmed balance from Anthropic console screenshot
         WORKSPACE_CAP = 65.0   # monthly_api_budget_usd — allows ~$20 new spend
 
         def claude_spend(since: str) -> float:
