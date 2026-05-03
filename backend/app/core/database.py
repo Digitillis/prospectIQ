@@ -77,8 +77,19 @@ class Database:
         search: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        oec_only: bool = False,
     ) -> list[dict]:
-        """Query companies with optional filters."""
+        """Query companies with optional filters.
+
+        When oec_only=True, only returns companies that have at least one contact
+        in outbound_eligible_contacts, ordered by pqs_total desc. Uses a Python-side
+        join to avoid large IN-clause URL limits in PostgREST.
+        """
+        if oec_only:
+            return self._get_companies_oec_filtered(
+                status=status, tier=tier, tiers=tiers,
+                min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+            )
         query = self._filter_ws(self.client.table("companies").select("*"))
         if status:
             query = query.eq("status", status)
@@ -94,6 +105,85 @@ class Database:
             query = query.ilike("name", f"%{search}%")
         query = query.order("pqs_total", desc=True).range(offset, offset + limit - 1)
         return query.execute().data
+
+    def _get_companies_oec_filtered(
+        self,
+        status: str | None,
+        tier: str | None,
+        tiers: list[str] | None,
+        min_pqs: int | None,
+        batch_id: str | None,
+        limit: int,
+    ) -> list[dict]:
+        """Return up to `limit` companies that have an eligible contact, ordered by PQS.
+
+        Fetches all OEC company IDs for the workspace (paginated), then scans
+        companies in descending PQS order until enough matches are found.
+        Falls back to the unfiltered query if the OEC table is empty.
+        """
+        if not self.workspace_id:
+            return self.get_companies(
+                status=status, tier=tier, tiers=tiers,
+                min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+            )
+
+        oec_ids: set[str] = set()
+        oec_offset = 0
+        while True:
+            page = (
+                self.client.table("outbound_eligible_contacts")
+                .select("company_id")
+                .eq("workspace_id", self.workspace_id)
+                .range(oec_offset, oec_offset + 999)
+                .execute()
+                .data or []
+            )
+            oec_ids.update(r["company_id"] for r in page if r.get("company_id"))
+            if len(page) < 1000:
+                break
+            oec_offset += 1000
+
+        if not oec_ids:
+            logger.warning("_get_companies_oec_filtered: OEC table empty — falling back to standard query")
+            return self.get_companies(
+                status=status, tier=tier, tiers=tiers,
+                min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+            )
+
+        # Scan companies in PQS order, collecting those present in OEC.
+        # fetch_size is tuned so that a single page typically yields enough matches
+        # (OEC density ~13% of qualified → 500 fetched ≈ 65 hits for limit=50).
+        results: list[dict] = []
+        fetch_offset = 0
+        fetch_size = max(limit * 10, 500)
+        while len(results) < limit:
+            query = self._filter_ws(self.client.table("companies").select("*"))
+            if status:
+                query = query.eq("status", status)
+            if tiers:
+                query = query.in_("tier", tiers)
+            elif tier:
+                query = query.eq("tier", tier)
+            if min_pqs is not None:
+                query = query.gte("pqs_total", min_pqs)
+            if batch_id:
+                query = query.eq("batch_id", batch_id)
+            page = (
+                query.order("pqs_total", desc=True)
+                .range(fetch_offset, fetch_offset + fetch_size - 1)
+                .execute()
+                .data or []
+            )
+            for co in page:
+                if co.get("id") in oec_ids:
+                    results.append(co)
+                    if len(results) >= limit:
+                        break
+            if len(page) < fetch_size:
+                break
+            fetch_offset += fetch_size
+
+        return results[:limit]
 
     def get_company(self, company_id: str) -> dict | None:
         """Get a single company by ID."""
