@@ -1042,97 +1042,199 @@ def _run_intent_refresh_for_companies(company_ids: list[str], workspace_id: str)
 
 
 def _run_pipeline_monitor_email() -> None:
-    """Every-6-hour job: email pipeline stats to Avanish."""
+    """Hourly job: spend-vs-value report. Shows $ burned, drafts generated, cost per draft,
+    approval queue depth, account headroom, and burn rate projection."""
     try:
         from backend.app.core.database import get_supabase_client
-        from backend.app.core.workspace_scheduler import apollo_credits_ok
         from backend.app.core.notifications import send_email
-        from backend.app.integrations.apollo import ApolloClient
-        from datetime import datetime, timezone
+        from datetime import datetime, timezone, timedelta
         import asyncio
 
         client = get_supabase_client()
-        workspace_id = "00000000-0000-0000-0000-000000000001"
-        now_str = datetime.now(timezone.utc).strftime("%b %-d, %Y at %-I:%M %p UTC")
+        WS = "00000000-0000-0000-0000-000000000001"
+        now = datetime.now(timezone.utc)
+        one_hour_ago = (now - timedelta(hours=1)).isoformat()
+        # Top-up reference: $24.85 added at ~21:00 UTC May 2 2026
+        TOPUP_TS   = "2026-05-02T21:00:00+00:00"
+        TOPUP_AMOUNT = 24.85
+        WORKSPACE_CAP = 65.0   # monthly_api_budget_usd — allows ~$20 new spend
+
+        def claude_spend(since: str) -> float:
+            rows = (
+                client.table("api_costs")
+                .select("estimated_cost_usd")
+                .eq("workspace_id", WS)
+                .eq("provider", "anthropic")
+                .not_.ilike("model", "%web_search%")
+                .gte("created_at", since)
+                .execute()
+            ).data or []
+            return sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+
+        def draft_count(since: str, approval_status: str | None = None) -> int:
+            q = client.table("outreach_drafts").select("id", count="exact")\
+                .eq("workspace_id", WS).gte("created_at", since)
+            if approval_status:
+                q = q.eq("approval_status", approval_status)
+            return q.execute().count or 0
+
+        # Spend figures
+        spend_1h       = claude_spend(one_hour_ago)
+        spend_topup    = claude_spend(TOPUP_TS)
+        acct_remaining = max(0.0, TOPUP_AMOUNT - spend_topup)
+
+        # MTD all-providers for workspace cap check
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        mtd_rows = (client.table("api_costs").select("estimated_cost_usd")
+                    .eq("workspace_id", WS).gte("created_at", month_start).execute()).data or []
+        mtd_all = sum(float(r.get("estimated_cost_usd") or 0) for r in mtd_rows)
+        cap_remaining = max(0.0, WORKSPACE_CAP - mtd_all)
+
+        # Drafts this hour / since top-up
+        drafts_1h       = draft_count(one_hour_ago)
+        drafts_topup    = draft_count(TOPUP_TS)
+        cost_per_draft  = (spend_topup / drafts_topup) if drafts_topup else None
+
+        # Draft queue depth
+        pending_approval = draft_count(
+            (now - timedelta(days=30)).isoformat(), "pending"
+        )
+        approved_unsent = (
+            client.table("outreach_drafts").select("id", count="exact")
+            .eq("workspace_id", WS)
+            .eq("approval_status", "approved")
+            .is_("sent_at", "null")
+            .execute()
+        ).count or 0
 
         # Pipeline counts
-        def count(status):
-            r = client.table("companies").select("id", count="exact").eq("workspace_id", workspace_id).eq("status", status).execute()
-            return r.count or 0
+        def co_count(status):
+            return client.table("companies").select("id", count="exact")\
+                .eq("workspace_id", WS).eq("status", status).execute().count or 0
 
-        def count_contacts(status):
-            r = client.table("contacts").select("id", count="exact").eq("workspace_id", workspace_id).eq("enrichment_status", status).execute()
-            return r.count or 0
+        qualified    = co_count("qualified")
+        outreach_pnd = co_count("outreach_pending")
+        contacted    = co_count("contacted")
+        discovered   = co_count("discovered")
 
-        discovered   = count("discovered")
-        researched   = count("researched")
-        qualified    = count("qualified")
-        disqualified = count("disqualified")
-        outreach     = count("outreach_pending")
+        # Burn rate projection
+        burn_rate_hr = spend_1h  # $/hr based on last hour
+        hrs_to_stop  = (acct_remaining / burn_rate_hr) if burn_rate_hr > 0.01 else 999
 
-        contacts_enriched = count_contacts("enriched")
-        contacts_pending  = count_contacts("pending")
+        # Color helpers
+        def green(v): return f"<span style='color:#16a34a'>{v}</span>"
+        def red(v):   return f"<span style='color:#dc2626'>{v}</span>"
+        def amber(v): return f"<span style='color:#d97706'>{v}</span>"
 
-        # Apollo credits
-        credits_remaining = "—"
-        try:
-            with ApolloClient(workspace_id=workspace_id) as apollo:
-                info = apollo.get_credits()
-                used = info.get("credits_used", 0)
-                limit = info.get("credit_limit", 0)
-                credits_remaining = f"{limit - used:,} of {limit:,} remaining"
-        except Exception:
-            pass
+        acct_color = "#16a34a" if acct_remaining > 15 else "#d97706" if acct_remaining > 5 else "#dc2626"
+        burn_note  = (
+            f"At this rate, account lasts <strong>{hrs_to_stop:.1f}h</strong>"
+            if burn_rate_hr > 0.01
+            else "No spend recorded yet this hour"
+        )
 
-        # Enrichment cap progress
-        ws_row = client.table("workspaces").select("settings").eq("id", workspace_id).single().execute()
-        ws_settings = (ws_row.data or {}).get("settings") or {}
-        cap = ws_settings.get("enrichment_company_cap")
-        processed = ws_settings.get("enrichment_companies_processed", 0)
-        cap_line = f"{processed} / {cap} companies (cap)" if cap else f"{processed} companies (no cap)"
+        subject = (
+            f"[ProspectIQ] ${spend_1h:.3f}/hr · {drafts_1h} drafts · "
+            f"${acct_remaining:.2f} left · {pending_approval} pending your approval"
+        )
 
         html = f"""
-<html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#222">
-<h2 style="color:#1a56db;margin-bottom:4px">ProspectIQ Pipeline Report</h2>
-<p style="color:#666;margin-top:0">{now_str}</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
+<html><body style="font-family:-apple-system,sans-serif;max-width:580px;margin:0 auto;color:#111;padding:20px">
+<h2 style="color:#1a56db;margin-bottom:2px">ProspectIQ — Hourly Spend vs. Value</h2>
+<p style="color:#6b7280;margin-top:0">{now.strftime('%A %b %-d, %-I:%M %p UTC')}</p>
+
+<h3 style="font-size:14px;margin-bottom:6px">Spend</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:16px">
   <tr style="background:#f3f4f6">
-    <th style="text-align:left;padding:8px 12px">Stage</th>
-    <th style="text-align:right;padding:8px 12px">Count</th>
+    <th style="text-align:left;padding:7px 12px;font-size:13px">Period</th>
+    <th style="text-align:right;padding:7px 12px;font-size:13px">Claude spend</th>
   </tr>
-  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Discovered (queue)</td>
-      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{discovered:,}</strong></td></tr>
-  <tr style="background:#f9fafb"><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Researched</td>
-      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{researched:,}</strong></td></tr>
-  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Qualified</td>
-      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{qualified:,}</strong></td></tr>
-  <tr style="background:#f9fafb"><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Outreach Pending</td>
-      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong style="color:#1a56db">{outreach:,}</strong></td></tr>
-  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Disqualified</td>
-      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#9ca3af">{disqualified:,}</td></tr>
+  <tr>
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Last hour</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px"><strong>${spend_1h:.4f}</strong></td>
+  </tr>
+  <tr style="background:#f9fafb">
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Since top-up (~21:00 UTC)</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px"><strong>${spend_topup:.4f}</strong></td>
+  </tr>
+  <tr>
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Account balance remaining</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">
+      <strong style="color:{acct_color}">${acct_remaining:.2f}</strong>
+    </td>
+  </tr>
+  <tr style="background:#f9fafb">
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Workspace cap headroom</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">${cap_remaining:.2f} of ${WORKSPACE_CAP:.0f} cap</td>
+  </tr>
 </table>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
+<p style="font-size:12px;color:#6b7280;background:#f9fafb;padding:8px 12px;border-radius:4px;margin-bottom:16px">
+  {burn_note}. Research is <strong>paused</strong> — spend is drafts only.
+</p>
+
+<h3 style="font-size:14px;margin-bottom:6px">Value Generated</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:16px">
   <tr style="background:#f3f4f6">
-    <th style="text-align:left;padding:8px 12px">Contacts</th>
-    <th style="text-align:right;padding:8px 12px">Count</th>
+    <th style="text-align:left;padding:7px 12px;font-size:13px">Metric</th>
+    <th style="text-align:right;padding:7px 12px;font-size:13px">This hour</th>
+    <th style="text-align:right;padding:7px 12px;font-size:13px">Since top-up</th>
   </tr>
-  <tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Enriched (have email)</td>
-      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb"><strong>{contacts_enriched:,}</strong></td></tr>
-  <tr style="background:#f9fafb"><td style="padding:8px 12px;border-top:1px solid #e5e7eb">Pending enrichment</td>
-      <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb">{contacts_pending:,}</td></tr>
+  <tr>
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Drafts generated</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px"><strong>{drafts_1h}</strong></td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{drafts_topup}</td>
+  </tr>
+  <tr style="background:#f9fafb">
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Cost per draft</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px" colspan="2">
+      {'${:.4f}'.format(cost_per_draft) if cost_per_draft else '— (no drafts yet)'}
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Approved &amp; ready to send</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px" colspan="2">
+      <strong style="color:#1a56db">{approved_unsent}</strong>
+    </td>
+  </tr>
+  <tr style="background:#f9fafb">
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Pending YOUR approval</td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px" colspan="2">
+      <strong style="color:#d97706">{pending_approval}</strong>
+    </td>
+  </tr>
 </table>
-<p style="background:#fef3c7;padding:10px 14px;border-radius:6px;margin:16px 0">
-  <strong>Apollo credits:</strong> {credits_remaining}<br>
-  <strong>Enrichment cap:</strong> {cap_line}
+
+<h3 style="font-size:14px;margin-bottom:6px">Pipeline</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+  <tr style="background:#f3f4f6">
+    <th style="text-align:left;padding:7px 12px;font-size:13px">Stage</th>
+    <th style="text-align:right;padding:7px 12px;font-size:13px">Count</th>
+  </tr>
+  <tr><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Qualified (draft gen queue)</td>
+      <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{qualified:,}</td></tr>
+  <tr style="background:#f9fafb"><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Outreach pending</td>
+      <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{outreach_pnd:,}</td></tr>
+  <tr><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Contacted</td>
+      <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">{contacted:,}</td></tr>
+  <tr style="background:#f9fafb"><td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Discovered (research paused)</td>
+      <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px;color:#9ca3af">{discovered:,}</td></tr>
+</table>
+
+<p style="font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px">
+  Spend = Claude API only (no Apollo estimates). Account balance is approximate ($24.85 at top-up minus spend since).
+  Cap: ${WORKSPACE_CAP:.0f}/mo workspace soft-stop. Research paused until next top-up decision.
 </p>
 </body></html>"""
 
         asyncio.run(send_email(
             to="avi@digitillis.io",
-            subject=f"ProspectIQ pipeline: {outreach:,} outreach-ready | {qualified:,} qualified | {discovered:,} in queue",
+            subject=subject,
             html_body=html,
         ))
-        logger.info("Pipeline monitor email sent.")
+        logger.info(
+            "Hourly spend report sent. 1h spend: $%.4f | drafts this hour: %d | acct remaining: $%.2f",
+            spend_1h, drafts_1h, acct_remaining,
+        )
     except Exception as e:
         logger.error("Pipeline monitor email failed: %s", e, exc_info=True)
 
