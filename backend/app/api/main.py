@@ -1054,11 +1054,12 @@ def _run_pipeline_monitor_email() -> None:
         WS = "00000000-0000-0000-0000-000000000001"
         now = datetime.now(timezone.utc)
         one_hour_ago = (now - timedelta(hours=1)).isoformat()
-        # Top-up reference: $24.85 added at ~21:00 UTC May 2 2026
         # Top-up history (cumulative — add new entries as credits are purchased):
-        # May 2 9PM CT: $24.85 | May 3: $28.75 grant added → $24.41 confirmed balance
-        TOPUP_TS   = "2026-05-03T03:00:00+00:00"  # ~10PM CT May 2 / 3AM UTC May 3 baseline
-        TOPUP_AMOUNT = 24.41   # confirmed balance from Anthropic console screenshot
+        # May 2 9PM CT: +$28.75 grant | May 3 ~11PM CT: confirmed $23.82 actual balance
+        # Note: TOPUP_AMOUNT reflects Anthropic console balance; delta vs api_costs
+        # is Claude Code session usage not tracked in ProspectIQ api_costs table.
+        TOPUP_TS   = "2026-05-03T04:00:00+00:00"  # ~11PM CT May 2 / 4AM UTC May 3 anchor
+        TOPUP_AMOUNT = 23.82   # confirmed balance from Anthropic console screenshot (10:59 PM CT)
         WORKSPACE_CAP = 65.0   # monthly_api_budget_usd — allows ~$20 new spend
 
         def claude_spend(since: str) -> float:
@@ -1315,7 +1316,7 @@ def _enrich_workspace(ws: dict) -> None:
 
 
 def _run_enrichment() -> None:
-    """Every-45-min job: enrich up to enrichment_company_cap companies via Apollo (1 credit/contact).
+    """Every-15-min job: enrich up to enrichment_company_cap companies via Apollo (1 credit/contact).
 
     Controlled by workspace settings:
       enrichment_company_cap (int): pause after this many companies (None = unlimited)
@@ -1960,10 +1961,11 @@ async def lifespan(app: FastAPI):
         # Enrichment now runs every 3 min; draft gen follows at 5 min to close the gap
         # between a contact being found and a draft existing for it.
         scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
-        # Enrichment: every 3 min 24/7 — Apollo credit-gated (1 credit/contact)
-        # Aggressive cadence to drain the uncontacted qualified backlog fast.
-        # Credit guard (200 remaining) and enrichment_company_cap hard-stop prevent overspend.
-        scheduler.add_job(_run_enrichment, "interval", minutes=3, id="enrichment")
+        # Enrichment: every 15 min — Apollo credit-gated (1 credit/contact).
+        # 15 min gives ~68 credits/hr vs 340/hr at 3 min; extends 4,855 remaining credits
+        # to ~71 hrs (vs 14 hrs at 3 min). Pipeline drains at 50/day so no benefit
+        # to faster enrichment — the draft approval queue is the real bottleneck.
+        scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
         # Pipeline monitor: email pipeline stats every hour (researched/qualified/enriched/credits/outreach)
         scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
         # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
