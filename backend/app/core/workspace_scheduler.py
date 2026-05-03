@@ -250,15 +250,26 @@ def research_budget_ok(workspace: dict) -> bool:
         month_start = datetime.now(timezone.utc).replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         ).isoformat()
-        rows = (
+        result = (
             client.table("api_costs")
-            .select("estimated_cost_usd")
+            .select("estimated_cost_usd", count="exact")
             .eq("workspace_id", ws_id)
             .gte("created_at", month_start)
             .like("batch_id", "research%")
             .execute()
-        ).data or []
+        )
+        rows = result.data or []
+        row_count = result.count or 0
         research_spend = sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+        # PostgREST returns at most 1000 rows by default. If count > len(rows),
+        # there are un-fetched rows — assume cap is exceeded rather than under-reporting.
+        if row_count > len(rows):
+            logger.warning(
+                "research: workspace %s has %d research rows (>1000 page limit) — "
+                "assuming cap exceeded to avoid undercount",
+                workspace.get("name", ws_id), row_count,
+            )
+            return False
         if research_spend >= cap:
             logger.warning(
                 "research: workspace %s research budget exhausted ($%.2f / $%.2f) — pausing research",
