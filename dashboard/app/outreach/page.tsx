@@ -75,14 +75,15 @@ function DraftQueueTab() {
   });
 
   const handleApprove = async (id: string) => {
+    // Capture next draft synchronously before the await — avoids stale closure
+    const currentIndex = filteredDrafts.findIndex((d) => d.id === id);
+    const nextId = filteredDrafts[currentIndex + 1]?.id ?? null;
     setActionLoading(id);
     try {
       await approveDraft(id);
-      const currentIndex = filteredDrafts.findIndex((d) => d.id === id);
-      const nextDraft = filteredDrafts[currentIndex + 1] ?? null;
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
-      setExpandedId(nextDraft?.id ?? null);
+      setExpandedId(nextId);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("422")) {
@@ -110,15 +111,15 @@ function DraftQueueTab() {
 
   const handleReject = async (id: string) => {
     if (!rejectReason.trim()) return;
+    const currentIndex = filteredDrafts.findIndex((d) => d.id === id);
+    const nextId = filteredDrafts[currentIndex + 1]?.id ?? null;
     setActionLoading(id);
     try {
       await rejectDraft(id, rejectReason);
-      const currentIndex = filteredDrafts.findIndex((d) => d.id === id);
-      const nextDraft = filteredDrafts[currentIndex + 1] ?? null;
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setRejectingId(null);
       setRejectReason("");
-      setExpandedId(nextDraft?.id ?? null);
+      setExpandedId(nextId);
     } catch (err: unknown) {
       alert(`Reject failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally { setActionLoading(null); }
