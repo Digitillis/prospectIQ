@@ -235,7 +235,7 @@ function DraftQueueTab() {
                     {qs !== undefined && <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium", qualityBadgeClass(qs))}>Q:{qs}</span>}
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-500 truncate">
-                    {draft.contacts?.full_name} · {draft.sequence_name} · Step {draft.sequence_step}
+                    {draft.contacts?.full_name}{draft.contacts?.title && <span className="text-gray-400 dark:text-gray-600"> · {draft.contacts.title}</span>} · {draft.sequence_name} · Step {draft.sequence_step}
                   </p>
                 </div>
                 <button onClick={() => setExpandedId(isExpanded ? null : draft.id)} className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
