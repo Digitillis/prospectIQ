@@ -240,8 +240,8 @@ function DraftQueueTab() {
                       <textarea
                         value={editBody}
                         onChange={(e) => setEditBody(e.target.value)}
-                        rows={5}
-                        className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-2 text-xs text-gray-700 dark:text-gray-300 focus:outline-none"
+                        rows={18}
+                        className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-2 text-xs text-gray-700 dark:text-gray-300 focus:outline-none resize-y"
                       />
                     ) : (
                       <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-700 dark:text-gray-300">{draft.body}</p>
