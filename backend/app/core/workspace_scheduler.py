@@ -118,7 +118,9 @@ def workspace_daily_sends_ok(workspace: dict, job_name: str = "outreach") -> boo
     """Return True if workspace is under its daily outreach send limit.
 
     Limit is read from workspace.settings.daily_send_limit (default 125).
-    Counts approved + sent drafts created today UTC. Fails open on DB error.
+    Counts drafts with sent_at set today UTC (not approval_status, which has
+    no 'sent' enum value — that caused a DB error on every check).
+    Fails open on DB error.
     """
     ws_id = workspace["id"]
     settings = workspace.get("settings") or {}
@@ -136,8 +138,8 @@ def workspace_daily_sends_ok(workspace: dict, job_name: str = "outreach") -> boo
             .table("outreach_drafts")
             .select("id", count="exact")
             .eq("workspace_id", ws_id)
-            .in_("approval_status", ["approved", "sent"])
-            .gte("created_at", today_start)
+            .not_.is_("sent_at", "null")
+            .gte("sent_at", today_start)
             .execute()
         )
         today_count = rows.count or 0

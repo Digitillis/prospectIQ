@@ -213,7 +213,7 @@ class EngagementAgent(BaseAgent):
         fetch_limit = min(send_limit * 5, max(0, remaining_today) + 40)
         drafts = (
             self.db.client.table("outreach_drafts")
-            .select("*, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
+            .select("id, company_id, contact_id, channel, sequence_name, sequence_step, subject, body, edited_body, workspace_id, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
             .eq("channel", "email")
