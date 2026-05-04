@@ -429,7 +429,7 @@ class EngagementAgent(BaseAgent):
                             next_action_at = (
                                 datetime.now(timezone.utc) + timedelta(days=delay)
                             ).isoformat()
-                            next_action_type = f"send_{step['channel']}"
+                            next_action_type = f"send_{step.get('channel') or step.get('type', 'email')}"
                             break
 
                 self.db.insert_engagement_sequence({
