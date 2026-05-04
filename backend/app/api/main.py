@@ -2,6 +2,7 @@
 
 Serves the Next.js CRM dashboard with endpoints for
 companies, approvals, pipeline agents, analytics, and webhooks.
+Scheduler recovery: 2026-05-04.
 """
 
 import logging
