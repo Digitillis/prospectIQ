@@ -75,20 +75,51 @@ async def list_sent_emails(
 
 @router.get("/")
 async def list_pending_drafts(limit: int = 200):
-    """Get pending outreach drafts with company/contact info and quality scores."""
+    """Get pending outreach drafts with company/contact info and quality scores.
+
+    Companies and research are fetched in two bulk queries rather than one
+    per draft, reducing DB round-trips from O(n) to O(1) for a typical page load.
+    """
     db = get_db()
     drafts = db.get_pending_drafts(limit=limit)
 
-    # Run quality validation on each draft
+    # Batch-load companies and research in two queries instead of 2×N queries.
     from backend.app.core.draft_quality import validate_draft
 
+    company_ids = list({d["company_id"] for d in drafts if d.get("company_id")})
+
+    companies_by_id: dict = {}
+    research_by_company: dict = {}
+
+    if company_ids:
+        try:
+            cos = (
+                db._filter_ws(
+                    db.client.table("companies")
+                    .select("id, name, tier, pqs_total, personalization_hooks, pain_signals")
+                )
+                .in_("id", company_ids)
+                .execute()
+            ).data or []
+            companies_by_id = {c["id"]: c for c in cos}
+        except Exception:
+            pass
+
+        try:
+            res_rows = (
+                db.client.table("research_intelligence")
+                .select("company_id, personalization_hooks, pain_signals, technology_stack")
+                .in_("company_id", company_ids)
+                .execute()
+            ).data or []
+            research_by_company = {r["company_id"]: r for r in res_rows}
+        except Exception:
+            pass
+
     for draft in drafts:
-        company = None
-        research = None
         company_id = draft.get("company_id")
-        if company_id:
-            company = db.get_company(company_id)
-            research = db.get_research(company_id)
+        company  = companies_by_id.get(company_id) if company_id else None
+        research = research_by_company.get(company_id) if company_id else None
 
         report = validate_draft(draft, company, research)
         draft["quality_score"] = report.score
