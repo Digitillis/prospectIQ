@@ -80,8 +80,14 @@ function DraftQueueTab() {
       await approveDraft(id);
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
-    } catch { /* noop */ }
-    finally { setActionLoading(null); }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("422")) {
+        alert("This draft has quality errors and cannot be approved as-is.\nFix the body or use the edit button first.");
+      } else {
+        alert(`Approval failed: ${msg}`);
+      }
+    } finally { setActionLoading(null); }
   };
 
   const handleApproveSelected = async () => {
@@ -107,8 +113,9 @@ function DraftQueueTab() {
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setRejectingId(null);
       setRejectReason("");
-    } catch { /* noop */ }
-    finally { setActionLoading(null); }
+    } catch (err: unknown) {
+      alert(`Reject failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally { setActionLoading(null); }
   };
 
   const handleSaveEdit = async (id: string) => {
@@ -117,8 +124,9 @@ function DraftQueueTab() {
       await saveDraftEdit(id, editBody);
       setDrafts((prev) => prev.map((d) => d.id === id ? { ...d, body: editBody } : d));
       setEditingId(null);
-    } catch { /* noop */ }
-    finally { setActionLoading(null); }
+    } catch (err: unknown) {
+      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally { setActionLoading(null); }
   };
 
   const handleTestSend = async (id: string) => {
