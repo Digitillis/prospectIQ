@@ -348,11 +348,14 @@ class EnrichmentAgent(BaseAgent):
 
                         if update_data:
                             update_data["status"] = "enriched"
+                            update_data["enrichment_status"] = "enriched"
                             from backend.app.core.contact_filter import compute_ccs
                             from datetime import datetime, timezone
+                            _now = datetime.now(timezone.utc).isoformat()
+                            update_data["enriched_at"] = _now
                             merged = {**contact, **update_data}
                             update_data["ccs_score"] = compute_ccs(merged)
-                            update_data["ccs_computed_at"] = datetime.now(timezone.utc).isoformat()
+                            update_data["ccs_computed_at"] = _now
                             self.db.update_contact(contact["id"], update_data)
 
                         if email:
