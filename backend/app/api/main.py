@@ -152,6 +152,36 @@ def _run_health_snapshot() -> None:
         logger.error(f"Scheduled health_snapshot failed: {e}")
 
 
+def _run_pipeline_qc() -> None:
+    """Every-15-min job: check pipeline health and auto-fix known issues.
+
+    Checks performed:
+    - OEC staleness: qualified companies missing from outbound_eligible_contacts
+      → auto-fix via refresh_outbound_eligible()
+    - Draft generation stall: 0 drafts in last 2h with qualified companies available
+    - Discovery staleness: no new companies in > 4 days
+    - Budget burn: MTD spend approaching monthly cap
+    - Low approval queue on weekday mornings
+
+    Sends a Resend alert email on any unresolved issue. Fixes are silent.
+    """
+    try:
+        import sys
+        import os
+        script = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts", "pipeline_qc.py")
+        script = os.path.abspath(script)
+        if os.path.exists(script):
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("pipeline_qc", script)
+            mod  = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.run_qc()
+        else:
+            logger.warning("pipeline_qc.py not found at %s", script)
+    except Exception as exc:
+        logger.error("Scheduled pipeline_qc failed: %s", exc, exc_info=True)
+
+
 def _send_approved_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_daily_sends_ok
     if not workspace_daily_sends_ok(ws, "send_approved"):
@@ -1932,6 +1962,7 @@ async def lifespan(app: FastAPI):
         scheduler = BackgroundScheduler(timezone="America/Chicago")
         _scheduler = scheduler
         scheduler.add_job(_run_health_snapshot, "interval", minutes=15, id="health_snapshot")
+        scheduler.add_job(_run_pipeline_qc, "interval", minutes=15, id="pipeline_qc")
         # send_approved: Tue/Wed/Thu only, 8am-11am Chicago at :00 and :30
         # Ticks: 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00 (7 per day)
         # With batch_size=20 and daily_limit=100, first 5 ticks fill the quota
@@ -2068,12 +2099,27 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="intent_refresh",
         )
+        # Discovery: weekly runs to keep the pipeline full with fresh companies.
+        # F&B (Mon 7am) and manufacturing (Wed 7am) staggered to spread Apollo load.
+        scheduler.add_job(
+            _run_fb_discovery, "cron",
+            day_of_week="mon", hour=7, minute=0,
+            timezone="America/Chicago",
+            id="fb_discovery",
+        )
+        scheduler.add_job(
+            _run_mfg_discovery, "cron",
+            day_of_week="wed", hour=7, minute=0,
+            timezone="America/Chicago",
+            id="mfg_discovery",
+        )
         scheduler.start()
         logger.info(
             "APScheduler started — "
             "pipeline_advance every 4h (event-driven: capacity-aware discovery + learning trigger), "
             "send_approved cron Mon-Fri 8:00-11:00 Chicago (reactive advance after each batch), "
             "gmail_intake every 15m across all sender_pool mailboxes (reply draft + HITL on interested/question/objection), "
+            "fb_discovery Mon 7am, mfg_discovery Wed 7am, "
             "research 9/12/3/6pm → qualification +30m → enrichment 9:45am+2:45pm Mon-Fri (Apollo credit-gated), "
             "process_due/hitl_auto_archive every 1h, poll_instantly every 6h, "
             "personalization_refresh/jit_pregenerate every 24h, "

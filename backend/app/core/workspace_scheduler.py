@@ -81,7 +81,11 @@ def for_each_workspace(
 
 
 def get_workspace_monthly_spend(workspace_id: str) -> float:
-    """Return total API spend for a workspace in the current calendar month."""
+    """Return total API spend for a workspace in the current calendar month.
+
+    Paginates through all rows to avoid the 1000-row PostgREST default limit
+    truncating the result for high-volume workspaces.
+    """
     try:
         from backend.app.core.database import get_supabase_client
         from datetime import datetime, timezone
@@ -89,14 +93,22 @@ def get_workspace_monthly_spend(workspace_id: str) -> float:
         month_start = datetime.now(timezone.utc).replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         ).isoformat()
-        rows = (
-            client.table("api_costs")
-            .select("estimated_cost_usd")
-            .eq("workspace_id", workspace_id)
-            .gte("created_at", month_start)
-            .execute()
-        ).data or []
-        return sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+        total = 0.0
+        offset = 0
+        while True:
+            rows = (
+                client.table("api_costs")
+                .select("estimated_cost_usd")
+                .eq("workspace_id", workspace_id)
+                .gte("created_at", month_start)
+                .range(offset, offset + 999)
+                .execute()
+            ).data or []
+            total += sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+        return total
     except Exception as exc:
         logger.warning("get_workspace_monthly_spend failed: %s", exc)
         return 0.0
