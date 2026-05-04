@@ -51,6 +51,8 @@ function DraftQueueTab() {
   const [testSendingId, setTestSendingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; message: string } | null>(null);
   const [totalPending, setTotalPending] = useState<number>(0);
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   const loadDrafts = useCallback(async () => {
     setLoading(true);
@@ -96,19 +98,52 @@ function DraftQueueTab() {
     } finally { setActionLoading(null); }
   };
 
-  const handleApproveSelected = async () => {
-    const ids = Array.from(selected);
-    for (const id of ids) {
-      await handleApprove(id);
+  const handleBulkApprove = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkApproving(true);
+    setBulkProgress({ done: 0, total: ids.length });
+    let done = 0;
+    // Process in parallel batches of 5 to avoid hammering the API
+    const BATCH = 5;
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const batch = ids.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map(async (id) => {
+          try {
+            await approveDraft(id);
+            setDrafts((prev) => prev.filter((d) => d.id !== id));
+            setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+          } catch {
+            // leave failed drafts in list; user sees them remain
+          }
+          done++;
+          setBulkProgress({ done, total: ids.length });
+        })
+      );
     }
+    setBulkApproving(false);
+    setBulkProgress(null);
+    setExpandedId(null);
   };
 
-  const handleApproveHighQuality = async () => {
-    const highQ = drafts.filter((d) => {
-      const qs = d.quality_score;
-      return qs !== undefined && qs >= 80;
-    });
-    for (const d of highQ) { await handleApprove(d.id); }
+  const handleApproveSelected = () => handleBulkApprove(Array.from(selected));
+
+  const handleApproveHighQuality = () => {
+    const ids = drafts
+      .filter((d) => d.quality_score !== undefined && d.quality_score >= 80)
+      .map((d) => d.id);
+    handleBulkApprove(ids);
+  };
+
+  const allVisibleIds = filteredDrafts.map((d) => d.id);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
+  const someSelected = allVisibleIds.some((id) => selected.has(id)) && !allSelected;
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(allVisibleIds));
+    }
   };
 
   const handleReject = async (id: string) => {
@@ -190,19 +225,52 @@ function DraftQueueTab() {
         </div>
       </div>
 
-      {/* Bulk actions */}
-      {selected.size > 0 && (
+      {/* Bulk actions — always visible when drafts are loaded */}
+      {!loading && filteredDrafts.length > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-2">
-          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{selected.size} selected</span>
-          <button onClick={handleApproveSelected} className="rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100">
-            Approve {selected.size} selected
-          </button>
-          {highQCount > 0 && (
-            <button onClick={handleApproveHighQuality} className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-900">
-              Approve all quality ≥80 ({highQCount})
-            </button>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => { if (el) el.indeterminate = someSelected; }}
+              onChange={handleSelectAll}
+              className="h-4 w-4 rounded"
+            />
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {allSelected ? "Deselect all" : someSelected ? `${selected.size} selected` : "Select all"}
+            </span>
+          </label>
+
+          {selected.size > 0 && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600">|</span>
+              <button
+                onClick={handleApproveSelected}
+                disabled={bulkApproving}
+                className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
+              >
+                {bulkApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                Approve {selected.size}
+                {bulkProgress && ` (${bulkProgress.done}/${bulkProgress.total})`}
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+                Clear
+              </button>
+            </>
           )}
-          <button onClick={() => setSelected(new Set())} className="ml-auto text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">Clear</button>
+
+          {highQCount > 0 && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600 ml-auto">|</span>
+              <button
+                onClick={handleApproveHighQuality}
+                disabled={bulkApproving}
+                className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-900 disabled:opacity-50"
+              >
+                Approve all ≥80 ({highQCount})
+              </button>
+            </>
+          )}
         </div>
       )}
 
