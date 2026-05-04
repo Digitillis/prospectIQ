@@ -331,7 +331,9 @@ class EngagementAgent(BaseAgent):
                         pass
 
                 # Log interaction — use default_workspace_id directly since scheduler
-                # runs without auth context (_inject_ws would inject null)
+                # runs without auth context (_inject_ws would inject null).
+                # body is intentionally omitted: full email bodies in INSERT payloads
+                # trigger Cloudflare 400 on Railway's network path to Supabase.
                 from backend.app.core.config import get_settings as _get_settings
                 _settings = _get_settings()
                 self.db.client.table("interactions").insert({
@@ -340,7 +342,6 @@ class EngagementAgent(BaseAgent):
                     "type": "email_sent",
                     "channel": "email",
                     "subject": subject,
-                    "body": body,
                     "source": "resend",
                     "workspace_id": _settings.default_workspace_id,
                     "metadata": {
