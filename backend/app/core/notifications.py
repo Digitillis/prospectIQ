@@ -27,7 +27,7 @@ from backend.app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 _RESEND_EMAILS_URL = "https://api.resend.com/emails"
-_DEFAULT_FROM = "ProspectIQ <notifications@prospectiq.ai>"
+_DEFAULT_FROM = "ProspectIQ <avi@digitillis.io>"
 
 
 def _from_address() -> str:

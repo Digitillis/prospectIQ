@@ -868,7 +868,10 @@ async def resend_webhook(
                 except Exception as exc:
                     logger.debug("Draft bounce stamp failed: %s", exc)
 
-                db.update_contact(contact_id, {"outreach_state": action})
+                contact_update: dict = {"outreach_state": action}
+                if action in ("bounced", "not_interested"):
+                    contact_update["status"] = action
+                db.update_contact(contact_id, contact_update)
                 if company_id:
                     db.update_company(company_id, {"status": "bounced"}, allow_downgrade=True)
                 if recipient_email:
