@@ -174,9 +174,18 @@ function DraftQueueTab() {
             </button>
           ))}
         </div>
-        <button onClick={loadDrafts} className="ml-auto rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {filteredDrafts.length > 0 && (
+            <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500 select-none">
+              {expandedId
+                ? `${filteredDrafts.findIndex((d) => d.id === expandedId) + 1} / ${filteredDrafts.length}`
+                : `${filteredDrafts.length} drafts`}
+            </span>
+          )}
+          <button onClick={loadDrafts} className="rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
       {/* Bulk actions */}
