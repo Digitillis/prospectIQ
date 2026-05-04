@@ -88,17 +88,18 @@ class EngagementAgent(BaseAgent):
         return defaults
 
     def _count_sent_today(self) -> int:
-        """Count emails already sent today (UTC date)."""
+        """Count emails already sent today (UTC date) for this workspace."""
         from datetime import date
         today = date.today().isoformat()
         try:
-            r = (
+            q = (
                 self.db.client.table("outreach_drafts")
                 .select("id", count="exact")
                 .gte("sent_at", f"{today}T00:00:00")
-                .execute()
             )
-            return r.count or 0
+            if self.db.workspace_id:
+                q = q.eq("workspace_id", self.db.workspace_id)
+            return q.execute().count or 0
         except Exception:
             return 0
 

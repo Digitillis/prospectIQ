@@ -183,9 +183,11 @@ def _run_pipeline_qc() -> None:
 
 
 def _send_approved_workspace(ws: dict) -> None:
-    from backend.app.core.workspace_scheduler import workspace_daily_sends_ok
-    if not workspace_daily_sends_ok(ws, "send_approved"):
-        return
+    # Note: workspace_daily_sends_ok is intentionally not called here.
+    # It reads workspaces.settings.daily_send_limit (default 125) which is a
+    # different config source from outreach_send_config.daily_limit (500).
+    # That mismatch caused Railway ticks to be gated out after ~125 sends/day.
+    # EngagementAgent._load_send_config + _count_sent_today enforce the correct limit.
     from backend.app.core.config import get_settings
     if not get_settings().send_enabled:
         return
