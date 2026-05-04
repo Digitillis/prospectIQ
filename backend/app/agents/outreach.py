@@ -651,6 +651,24 @@ class OutreachAgent(BaseAgent):
 
                     # Create outreach draft — strip em dashes from all text fields
                     _clean = lambda s: (s or "").replace("—", " - ")
+
+                    # Signature enforcement — LLM occasionally omits the block even
+                    # when instructed. Always guarantee the correct signature is present.
+                    _body = _clean(parsed.get("body", ""))
+                    _sig_check = ["avanish mehrotra", "avi@digitillis.io"]
+                    if not any(m in _body.lower() for m in _sig_check):
+                        try:
+                            _sig = (
+                                get_outreach_guidelines()
+                                .get("sender", {})
+                                .get("signature" if sequence_step > 1 else "step_1_signature", "")
+                                or get_outreach_guidelines().get("sender", {}).get("signature", "")
+                            )
+                            if _sig:
+                                _body = _body.rstrip() + "\n\n" + _sig.strip()
+                        except Exception:
+                            pass
+
                     draft_data = {
                         "company_id": company_id,
                         "contact_id": contact["id"],
@@ -658,7 +676,7 @@ class OutreachAgent(BaseAgent):
                         "sequence_name": sequence_name,
                         "sequence_step": sequence_step,
                         "subject": _clean(parsed.get("subject", "")),
-                        "body": _clean(parsed.get("body", "")),
+                        "body": _body,
                         "personalization_notes": _clean(parsed.get("personalization_notes", "")),
                         "approval_status": "pending",
                     }
