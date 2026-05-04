@@ -182,8 +182,9 @@ def validate_draft(
             )
             break  # One is enough to flag
 
-    # 5b. Spam trigger words check
-    spam_found = [w for w in SPAM_TRIGGER_WORDS if w in body_lower]
+    # 5b. Spam trigger words check — word-boundary match to avoid false positives
+    # e.g. "free" must not fire on "freeze", "freezer", "risk-free" (handled separately)
+    spam_found = [w for w in SPAM_TRIGGER_WORDS if re.search(r'\b' + re.escape(w) + r'\b', body_lower)]
     if spam_found:
         report.add_issue(
             "error", "spam_words",
