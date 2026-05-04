@@ -191,22 +191,20 @@ class Database:
         return result.data[0] if result.data else None
 
     def get_company_by_apollo_id(self, apollo_id: str) -> dict | None:
-        """Get a company by Apollo ID (for deduplication)."""
+        """Get a company by Apollo ID (workspace-scoped, for deduplication)."""
         result = (
-            self.client.table("companies")
-            .select("id, apollo_id")
+            self._filter_ws(self.client.table("companies").select("id, apollo_id"))
             .eq("apollo_id", apollo_id)
             .execute()
         )
         return result.data[0] if result.data else None
 
     def get_company_by_domain(self, domain: str) -> dict | None:
-        """Get a company by domain (fallback dedup)."""
+        """Get a company by domain (workspace-scoped, fallback dedup)."""
         if not domain:
             return None
         result = (
-            self.client.table("companies")
-            .select("id, domain")
+            self._filter_ws(self.client.table("companies").select("id, domain"))
             .eq("domain", domain)
             .execute()
         )
