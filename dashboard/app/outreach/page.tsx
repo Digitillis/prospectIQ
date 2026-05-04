@@ -50,6 +50,7 @@ function DraftQueueTab() {
   const [filterSequence, setFilterSequence] = useState("");
   const [testSendingId, setTestSendingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; message: string } | null>(null);
+  const [totalPending, setTotalPending] = useState<number>(0);
 
   const loadDrafts = useCallback(async () => {
     setLoading(true);
@@ -57,6 +58,7 @@ function DraftQueueTab() {
       const res = await getPendingDrafts();
       const sorted = [...res.data].sort((a, b) => (b.companies?.pqs_total ?? 0) - (a.companies?.pqs_total ?? 0));
       setDrafts(sorted);
+      setTotalPending(res.total_pending ?? res.count ?? 0);
     } catch {
       setDrafts([]);
     } finally {
@@ -175,11 +177,11 @@ function DraftQueueTab() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {filteredDrafts.length > 0 && (
+          {(filteredDrafts.length > 0 || totalPending > 0) && (
             <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500 select-none">
               {expandedId
-                ? `${filteredDrafts.findIndex((d) => d.id === expandedId) + 1} / ${filteredDrafts.length}`
-                : `${filteredDrafts.length} drafts`}
+                ? `${filteredDrafts.findIndex((d) => d.id === expandedId) + 1} / ${filteredDrafts.length} · ${totalPending} total`
+                : `${filteredDrafts.length} loaded · ${totalPending} pending`}
             </span>
           )}
           <button onClick={loadDrafts} className="rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">

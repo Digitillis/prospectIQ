@@ -74,7 +74,7 @@ async def list_sent_emails(
 
 
 @router.get("/")
-async def list_pending_drafts(limit: int = 200):
+async def list_pending_drafts(limit: int = 100):
     """Get pending outreach drafts with company/contact info and quality scores.
 
     Companies and research are fetched in two bulk queries rather than one
