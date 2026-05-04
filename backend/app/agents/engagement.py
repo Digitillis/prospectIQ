@@ -209,9 +209,11 @@ class EngagementAgent(BaseAgent):
         # companies) don't silently consume all batch slots. The oldest drafts
         # are checked first; we stop sending once batch_size emails have gone out.
         send_limit = min(batch_size, max(0, remaining_today))
-        # Fetch up to 5× the send limit so there are enough candidates even if
-        # most are suppressed or locked.
-        fetch_limit = min(send_limit * 5, max(0, remaining_today) + 40)
+        # Fetch up to 5× the send limit so locked/suppressed drafts don't
+        # consume all batch slots. The secondary cap (remaining+40) is removed:
+        # when the queue has many old locked drafts at the front, that cap would
+        # prevent newer sendable drafts further back from being reached at all.
+        fetch_limit = send_limit * 5
         drafts = (
             self.db.client.table("outreach_drafts")
             .select("id, company_id, contact_id, channel, sequence_name, sequence_step, subject, body, edited_body, workspace_id, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
