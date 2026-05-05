@@ -1152,7 +1152,7 @@ export interface OutreachDraft {
   quality_score?: number;
   sent_at?: string;
   companies?: { name: string; tier?: string; pqs_total: number };
-  contacts?: { full_name?: string; title?: string; email?: string };
+  contacts?: { full_name?: string; title?: string; email?: string; open_count?: number; click_count?: number };
 }
 
 export interface Interaction {

@@ -350,11 +350,34 @@ export default function ApprovalsPage() {
                       &middot; {draft.contacts.title}
                     </span>
                   )}
+                  {draft.sequence_step && (
+                    <span className="ml-1 rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Step {draft.sequence_step}
+                    </span>
+                  )}
                 </div>
                 {draft.contacts?.email && (
                   <div className="flex items-center gap-1.5">
                     <Mail className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                     <span>{draft.contacts.email}</span>
+                  </div>
+                )}
+                {/* Engagement signals from prior steps */}
+                {draft.sequence_step > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    {(draft.contacts?.click_count ?? 0) > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 dark:bg-green-900/20 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
+                        Clicked step {draft.sequence_step - 1}
+                      </span>
+                    ) : (draft.contacts?.open_count ?? 0) > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+                        Opened step {draft.sequence_step - 1}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-400 dark:text-gray-500">
+                        No engagement on step {draft.sequence_step - 1}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

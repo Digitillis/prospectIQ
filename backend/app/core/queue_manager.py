@@ -165,6 +165,11 @@ def compute_priority_score(contact: dict, company: dict | None = None) -> int:
     tier = _tier_points(company_tier)
     penalty = _recency_penalty(contact.get("last_contacted_at") or contact.get("updated_at"))
 
+    # Engagement signal bonus: open = +10, click = +20 (click implies open, take max)
+    open_cnt = contact.get("open_count") or 0
+    click_cnt = contact.get("click_count") or 0
+    engagement = 20 if click_cnt > 0 else (10 if open_cnt > 0 else 0)
+
     raw_intent = (company or {}).get("intent_score", 0)
     # F&B FSMA intent multiplier: signals post Jan-20-2026 enforcement carry 1.5x
     if str(company_tier or "") in _FB_TIERS and raw_intent > 0:
@@ -176,7 +181,7 @@ def compute_priority_score(contact: dict, company: dict | None = None) -> int:
             raw_intent = raw_intent * 1.5
 
     intent = min(int(raw_intent), 15)  # cap intent contribution at 15
-    raw = comp + persona + tier + intent - penalty
+    raw = comp + persona + tier + intent + engagement - penalty
     return max(0, min(100, raw))
 
 

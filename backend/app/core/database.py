@@ -405,7 +405,7 @@ class Database:
         """Get outreach drafts pending approval."""
         query = self._filter_ws(
             self.client.table("outreach_drafts")
-            .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email)")
+            .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email, open_count, click_count)")
         )
         result = (
             query
