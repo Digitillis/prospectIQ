@@ -28,6 +28,9 @@ COMPANY_COOLDOWN_DAYS = 30
 # Hard bounce rate threshold (7-day rolling). Exceeding this pauses all sends.
 MAX_BOUNCE_RATE = 0.02
 
+# Minimum days between any two emails to the same contact (hard floor)
+MIN_STEP_GAP_DAYS = 5
+
 
 class AssertionFailure(Exception):
     """Raised when a pre-send invariant fails. Blocks the send."""
@@ -158,6 +161,88 @@ def assert_sender_under_daily_cap(db: Any, sender_email: str, daily_cap: int) ->
     _log_assertion(db, "", "", "sender_daily_cap", True, f"{sender_email}: under cap")
 
 
+def assert_prior_step_sent(db: Any, contact: dict, sequence_step: int) -> None:
+    """For step N ≥ 2, step N-1 must have been sent (sent_at IS NOT NULL).
+
+    Prevents step-3 from being drafted/sent when step-2 is still pending review,
+    and catches sequences whose current_step counter ran ahead of actual sends.
+    """
+    if sequence_step < 2:
+        return
+    contact_id = contact.get("id") or contact.get("contact_id")
+    if not contact_id:
+        return
+    prior_step = sequence_step - 1
+    try:
+        result = (
+            db.client.table("outreach_drafts")
+            .select("id, sent_at")
+            .eq("contact_id", contact_id)
+            .eq("sequence_step", prior_step)
+            .not_.is_("sent_at", "null")
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            detail = (
+                f"step {prior_step} has not been sent for contact {contact_id} — "
+                f"cannot send step {sequence_step}"
+            )
+            _log_assertion(db, contact_id, contact.get("company_id", ""), "prior_step_sent", False, detail)
+            _alert(f":warning: Pre-send gate: prior_step_sent failed — {contact.get('full_name')} ({detail})")
+            raise AssertionFailure("prior_step_sent", detail)
+    except AssertionFailure:
+        raise
+    except Exception as e:
+        logger.warning("Could not check prior step for contact %s: %s", contact_id, e)
+    _log_assertion(db, contact_id, contact.get("company_id", ""), "prior_step_sent", True, f"step {prior_step} confirmed sent")
+
+
+def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int) -> None:
+    """For step N ≥ 2, at least MIN_STEP_GAP_DAYS must have passed since the prior step.
+
+    Prevents rapid-fire email sequences where the system schedules steps
+    too close together due to sequence state drift.
+    """
+    if sequence_step < 2:
+        return
+    contact_id = contact.get("id") or contact.get("contact_id")
+    if not contact_id:
+        return
+    prior_step = sequence_step - 1
+    try:
+        result = (
+            db.client.table("outreach_drafts")
+            .select("sent_at")
+            .eq("contact_id", contact_id)
+            .eq("sequence_step", prior_step)
+            .not_.is_("sent_at", "null")
+            .order("sent_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data and result.data[0].get("sent_at"):
+            sent_str = result.data[0]["sent_at"].replace("Z", "+00:00")
+            try:
+                last_sent = datetime.fromisoformat(sent_str)
+            except ValueError:
+                last_sent = datetime.fromisoformat(sent_str.replace("+00:00", "")).replace(tzinfo=timezone.utc)
+            days_since = (datetime.now(timezone.utc) - last_sent).days
+            if days_since < MIN_STEP_GAP_DAYS:
+                detail = (
+                    f"only {days_since}d since step {prior_step} was sent — "
+                    f"minimum gap is {MIN_STEP_GAP_DAYS}d (step {sequence_step} blocked)"
+                )
+                _log_assertion(db, contact_id, contact.get("company_id", ""), "minimum_step_gap", False, detail)
+                _alert(f":warning: Pre-send gate: minimum_step_gap failed — {contact.get('full_name')} ({detail})")
+                raise AssertionFailure("minimum_step_gap", detail)
+    except AssertionFailure:
+        raise
+    except Exception as e:
+        logger.warning("Could not check step gap for contact %s: %s", contact_id, e)
+    _log_assertion(db, contact_id, contact.get("company_id", ""), "minimum_step_gap", True, f"gap ok for step {sequence_step}")
+
+
 def run_pre_send_assertions(
     db: Any,
     contact: dict,
@@ -165,11 +250,16 @@ def run_pre_send_assertions(
     sender_email: str,
     daily_cap: int = 125,
     cooldown_days: int = COMPANY_COOLDOWN_DAYS,
+    sequence_step: int = 1,
 ) -> None:
     """Run all pre-send invariants. Raises AssertionFailure on first violation.
 
     Call this before generating any draft. A failure means the contact should
     be skipped — the send is blocked.
+
+    For follow-up steps (sequence_step ≥ 2) two additional checks run:
+    - prior_step_sent: the preceding step was actually delivered
+    - minimum_step_gap: at least MIN_STEP_GAP_DAYS since the preceding send
     """
     assert_email_deliverable(db, contact)
     assert_email_name_consistent(db, contact)
@@ -177,3 +267,6 @@ def run_pre_send_assertions(
     assert_persona_target(db, contact)
     assert_no_recent_company_send(db, contact, company, days=cooldown_days)
     assert_sender_under_daily_cap(db, sender_email, daily_cap)
+    # Follow-up sequence guards
+    assert_prior_step_sent(db, contact, sequence_step)
+    assert_minimum_step_gap(db, contact, sequence_step)

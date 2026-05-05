@@ -612,6 +612,7 @@ class OutreachAgent(BaseAgent):
                             # Follow-ups continue an existing sequence — skip the
                             # "no send in past N days" gate (step 1 was sent recently by design).
                             cooldown_days=0 if _is_followup else COMPANY_COOLDOWN_DAYS,
+                            sequence_step=sequence_step,
                         )
                     except AssertionFailure as _af:
                         console.print(

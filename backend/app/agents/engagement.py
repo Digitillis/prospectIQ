@@ -726,6 +726,25 @@ class EngagementAgent(BaseAgent):
                     result.add_detail(company_name, "completed", "Sequence finished")
                     continue
 
+                # Guard: prior step must be confirmed sent before advancing
+                if next_step > 2 and contact_id:
+                    prior_sent = (
+                        self.db.client.table("outreach_drafts")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .eq("sequence_step", next_step - 1)
+                        .not_.is_("sent_at", "null")
+                        .limit(1)
+                        .execute()
+                    ).data or []
+                    if not prior_sent:
+                        console.print(
+                            f"  [red]{company_name}: step {next_step - 1} not sent yet — "
+                            f"will not advance sequence to step {next_step}[/red]"
+                        )
+                        result.skipped += 1
+                        continue
+
                 # channel is defined at sequence level, not per-step in most YAML sequences
                 channel = step_config.get("channel") or sequence.get("channel", "email")
 
@@ -975,7 +994,43 @@ class EngagementAgent(BaseAgent):
                     result.skipped += 1
                     continue
 
-                # Check for reply context
+                # ---- Pre-generation sequence integrity checks ----
+                # Check 1: preceding step must have been sent
+                if next_step > 1:
+                    prior_sent_rows = (
+                        self.db.client.table("outreach_drafts")
+                        .select("sent_at")
+                        .eq("contact_id", contact_id)
+                        .eq("sequence_step", next_step - 1)
+                        .not_.is_("sent_at", "null")
+                        .limit(1)
+                        .execute()
+                    ).data or []
+                    if not prior_sent_rows:
+                        console.print(
+                            f"  [red]{company_name}: step {next_step - 1} not yet sent — "
+                            f"holding step {next_step} draft (sequence state ahead of sends)[/red]"
+                        )
+                        result.skipped += 1
+                        continue
+
+                    # Check 2: minimum gap between consecutive steps
+                    from backend.app.core.pre_send_assertions import MIN_STEP_GAP_DAYS
+                    prior_sent_str = prior_sent_rows[0].get("sent_at", "")
+                    try:
+                        prior_dt = datetime.fromisoformat(prior_sent_str.replace("Z", "+00:00"))
+                    except ValueError:
+                        prior_dt = datetime.fromisoformat(prior_sent_str.replace("+00:00", "")).replace(tzinfo=timezone.utc)
+                    days_since_prior = (now - prior_dt).days
+                    if days_since_prior < MIN_STEP_GAP_DAYS:
+                        console.print(
+                            f"  [yellow]{company_name}: only {days_since_prior}d since step {next_step - 1} — "
+                            f"minimum gap is {MIN_STEP_GAP_DAYS}d, holding step {next_step}[/yellow]"
+                        )
+                        result.skipped += 1
+                        continue
+
+                # Check 3: reply context — inject or stop sequence
                 reply_ctx = self._get_latest_reply_context(contact_id)
                 if reply_ctx and reply_ctx.get("stop_sequence"):
                     self.db.update_engagement_sequence(seq["id"], {
