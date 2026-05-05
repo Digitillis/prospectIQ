@@ -20,6 +20,8 @@ import {
   Inbox,
   Shuffle,
   MessageSquareReply,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, logReply, OutreachDraft, type DraftQualityScore, type LogReplyPayload } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
@@ -47,6 +49,8 @@ export default function ApprovalsPage() {
   const [replyNotes, setReplyNotes] = useState("");
   const [replyLoading, setReplyLoading] = useState<string | null>(null);
   const [replySuccess, setReplySuccess] = useState<Record<string, string>>({});
+  const [alerts, setAlerts] = useState<{ id: string; assertion: string; detail: string; contact_name: string; evaluated_at: string }[]>([]);
+  const [alertsDismissed, setAlertsDismissed] = useState(false);
   const TEST_EMAIL = "avi@digitillis.com";
 
   const handleLogReply = async (draft: OutreachDraft) => {
@@ -103,6 +107,14 @@ export default function ApprovalsPage() {
   useEffect(() => {
     fetchDrafts();
   }, [fetchDrafts]);
+
+  useEffect(() => {
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://prospectiq-production-4848.up.railway.app";
+    fetch(`${API_BASE}/api/approvals/alerts`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => { if (json?.items) setAlerts(json.items); })
+      .catch(() => {});
+  }, []);
 
   const handleApprove = async (id: string) => {
     setActionLoading(id);
@@ -264,6 +276,44 @@ export default function ApprovalsPage() {
           </span>
         </div>
       </div>
+
+      {/* Pre-send assertion failures — shown until dismissed */}
+      {alerts.length > 0 && !alertsDismissed && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div>
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                  {alerts.length} email{alerts.length !== 1 ? "s" : ""} held — pre-send check failed
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {alerts.slice(0, 5).map((a) => (
+                    <li key={a.id} className="text-xs text-amber-700 dark:text-amber-300">
+                      <span className="font-medium">{a.assertion.replace(/_/g, " ")}</span>
+                      {a.contact_name ? ` · ${a.contact_name}` : ""}
+                      {" — "}
+                      {a.detail}
+                    </li>
+                  ))}
+                  {alerts.length > 5 && (
+                    <li className="text-xs text-amber-600 dark:text-amber-400">
+                      +{alerts.length - 5} more in the last 24h
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </div>
+            <button
+              onClick={() => setAlertsDismissed(true)}
+              className="shrink-0 rounded p-0.5 text-amber-500 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-200"
+              title="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-300">

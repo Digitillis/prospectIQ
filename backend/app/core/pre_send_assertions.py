@@ -57,6 +57,8 @@ def _log_assertion(db: Any, contact_id: str, company_id: str, assertion: str,
 
 
 def _alert(message: str) -> None:
+    # Slack is optional — failures are durably stored in send_assertions
+    # and surfaced on the dashboard via /api/approvals/alerts.
     try:
         from backend.app.utils.notifications import notify_slack
         notify_slack(message, emoji=":rotating_light:")

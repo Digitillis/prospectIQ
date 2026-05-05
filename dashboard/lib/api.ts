@@ -140,6 +140,16 @@ export const addNote = (companyId: string, body: string, subject?: string) =>
 export const getPendingDrafts = () =>
   fetchAPI<{ data: OutreachDraft[]; count: number; total_pending: number }>("/api/approvals");
 
+export interface AlertItem {
+  id: string;
+  assertion: string;
+  detail: string;
+  contact_name: string;
+  evaluated_at: string;
+}
+export const getAlerts = (hours = 24) =>
+  fetchAPI<{ count: number; items: AlertItem[] }>(`/api/approvals/alerts?hours=${hours}`);
+
 export const approveDraft = (id: string, editedBody?: string) =>
   fetchAPI(`/api/approvals/${id}/approve`, {
     method: "POST",

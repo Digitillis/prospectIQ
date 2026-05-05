@@ -13,11 +13,30 @@ import {
   Search,
   Moon,
   Sun,
+  Bell,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://prospectiq-production-4848.up.railway.app";
+
+/** Alert badge — recent pre-send assertion failures. */
+function useAlertsBadge(): number {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const load = () =>
+      fetch(`${API_BASE}/api/approvals/alerts`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json) => { if (json) setCount(json.count ?? 0); })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  return count;
+}
 
 /** Hot signals badge — companies with intent_score > 15. */
 function useSignalsBadge(): number {
@@ -58,6 +77,7 @@ interface NavSection {
 export function Sidebar() {
   const pathname = usePathname();
   const signalsBadge = useSignalsBadge();
+  const alertsBadge = useAlertsBadge();
 
   const [dark, setDark] = useState(false);
 
@@ -89,6 +109,7 @@ export function Sidebar() {
         { label: "Pipeline", href: "/pipeline", icon: Activity },
         { label: "Signals", href: "/signals", icon: Zap, badge: signalsBadge > 0 ? signalsBadge : undefined },
         { label: "Outreach", href: "/outreach", icon: Send },
+        { label: "Approvals", href: "/approvals", icon: Bell, badge: alertsBadge > 0 ? alertsBadge : undefined },
       ],
     },
     {

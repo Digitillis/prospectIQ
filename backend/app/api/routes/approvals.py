@@ -145,6 +145,57 @@ async def list_pending_drafts(limit: int = 100):
     return {"data": drafts, "count": len(drafts), "total_pending": total_pending}
 
 
+@router.get("/alerts")
+async def list_alerts(hours: int = 24):
+    """Return recent pre-send assertion failures for the dashboard alert badge.
+
+    Only returns failed assertions (passed=False) from the past `hours` hours.
+    Groups by assertion type so the UI can show a concise summary.
+    """
+    db = get_db()
+    cutoff = (datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=hours)).isoformat()
+    try:
+        rows = (
+            db.client.table("send_assertions")
+            .select("id, assertion, detail, contact_id, company_id, evaluated_at")
+            .eq("passed", False)
+            .gte("evaluated_at", cutoff)
+            .order("evaluated_at", desc=True)
+            .limit(100)
+            .execute()
+        ).data or []
+    except Exception:
+        rows = []
+
+    # Enrich with contact name where available
+    contact_ids = list({r["contact_id"] for r in rows if r.get("contact_id")})
+    names: dict[str, str] = {}
+    if contact_ids:
+        try:
+            contacts = (
+                db.client.table("contacts")
+                .select("id, full_name, email")
+                .in_("id", contact_ids)
+                .execute()
+            ).data or []
+            names = {c["id"]: c.get("full_name") or c.get("email", "") for c in contacts}
+        except Exception:
+            pass
+
+    items = [
+        {
+            "id": r["id"],
+            "assertion": r["assertion"],
+            "detail": r["detail"],
+            "contact_name": names.get(r.get("contact_id", ""), ""),
+            "evaluated_at": r["evaluated_at"],
+        }
+        for r in rows
+    ]
+
+    return {"count": len(items), "items": items}
+
+
 @router.post("/{draft_id}/approve")
 async def approve_draft(
     draft_id: str,
