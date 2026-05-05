@@ -549,7 +549,19 @@ class EngagementAgent(BaseAgent):
             console.print("[yellow]No sequences due for action.[/yellow]")
             return result
 
-        console.print(f"[cyan]Processing {len(due_sequences)} due sequence actions...[/cyan]")
+        # Warm contacts (opened or clicked) are processed first so their step-2
+        # drafts are generated and queued ahead of cold contacts.
+        def _warmth(seq: dict) -> int:
+            c = seq.get("contacts") or {}
+            return 0 if ((c.get("open_count") or 0) > 0 or (c.get("click_count") or 0) > 0) else 1
+
+        due_sequences.sort(key=lambda s: (_warmth(s), s.get("next_action_at") or ""))
+
+        warm_count = sum(1 for s in due_sequences if _warmth(s) == 0)
+        console.print(
+            f"[cyan]Processing {len(due_sequences)} due sequence actions "
+            f"({warm_count} warm, {len(due_sequences) - warm_count} cold)...[/cyan]"
+        )
 
         for seq in due_sequences:
             company = seq.get("companies", {}) or {}

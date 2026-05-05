@@ -528,6 +528,53 @@ def _handle_email_unsubscribed(db, payload: dict) -> dict:
     return {"status": "processed", "action": "unsubscribed", "email": from_email}
 
 
+def _advance_warm_sequence(db, contact_id: str, days_advance: int = 2) -> None:
+    """Pull next_action_at forward when a contact shows engagement signal.
+
+    Never advances to earlier than tomorrow — preserves a draft review window.
+    Only moves the date if it would actually be sooner than the current schedule.
+    """
+    from datetime import datetime, timezone, timedelta
+    try:
+        now = datetime.now(timezone.utc)
+        seqs = (
+            db.client.table("engagement_sequences")
+            .select("id, next_action_at")
+            .eq("contact_id", contact_id)
+            .eq("status", "active")
+            .order("next_action_at")
+            .limit(1)
+            .execute()
+            .data or []
+        )
+        if not seqs:
+            return
+        seq = seqs[0]
+        current_next_str = seq.get("next_action_at")
+        if not current_next_str:
+            return
+        # Normalize timestamp — Python 3.9 fromisoformat can't handle +00:00 or
+        # fractional seconds longer than 6 digits; strip and assume UTC.
+        _ts = current_next_str.replace("Z", "").replace("+00:00", "")
+        if "." in _ts:
+            _base, _frac = _ts.split(".", 1)
+            _ts = _base + "." + _frac[:6].ljust(6, "0")
+        current_next = datetime.fromisoformat(_ts).replace(tzinfo=timezone.utc)
+        # Never earlier than tomorrow — keeps a review window
+        floor = now + timedelta(days=1)
+        new_next = max(floor, current_next - timedelta(days=days_advance))
+        if new_next < current_next:
+            db.client.table("engagement_sequences").update({
+                "next_action_at": new_next.isoformat(),
+            }).eq("id", seq["id"]).execute()
+            logger.info(
+                "Warm contact %s: advanced next step from %s to %s",
+                contact_id, current_next_str[:10], new_next.date()
+            )
+    except Exception as exc:
+        logger.debug("sequence advance failed (non-fatal): %s", exc)
+
+
 def _handle_email_opened(db, payload: dict) -> dict:
     """Handle email open events — update engagement signal."""
     to_email: str = payload.get("to_email") or payload.get("email", "") or ""
@@ -537,15 +584,16 @@ def _handle_email_opened(db, payload: dict) -> dict:
         return {"status": "ignored", "reason": "contact not found"}
 
     try:
-        # Increment open_count on contact
         contact = db.client.table("contacts").select("open_count").eq("id", contact_id).limit(1).execute()
         current = contact.data[0].get("open_count", 0) if contact.data else 0
         db.client.table("contacts").update({
             "open_count": (current or 0) + 1,
-            "last_opened_at": _now_iso(),
         }).eq("id", contact_id).execute()
     except Exception as exc:
         logger.debug("open_count update failed (column may not exist): %s", exc)
+
+    # Pull next step forward — opened contacts are higher-intent, serve them sooner
+    _advance_warm_sequence(db, contact_id, days_advance=2)
 
     return {"status": "processed", "action": "opened"}
 
@@ -563,10 +611,12 @@ def _handle_email_clicked(db, payload: dict) -> dict:
         current = contact.data[0].get("click_count", 0) if contact.data else 0
         db.client.table("contacts").update({
             "click_count": (current or 0) + 1,
-            "last_clicked_at": _now_iso(),
         }).eq("id", contact_id).execute()
     except Exception as exc:
         logger.debug("click_count update failed: %s", exc)
+
+    # Clicks are stronger intent than opens — advance by 3 days
+    _advance_warm_sequence(db, contact_id, days_advance=3)
 
     return {"status": "processed", "action": "clicked"}
 

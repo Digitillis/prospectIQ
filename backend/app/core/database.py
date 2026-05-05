@@ -532,7 +532,7 @@ class Database:
         """Get active engagement sequences, optionally filtered by due date."""
         query = self._filter_ws(
             self.client.table("engagement_sequences")
-            .select("*, companies(name), contacts(full_name, email)")
+            .select("*, companies(name), contacts(full_name, email, open_count, click_count)")
         ).eq("status", "active")
         if due_before:
             query = query.lte("next_action_at", due_before)
