@@ -419,24 +419,38 @@ class ApolloClient:
     def get_credits(self) -> dict:
         """Return Apollo account credit usage for the current month.
 
-        Calls GET /auth/health — free, does not consume credits.
+        Apollo's /auth/health endpoint requires the API key as a query param
+        (not just the X-Api-Key header) to populate the user credit fields.
+        Falls back to the header-only call so that a key format change doesn't
+        silently break credit tracking.
 
         Returns:
             Dict with keys:
               credits_used      — credits consumed this billing month
               credit_limit      — monthly credit cap
-              credits_remaining — credit_limit - credits_used (0 if uncapped)
+              credits_remaining — credit_limit - credits_used
         """
         try:
             self._rate_limit()
-            response = self.client.get("/auth/health")
+            # Pass api_key as query param — required for /auth/health to return
+            # the user object with credit fields (header-only returns empty user).
+            response = self.client.get(
+                "/auth/health", params={"api_key": self.api_key}
+            )
             response.raise_for_status()
             data = response.json()
             user = data.get("user") or {}
             used = int(user.get("credits_used_for_the_month") or 0)
             limit = int(user.get("credit_limit_for_the_month") or 0)
-            remaining = max(limit - used, 0) if limit else 9999
-            return {"credits_used": used, "credit_limit": limit, "credits_remaining": remaining}
+            if limit:
+                remaining = max(limit - used, 0)
+                return {"credits_used": used, "credit_limit": limit, "credits_remaining": remaining}
+            # If limit is still zero, the endpoint returned no credit data.
+            # Log a warning so this is visible in Railway logs.
+            logger.warning(
+                "get_credits: /auth/health returned no credit data (user=%s)", user
+            )
+            return {"credits_used": 0, "credit_limit": 0, "credits_remaining": 9999}
         except Exception as exc:
             logger.warning("get_credits failed: %s", exc)
             return {"credits_used": 0, "credit_limit": 0, "credits_remaining": 9999}
