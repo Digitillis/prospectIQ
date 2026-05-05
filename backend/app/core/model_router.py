@@ -62,3 +62,24 @@ def get_model(task: str) -> str:
         Model ID string ready to pass to the Anthropic client.
     """
     return _TASK_MODEL.get(task, SONNET)
+
+
+def get_model_for_outreach(
+    sequence_step: int,
+    open_count: int = 0,
+    click_count: int = 0,
+) -> str:
+    """Engagement-aware model selection for outreach drafts.
+
+    Step 1 always uses Sonnet — cold opens, first impression.
+    Step 2+: Sonnet if contact has opened or clicked (warm signal),
+             Haiku otherwise (cold follow-up, formulaic, cost-efficient).
+
+    Why: opened/clicked contacts have shown intent; a higher-quality
+    personalised message at step 2 is worth ~6x the token cost.
+    """
+    if sequence_step <= 1:
+        return SONNET
+    if open_count > 0 or click_count > 0:
+        return SONNET
+    return HAIKU

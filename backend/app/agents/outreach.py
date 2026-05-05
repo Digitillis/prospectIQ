@@ -618,8 +618,12 @@ class OutreachAgent(BaseAgent):
                     # Call Claude
                     console.print(f"  [dim]{company_name} → {contact.get('full_name', 'Unknown')}...[/dim]")
 
-                    from backend.app.core.model_router import get_model
-                    _draft_model = get_model("outreach_step1" if sequence_step <= 1 else "outreach_step2plus")
+                    from backend.app.core.model_router import get_model_for_outreach
+                    _draft_model = get_model_for_outreach(
+                        sequence_step=sequence_step,
+                        open_count=int(contact.get("open_count") or 0),
+                        click_count=int(contact.get("click_count") or 0),
+                    )
 
                     response = client.messages.create(
                         model=_draft_model,
