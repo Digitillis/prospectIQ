@@ -736,10 +736,12 @@ class Database:
         return self.update_contact(contact_id, data)
 
     def mark_contact_enrichment_failed(self, contact_id: str, notes: str = "") -> dict:
-        """Mark a contact's enrichment attempt as failed."""
+        """Mark a contact's enrichment as permanently failed after 3 misses.
+        Sets enrichment_attempts=3 so the pool selector won't re-pick this contact."""
         return self.update_contact(contact_id, {
             "enrichment_status": "failed",
             "enrichment_source": None,
+            "enrichment_attempts": 3,
         })
 
     def mark_contacts_stale(self, stale_days: int = 90) -> int:
