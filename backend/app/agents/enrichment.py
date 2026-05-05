@@ -97,19 +97,29 @@ class EnrichmentAgent(BaseAgent):
             for co in pool:
                 if len(companies) >= limit:
                     break
-                # Skip companies with no domain — Apollo discovery without a
-                # domain falls back to name search which produces poor matches.
-                if not co.get("domain"):
-                    continue
                 existing = self.db.get_contacts_for_company(co["id"])
                 # Include if: no contacts yet (need discovery), or some contacts
                 # still have no email and haven't exhausted their attempt budget.
                 if not existing:
+                    # No contacts yet — need Apollo People Search to discover them.
+                    # That requires a domain; skip if unavailable.
+                    if not co.get("domain"):
+                        continue
                     companies.append(co)
                 elif any(
                     not c.get("email") and int(c.get("enrichment_attempts") or 0) < 3
                     for c in existing
                 ):
+                    # Have contacts but missing emails. If they have apollo_id we can
+                    # People Match directly — no domain needed. Only skip if no
+                    # apollo_id AND no domain (name search produces poor matches).
+                    needs_match = [
+                        c for c in existing
+                        if not c.get("email") and int(c.get("enrichment_attempts") or 0) < 3
+                    ]
+                    can_enrich = any(c.get("apollo_id") for c in needs_match)
+                    if not can_enrich and not co.get("domain"):
+                        continue
                     companies.append(co)
 
         if not companies:
