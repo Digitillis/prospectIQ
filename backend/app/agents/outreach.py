@@ -366,6 +366,7 @@ class OutreachAgent(BaseAgent):
         tiers: list[str] | None = None,
         reply_context: str | None = None,
         time_gap_days: int | None = None,
+        contact_id: str | None = None,
     ) -> AgentResult:
         """Generate outreach drafts for qualified companies.
 
@@ -377,6 +378,9 @@ class OutreachAgent(BaseAgent):
             limit: Max companies to process.
             time_gap_days: Days since step 1 was sent. Used to adjust follow-up
                 framing when the gap is unusually long (>14 days).
+            contact_id: Pin generation to one specific contact. When set with
+                sequence_step >= 2, skips company-level lock and threading gates
+                (we are continuing an existing sequence, not starting a new thread).
 
         Returns:
             AgentResult with draft creation stats.
@@ -452,52 +456,72 @@ class OutreachAgent(BaseAgent):
                     result.add_detail(company_name, "icp_excluded", _icp_reason or "")
                     continue
 
-                # Company-level send lock — prevent multi-contact collision
-                from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
-                locked, lock_reason = is_company_locked(self.db, company_id)
-                if locked:
-                    console.print(f"  [dim]{company_name}: company locked — {lock_reason}[/dim]")
-                    result.skipped += 1
-                    continue
-
-                # Threading state gate — check before any contact work
-                from backend.app.core.threading_coordinator import ThreadingCoordinator
-                _tc = ThreadingCoordinator(self.db)
-                _tc_ok, _tc_reason = _tc.can_send_contact_1(company)
-                if not _tc_ok:
-                    console.print(f"  [dim]{company_name}: threading gate — {_tc_reason}[/dim]")
-                    result.skipped += 1
-                    continue
-
-                # Select contacts from hard SQL gate (outbound_eligible_contacts)
-                contacts = self.db.get_outbound_eligible_contacts_for_company(company_id)
-
-                if multi_thread and max_contacts_per_company > 1:
-                    target_contacts = self._select_contacts_for_threading(
-                        contacts, max_contacts_per_company
+                # Follow-up shortcut: when continuing an existing sequence for a
+                # pinned contact (step 2+), skip the company lock and threading
+                # gates — those gates prevent *new* threads, not sequence continuations.
+                _is_followup = contact_id is not None and sequence_step >= 2
+                if _is_followup:
+                    pinned = (
+                        self.db.client.table("contacts")
+                        .select("*")
+                        .eq("id", contact_id)
+                        .limit(1)
+                        .execute()
+                        .data or []
                     )
+                    if not pinned:
+                        result.skipped += 1
+                        continue
+                    valid_contacts = [pinned[0]]
                 else:
-                    primary = self._select_primary_contact(contacts)
-                    target_contacts = [primary] if primary else []
+                    # Company-level send lock — prevent multi-contact collision
+                    from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
+                    locked, lock_reason = is_company_locked(self.db, company_id)
+                    if locked:
+                        console.print(f"  [dim]{company_name}: company locked — {lock_reason}[/dim]")
+                        result.skipped += 1
+                        continue
 
-                if not target_contacts:
-                    console.print(f"  [yellow]{company_name}: No suitable contact found. Skipping.[/yellow]")
-                    result.skipped += 1
-                    result.add_detail(company_name, "skipped", "No suitable contact")
-                    continue
+                    # Threading state gate — check before any contact work
+                    from backend.app.core.threading_coordinator import ThreadingCoordinator
+                    _tc = ThreadingCoordinator(self.db)
+                    _tc_ok, _tc_reason = _tc.can_send_contact_1(company)
+                    if not _tc_ok:
+                        console.print(f"  [dim]{company_name}: threading gate — {_tc_reason}[/dim]")
+                        result.skipped += 1
+                        continue
 
-                # Filter out suppressed contacts
-                valid_contacts = []
-                for contact in target_contacts:
-                    contact_suppressed, contact_reason = is_suppressed(
-                        self.db, company_id, contact["id"]
-                    )
-                    if contact_suppressed:
-                        console.print(
-                            f"  [dim]{company_name}: {contact.get('full_name', '?')} suppressed ({contact_reason})[/dim]"
+                if not _is_followup:
+                    # Select contacts from hard SQL gate (outbound_eligible_contacts)
+                    contacts = self.db.get_outbound_eligible_contacts_for_company(company_id)
+
+                    if multi_thread and max_contacts_per_company > 1:
+                        target_contacts = self._select_contacts_for_threading(
+                            contacts, max_contacts_per_company
                         )
                     else:
-                        valid_contacts.append(contact)
+                        primary = self._select_primary_contact(contacts)
+                        target_contacts = [primary] if primary else []
+
+                    if not target_contacts:
+                        console.print(f"  [yellow]{company_name}: No suitable contact found. Skipping.[/yellow]")
+                        result.skipped += 1
+                        result.add_detail(company_name, "skipped", "No suitable contact")
+                        continue
+
+                    # Filter out suppressed contacts
+                    _filtered = []
+                    for contact in target_contacts:
+                        contact_suppressed, contact_reason = is_suppressed(
+                            self.db, company_id, contact["id"]
+                        )
+                        if contact_suppressed:
+                            console.print(
+                                f"  [dim]{company_name}: {contact.get('full_name', '?')} suppressed ({contact_reason})[/dim]"
+                            )
+                        else:
+                            _filtered.append(contact)
+                    valid_contacts = _filtered
 
                 if not valid_contacts:
                     result.skipped += 1
@@ -558,25 +582,26 @@ class OutreachAgent(BaseAgent):
                         )
                         continue
 
-                    # Cross-channel check — block email if LinkedIn is active
-                    from backend.app.core.channel_coordinator import can_use_channel
-                    channel_ok, channel_reason = can_use_channel(self.db, contact["id"], "email")
-                    if not channel_ok:
-                        console.print(
-                            f"  [dim]{company_name}: {contact.get('full_name', '?')} — email blocked ({channel_reason})[/dim]"
-                        )
-                        # Don't skip the company, just skip this contact
-                        continue
+                    # Cross-channel and cooldown checks are only for step-1 (new threads).
+                    # Follow-ups continue an existing sequence — these gates don't apply.
+                    if not _is_followup:
+                        from backend.app.core.channel_coordinator import can_use_channel, has_recent_activity
+                        channel_ok, channel_reason = can_use_channel(self.db, contact["id"], "email")
+                        if not channel_ok:
+                            console.print(
+                                f"  [dim]{company_name}: {contact.get('full_name', '?')} — email blocked ({channel_reason})[/dim]"
+                            )
+                            continue
 
-                    # 48-hour activity cooldown — prevent rapid-fire touches
-                    recent, activity_desc = has_recent_activity(self.db, contact["id"])
-                    if recent:
-                        console.print(f"  [dim]{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}[/dim]")
-                        continue
+                        # 48-hour activity cooldown — prevent rapid-fire first touches
+                        recent, activity_desc = has_recent_activity(self.db, contact["id"])
+                        if recent:
+                            console.print(f"  [dim]{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}[/dim]")
+                            continue
 
                     # Pre-send invariant library — hard block before any draft generation
                     from backend.app.core.pre_send_assertions import (
-                        run_pre_send_assertions, AssertionFailure,
+                        run_pre_send_assertions, AssertionFailure, COMPANY_COOLDOWN_DAYS,
                     )
                     _guidelines = get_outreach_guidelines()
                     _sender_email = _guidelines.get("sender", {}).get("email", "")
@@ -584,6 +609,9 @@ class OutreachAgent(BaseAgent):
                         run_pre_send_assertions(
                             self.db, contact, company, _sender_email,
                             daily_cap=getattr(settings, "daily_send_limit", 125),
+                            # Follow-ups continue an existing sequence — skip the
+                            # "no send in past N days" gate (step 1 was sent recently by design).
+                            cooldown_days=0 if _is_followup else COMPANY_COOLDOWN_DAYS,
                         )
                     except AssertionFailure as _af:
                         console.print(

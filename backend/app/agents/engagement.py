@@ -1016,6 +1016,7 @@ class EngagementAgent(BaseAgent):
                     sequence_step=next_step,
                     reply_context=reply_ctx.get("context_str") if reply_ctx else None,
                     time_gap_days=jit_time_gap_days,
+                    contact_id=contact_id,
                 )
 
                 if outreach_result.processed > 0:
