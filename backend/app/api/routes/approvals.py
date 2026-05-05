@@ -154,6 +154,9 @@ async def list_alerts(hours: int = 24):
     """
     db = get_db()
     cutoff = (datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=hours)).isoformat()
+    # no_recent_company_send is a cold-outreach-only gate; follow-ups bypass it via
+    # cooldown_days=0. Exclude it from dashboard alerts to avoid noise.
+    _NOISE_ASSERTIONS = {"no_recent_company_send", "sender_daily_cap"}
     try:
         rows = (
             db.client.table("send_assertions")
@@ -161,11 +164,12 @@ async def list_alerts(hours: int = 24):
             .eq("passed", False)
             .gte("evaluated_at", cutoff)
             .order("evaluated_at", desc=True)
-            .limit(100)
+            .limit(200)
             .execute()
         ).data or []
     except Exception:
         rows = []
+    rows = [r for r in rows if r.get("assertion") not in _NOISE_ASSERTIONS]
 
     # Enrich with contact name where available
     contact_ids = list({r["contact_id"] for r in rows if r.get("contact_id")})

@@ -794,6 +794,7 @@ class EngagementAgent(BaseAgent):
                         sequence_step=next_step,
                         reply_context=reply_ctx.get("context_str") if reply_ctx else None,
                         time_gap_days=time_gap_days,
+                        contact_id=contact_id,  # enables _is_followup → bypasses new-thread gates
                     )
                     if outreach_result.processed > 0:
                         gap_label = f" [{time_gap_days}d gap]" if time_gap_days and time_gap_days >= 14 else ""
