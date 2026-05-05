@@ -304,7 +304,7 @@ PROSPECT AWARENESS LEVEL: {awareness_level}
 
 SEQUENCE: {sequence_name}, Step {sequence_step}
 CHANNEL: {channel}
-{time_gap_block}{reply_context_block}
+{prior_thread_block}{time_gap_block}{reply_context_block}
 STEP INSTRUCTIONS:
 {step_instructions}
 
@@ -630,6 +630,29 @@ class OutreachAgent(BaseAgent):
                     # Resolve channel from step or sequence level
                     resolved_channel = step_config.get("channel") or sequence.get("channel", "email")
 
+                    # Fetch prior sent messages for this contact so the model
+                    # can read the full thread and avoid repeating hooks/angles.
+                    prior_messages: list[dict] = []
+                    if sequence_step > 1:
+                        try:
+                            _prior_rows = (
+                                self.db.client.table("outreach_drafts")
+                                .select("sequence_step, subject, edited_body, body, sent_at")
+                                .eq("contact_id", contact["id"])
+                                .not_.is_("sent_at", "null")
+                                .order("sequence_step")
+                                .execute()
+                                .data or []
+                            )
+                            for _pr in _prior_rows:
+                                prior_messages.append({
+                                    "step": _pr["sequence_step"],
+                                    "subject": _pr.get("subject", ""),
+                                    "body": (_pr.get("edited_body") or _pr.get("body", ""))[:600],
+                                })
+                        except Exception:
+                            pass
+
                     # Build the prompt
                     prompt = self._build_prompt(
                         company=company,
@@ -642,6 +665,7 @@ class OutreachAgent(BaseAgent):
                         channel=resolved_channel,
                         reply_context=reply_context,
                         time_gap_days=time_gap_days,
+                        prior_messages=prior_messages,
                     )
 
                     # Call Claude
@@ -891,6 +915,7 @@ class OutreachAgent(BaseAgent):
         channel: str = "email",
         reply_context: str | None = None,
         time_gap_days: int | None = None,
+        prior_messages: list[dict] | None = None,
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -980,6 +1005,28 @@ class OutreachAgent(BaseAgent):
         except Exception:
             company_signals_text = "None available"
 
+        # Build prior thread block — full text of every previously sent email
+        if prior_messages:
+            thread_parts = []
+            for pm in prior_messages:
+                thread_parts.append(
+                    f"--- Step {pm['step']} (sent) ---\n"
+                    f"Subject: {pm['subject']}\n"
+                    f"{pm['body']}"
+                )
+            prior_thread_block = (
+                "\n\nPRIOR OUTREACH THREAD (emails already sent to this contact):\n"
+                + "\n\n".join(thread_parts)
+                + "\n\n⚠️  THREAD CONTINUITY RULES — MANDATORY:\n"
+                "1. Read every prior email above before writing.\n"
+                "2. Do NOT repeat the same opening hook, angle, or personalization fact used in a prior step.\n"
+                "3. Do NOT repeat a CTA that was already made (e.g. if step 1 asked for a 15-min call, don't ask again — offer something different or escalate).\n"
+                "4. Your email must read as the next logical message in this conversation, not as a fresh cold email.\n"
+                "5. If step 1 introduced a problem, step 2 should deepen it or introduce a proof point. If step 2 gave a case study, step 3 should make a direct ask.\n"
+            )
+        else:
+            prior_thread_block = ""
+
         # Build time-gap framing block for follow-ups with an unusually long gap
         if time_gap_days is not None and time_gap_days >= 14 and step_config.get("step", 1) > 1:
             weeks = round(time_gap_days / 7)
@@ -1037,6 +1084,7 @@ class OutreachAgent(BaseAgent):
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
             channel=channel,
+            prior_thread_block=prior_thread_block,
             time_gap_block=time_gap_block,
             reply_context_block=reply_context_block,
             step_instructions=step_text,
