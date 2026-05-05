@@ -16,7 +16,9 @@ from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.agents.discovery import classify_persona
+from backend.app.core.config import get_settings
 from backend.app.integrations.apollo import ApolloClient
+from backend.app.integrations.zerobounce import ZeroBounceClient
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -389,33 +391,91 @@ class EnrichmentAgent(BaseAgent):
                                 + (f" [{email_status}]" if email_status else ""),
                             )
                         else:
-                            # Track consecutive misses. After 3 attempts with no email
-                            # returned, flip to 'failed' so this contact stops consuming
-                            # Apollo credits every cycle.
-                            attempts = int(contact.get("enrichment_attempts") or 0) + 1
-                            if attempts >= 3:
-                                self.db.mark_contact_enrichment_failed(contact["id"])
+                            # Apollo returned no email. Try ZeroBounce Email Finder as fallback
+                            # before incrementing the attempt counter. ZeroBounce needs a domain
+                            # and the contact's first/last name.
+                            zb_email = None
+                            zb_status = ""
+                            first = (
+                                contact.get("first_name")
+                                or (contact.get("full_name") or "").split()[0]
+                            )
+                            last = (
+                                contact.get("last_name")
+                                or " ".join((contact.get("full_name") or "").split()[1:])
+                            )
+                            if company_domain and first and last:
+                                try:
+                                    settings = get_settings()
+                                    if settings.zerobounce_api_key:
+                                        zb = ZeroBounceClient(settings.zerobounce_api_key)
+                                        zb_result = zb.find_email(company_domain, first, last)
+                                        zb_email = zb_result.get("email")
+                                        zb_status = zb_result.get("status", "")
+                                        # Track ZeroBounce credit spend
+                                        self.track_cost(
+                                            provider="zerobounce",
+                                            model="email_finder",
+                                            endpoint="/v2/guessformat",
+                                            company_id=company_id,
+                                            input_tokens=0,
+                                            output_tokens=0,
+                                        )
+                                except Exception as zb_err:
+                                    logger.warning(
+                                        f"ZeroBounce lookup failed for {contact_name}: {zb_err}"
+                                    )
+
+                            if zb_email:
+                                zb_update = {
+                                    "email": zb_email,
+                                    "enrichment_status": "enriched",
+                                    "enrichment_source": "zerobounce",
+                                    "enrichment_attempts": int(contact.get("enrichment_attempts") or 0),
+                                }
+                                from datetime import datetime, timezone
+                                _now = datetime.now(timezone.utc).isoformat()
+                                zb_update["enriched_at"] = _now
+                                merged = {**contact, **zb_update}
+                                zb_update["ccs_score"] = compute_ccs(merged)
+                                zb_update["ccs_computed_at"] = _now
+                                self.db.update_contact(contact["id"], zb_update)
                                 console.print(
-                                    f"  [red]{company_name}: {contact_name} — 3 Apollo misses,"
-                                    f" marked enrichment_failed (no further attempts).[/red]"
+                                    f"  [green]{company_name}: {contact_name} → {zb_email}"
+                                    f" [ZeroBounce/{zb_status}][/green]"
                                 )
+                                result.processed += 1
                                 result.add_detail(
-                                    company_name, "enrichment_failed",
-                                    f"{contact_name}: 3 Apollo misses — giving up"
+                                    company_name, "enriched_zb",
+                                    f"{contact_name}: {zb_email} (ZeroBounce)"
                                 )
                             else:
-                                self.db.update_contact(
-                                    contact["id"], {"enrichment_attempts": attempts}
-                                )
-                                console.print(
-                                    f"  [yellow]{company_name}: No email for {contact_name}"
-                                    f" (attempt {attempts}/3).[/yellow]"
-                                )
-                                result.add_detail(
-                                    company_name, "no_email",
-                                    f"{contact_name}: no email in Apollo (attempt {attempts}/3)"
-                                )
-                            result.skipped += 1
+                                # Both Apollo and ZeroBounce missed. Increment attempt counter.
+                                attempts = int(contact.get("enrichment_attempts") or 0) + 1
+                                if attempts >= 3:
+                                    self.db.mark_contact_enrichment_failed(contact["id"])
+                                    console.print(
+                                        f"  [red]{company_name}: {contact_name} — 3 misses"
+                                        f" (Apollo + ZeroBounce), marked failed.[/red]"
+                                    )
+                                    result.add_detail(
+                                        company_name, "enrichment_failed",
+                                        f"{contact_name}: 3 misses — giving up"
+                                    )
+                                else:
+                                    self.db.update_contact(
+                                        contact["id"], {"enrichment_attempts": attempts}
+                                    )
+                                    console.print(
+                                        f"  [yellow]{company_name}: No email for {contact_name}"
+                                        f" (attempt {attempts}/3 — Apollo + ZeroBounce both miss).[/yellow]"
+                                    )
+                                    result.add_detail(
+                                        company_name, "no_email",
+                                        f"{contact_name}: no email in Apollo or ZeroBounce"
+                                        f" (attempt {attempts}/3)"
+                                    )
+                                result.skipped += 1
 
                 except Exception as e:
                     logger.error(f"Error enriching {company_name}: {e}", exc_info=True)

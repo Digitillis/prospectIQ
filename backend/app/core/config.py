@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_webhook_secret: str = ""  # Set in Resend dashboard → Webhooks → Signing Secret
 
+    # ZeroBounce Email Finder (fallback enrichment after Apollo miss)
+    zerobounce_api_key: str = ""
+
     # Webhook
     webhook_secret: str = ""
 
