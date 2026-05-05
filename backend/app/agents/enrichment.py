@@ -97,12 +97,19 @@ class EnrichmentAgent(BaseAgent):
             for co in pool:
                 if len(companies) >= limit:
                     break
+                # Skip companies with no domain — Apollo discovery without a
+                # domain falls back to name search which produces poor matches.
+                if not co.get("domain"):
+                    continue
                 existing = self.db.get_contacts_for_company(co["id"])
                 # Include if: no contacts yet (need discovery), or some contacts
-                # still have no email and haven't been attempted this cycle.
+                # still have no email and haven't exhausted their attempt budget.
                 if not existing:
                     companies.append(co)
-                elif any(not c.get("email") for c in existing):
+                elif any(
+                    not c.get("email") and int(c.get("enrichment_attempts") or 0) < 3
+                    for c in existing
+                ):
                     companies.append(co)
 
         if not companies:
@@ -372,18 +379,33 @@ class EnrichmentAgent(BaseAgent):
                                 + (f" [{email_status}]" if email_status else ""),
                             )
                         else:
-                            # Flag as attempted so the next run doesn't re-enrich — prevents
-                            # burning credits on a contact Apollo consistently doesn't match.
-                            self.db.update_contact(
-                                contact["id"], {"enrichment_status": "needs_enrichment"}
-                            )
-                            console.print(
-                                f"  [yellow]{company_name}: No email found for {contact_name}.[/yellow]"
-                            )
+                            # Track consecutive misses. After 3 attempts with no email
+                            # returned, flip to 'failed' so this contact stops consuming
+                            # Apollo credits every cycle.
+                            attempts = int(contact.get("enrichment_attempts") or 0) + 1
+                            if attempts >= 3:
+                                self.db.mark_contact_enrichment_failed(contact["id"])
+                                console.print(
+                                    f"  [red]{company_name}: {contact_name} — 3 Apollo misses,"
+                                    f" marked enrichment_failed (no further attempts).[/red]"
+                                )
+                                result.add_detail(
+                                    company_name, "enrichment_failed",
+                                    f"{contact_name}: 3 Apollo misses — giving up"
+                                )
+                            else:
+                                self.db.update_contact(
+                                    contact["id"], {"enrichment_attempts": attempts}
+                                )
+                                console.print(
+                                    f"  [yellow]{company_name}: No email for {contact_name}"
+                                    f" (attempt {attempts}/3).[/yellow]"
+                                )
+                                result.add_detail(
+                                    company_name, "no_email",
+                                    f"{contact_name}: no email in Apollo (attempt {attempts}/3)"
+                                )
                             result.skipped += 1
-                            result.add_detail(
-                                company_name, "no_email", f"{contact_name}: no email in Apollo"
-                            )
 
                 except Exception as e:
                     logger.error(f"Error enriching {company_name}: {e}", exc_info=True)
@@ -421,7 +443,10 @@ class EnrichmentAgent(BaseAgent):
         Contacts that already have an email are excluded from the selection —
         they don't need re-enrichment.
         """
-        needs_enrichment = [c for c in contacts if not c.get("email")]
+        needs_enrichment = [
+            c for c in contacts
+            if not c.get("email") and int(c.get("enrichment_attempts") or 0) < 3
+        ]
         if not needs_enrichment:
             return []
 
@@ -429,7 +454,12 @@ class EnrichmentAgent(BaseAgent):
             persona = c.get("persona_type", "")
             priority = _PERSONA_PRIORITY.get(persona, 0)
             dm_bonus = 50 if c.get("is_decision_maker") else 0
-            return priority + dm_bonus
+            # Contacts without an Apollo ID can't be enriched via people/match.
+            # Deprioritise them so we don't waste a cycle slot picking one.
+            apollo_penalty = -200 if not c.get("apollo_id") else 0
+            # LinkedIn URL signals Apollo has a confirmed profile — higher match rate.
+            linkedin_bonus = 20 if c.get("linkedin_url") else 0
+            return priority + dm_bonus + apollo_penalty + linkedin_bonus
 
         needs_enrichment.sort(key=score, reverse=True)
 
