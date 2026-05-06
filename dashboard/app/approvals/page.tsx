@@ -737,7 +737,7 @@ export default function ApprovalsPage() {
                               {new Date(email.sent_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                             </span>
                           </div>
-                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600 dark:text-gray-400 line-clamp-6">
+                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600 dark:text-gray-400">
                             {email.edited_body || email.body}
                           </p>
                         </div>
