@@ -89,6 +89,67 @@ def _is_wrong_persona(contact: dict) -> bool:
 
     return False
 
+
+# ---------------------------------------------------------------------------
+# Post-generation integrity validator
+# Runs on every generated draft body before it is saved.
+# Returns a list of violation strings (empty = clean).
+# ---------------------------------------------------------------------------
+
+_INTEGRITY_PATTERNS: list[tuple[str, str]] = [
+    # Past-customer fabrication claims
+    ("one plant we work with",          "past_customer_claim"),
+    ("one plant we worked with",        "past_customer_claim"),
+    ("one plant we trained on",         "past_customer_claim"),
+    ("a plant we trained on",           "past_customer_claim"),
+    ("a plant we work with",            "past_customer_claim"),
+    ("plants we work with",             "past_customer_claim"),
+    ("we ran diagnostics on",           "past_customer_claim"),
+    ("we ran an analysis on",           "past_customer_claim"),
+    ("we connected a",                  "past_customer_claim"),
+    ("we worked with a",                "past_customer_claim"),
+    ("a similar company",               "past_customer_claim"),
+    ("one of our clients",              "past_customer_claim"),
+    ("one of our customers",            "past_customer_claim"),
+    ("a client of ours",                "past_customer_claim"),
+    ("our client",                      "past_customer_claim"),
+    ("we helped a",                     "past_customer_claim"),
+    ("a manufacturer we worked",        "past_customer_claim"),
+    ("a manufacturer we connected",     "past_customer_claim"),
+    ("comparable operation",            "past_customer_claim"),
+    ("a plant in the midwest",          "fabricated_anecdote"),
+    ("a plant in the southeast",        "fabricated_anecdote"),
+    ("a plant in the northeast",        "fabricated_anecdote"),
+    ("a plant in the south",            "fabricated_anecdote"),
+    ("shutdowns per quarter",           "fabricated_anecdote"),  # e.g. "3 shutdowns per quarter"
+    # Unverified precision metrics
+    ("87% confidence",                  "unverified_metric"),
+    # Internal sequence label leakage
+    ("step 1 was about",                "step_label_leak"),
+    ("step 1 landed",                   "step_label_leak"),
+    ("step 2 was about",                "step_label_leak"),
+    ("step 2 landed",                   "step_label_leak"),
+    ("the first email",                 "step_label_leak"),
+    ("you didn't respond to the first", "step_label_leak"),
+    ("you haven't responded to the",    "step_label_leak"),
+]
+
+
+def _check_draft_integrity(body: str, subject: str = "") -> list[str]:
+    """Return a list of violation tags found in the draft body/subject.
+
+    An empty list means the draft passed all checks.
+    """
+    text = (body + " " + subject).lower()
+    violations: list[str] = []
+    seen_tags: set[str] = set()
+    for phrase, tag in _INTEGRITY_PATTERNS:
+        if phrase in text and tag not in seen_tags:
+            violations.append(f"{tag}:{phrase!r}")
+            seen_tags.add(tag)
+    return violations
+
+
 def _build_system_prompt(sequence_step: int = 1) -> str:
     """Build the outreach system prompt from outreach_guidelines.yaml + offer_context.yaml.
 
@@ -738,6 +799,23 @@ class OutreachAgent(BaseAgent):
                         "approval_status": "pending",
                     }
 
+                    # Post-generation integrity check — auto-reject before save if
+                    # the model produced fabricated customer claims or internal labels.
+                    _violations = _check_draft_integrity(_body, draft_data["subject"])
+                    if _violations:
+                        _vstr = " | ".join(_violations[:4])
+                        logger.warning(
+                            "Auto-rejecting draft for %s (%s): %s",
+                            company_name,
+                            contact.get("full_name") or contact.get("first_name", ""),
+                            _vstr,
+                        )
+                        draft_data["approval_status"] = "rejected"
+                        draft_data["rejection_reason"] = f"auto_rejected|{_vstr}"
+                        self.db.insert_outreach_draft(draft_data)
+                        result.errors += 1
+                        continue
+
                     inserted_draft = self.db.insert_outreach_draft(draft_data)
 
                     # Threading state update — mark contact queued/sent
@@ -1008,9 +1086,9 @@ class OutreachAgent(BaseAgent):
         # Build prior thread block — full text of every previously sent email
         if prior_messages:
             thread_parts = []
-            for pm in prior_messages:
+            for idx, pm in enumerate(prior_messages, 1):
                 thread_parts.append(
-                    f"--- Step {pm['step']} (sent) ---\n"
+                    f"--- Prior email #{idx} (already sent) ---\n"
                     f"Subject: {pm['subject']}\n"
                     f"{pm['body']}"
                 )
@@ -1019,10 +1097,10 @@ class OutreachAgent(BaseAgent):
                 + "\n\n".join(thread_parts)
                 + "\n\n⚠️  THREAD CONTINUITY RULES — MANDATORY:\n"
                 "1. Read every prior email above before writing.\n"
-                "2. Do NOT repeat the same opening hook, angle, or personalization fact used in a prior step.\n"
-                "3. Do NOT repeat a CTA that was already made (e.g. if step 1 asked for a 15-min call, don't ask again — offer something different or escalate).\n"
+                "2. Do NOT repeat the same opening hook, angle, or personalization fact used in a prior email.\n"
+                "3. Do NOT repeat a CTA that was already made (e.g. if a prior email asked for a 15-min call, don't ask again — offer something different or escalate).\n"
                 "4. Your email must read as the next logical message in this conversation, not as a fresh cold email.\n"
-                "5. If step 1 introduced a problem, step 2 should deepen it or introduce a proof point. If step 2 gave a case study, step 3 should make a direct ask.\n"
+                "5. NEVER reference 'email 1', 'email 2', 'the first email', 'step 1', 'step 2', or any internal sequence label in the email body — the prospect has no context for these labels.\n"
             )
         else:
             prior_thread_block = ""

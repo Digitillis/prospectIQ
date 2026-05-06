@@ -196,7 +196,7 @@ value_messaging:
       - "Reactive maintenance consuming 60%+ of maintenance budget"
       - "Equipment complexity growing faster than team capability"
     value_hooks:
-      - "Predict equipment failures 18+ days in advance with 87% confidence"
+      - "Predict equipment failures 18+ days in advance"
       - "Capture institutional maintenance knowledge in AI models that learn continuously"
       - "Shift from reactive to predictive maintenance, reducing costs by 25-40%"
       - "Quantify the financial ROI of every maintenance intervention"
@@ -302,7 +302,7 @@ digitillis:
     - "Production optimization with OEE analytics"
     - "Conversational AI copilot (ARIA) for natural language queries"
   key_metrics:
-    - "87% confidence in remaining useful life predictions"
+    - "18-day advance failure prediction window"
     - "847ms average response time"
     - "18-day advance failure prediction"
     - "35+ production ML models"

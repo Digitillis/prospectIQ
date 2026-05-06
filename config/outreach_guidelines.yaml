@@ -211,10 +211,10 @@ product_facts:
   - "AI platform that monitors equipment 24/7 and predicts failures up to 18 days before they happen"
   - "45 specialized AI agents across predictive maintenance, quality, energy, compliance"
   - "For F&B: continuous CCP monitoring, FSMA-compliant documentation, audit readiness"
-  - "For manufacturing: RUL prediction at 87% confidence, anomaly detection, OEE analytics"
+  - "For manufacturing: RUL prediction with 18-day advance warning, anomaly detection, OEE analytics"
   - "ARIA: conversational AI that lets plant managers ask questions in plain English"
   - "90-day pilot, no long-term commitment, prove ROI or walk away"
-  - "Trained on real industrial datasets (NASA, SECOM, Bosch, C-MAPSS)"
+  - "Models trained on public industrial research datasets (not customer data)"
 
 # Max words per email (by sequence step)
 max_words:
