@@ -118,14 +118,24 @@ _INTEGRITY_PATTERNS: list[tuple[str, str]] = [
     ("a manufacturer we connected",     "past_customer_claim"),
     ("comparable operation",            "past_customer_claim"),
     ("we trained our system on",        "past_customer_claim"),
+    ("we've trained our",               "past_customer_claim"),
+    ("here's what we've seen",          "past_customer_claim"),
+    ("here is what we've seen",         "past_customer_claim"),
     # Fabricated named-entity anecdotes (OEM/plant/company stories)
     ("one roofing oem",                 "fabricated_anecdote"),
     ("a roofing oem",                   "fabricated_anecdote"),
     ("one oem using similar",           "fabricated_anecdote"),
     ("an oem using similar",            "fabricated_anecdote"),
+    ("one process manufacturer",        "fabricated_anecdote"),
+    ("a process manufacturer",          "fabricated_anecdote"),
+    ("using similar monitoring caught", "fabricated_anecdote"),
+    ("using similar monitoring found",  "fabricated_anecdote"),
     ("similar line architecture caught","fabricated_anecdote"),
     ("would've cost them",              "fabricated_anecdote"),
+    ("would have cost them",            "fabricated_anecdote"),
     ("cost them $",                     "fabricated_anecdote"),
+    ("scrapped 18",                     "fabricated_anecdote"),
+    ("flagged it on day",               "fabricated_anecdote"),
     ("a plant in the midwest",          "fabricated_anecdote"),
     ("a plant in the southeast",        "fabricated_anecdote"),
     ("a plant in the northeast",        "fabricated_anecdote"),
@@ -133,14 +143,33 @@ _INTEGRITY_PATTERNS: list[tuple[str, str]] = [
     ("shutdowns per quarter",           "fabricated_anecdote"),
     # Unverified precision metrics
     ("87% confidence",                  "unverified_metric"),
-    # Internal sequence label leakage
+    # Internal sequence label leakage — all "step N" variants
     ("step 1 was about",                "step_label_leak"),
     ("step 1 landed",                   "step_label_leak"),
+    ("step 1 email",                    "step_label_leak"),
+    ("step 1,",                         "step_label_leak"),
+    ("step 1.",                         "step_label_leak"),
+    ("after step 1",                    "step_label_leak"),
+    ("after step 2",                    "step_label_leak"),
+    ("following step 1",                "step_label_leak"),
+    ("from step 1",                     "step_label_leak"),
+    ("in step 1",                       "step_label_leak"),
+    ("your step 1",                     "step_label_leak"),
     ("step 2 was about",                "step_label_leak"),
     ("step 2 landed",                   "step_label_leak"),
+    ("step 2 email",                    "step_label_leak"),
+    ("your step 2",                     "step_label_leak"),
     ("the first email",                 "step_label_leak"),
+    ("my first email",                  "step_label_leak"),
+    ("my last email",                   "step_label_leak"),
+    ("my previous email",               "step_label_leak"),
+    ("in my last",                      "step_label_leak"),
+    ("in my previous",                  "step_label_leak"),
     ("you didn't respond to the first", "step_label_leak"),
     ("you haven't responded to the",    "step_label_leak"),
+    ("i reached out",                   "step_label_leak"),
+    ("i sent you",                      "step_label_leak"),
+    ("i emailed you",                   "step_label_leak"),
 ]
 
 
@@ -372,7 +401,7 @@ PROSPECT AWARENESS LEVEL: {awareness_level}
     go straight to what makes the platform different (speed to value, existing integration path,
     specific sub-sector benchmarks, or a competitor gap they have).
 
-SEQUENCE: {sequence_name}, Step {sequence_step}
+SEQUENCE: {sequence_name} | {sequence_context}
 CHANNEL: {channel}
 {prior_thread_block}{time_gap_block}{reply_context_block}
 STEP INSTRUCTIONS:
@@ -387,14 +416,22 @@ Before returning the JSON, silently check your draft against these three questio
 1. Does the email reference a specific, believable outcome for THIS company?
    (Not "reduce downtime" — something like "based on their Plex ERP setup, the
    likely first win is work order prediction, not sensors")
-2. Is there at least one concrete proof point? (a number, a timeline, a specific outcome)
+2. If there is a proof point, does it come ONLY from verified platform capabilities
+   or published industry benchmarks (SMRP, EPA, FDA)? If the proof point requires
+   inventing a customer story or unnamed company — DELETE it entirely. No proof
+   point is better than a fabricated one.
 3. Is the CTA low-friction? (a question or an offer — not "schedule a demo")
 
-If any check fails, rewrite that sentence before returning.
+If check 2 fails, remove the proof point rather than rewriting it.
 
-## FORBIDDEN PHRASES (rewrite any of these if they appear)
+## FORBIDDEN PHRASES (rewrite or delete any of these if they appear)
 
 Never use:
+- "step 1" / "step 2" / "email 1" / "my first email" / "your first email" / "after step" → never reference sequence stage in the email body
+- "one [X] manufacturer" / "a [X] manufacturer caught" / "one process manufacturer" → fabricated customer anecdote, delete entirely
+- "using similar [X] caught" / "using similar monitoring caught" → fabricated anecdote, delete
+- "here's what we've seen" → implies customer observations, delete or replace with platform capability
+- "we've trained our [X] on real [Y] data" → implies proprietary customer data, replace with platform capability claim only
 - "many manufacturers" → name the specific type instead
 - "companies like yours" → say "plants with [their specific setup]"
 - "significant downtime" → use a number or "unplanned stops on [their equipment type]"
@@ -1170,6 +1207,11 @@ class OutreachAgent(BaseAgent):
             awareness_level=awareness_level or "unaware",
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
+            sequence_context=(
+                "Initial cold email — no prior contact"
+                if step_config["step"] == 1
+                else "Follow-up — a prior email has been sent (visible in thread above). Do NOT reference it as 'step 1', 'email 1', 'my first email', or any numbered label."
+            ),
             channel=channel,
             prior_thread_block=prior_thread_block,
             time_gap_block=time_gap_block,
