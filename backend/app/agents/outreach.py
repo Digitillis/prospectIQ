@@ -89,6 +89,97 @@ def _is_wrong_persona(contact: dict) -> bool:
 
     return False
 
+
+# ---------------------------------------------------------------------------
+# Post-generation integrity validator
+# Runs on every generated draft body before it is saved.
+# Returns a list of violation strings (empty = clean).
+#
+# Uses regex rather than exact-phrase matching so the model can't escape by
+# rewording (e.g. "step 1 asked" vs "step 1 landed" vs "after step 1").
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_INTEGRITY_RULES: list[tuple[str, str, str]] = [
+    # (regex_pattern, violation_tag, example_match)
+
+    # ── Step/sequence label leakage ──────────────────────────────────────────
+    # Catches: "step 1", "step 2", "step 3" in any surrounding context
+    (r"\bstep\s+[123]\b",                  "step_label_leak",      "step 1/2/3 in body"),
+    # Catches: "the/my/your first/previous/last email"
+    (r"\b(the|my|your)\s+(first|previous|last)\s+email\b",
+                                           "step_label_leak",      "prior email reference"),
+    # Catches: "i reached out", "i sent you", "i emailed you"
+    (r"\bi\s+(reached\s+out|sent\s+you|emailed\s+you)\b",
+                                           "step_label_leak",      "prior outreach reference"),
+    # Catches: "you didn't/haven't responded to..."
+    (r"\byou\s+(didn.t|haven.t)\s+responded\b",
+                                           "step_label_leak",      "non-response reference"),
+    # Catches: "in my last/previous message/note/email"
+    (r"\bin\s+my\s+(last|previous)\b",     "step_label_leak",      "prior message reference"),
+
+    # ── Past-customer fabrication claims ─────────────────────────────────────
+    # Catches: "one/a [any word(s)] shop/plant/manufacturer/facility/operation/company/customer/client [verb]"
+    # e.g. "one aerospace shop identified", "a tier supplier caught", "one process manufacturer using"
+    (r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem|processor|producer|fabricator|converter|integrator|distributor|company|tier)\s+\w+(ed|ing|s)?\b",
+                                           "fabricated_anecdote",  "one/a [X] shop/plant/manufacturer/processor/..."),
+    # Catches: "plants using/running similar X catch/caught/found..."
+    (r"\bplants\s+(using|running|with)\s+similar\b",
+                                           "fabricated_anecdote",  "plants using similar X"),
+    # Catches: "here's what we..." / "here is what we..." (implies observations from customers)
+    (r"\b(here.s|here\s+is)\s+what\s+we\b",
+                                           "past_customer_claim",  "here's/here is what we..."),
+    # Catches: "we('ve) (trained|built|deployed|tested) our X on (real|actual|customer|live) Y"
+    (r"\bwe.ve?\s+(trained|built|deployed|tested)\s+our\s+\w+\s+on\s+(real|actual|customer|live|proprietary)\b",
+                                           "past_customer_claim",  "we've trained/built on real/customer data"),
+    # Catches: "we ran (diagnostics|analysis|tests|a study) on"
+    (r"\bwe\s+ran\s+(diagnostics|analysis|tests?|a\s+study|an\s+analysis)\s+on\b",
+                                           "past_customer_claim",  "we ran diagnostics/analysis on"),
+    # Catches: "we (worked|partnered|connected|collaborated) with a"
+    (r"\bwe\s+(worked|partnered|connected|collaborated)\s+with\s+a\b",
+                                           "past_customer_claim",  "we worked/connected with a..."),
+    # Catches: "one of our (clients|customers|partners)"
+    (r"\bone\s+of\s+our\s+(clients|customers|partners)\b",
+                                           "past_customer_claim",  "one of our clients/customers"),
+    # Catches: "our client(s)", "a client of ours"
+    (r"\b(our\s+client|a\s+client\s+of\s+ours)\b",
+                                           "past_customer_claim",  "our client / a client of ours"),
+    # Catches: "comparable/similar operation" as a reference to a prior customer
+    (r"\b(comparable|similar)\s+operation\b",
+                                           "past_customer_claim",  "comparable/similar operation"),
+    # Catches: "would('ve) cost them" / "cost them $X"
+    (r"\b(would.ve|would\s+have)\s+cost\s+them\b",
+                                           "fabricated_anecdote",  "would've cost them"),
+    (r"\bcost\s+them\s+\$",               "fabricated_anecdote",  "cost them $X"),
+    # Catches: "prevented [N] (unplanned|outages|shutdowns|stops)"
+    (r"\bprevented\s+\w+\s+(unplanned|outage|shutdown|stop)",
+                                           "fabricated_anecdote",  "prevented N outages (anecdote)"),
+
+    # ── Unverified precision metrics ─────────────────────────────────────────
+    (r"\b87\s*%\s*confidence\b",           "unverified_metric",    "87% confidence"),
+]
+
+
+def _check_draft_integrity(body: str, subject: str = "") -> list[str]:
+    """Return a list of violation tags found in the draft body/subject.
+
+    An empty list means the draft passed all checks.
+    Uses regex patterns so structural variants are caught regardless of exact wording.
+    """
+    text = (body + " " + subject).lower()
+    violations: list[str] = []
+    seen_tags: set[str] = set()
+    for pattern, tag, example in _INTEGRITY_RULES:
+        if tag in seen_tags:
+            continue
+        m = _re.search(pattern, text)
+        if m:
+            violations.append(f"{tag}:{m.group()!r}")
+            seen_tags.add(tag)
+    return violations
+
+
 def _build_system_prompt(sequence_step: int = 1) -> str:
     """Build the outreach system prompt from outreach_guidelines.yaml + offer_context.yaml.
 
@@ -302,7 +393,7 @@ PROSPECT AWARENESS LEVEL: {awareness_level}
     go straight to what makes the platform different (speed to value, existing integration path,
     specific sub-sector benchmarks, or a competitor gap they have).
 
-SEQUENCE: {sequence_name}, Step {sequence_step}
+SEQUENCE: {sequence_name} | {sequence_context}
 CHANNEL: {channel}
 {prior_thread_block}{time_gap_block}{reply_context_block}
 STEP INSTRUCTIONS:
@@ -317,14 +408,22 @@ Before returning the JSON, silently check your draft against these three questio
 1. Does the email reference a specific, believable outcome for THIS company?
    (Not "reduce downtime" — something like "based on their Plex ERP setup, the
    likely first win is work order prediction, not sensors")
-2. Is there at least one concrete proof point? (a number, a timeline, a specific outcome)
+2. If there is a proof point, does it come ONLY from verified platform capabilities
+   or published industry benchmarks (SMRP, EPA, FDA)? If the proof point requires
+   inventing a customer story or unnamed company — DELETE it entirely. No proof
+   point is better than a fabricated one.
 3. Is the CTA low-friction? (a question or an offer — not "schedule a demo")
 
-If any check fails, rewrite that sentence before returning.
+If check 2 fails, remove the proof point rather than rewriting it.
 
-## FORBIDDEN PHRASES (rewrite any of these if they appear)
+## FORBIDDEN PHRASES (rewrite or delete any of these if they appear)
 
 Never use:
+- "step 1" / "step 2" / "email 1" / "my first email" / "your first email" / "after step" → never reference sequence stage in the email body
+- "one [X] manufacturer" / "a [X] manufacturer caught" / "one process manufacturer" → fabricated customer anecdote, delete entirely
+- "using similar [X] caught" / "using similar monitoring caught" → fabricated anecdote, delete
+- "here's what we've seen" → implies customer observations, delete or replace with platform capability
+- "we've trained our [X] on real [Y] data" → implies proprietary customer data, replace with platform capability claim only
 - "many manufacturers" → name the specific type instead
 - "companies like yours" → say "plants with [their specific setup]"
 - "significant downtime" → use a number or "unplanned stops on [their equipment type]"
@@ -738,6 +837,23 @@ class OutreachAgent(BaseAgent):
                         "approval_status": "pending",
                     }
 
+                    # Post-generation integrity check — auto-reject before save if
+                    # the model produced fabricated customer claims or internal labels.
+                    _violations = _check_draft_integrity(_body, draft_data["subject"])
+                    if _violations:
+                        _vstr = " | ".join(_violations[:4])
+                        logger.warning(
+                            "Auto-rejecting draft for %s (%s): %s",
+                            company_name,
+                            contact.get("full_name") or contact.get("first_name", ""),
+                            _vstr,
+                        )
+                        draft_data["approval_status"] = "rejected"
+                        draft_data["rejection_reason"] = f"auto_rejected|{_vstr}"
+                        self.db.insert_outreach_draft(draft_data)
+                        result.errors += 1
+                        continue
+
                     inserted_draft = self.db.insert_outreach_draft(draft_data)
 
                     # Threading state update — mark contact queued/sent
@@ -1008,9 +1124,9 @@ class OutreachAgent(BaseAgent):
         # Build prior thread block — full text of every previously sent email
         if prior_messages:
             thread_parts = []
-            for pm in prior_messages:
+            for idx, pm in enumerate(prior_messages, 1):
                 thread_parts.append(
-                    f"--- Step {pm['step']} (sent) ---\n"
+                    f"--- Prior email #{idx} (already sent) ---\n"
                     f"Subject: {pm['subject']}\n"
                     f"{pm['body']}"
                 )
@@ -1019,10 +1135,10 @@ class OutreachAgent(BaseAgent):
                 + "\n\n".join(thread_parts)
                 + "\n\n⚠️  THREAD CONTINUITY RULES — MANDATORY:\n"
                 "1. Read every prior email above before writing.\n"
-                "2. Do NOT repeat the same opening hook, angle, or personalization fact used in a prior step.\n"
-                "3. Do NOT repeat a CTA that was already made (e.g. if step 1 asked for a 15-min call, don't ask again — offer something different or escalate).\n"
+                "2. Do NOT repeat the same opening hook, angle, or personalization fact used in a prior email.\n"
+                "3. Do NOT repeat a CTA that was already made (e.g. if a prior email asked for a 15-min call, don't ask again — offer something different or escalate).\n"
                 "4. Your email must read as the next logical message in this conversation, not as a fresh cold email.\n"
-                "5. If step 1 introduced a problem, step 2 should deepen it or introduce a proof point. If step 2 gave a case study, step 3 should make a direct ask.\n"
+                "5. NEVER reference 'email 1', 'email 2', 'the first email', 'step 1', 'step 2', or any internal sequence label in the email body — the prospect has no context for these labels.\n"
             )
         else:
             prior_thread_block = ""
@@ -1083,6 +1199,11 @@ class OutreachAgent(BaseAgent):
             awareness_level=awareness_level or "unaware",
             sequence_name=sequence_name,
             sequence_step=step_config["step"],
+            sequence_context=(
+                "Initial cold email — no prior contact"
+                if step_config["step"] == 1
+                else "Follow-up — a prior email has been sent (visible in thread above). Do NOT reference it as 'step 1', 'email 1', 'my first email', or any numbered label."
+            ),
             channel=channel,
             prior_thread_block=prior_thread_block,
             time_gap_block=time_gap_block,

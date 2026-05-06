@@ -8,7 +8,7 @@
  */
 
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -22,8 +22,12 @@ import {
   MessageSquareReply,
   AlertTriangle,
   X,
+  ChevronDown,
+  ChevronRight,
+  History,
+  FileSearch,
 } from "lucide-react";
-import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, logReply, OutreachDraft, type DraftQualityScore, type LogReplyPayload } from "@/lib/api";
+import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, logReply, getDraftThread, getDraftResearch, OutreachDraft, type DraftQualityScore, type LogReplyPayload, type SentEmail, type ResearchIntelligence } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
@@ -51,7 +55,59 @@ export default function ApprovalsPage() {
   const [replySuccess, setReplySuccess] = useState<Record<string, string>>({});
   const [alerts, setAlerts] = useState<{ id: string; assertion: string; detail: string; contact_name: string; evaluated_at: string }[]>([]);
   const [alertsDismissed, setAlertsDismissed] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const TEST_EMAIL = "avi@digitillis.com";
+  const [expandedThread, setExpandedThread] = useState<Set<string>>(new Set());
+  const [expandedResearch, setExpandedResearch] = useState<Set<string>>(new Set());
+  const [threadData, setThreadData] = useState<Record<string, SentEmail[]>>({});
+  const [researchData, setResearchData] = useState<Record<string, ResearchIntelligence | null>>({});
+  const [threadLoading, setThreadLoading] = useState<Set<string>>(new Set());
+  const [researchLoading, setResearchLoading] = useState<Set<string>>(new Set());
+
+  const toggleThread = async (draftId: string) => {
+    const next = new Set(expandedThread);
+    if (next.has(draftId)) {
+      next.delete(draftId);
+      setExpandedThread(next);
+      return;
+    }
+    next.add(draftId);
+    setExpandedThread(next);
+    if (threadData[draftId] !== undefined) return;
+    setThreadLoading((prev) => new Set(prev).add(draftId));
+    try {
+      const res = await getDraftThread(draftId);
+      setThreadData((prev) => ({ ...prev, [draftId]: res.data }));
+    } catch {
+      setThreadData((prev) => ({ ...prev, [draftId]: [] }));
+    } finally {
+      setThreadLoading((prev) => { const n = new Set(prev); n.delete(draftId); return n; });
+    }
+  };
+
+  const toggleResearch = async (draftId: string) => {
+    const next = new Set(expandedResearch);
+    if (next.has(draftId)) {
+      next.delete(draftId);
+      setExpandedResearch(next);
+      return;
+    }
+    next.add(draftId);
+    setExpandedResearch(next);
+    if (researchData[draftId] !== undefined) return;
+    setResearchLoading((prev) => new Set(prev).add(draftId));
+    try {
+      const res = await getDraftResearch(draftId);
+      setResearchData((prev) => ({ ...prev, [draftId]: res.data }));
+    } catch {
+      setResearchData((prev) => ({ ...prev, [draftId]: null }));
+    } finally {
+      setResearchLoading((prev) => { const n = new Set(prev); n.delete(draftId); return n; });
+    }
+  };
 
   const handleLogReply = async (draft: OutreachDraft) => {
     if (!replyBody.trim()) return;
@@ -120,16 +176,50 @@ export default function ApprovalsPage() {
     setActionLoading(id);
     try {
       await approveDraft(id);
-      setDrafts((prev) => {
-        const next = prev.filter((d) => d.id !== id);
-        return next;
-      });
+      setDrafts((prev) => prev.filter((d) => d.id !== id));
+      setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
       setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to approve");
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleBulkApprove = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkApproving(true);
+    setBulkProgress({ done: 0, total: ids.length });
+    let done = 0;
+    const BATCH = 5;
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const batch = ids.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map(async (id) => {
+          try {
+            await approveDraft(id);
+            setDrafts((prev) => prev.filter((d) => d.id !== id));
+            setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+          } catch {
+            // leave failed drafts visible
+          }
+          done++;
+          setBulkProgress({ done, total: ids.length });
+        })
+      );
+    }
+    setBulkApproving(false);
+    setBulkProgress(null);
+  };
+
+  const allVisibleIds = drafts.map((d) => d.id);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
+  const someSelected = allVisibleIds.some((id) => selected.has(id)) && !allSelected;
+  const highQCount = drafts.filter((d) => (d.quality_score ?? 0) >= 80).length;
+
+  const handleSelectAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(allVisibleIds));
   };
 
   const handleSaveEdit = async (id: string) => {
@@ -321,6 +411,56 @@ export default function ApprovalsPage() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {!loading && drafts.length > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => { if (el) el.indeterminate = someSelected; }}
+              onChange={handleSelectAll}
+              className="h-4 w-4 rounded"
+            />
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {allSelected ? "Deselect all" : someSelected ? `${selected.size} selected` : "Select all"}
+            </span>
+          </label>
+          {selected.size > 0 && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600">|</span>
+              <button
+                onClick={() => handleBulkApprove([...selected])}
+                disabled={bulkApproving}
+                className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
+              >
+                {bulkApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                Approve {selected.size}
+                {bulkProgress && ` (${bulkProgress.done}/${bulkProgress.total})`}
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="text-xs text-gray-400 hover:text-gray-700"
+              >
+                Clear
+              </button>
+            </>
+          )}
+          {highQCount > 0 && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600 ml-auto">|</span>
+              <button
+                onClick={() => handleBulkApprove(drafts.filter((d) => (d.quality_score ?? 0) >= 80).map((d) => d.id))}
+                disabled={bulkApproving}
+                className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50"
+              >
+                Approve all ≥80 ({highQCount})
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Empty State */}
       {drafts.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-16">
@@ -350,6 +490,18 @@ export default function ApprovalsPage() {
             {/* Company Header */}
             <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-6 py-4">
               <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(draft.id)}
+                  onChange={(e) =>
+                    setSelected((prev) => {
+                      const n = new Set(prev);
+                      e.target.checked ? n.add(draft.id) : n.delete(draft.id);
+                      return n;
+                    })
+                  }
+                  className="h-4 w-4 rounded"
+                />
                 <Building2 className="h-5 w-5 text-gray-400 dark:text-gray-500" />
                 <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {draft.companies?.name ?? "Unknown Company"}
@@ -514,6 +666,156 @@ export default function ApprovalsPage() {
                 <p className="text-xs italic text-gray-500 dark:text-gray-500">
                   {draft.personalization_notes}
                 </p>
+              )}
+
+              {/* Prior Emails + Research Notes expandable toggles */}
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={() => toggleThread(draft.id)}
+                  className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  {threadLoading.has(draft.id) ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : expandedThread.has(draft.id) ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  <History className="h-3.5 w-3.5" />
+                  Prior emails
+                  {threadData[draft.id] !== undefined && !threadLoading.has(draft.id) && (
+                    <span className="rounded bg-gray-100 dark:bg-gray-800 px-1 py-px text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                      {threadData[draft.id]?.length ?? 0}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => toggleResearch(draft.id)}
+                  className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  {researchLoading.has(draft.id) ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : expandedResearch.has(draft.id) ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  <FileSearch className="h-3.5 w-3.5" />
+                  Research notes
+                </button>
+              </div>
+
+              {/* Prior emails panel */}
+              {expandedThread.has(draft.id) && (
+                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-4 space-y-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                    Prior emails sent to {draft.contacts?.full_name ?? "this contact"}
+                  </p>
+                  {threadLoading.has(draft.id) ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  ) : !threadData[draft.id] || threadData[draft.id].length === 0 ? (
+                    <p className="text-xs text-gray-400 dark:text-gray-500">No prior emails found.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {threadData[draft.id].map((email, i) => (
+                        <div key={email.id} className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                #{i + 1}
+                              </span>
+                              {email.sequence_step && (
+                                <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-px text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                                  Step {email.sequence_step}
+                                </span>
+                              )}
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[300px]">
+                                {email.subject}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500 shrink-0 ml-2">
+                              {new Date(email.sent_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600 dark:text-gray-400 line-clamp-6">
+                            {email.edited_body || email.body}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Research notes panel */}
+              {expandedResearch.has(draft.id) && (
+                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-4 space-y-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                    Research — {draft.companies?.name ?? "Company"}
+                  </p>
+                  {researchLoading.has(draft.id) ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  ) : !researchData[draft.id] ? (
+                    <p className="text-xs text-gray-400 dark:text-gray-500">No research data available.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 text-xs">
+                      {researchData[draft.id]?.company_description && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">Overview</p>
+                          <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{researchData[draft.id]!.company_description}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.pain_points && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">Pain Points</p>
+                          <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{researchData[draft.id]!.pain_points}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.opportunities && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">Opportunities</p>
+                          <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{researchData[draft.id]!.opportunities}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.equipment_types && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">Equipment</p>
+                          <p className="text-gray-700 dark:text-gray-300">{researchData[draft.id]!.equipment_types}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.known_systems && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">Known Systems</p>
+                          <p className="text-gray-700 dark:text-gray-300">{researchData[draft.id]!.known_systems}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.maintenance_approach && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">Maintenance Approach</p>
+                          <p className="text-gray-700 dark:text-gray-300">{researchData[draft.id]!.maintenance_approach}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.existing_solutions && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">Existing Solutions</p>
+                          <p className="text-gray-700 dark:text-gray-300">{researchData[draft.id]!.existing_solutions}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.iot_maturity && (
+                        <div>
+                          <p className="font-medium text-gray-500 dark:text-gray-400 mb-0.5">IoT Maturity</p>
+                          <p className="text-gray-700 dark:text-gray-300">{researchData[draft.id]!.iot_maturity}</p>
+                        </div>
+                      )}
+                      {researchData[draft.id]?.researched_at && (
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 pt-1">
+                          Researched {new Date(researchData[draft.id]!.researched_at!).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          {researchData[draft.id]?.confidence_level && ` · Confidence: ${researchData[draft.id]!.confidence_level}`}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Reject Reason Input */}

@@ -134,6 +134,8 @@ sequences:
             - "No feature lists"
             - "Opening sentence MUST use one of the PERSONALIZATION HOOKS directly -- not a generic sub-sector trend. The hook goes first, not in the middle."
             - "Do not soften the hook with a preamble. Wrong: 'In talking to companies like yours, I noticed that Plex users often...' Right: 'MEC runs Plex -- most Plex shops still track work orders in Excel.'"
+            - "NEVER imply past customer engagements: forbidden phrases include 'one plant we work with', 'one plant we worked with', 'plants we work with', 'our client', 'we helped a', 'a customer of ours'"
+            - "All claims must be platform capabilities or published industry benchmarks"
 
       - step: 2
         name: case_relevance
@@ -142,16 +144,25 @@ sequences:
         instructions:
           subject_approach: "Reference a specific outcome or equipment type relevant to their operation"
           description: >
-            Describe how a similar company in their sub-sector addressed the
-            challenge you mentioned in email 1. Use real training data results
-            (18-day RUL prediction, 87% confidence, 25-40% maintenance cost
-            reduction). Do not fabricate case studies. Be specific about the
-            type of equipment and the outcome.
-          tone: "Evidence-based. Specific. Not a generic case study."
+            Describe what the Digitillis platform does for this specific equipment
+            type and the measurable outcomes it produces, using only confirmed
+            platform capabilities and published industry benchmarks. Frame all
+            numbers as what the platform achieves or what industry data shows --
+            never as what a specific customer experienced. Use these verified
+            platform benchmarks only: 18-day RUL prediction window, sub-sector
+            maintenance cost reductions of 25-40% (industry benchmark per SMRP),
+            2-week diagnostic timeline. Do not describe a customer, client, or
+            similar company. Do not write "we connected", "we worked with",
+            "a manufacturer we worked with", or any phrase implying a past
+            customer engagement. If the claim cannot be defended in a live
+            meeting, do not include it.
+          tone: "Evidence-based. Specific. Capability-forward, not story-forward."
           max_words: 100
           anti_patterns:
-            - "No fabricated case studies -- use real platform capabilities as examples"
-            - "Equipment type and outcome must be specific, not generic"
+            - "NEVER write 'we connected a', 'we worked with a', 'a similar company', 'one of our clients', or any phrase implying a past customer engagement"
+            - "NEVER use specific percentage reductions or dollar figures that are not from the verified platform benchmarks listed above"
+            - "NEVER write 'at X% confidence' unless it is the verified 18-day RUL / sub-sector benchmark"
+            - "Equipment type and outcome must be specific to the platform capability, not a fabricated story"
 
       - step: 3
         name: framework_share
@@ -226,13 +237,19 @@ sequences:
         instructions:
           subject_approach: "Reference specific data or outcome relevant to the new angle"
           description: >
-            Follow up with evidence supporting the new angle. Specific data,
-            specific outcomes, specific equipment types.
-          tone: "Evidence-based follow-up."
+            Follow up with evidence supporting the new angle. Use only confirmed
+            platform capabilities and published industry benchmarks -- never a past
+            customer story. Verified benchmarks: 18-day RUL prediction window,
+            sub-sector maintenance cost reductions of 25-40% (SMRP benchmark),
+            2-week diagnostic timeline. Frame all numbers as what the platform
+            achieves or what industry data shows, not what a specific customer saw.
+          tone: "Evidence-based follow-up. Capability-forward, not story-forward."
           max_words: 100
           anti_patterns:
             - "Evidence must match the new angle, not drift back to the LinkedIn angle"
             - "Specific equipment type and outcome required -- no vague claims"
+            - "NEVER imply past customer work: forbidden phrases include 'we ran diagnostics on', 'one plant we', 'a similar operation', 'we worked with a', 'a client of ours'"
+            - "All claims must be platform capabilities or published benchmarks -- never attributed to a specific or unnamed past customer"
 
       - step: 3
         name: final_ask
@@ -297,13 +314,15 @@ sequences:
             that maintenance teams don't care, it's that your CMMS was designed for
             tracking repairs, not predicting them." For F&B: "The villain is that
             HACCP plans are built for audits, not operations." Name it. Validate them.
-            Show you understand why it's hard. No solution yet.
+            Show you understand why it's hard. No solution yet. The villain must come
+            from industry structure and logic -- not from a past customer story.
           tone: "Empathetic industry analyst. Not finger-pointing — exonerating."
           max_words: 100
           anti_patterns:
             - "The villain is a structural/systemic cause — never a competitor or person"
             - "Do NOT hint at your solution"
             - "Validate that the villain is not their fault"
+            - "NEVER introduce past customer evidence: forbidden phrases include 'we ran diagnostics on', 'one plant we', 'a similar operation we', 'plants we have worked with'. The villain must be structural — no anecdotes."
 
       - step: 3
         name: the_solution
@@ -332,19 +351,20 @@ sequences:
         instructions:
           subject_approach: "A specific outcome — a number, a timeline, a before/after"
           description: >
-            One concrete proof point that the solution works. Use Digitillis
-            real capabilities as examples: 18-day advance warning on bearing
-            failures, 87% prediction confidence, 25-40% maintenance cost
-            reduction. Frame as a story about a comparable operation (no names):
-            "A food & beverage plant in the Midwest was averaging 3 unplanned
-            CIP line shutdowns per quarter. 90 days after deploying sensor
-            monitoring, that dropped to 0." Specific. Believable. Verifiable.
+            One concrete proof point that the platform works. State what the
+            platform does and the measurable outcome it produces, using only
+            confirmed platform capabilities and published industry benchmarks.
+            Verified benchmarks: 18-day RUL prediction window, sub-sector
+            maintenance cost reductions of 25-40% (SMRP benchmark), 2-week
+            diagnostic timeline. Frame all claims as platform capabilities or
+            industry data -- never as what a specific or unnamed past customer
+            achieved. Numbers are mandatory. No vague improvement claims.
           tone: "Evidence-based. The numbers do the work, not adjectives."
           max_words: 100
           anti_patterns:
-            - "No fabricated case studies — use real Digitillis capabilities"
-            - "The comparison plant must be genuinely similar to this prospect"
-            - "Numbers are mandatory — no vague 'significant improvement'"
+            - "NEVER frame a proof point as a customer story: no 'a plant in the Midwest', 'a food manufacturer we worked with', 'one of our clients', or any unnamed past customer"
+            - "All claims must be platform capabilities or published benchmarks -- never attributed to a customer"
+            - "Numbers are mandatory -- no vague 'significant improvement'"
 
       - step: 5
         name: the_cta
@@ -451,6 +471,9 @@ global_principles:
     - "Never use words: leverage, synergy, cutting-edge, game-changing, revolutionary"
     - "Never compliment their company in a way that feels like flattery"
     - "Never mention Digitillis funding, stage, or team size"
+    - "NEVER imply past customer engagements: forbidden phrases include 'one plant we work with', 'one plant we trained on', 'we ran diagnostics on a similar', 'we worked with a', 'a similar company', 'our client', 'one of our clients', 'a customer of ours', 'we helped a', 'plants we work with', 'a [industry] manufacturer we'. Digitillis has no customers to reference."
+    - "NEVER reference step numbers, sequence stages, or internal labels in the email body (e.g. 'Step 1', 'Step 2', 'email 1', 'the first email', 'last email'). The prospect has no context for these labels."
+    - "ALL performance claims must be verifiable platform capabilities or published benchmarks (SMRP, industry reports). Never attribute a metric to a specific or unnamed past customer."
   personalization_requirements:
     - "Every email must reference at least 1 specific fact about the company"
     - "Subject lines must reference their company name or specific situation"
