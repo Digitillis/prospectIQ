@@ -94,82 +94,70 @@ def _is_wrong_persona(contact: dict) -> bool:
 # Post-generation integrity validator
 # Runs on every generated draft body before it is saved.
 # Returns a list of violation strings (empty = clean).
+#
+# Uses regex rather than exact-phrase matching so the model can't escape by
+# rewording (e.g. "step 1 asked" vs "step 1 landed" vs "after step 1").
 # ---------------------------------------------------------------------------
 
-_INTEGRITY_PATTERNS: list[tuple[str, str]] = [
-    # Past-customer fabrication claims
-    ("one plant we work with",          "past_customer_claim"),
-    ("one plant we worked with",        "past_customer_claim"),
-    ("one plant we trained on",         "past_customer_claim"),
-    ("a plant we trained on",           "past_customer_claim"),
-    ("a plant we work with",            "past_customer_claim"),
-    ("plants we work with",             "past_customer_claim"),
-    ("we ran diagnostics on",           "past_customer_claim"),
-    ("we ran an analysis on",           "past_customer_claim"),
-    ("we connected a",                  "past_customer_claim"),
-    ("we worked with a",                "past_customer_claim"),
-    ("a similar company",               "past_customer_claim"),
-    ("one of our clients",              "past_customer_claim"),
-    ("one of our customers",            "past_customer_claim"),
-    ("a client of ours",                "past_customer_claim"),
-    ("our client",                      "past_customer_claim"),
-    ("we helped a",                     "past_customer_claim"),
-    ("a manufacturer we worked",        "past_customer_claim"),
-    ("a manufacturer we connected",     "past_customer_claim"),
-    ("comparable operation",            "past_customer_claim"),
-    ("we trained our system on",        "past_customer_claim"),
-    ("we've trained our",               "past_customer_claim"),
-    ("here's what we've seen",          "past_customer_claim"),
-    ("here is what we've seen",         "past_customer_claim"),
-    # Fabricated named-entity anecdotes (OEM/plant/company stories)
-    ("one roofing oem",                 "fabricated_anecdote"),
-    ("a roofing oem",                   "fabricated_anecdote"),
-    ("one oem using similar",           "fabricated_anecdote"),
-    ("an oem using similar",            "fabricated_anecdote"),
-    ("one process manufacturer",        "fabricated_anecdote"),
-    ("a process manufacturer",          "fabricated_anecdote"),
-    ("using similar monitoring caught", "fabricated_anecdote"),
-    ("using similar monitoring found",  "fabricated_anecdote"),
-    ("similar line architecture caught","fabricated_anecdote"),
-    ("would've cost them",              "fabricated_anecdote"),
-    ("would have cost them",            "fabricated_anecdote"),
-    ("cost them $",                     "fabricated_anecdote"),
-    ("scrapped 18",                     "fabricated_anecdote"),
-    ("flagged it on day",               "fabricated_anecdote"),
-    ("a plant in the midwest",          "fabricated_anecdote"),
-    ("a plant in the southeast",        "fabricated_anecdote"),
-    ("a plant in the northeast",        "fabricated_anecdote"),
-    ("a plant in the south",            "fabricated_anecdote"),
-    ("shutdowns per quarter",           "fabricated_anecdote"),
-    # Unverified precision metrics
-    ("87% confidence",                  "unverified_metric"),
-    # Internal sequence label leakage — all "step N" variants
-    ("step 1 was about",                "step_label_leak"),
-    ("step 1 landed",                   "step_label_leak"),
-    ("step 1 email",                    "step_label_leak"),
-    ("step 1,",                         "step_label_leak"),
-    ("step 1.",                         "step_label_leak"),
-    ("after step 1",                    "step_label_leak"),
-    ("after step 2",                    "step_label_leak"),
-    ("following step 1",                "step_label_leak"),
-    ("from step 1",                     "step_label_leak"),
-    ("in step 1",                       "step_label_leak"),
-    ("your step 1",                     "step_label_leak"),
-    ("step 2 was about",                "step_label_leak"),
-    ("step 2 landed",                   "step_label_leak"),
-    ("step 2 email",                    "step_label_leak"),
-    ("your step 2",                     "step_label_leak"),
-    ("the first email",                 "step_label_leak"),
-    ("my first email",                  "step_label_leak"),
-    ("my last email",                   "step_label_leak"),
-    ("my previous email",               "step_label_leak"),
-    ("in my last",                      "step_label_leak"),
-    ("in my previous",                  "step_label_leak"),
-    ("you didn't respond to the first", "step_label_leak"),
-    ("you haven't responded to the",    "step_label_leak"),
-    ("i reached out",                   "step_label_leak"),
-    ("i sent you",                      "step_label_leak"),
-    ("i emailed you",                   "step_label_leak"),
+import re as _re
+
+_INTEGRITY_RULES: list[tuple[str, str, str]] = [
+    # (regex_pattern, violation_tag, example_match)
+
+    # ── Step/sequence label leakage ──────────────────────────────────────────
+    # Catches: "step 1", "step 2", "step 3" in any surrounding context
+    (r"\bstep\s+[123]\b",                  "step_label_leak",      "step 1/2/3 in body"),
+    # Catches: "the/my/your first/previous/last email"
+    (r"\b(the|my|your)\s+(first|previous|last)\s+email\b",
+                                           "step_label_leak",      "prior email reference"),
+    # Catches: "i reached out", "i sent you", "i emailed you"
+    (r"\bi\s+(reached\s+out|sent\s+you|emailed\s+you)\b",
+                                           "step_label_leak",      "prior outreach reference"),
+    # Catches: "you didn't/haven't responded to..."
+    (r"\byou\s+(didn.t|haven.t)\s+responded\b",
+                                           "step_label_leak",      "non-response reference"),
+    # Catches: "in my last/previous message/note/email"
+    (r"\bin\s+my\s+(last|previous)\b",     "step_label_leak",      "prior message reference"),
+
+    # ── Past-customer fabrication claims ─────────────────────────────────────
+    # Catches: "one/a [any word(s)] shop/plant/manufacturer/facility/operation/company/customer/client [verb]"
+    # e.g. "one aerospace shop identified", "a tier supplier caught", "one process manufacturer using"
+    (r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem)\s+\w+(ed|ing|s)?\b",
+                                           "fabricated_anecdote",  "one/a [X] shop/plant/manufacturer/..."),
+    # Catches: "plants using/running similar X catch/caught/found..."
+    (r"\bplants\s+(using|running|with)\s+similar\b",
+                                           "fabricated_anecdote",  "plants using similar X"),
+    # Catches: "here's what we..." / "here is what we..." (implies observations from customers)
+    (r"\b(here.s|here\s+is)\s+what\s+we\b",
+                                           "past_customer_claim",  "here's/here is what we..."),
+    # Catches: "we('ve) (trained|built|deployed|tested) our X on (real|actual|customer|live) Y"
+    (r"\bwe.ve?\s+(trained|built|deployed|tested)\s+our\s+\w+\s+on\s+(real|actual|customer|live|proprietary)\b",
+                                           "past_customer_claim",  "we've trained/built on real/customer data"),
+    # Catches: "we ran (diagnostics|analysis|tests|a study) on"
+    (r"\bwe\s+ran\s+(diagnostics|analysis|tests?|a\s+study|an\s+analysis)\s+on\b",
+                                           "past_customer_claim",  "we ran diagnostics/analysis on"),
+    # Catches: "we (worked|partnered|connected|collaborated) with a"
+    (r"\bwe\s+(worked|partnered|connected|collaborated)\s+with\s+a\b",
+                                           "past_customer_claim",  "we worked/connected with a..."),
+    # Catches: "one of our (clients|customers|partners)"
+    (r"\bone\s+of\s+our\s+(clients|customers|partners)\b",
+                                           "past_customer_claim",  "one of our clients/customers"),
+    # Catches: "our client(s)", "a client of ours"
+    (r"\b(our\s+client|a\s+client\s+of\s+ours)\b",
+                                           "past_customer_claim",  "our client / a client of ours"),
+    # Catches: "comparable/similar operation" as a reference to a prior customer
+    (r"\b(comparable|similar)\s+operation\b",
+                                           "past_customer_claim",  "comparable/similar operation"),
+    # Catches: "would('ve) cost them" / "cost them $X"
+    (r"\b(would.ve|would\s+have)\s+cost\s+them\b",
+                                           "fabricated_anecdote",  "would've cost them"),
+    (r"\bcost\s+them\s+\$",               "fabricated_anecdote",  "cost them $X"),
+    # Catches: "prevented [N] (unplanned|outages|shutdowns|stops)"
+    (r"\bprevented\s+\w+\s+(unplanned|outage|shutdown|stop)",
+                                           "fabricated_anecdote",  "prevented N outages (anecdote)"),
+
+    # ── Unverified precision metrics ─────────────────────────────────────────
+    (r"\b87\s*%\s*confidence\b",           "unverified_metric",    "87% confidence"),
 ]
 
 
@@ -177,13 +165,17 @@ def _check_draft_integrity(body: str, subject: str = "") -> list[str]:
     """Return a list of violation tags found in the draft body/subject.
 
     An empty list means the draft passed all checks.
+    Uses regex patterns so structural variants are caught regardless of exact wording.
     """
     text = (body + " " + subject).lower()
     violations: list[str] = []
     seen_tags: set[str] = set()
-    for phrase, tag in _INTEGRITY_PATTERNS:
-        if phrase in text and tag not in seen_tags:
-            violations.append(f"{tag}:{phrase!r}")
+    for pattern, tag, example in _INTEGRITY_RULES:
+        if tag in seen_tags:
+            continue
+        m = _re.search(pattern, text)
+        if m:
+            violations.append(f"{tag}:{m.group()!r}")
             seen_tags.add(tag)
     return violations
 
