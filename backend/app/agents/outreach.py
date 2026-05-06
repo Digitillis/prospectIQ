@@ -122,8 +122,8 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
     # ── Past-customer fabrication claims ─────────────────────────────────────
     # Catches: "one/a [any word(s)] shop/plant/manufacturer/facility/operation/company/customer/client [verb]"
     # e.g. "one aerospace shop identified", "a tier supplier caught", "one process manufacturer using"
-    (r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem)\s+\w+(ed|ing|s)?\b",
-                                           "fabricated_anecdote",  "one/a [X] shop/plant/manufacturer/..."),
+    (r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem|processor|producer|fabricator|converter|integrator|distributor|company|tier)\s+\w+(ed|ing|s)?\b",
+                                           "fabricated_anecdote",  "one/a [X] shop/plant/manufacturer/processor/..."),
     # Catches: "plants using/running similar X catch/caught/found..."
     (r"\bplants\s+(using|running|with)\s+similar\b",
                                            "fabricated_anecdote",  "plants using similar X"),

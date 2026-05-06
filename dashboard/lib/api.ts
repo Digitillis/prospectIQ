@@ -177,6 +177,39 @@ export const testSendDraft = (id: string, testEmail: string) =>
     }
   );
 
+export interface SentEmail {
+  id: string;
+  subject: string;
+  body: string;
+  edited_body?: string;
+  sent_at: string;
+  sequence_name?: string;
+  sequence_step?: number;
+  channel?: string;
+}
+
+export interface ResearchIntelligence {
+  company_id: string;
+  company_description?: string;
+  manufacturing_type?: string;
+  equipment_types?: string;
+  known_systems?: string;
+  iot_maturity?: string;
+  maintenance_approach?: string;
+  pain_points?: string;
+  opportunities?: string;
+  existing_solutions?: string;
+  digital_transformation_status?: string;
+  confidence_level?: string;
+  researched_at?: string;
+}
+
+export const getDraftThread = (draftId: string) =>
+  fetchAPI<{ data: SentEmail[]; count: number }>(`/api/approvals/${draftId}/thread`);
+
+export const getDraftResearch = (draftId: string) =>
+  fetchAPI<{ data: ResearchIntelligence | null }>(`/api/approvals/${draftId}/research`);
+
 // ---------------------------------------------------------------------------
 // Outreach Agent — personalized draft generation and intelligence
 // ---------------------------------------------------------------------------

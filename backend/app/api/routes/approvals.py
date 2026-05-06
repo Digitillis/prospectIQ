@@ -438,3 +438,79 @@ async def test_send_draft(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send test email: {str(e)}")
+
+
+@router.get("/{draft_id}/thread")
+async def get_draft_thread(draft_id: str):
+    """Return all previously sent emails to the same contact as this draft.
+
+    Fetches the draft to get its contact_id, then returns all sent
+    outreach_drafts for that contact in chronological order.
+    """
+    db = get_db()
+
+    # Look up the draft to get contact_id
+    draft_result = (
+        db._filter_ws(
+            db.client.table("outreach_drafts").select("id, contact_id, company_id")
+        )
+        .eq("id", draft_id)
+        .execute()
+    )
+    if not draft_result.data:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    draft = draft_result.data[0]
+    contact_id = draft.get("contact_id")
+    if not contact_id:
+        return {"data": [], "count": 0}
+
+    sent = (
+        db._filter_ws(
+            db.client.table("outreach_drafts").select(
+                "id, subject, body, edited_body, sent_at, sequence_name, sequence_step, channel"
+            )
+        )
+        .eq("contact_id", contact_id)
+        .not_.is_("sent_at", "null")
+        .neq("id", draft_id)
+        .order("sent_at", desc=False)
+        .execute()
+    ).data or []
+
+    return {"data": sent, "count": len(sent)}
+
+
+@router.get("/{draft_id}/research")
+async def get_draft_research(draft_id: str):
+    """Return the research intelligence for the company associated with this draft."""
+    db = get_db()
+
+    draft_result = (
+        db._filter_ws(
+            db.client.table("outreach_drafts").select("id, company_id")
+        )
+        .eq("id", draft_id)
+        .execute()
+    )
+    if not draft_result.data:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    company_id = draft_result.data[0].get("company_id")
+    if not company_id:
+        return {"data": None}
+
+    ri_result = (
+        db.client.table("research_intelligence")
+        .select(
+            "company_id, company_description, manufacturing_type, equipment_types, "
+            "known_systems, iot_maturity, maintenance_approach, pain_points, "
+            "opportunities, existing_solutions, digital_transformation_status, "
+            "confidence_level, researched_at"
+        )
+        .eq("company_id", company_id)
+        .limit(1)
+        .execute()
+    )
+    research = ri_result.data[0] if ri_result.data else None
+    return {"data": research}
