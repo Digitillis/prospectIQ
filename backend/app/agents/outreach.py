@@ -117,11 +117,20 @@ _INTEGRITY_PATTERNS: list[tuple[str, str]] = [
     ("a manufacturer we worked",        "past_customer_claim"),
     ("a manufacturer we connected",     "past_customer_claim"),
     ("comparable operation",            "past_customer_claim"),
+    ("we trained our system on",        "past_customer_claim"),
+    # Fabricated named-entity anecdotes (OEM/plant/company stories)
+    ("one roofing oem",                 "fabricated_anecdote"),
+    ("a roofing oem",                   "fabricated_anecdote"),
+    ("one oem using similar",           "fabricated_anecdote"),
+    ("an oem using similar",            "fabricated_anecdote"),
+    ("similar line architecture caught","fabricated_anecdote"),
+    ("would've cost them",              "fabricated_anecdote"),
+    ("cost them $",                     "fabricated_anecdote"),
     ("a plant in the midwest",          "fabricated_anecdote"),
     ("a plant in the southeast",        "fabricated_anecdote"),
     ("a plant in the northeast",        "fabricated_anecdote"),
     ("a plant in the south",            "fabricated_anecdote"),
-    ("shutdowns per quarter",           "fabricated_anecdote"),  # e.g. "3 shutdowns per quarter"
+    ("shutdowns per quarter",           "fabricated_anecdote"),
     # Unverified precision metrics
     ("87% confidence",                  "unverified_metric"),
     # Internal sequence label leakage
