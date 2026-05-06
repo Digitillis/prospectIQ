@@ -8,7 +8,7 @@
  */
 
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -51,6 +51,10 @@ export default function ApprovalsPage() {
   const [replySuccess, setReplySuccess] = useState<Record<string, string>>({});
   const [alerts, setAlerts] = useState<{ id: string; assertion: string; detail: string; contact_name: string; evaluated_at: string }[]>([]);
   const [alertsDismissed, setAlertsDismissed] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const TEST_EMAIL = "avi@digitillis.com";
 
   const handleLogReply = async (draft: OutreachDraft) => {
@@ -120,16 +124,50 @@ export default function ApprovalsPage() {
     setActionLoading(id);
     try {
       await approveDraft(id);
-      setDrafts((prev) => {
-        const next = prev.filter((d) => d.id !== id);
-        return next;
-      });
+      setDrafts((prev) => prev.filter((d) => d.id !== id));
+      setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
       setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to approve");
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleBulkApprove = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkApproving(true);
+    setBulkProgress({ done: 0, total: ids.length });
+    let done = 0;
+    const BATCH = 5;
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const batch = ids.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map(async (id) => {
+          try {
+            await approveDraft(id);
+            setDrafts((prev) => prev.filter((d) => d.id !== id));
+            setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+          } catch {
+            // leave failed drafts visible
+          }
+          done++;
+          setBulkProgress({ done, total: ids.length });
+        })
+      );
+    }
+    setBulkApproving(false);
+    setBulkProgress(null);
+  };
+
+  const allVisibleIds = drafts.map((d) => d.id);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
+  const someSelected = allVisibleIds.some((id) => selected.has(id)) && !allSelected;
+  const highQCount = drafts.filter((d) => (d.quality_score ?? 0) >= 80).length;
+
+  const handleSelectAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(allVisibleIds));
   };
 
   const handleSaveEdit = async (id: string) => {
@@ -321,6 +359,56 @@ export default function ApprovalsPage() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {!loading && drafts.length > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => { if (el) el.indeterminate = someSelected; }}
+              onChange={handleSelectAll}
+              className="h-4 w-4 rounded"
+            />
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {allSelected ? "Deselect all" : someSelected ? `${selected.size} selected` : "Select all"}
+            </span>
+          </label>
+          {selected.size > 0 && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600">|</span>
+              <button
+                onClick={() => handleBulkApprove([...selected])}
+                disabled={bulkApproving}
+                className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
+              >
+                {bulkApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                Approve {selected.size}
+                {bulkProgress && ` (${bulkProgress.done}/${bulkProgress.total})`}
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="text-xs text-gray-400 hover:text-gray-700"
+              >
+                Clear
+              </button>
+            </>
+          )}
+          {highQCount > 0 && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600 ml-auto">|</span>
+              <button
+                onClick={() => handleBulkApprove(drafts.filter((d) => (d.quality_score ?? 0) >= 80).map((d) => d.id))}
+                disabled={bulkApproving}
+                className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50"
+              >
+                Approve all ≥80 ({highQCount})
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Empty State */}
       {drafts.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-16">
@@ -350,6 +438,18 @@ export default function ApprovalsPage() {
             {/* Company Header */}
             <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-6 py-4">
               <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(draft.id)}
+                  onChange={(e) =>
+                    setSelected((prev) => {
+                      const n = new Set(prev);
+                      e.target.checked ? n.add(draft.id) : n.delete(draft.id);
+                      return n;
+                    })
+                  }
+                  className="h-4 w-4 rounded"
+                />
                 <Building2 className="h-5 w-5 text-gray-400 dark:text-gray-500" />
                 <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {draft.companies?.name ?? "Unknown Company"}
