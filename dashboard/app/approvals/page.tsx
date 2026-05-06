@@ -650,9 +650,19 @@ export default function ApprovalsPage() {
                 {editingId === draft.id ? (
                   <textarea
                     value={editBody}
-                    onChange={(e) => setEditBody(e.target.value)}
-                    rows={6}
-                    className="mt-2 w-full rounded-md border border-gray-200 dark:border-gray-700 p-3 text-sm text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
+                    onChange={(e) => {
+                      setEditBody(e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height = `${e.target.scrollHeight}px`;
+                    }}
+                    ref={(el) => {
+                      if (el) {
+                        el.style.height = "auto";
+                        el.style.height = `${el.scrollHeight}px`;
+                      }
+                    }}
+                    rows={20}
+                    className="mt-2 w-full resize-none overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 p-3 text-sm text-gray-700 dark:text-gray-300 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
                   />
                 ) : (
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">
