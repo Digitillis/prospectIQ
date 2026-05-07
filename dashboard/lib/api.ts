@@ -1196,6 +1196,7 @@ export interface OutreachDraft {
   sent_at?: string;
   companies?: { name: string; tier?: string; pqs_total: number };
   contacts?: { full_name?: string; title?: string; email?: string; open_count?: number; click_count?: number };
+  step_engagement?: Record<string, "clicked" | "opened" | "replied" | "none">;
 }
 
 export interface Interaction {

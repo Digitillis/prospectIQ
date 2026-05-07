@@ -116,6 +116,67 @@ async def list_pending_drafts(limit: int = 100):
         except Exception:
             pass
 
+    # Batch per-step engagement for multi-step drafts.
+    # For each pending draft at step N, we want to know what happened at steps 1…N-1:
+    # clicked / opened / replied / none.
+    # open/click events store resend_message_id but not sequence_step, so we join
+    # via the sent outreach_drafts for the same contact.
+    step_engagement_by_draft: dict[str, dict[str, str]] = {}
+    multi_step_contact_ids = list({
+        d["contact_id"] for d in drafts
+        if d.get("contact_id") and (d.get("sequence_step") or 0) > 1
+    })
+    if multi_step_contact_ids:
+        try:
+            sent_rows = (
+                db.client.table("outreach_drafts")
+                .select("contact_id, sequence_step, resend_message_id")
+                .in_("contact_id", multi_step_contact_ids)
+                .not_.is_("sent_at", "null")
+                .not_.is_("resend_message_id", "null")
+                .execute()
+            ).data or []
+            # resend_message_id → (contact_id, sequence_step)
+            msg_to_step: dict[str, tuple[str, int]] = {
+                r["resend_message_id"]: (r["contact_id"], int(r["sequence_step"] or 0))
+                for r in sent_rows if r.get("resend_message_id")
+            }
+            # Fetch engagement events for those messages
+            all_msg_ids = list(msg_to_step.keys())
+            eng_rows: list[dict] = []
+            if all_msg_ids:
+                eng_rows = (
+                    db.client.table("interactions")
+                    .select("type, metadata")
+                    .in_("type", ["email_opened", "email_clicked", "email_replied"])
+                    .in_("contact_id", multi_step_contact_ids)
+                    .execute()
+                ).data or []
+            # engagement level per (contact_id, step): "replied" > "clicked" > "opened" > "none"
+            _RANK = {"replied": 3, "clicked": 2, "opened": 1, "none": 0}
+            _TYPE_MAP = {"email_replied": "replied", "email_clicked": "clicked", "email_opened": "opened"}
+            contact_step_eng: dict[tuple[str, int], str] = {}
+            for ev in eng_rows:
+                mid = (ev.get("metadata") or {}).get("resend_message_id")
+                if not mid or mid not in msg_to_step:
+                    continue
+                contact_id, step = msg_to_step[mid]
+                label = _TYPE_MAP.get(ev["type"], "none")
+                key = (contact_id, step)
+                if _RANK[label] > _RANK.get(contact_step_eng.get(key, "none"), 0):
+                    contact_step_eng[key] = label
+            # Map back to each pending draft
+            for d in drafts:
+                cid = d.get("contact_id")
+                cur_step = int(d.get("sequence_step") or 0)
+                if cid and cur_step > 1:
+                    eng_map = {}
+                    for step in range(1, cur_step):
+                        eng_map[str(step)] = contact_step_eng.get((cid, step), "none")
+                    step_engagement_by_draft[d["id"]] = eng_map
+        except Exception:
+            pass
+
     for draft in drafts:
         company_id = draft.get("company_id")
         company  = companies_by_id.get(company_id) if company_id else None
@@ -128,6 +189,7 @@ async def list_pending_drafts(limit: int = 100):
             {"severity": i.severity, "check": i.check_name, "message": i.message}
             for i in report.issues
         ]
+        draft["step_engagement"] = step_engagement_by_draft.get(draft["id"])
 
     # Get total pending count (unaffected by limit) for the UI to display
     try:

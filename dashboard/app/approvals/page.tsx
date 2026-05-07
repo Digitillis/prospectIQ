@@ -582,22 +582,25 @@ export default function ApprovalsPage() {
                     <span>{draft.contacts.email}</span>
                   </div>
                 )}
-                {/* Engagement signals from prior steps */}
+                {/* Per-step engagement pills */}
                 {draft.sequence_step > 1 && (
-                  <div className="flex items-center gap-1.5">
-                    {(draft.contacts?.click_count ?? 0) > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 dark:bg-green-900/20 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
-                        Clicked step {draft.sequence_step - 1}
-                      </span>
-                    ) : (draft.contacts?.open_count ?? 0) > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-                        Opened step {draft.sequence_step - 1}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-400 dark:text-gray-500">
-                        No engagement on step {draft.sequence_step - 1}
-                      </span>
-                    )}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: draft.sequence_step - 1 }, (_, i) => i + 1).map((step) => {
+                      const eng = draft.step_engagement?.[String(step)] ?? "none";
+                      const pill =
+                        eng === "replied"
+                          ? { cls: "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400", label: `Replied S${step}` }
+                          : eng === "clicked"
+                          ? { cls: "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400", label: `Clicked S${step}` }
+                          : eng === "opened"
+                          ? { cls: "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400", label: `Opened S${step}` }
+                          : { cls: "bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500", label: `No response S${step}` };
+                      return (
+                        <span key={step} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${pill.cls}`}>
+                          {pill.label}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>
