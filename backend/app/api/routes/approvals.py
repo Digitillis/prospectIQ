@@ -265,6 +265,42 @@ async def approve_draft(
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
+    # Capture edit feedback when reviewer modified the body — used as a
+    # positive learning signal for future drafts to the same contact.
+    if body and body.edited_body:
+        try:
+            original = draft.get("body") or ""
+            edited = body.edited_body
+            orig_words = len(original.split())
+            edit_words = len(edited.split())
+            # Opener = first non-empty line
+            orig_opener = next((l.strip() for l in original.splitlines() if l.strip()), "")
+            edit_opener = next((l.strip() for l in edited.splitlines() if l.strip()), "")
+            opener_changed = orig_opener != edit_opener
+            # Proof point heuristics: numbers or % in original but not edited
+            import re as _re
+            orig_has_stat = bool(_re.search(r'\d+\s*%|\$\d+|\d+\s*(days?|hours?|weeks?)', original, _re.I))
+            edit_has_stat = bool(_re.search(r'\d+\s*%|\$\d+|\d+\s*(days?|hours?|weeks?)', edited, _re.I))
+            proof_point_removed = orig_has_stat and not edit_has_stat
+            db.client.table("outreach_edit_feedback").insert({
+                "draft_id": draft_id,
+                "company_id": draft.get("company_id"),
+                "contact_id": draft.get("contact_id"),
+                "sequence_name": draft.get("sequence_name"),
+                "sequence_step": draft.get("sequence_step"),
+                "original_body": original,
+                "edited_body": edited,
+                "original_word_count": orig_words,
+                "edited_word_count": edit_words,
+                "opener_changed": opener_changed,
+                "proof_point_removed": proof_point_removed,
+                "shortened": edit_words < orig_words - 10,
+                "original_model": draft.get("model"),
+                "workspace_id": get_workspace_id(),
+            }).execute()
+        except Exception:
+            pass  # non-critical — never block approval on feedback capture failure
+
     action = "draft.edited" if (body and body.edited_body) else "draft.approved"
     log_audit_event_from_ctx(
         action,

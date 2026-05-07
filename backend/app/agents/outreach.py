@@ -395,7 +395,7 @@ PROSPECT AWARENESS LEVEL: {awareness_level}
 
 SEQUENCE: {sequence_name} | {sequence_context}
 CHANNEL: {channel}
-{prior_thread_block}{time_gap_block}{reply_context_block}{prior_rejection_block}
+{prior_thread_block}{time_gap_block}{reply_context_block}{prior_rejection_block}{edit_signal_block}
 STEP INSTRUCTIONS:
 {step_instructions}
 
@@ -779,6 +779,29 @@ class OutreachAgent(BaseAgent):
                     except Exception:
                         pass
 
+                    # Feature 4: Fetch edit feedback for this contact — what did
+                    # the reviewer change in prior approved+edited drafts for this
+                    # sequence? Use as implicit style signal for next generation.
+                    edit_signals: list[dict] = []
+                    try:
+                        _ef_rows = (
+                            self.db.client.table("outreach_edit_feedback")
+                            .select(
+                                "original_word_count, edited_word_count, opener_changed, "
+                                "proof_point_removed, shortened, original_body, edited_body"
+                            )
+                            .eq("contact_id", contact["id"])
+                            .eq("sequence_name", sequence_name)
+                            .order("created_at", desc=True)
+                            .limit(2)
+                            .execute()
+                            .data or []
+                        )
+                        for _ef in _ef_rows:
+                            edit_signals.append(_ef)
+                    except Exception:
+                        pass
+
                     # Build the prompt
                     prompt = self._build_prompt(
                         company=company,
@@ -793,6 +816,7 @@ class OutreachAgent(BaseAgent):
                         time_gap_days=time_gap_days,
                         prior_messages=prior_messages,
                         prior_rejections=prior_rejections,
+                        edit_signals=edit_signals,
                     )
 
                     # Call Claude
@@ -882,6 +906,11 @@ class OutreachAgent(BaseAgent):
                         draft_data["rejection_reason"] = f"auto_rejected|{_vstr}"
                         self.db.insert_outreach_draft(draft_data)
                         result.errors += 1
+                        # Feature 3: flag contact for human review after 3+ rejections
+                        self._check_rejection_rate(
+                            contact["id"], company_id, company_name,
+                            contact.get("full_name", ""), sequence_name, sequence_step,
+                        )
                         continue
 
                     inserted_draft = self.db.insert_outreach_draft(draft_data)
@@ -1049,6 +1078,77 @@ class OutreachAgent(BaseAgent):
         emailable.sort(key=contact_score, reverse=True)
         return emailable[0]
 
+    def _check_rejection_rate(
+        self,
+        contact_id: str,
+        company_id: str,
+        company_name: str,
+        contact_name: str,
+        sequence_name: str,
+        sequence_step: int,
+        threshold: int = 3,
+    ) -> None:
+        """Feature 3: flag contact for human review after threshold rejections.
+
+        Checks total rejected drafts for this contact + step. If >= threshold,
+        logs an interaction note so the reviewer sees it in the timeline.
+        Only fires once — skips if a flag note already exists.
+        """
+        try:
+            count_result = (
+                self.db.client.table("outreach_drafts")
+                .select("id", count="exact")
+                .eq("contact_id", contact_id)
+                .eq("sequence_name", sequence_name)
+                .eq("sequence_step", sequence_step)
+                .eq("approval_status", "rejected")
+                .execute()
+            )
+            rejection_count = count_result.count or 0
+            if rejection_count < threshold:
+                return
+
+            # Check if we already filed this flag
+            existing = (
+                self.db.client.table("interactions")
+                .select("id")
+                .eq("contact_id", contact_id)
+                .eq("type", "note")
+                .like("subject", "⚠️ High rejection rate%")
+                .limit(1)
+                .execute()
+                .data or []
+            )
+            if existing:
+                return
+
+            self.db.insert_interaction({
+                "company_id": company_id,
+                "contact_id": contact_id,
+                "type": "note",
+                "channel": "internal",
+                "subject": f"⚠️ High rejection rate — {rejection_count} drafts rejected for {contact_name}",
+                "body": (
+                    f"{rejection_count} drafts have been rejected for {contact_name} at {company_name} "
+                    f"(sequence={sequence_name}, step={sequence_step}). "
+                    "Possible causes: insufficient research intelligence, wrong persona, or a bad-fit contact. "
+                    "Review manually before generating more drafts."
+                ),
+                "source": "system",
+                "metadata": {
+                    "rejection_count": rejection_count,
+                    "sequence_name": sequence_name,
+                    "sequence_step": sequence_step,
+                    "flag_type": "high_rejection_rate",
+                },
+            })
+            logger.warning(
+                "High rejection rate flag: %s / %s — %d rejections on %s step %d",
+                company_name, contact_name, rejection_count, sequence_name, sequence_step,
+            )
+        except Exception as exc:
+            logger.debug("_check_rejection_rate failed: %s", exc)
+
     def _build_prompt(
         self,
         company: dict,
@@ -1063,6 +1163,7 @@ class OutreachAgent(BaseAgent):
         time_gap_days: int | None = None,
         prior_messages: list[dict] | None = None,
         prior_rejections: list[dict] | None = None,
+        edit_signals: list[dict] | None = None,
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -1209,45 +1310,90 @@ class OutreachAgent(BaseAgent):
             reply_context_block = ""
 
         # Build prior rejection block — inject what was tried, why it failed,
-        # and mandate a meaningfully different approach.
+        # mandate a different approach, and list opening angles already used.
         if prior_rejections:
             _rej_parts = []
+            _used_openers: list[str] = []
+            _tag_map = {
+                "fabricated_anecdote": "contains a fabricated customer anecdote",
+                "past_customer_claim": "makes an unverifiable past-customer claim",
+                "step_label_leak": "references internal sequence step labels",
+                "unverified_metric": "uses an unverified precision metric",
+                "wrong_tone": "tone is wrong for this prospect",
+                "too_generic": "too generic — not specific enough to this company",
+                "bad_subject_line": "subject line is weak or templated",
+                "wrong_persona_angle": "wrong angle for this persona",
+                "contact_switch_needed": "wrong contact — persona mismatch",
+                "insufficient_research": "insufficient company-specific research used",
+                "too_long": "email is too long",
+            }
             for i, rj in enumerate(prior_rejections, 1):
                 part = f"Draft #{i}:\n  Subject: {rj['subject']}\n  Body excerpt: {rj['body'][:300]}"
                 reason = rj.get("reason", "").strip()
-                # Strip auto_rejected| prefix so the model sees the human reason
                 if reason.startswith("auto_rejected|"):
                     reason = reason[len("auto_rejected|"):]
                 if reason:
-                    # Map internal tag codes to readable descriptions
-                    _tag_map = {
-                        "fabricated_anecdote": "contains a fabricated customer anecdote",
-                        "past_customer_claim": "makes an unverifiable past-customer claim",
-                        "step_label_leak": "references internal sequence step labels",
-                        "unverified_metric": "uses an unverified precision metric",
-                    }
                     readable = " | ".join(
                         _tag_map.get(t.split(":")[0], t) for t in reason.split(" | ")
                     )
                     part += f"\n  Rejection reason: {readable}"
                 else:
-                    part += "\n  Rejection reason: not specified — the reviewer found this draft insufficient"
+                    part += "\n  Rejection reason: not specified — reviewer quality call"
                 _rej_parts.append(part)
+                # Extract opening sentence for angle dedup
+                body_text = rj.get("body", "")
+                first_line = next(
+                    (l.strip() for l in body_text.splitlines() if l.strip() and not l.strip().startswith("Hi ")),
+                    ""
+                )
+                if first_line:
+                    _used_openers.append(f'  - "{first_line[:120]}"')
+
+            angle_block = (
+                "\nOpening angles already tried (DO NOT reuse these hooks or angles):\n"
+                + "\n".join(_used_openers)
+                + "\n"
+            ) if _used_openers else ""
 
             prior_rejection_block = (
                 "\n\n🚫 PRIOR REJECTED DRAFT(S) FOR THIS CONTACT + STEP:\n"
                 + "\n\n".join(_rej_parts)
-                + "\n\n"
-                "MANDATORY: Your new draft MUST be materially different from every rejected draft above.\n"
-                "- Use a completely different opening angle and subject line.\n"
-                "- If the prior draft was rejected for fabrication: use only verified platform capabilities "
-                "and published benchmarks. Do not rewrite a fabricated claim — remove it entirely.\n"
+                + "\n"
+                + angle_block
+                + "\nMANDATORY — your new draft MUST be materially different:\n"
+                "- Use a completely different opening angle, subject line, and hook.\n"
+                "- If rejected for fabrication: use only verified platform capabilities "
+                "and published benchmarks. Remove fabricated claims entirely — do not rewrite them.\n"
                 "- If the rejection reason is unspecified: the reviewer made a quality call. "
-                "Approach from a fresh angle — different hook, different framing, different CTA.\n"
-                "- Do not salvage phrases from the rejected draft. Start from scratch.\n"
+                "Approach from a fresh angle — different hook, framing, and CTA.\n"
+                "- Do not salvage any phrase from a rejected draft. Start from scratch.\n"
             )
         else:
             prior_rejection_block = ""
+
+        # Feature 4: Build edit signal block — what did the reviewer change when
+        # they edited and approved a prior draft? Use as an implicit style preference.
+        if edit_signals:
+            _sig_lines: list[str] = []
+            for es in edit_signals:
+                orig_w = es.get("original_word_count") or 0
+                edit_w = es.get("edited_word_count") or 0
+                if es.get("shortened") and orig_w and edit_w:
+                    _sig_lines.append(f"- Reviewer shortened the draft from ~{orig_w} to ~{edit_w} words. Keep it concise.")
+                if es.get("opener_changed"):
+                    _sig_lines.append("- Reviewer changed the opening sentence. Lead with something more specific or direct.")
+                if es.get("proof_point_removed"):
+                    _sig_lines.append("- Reviewer removed a proof point/statistic. Do not include stats that can't be fully verified.")
+            if _sig_lines:
+                edit_signal_block = (
+                    "\n\n📝 REVIEWER STYLE PREFERENCES (from prior edited drafts for this contact):\n"
+                    + "\n".join(_sig_lines)
+                    + "\nMatch this style in your new draft.\n"
+                )
+            else:
+                edit_signal_block = ""
+        else:
+            edit_signal_block = ""
 
         return OUTREACH_USER.format(
             company_name=company.get("name", ""),
@@ -1281,6 +1427,7 @@ class OutreachAgent(BaseAgent):
             time_gap_block=time_gap_block,
             reply_context_block=reply_context_block,
             prior_rejection_block=prior_rejection_block,
+            edit_signal_block=edit_signal_block,
             step_instructions=step_text,
             anti_patterns=anti_text,
             max_words=max_words,

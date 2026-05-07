@@ -40,6 +40,7 @@ export default function ApprovalsPage() {
   const [editBody, setEditBody] = useState("");
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectTags, setRejectTags] = useState<string[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [abVariants, setAbVariants] = useState<Record<string, { a: string; b: string; selected: "a" | "b" }>>({});
@@ -241,14 +242,30 @@ export default function ApprovalsPage() {
     }
   };
 
+  const REJECT_TAGS: { value: string; label: string }[] = [
+    { value: "too_generic", label: "Too generic" },
+    { value: "wrong_persona_angle", label: "Wrong persona angle" },
+    { value: "bad_subject_line", label: "Bad subject line" },
+    { value: "fabricated_claim", label: "Fabricated claim" },
+    { value: "too_long", label: "Too long" },
+    { value: "wrong_tone", label: "Wrong tone" },
+    { value: "contact_switch_needed", label: "Wrong contact" },
+    { value: "insufficient_research", label: "Insufficient research" },
+  ];
+
   const handleReject = async (id: string) => {
-    if (!rejectReason.trim()) return;
+    if (rejectTags.length === 0 && !rejectReason.trim()) return;
     setActionLoading(id);
+    const combined = [
+      ...rejectTags,
+      ...(rejectReason.trim() ? [rejectReason.trim()] : []),
+    ].join(" | ");
     try {
-      await rejectDraft(id, rejectReason);
+      await rejectDraft(id, combined);
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setRejectingId(null);
       setRejectReason("");
+      setRejectTags([]);
       setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reject");
@@ -299,6 +316,7 @@ export default function ApprovalsPage() {
   const startRejecting = (id: string) => {
     setRejectingId(id);
     setRejectReason("");
+    setRejectTags([]);
     setEditingId(null);
     setEditBody("");
   };
@@ -333,7 +351,7 @@ export default function ApprovalsPage() {
           break;
         case "Escape":
           if (editingId) { setEditingId(null); setEditBody(""); }
-          if (rejectingId) { setRejectingId(null); setRejectReason(""); }
+          if (rejectingId) { setRejectingId(null); setRejectReason(""); setRejectTags([]); }
           break;
       }
     };
@@ -830,36 +848,68 @@ export default function ApprovalsPage() {
 
               {/* Reject Reason Input */}
               {rejectingId === draft.id && (
-                <div className="flex items-center gap-2">
+                <div className="rounded-lg border border-red-100 dark:border-red-900/40 bg-red-50/60 dark:bg-red-900/10 p-4 space-y-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700 dark:text-red-400">
+                    Why is this draft being rejected?
+                  </p>
+                  {/* Structured tags */}
+                  <div className="flex flex-wrap gap-2">
+                    {REJECT_TAGS.map((tag) => {
+                      const active = rejectTags.includes(tag.value);
+                      return (
+                        <button
+                          key={tag.value}
+                          onClick={() =>
+                            setRejectTags((prev) =>
+                              active ? prev.filter((t) => t !== tag.value) : [...prev, tag.value]
+                            )
+                          }
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                            active
+                              ? "border-red-400 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"
+                              : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-500 hover:border-red-300 hover:text-red-600"
+                          )}
+                        >
+                          {tag.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Optional freeform note */}
                   <input
                     type="text"
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Rejection reason..."
-                    className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleReject(draft.id);
-                    }}
+                    placeholder="Additional notes (optional)..."
+                    className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 focus:border-red-300 focus:outline-none focus:ring-1 focus:ring-red-200"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleReject(draft.id); }}
                   />
-                  <button
-                    onClick={() => handleReject(draft.id)}
-                    disabled={
-                      !rejectReason.trim() || actionLoading === draft.id
-                    }
-                    className="rounded-md bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-                  >
-                    {actionLoading === draft.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Confirm Reject"
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleReject(draft.id)}
+                      disabled={(rejectTags.length === 0 && !rejectReason.trim()) || actionLoading === draft.id}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-40"
+                    >
+                      {actionLoading === draft.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5" />
+                      )}
+                      Confirm Reject
+                    </button>
+                    <button
+                      onClick={() => { setRejectingId(null); setRejectTags([]); setRejectReason(""); }}
+                      className="text-xs text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300"
+                    >
+                      Cancel
+                    </button>
+                    {rejectTags.length > 0 && (
+                      <span className="ml-auto text-[10px] text-red-500 dark:text-red-400">
+                        {rejectTags.length} tag{rejectTags.length !== 1 ? "s" : ""} selected
+                      </span>
                     )}
-                  </button>
-                  <button
-                    onClick={() => setRejectingId(null)}
-                    className="rounded-md px-3 py-2 text-sm text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300"
-                  >
-                    Cancel
-                  </button>
+                  </div>
                 </div>
               )}
 
