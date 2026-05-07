@@ -395,7 +395,7 @@ PROSPECT AWARENESS LEVEL: {awareness_level}
 
 SEQUENCE: {sequence_name} | {sequence_context}
 CHANNEL: {channel}
-{prior_thread_block}{time_gap_block}{reply_context_block}
+{prior_thread_block}{time_gap_block}{reply_context_block}{prior_rejection_block}
 STEP INSTRUCTIONS:
 {step_instructions}
 
@@ -752,6 +752,33 @@ class OutreachAgent(BaseAgent):
                         except Exception:
                             pass
 
+                    # Fetch prior rejected drafts for this contact + step so the
+                    # model knows what was tried, why it failed, and can take a
+                    # meaningfully different approach.
+                    prior_rejections: list[dict] = []
+                    try:
+                        _rej_rows = (
+                            self.db.client.table("outreach_drafts")
+                            .select("subject, body, edited_body, rejection_reason, model, created_at")
+                            .eq("contact_id", contact["id"])
+                            .eq("sequence_name", sequence_name)
+                            .eq("sequence_step", sequence_step)
+                            .eq("approval_status", "rejected")
+                            .order("created_at", desc=True)
+                            .limit(3)
+                            .execute()
+                            .data or []
+                        )
+                        for _rj in _rej_rows:
+                            prior_rejections.append({
+                                "subject": _rj.get("subject", ""),
+                                "body": (_rj.get("edited_body") or _rj.get("body", ""))[:400],
+                                "reason": _rj.get("rejection_reason") or "",
+                                "model": _rj.get("model") or "",
+                            })
+                    except Exception:
+                        pass
+
                     # Build the prompt
                     prompt = self._build_prompt(
                         company=company,
@@ -765,6 +792,7 @@ class OutreachAgent(BaseAgent):
                         reply_context=reply_context,
                         time_gap_days=time_gap_days,
                         prior_messages=prior_messages,
+                        prior_rejections=prior_rejections,
                     )
 
                     # Call Claude
@@ -775,6 +803,7 @@ class OutreachAgent(BaseAgent):
                         sequence_step=sequence_step,
                         open_count=int(contact.get("open_count") or 0),
                         click_count=int(contact.get("click_count") or 0),
+                        prior_rejection_count=len(prior_rejections),
                     )
 
                     response = client.messages.create(
@@ -835,6 +864,7 @@ class OutreachAgent(BaseAgent):
                         "body": _body,
                         "personalization_notes": _clean(parsed.get("personalization_notes", "")),
                         "approval_status": "pending",
+                        "model": _draft_model,
                     }
 
                     # Post-generation integrity check — auto-reject before save if
@@ -1032,6 +1062,7 @@ class OutreachAgent(BaseAgent):
         reply_context: str | None = None,
         time_gap_days: int | None = None,
         prior_messages: list[dict] | None = None,
+        prior_rejections: list[dict] | None = None,
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -1177,6 +1208,47 @@ class OutreachAgent(BaseAgent):
         else:
             reply_context_block = ""
 
+        # Build prior rejection block — inject what was tried, why it failed,
+        # and mandate a meaningfully different approach.
+        if prior_rejections:
+            _rej_parts = []
+            for i, rj in enumerate(prior_rejections, 1):
+                part = f"Draft #{i}:\n  Subject: {rj['subject']}\n  Body excerpt: {rj['body'][:300]}"
+                reason = rj.get("reason", "").strip()
+                # Strip auto_rejected| prefix so the model sees the human reason
+                if reason.startswith("auto_rejected|"):
+                    reason = reason[len("auto_rejected|"):]
+                if reason:
+                    # Map internal tag codes to readable descriptions
+                    _tag_map = {
+                        "fabricated_anecdote": "contains a fabricated customer anecdote",
+                        "past_customer_claim": "makes an unverifiable past-customer claim",
+                        "step_label_leak": "references internal sequence step labels",
+                        "unverified_metric": "uses an unverified precision metric",
+                    }
+                    readable = " | ".join(
+                        _tag_map.get(t.split(":")[0], t) for t in reason.split(" | ")
+                    )
+                    part += f"\n  Rejection reason: {readable}"
+                else:
+                    part += "\n  Rejection reason: not specified — the reviewer found this draft insufficient"
+                _rej_parts.append(part)
+
+            prior_rejection_block = (
+                "\n\n🚫 PRIOR REJECTED DRAFT(S) FOR THIS CONTACT + STEP:\n"
+                + "\n\n".join(_rej_parts)
+                + "\n\n"
+                "MANDATORY: Your new draft MUST be materially different from every rejected draft above.\n"
+                "- Use a completely different opening angle and subject line.\n"
+                "- If the prior draft was rejected for fabrication: use only verified platform capabilities "
+                "and published benchmarks. Do not rewrite a fabricated claim — remove it entirely.\n"
+                "- If the rejection reason is unspecified: the reviewer made a quality call. "
+                "Approach from a fresh angle — different hook, different framing, different CTA.\n"
+                "- Do not salvage phrases from the rejected draft. Start from scratch.\n"
+            )
+        else:
+            prior_rejection_block = ""
+
         return OUTREACH_USER.format(
             company_name=company.get("name", ""),
             sub_sector=company.get("sub_sector", company.get("industry", "Manufacturing")),
@@ -1208,6 +1280,7 @@ class OutreachAgent(BaseAgent):
             prior_thread_block=prior_thread_block,
             time_gap_block=time_gap_block,
             reply_context_block=reply_context_block,
+            prior_rejection_block=prior_rejection_block,
             step_instructions=step_text,
             anti_patterns=anti_text,
             max_words=max_words,
