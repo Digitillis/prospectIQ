@@ -11,6 +11,7 @@ Cost profile (per 1M tokens, approximate):
 Approved routing policy (2026-05-02):
   outreach_step1    → Sonnet  (cold opens — first impression, user cannot uplift)
   outreach_step2plus → Haiku  (follow-ups — formulaic, prospect has context)
+  rejection_escalation → Sonnet always (prior draft was rejected; quality uplift required)
   draft_score       → Haiku   (classification task, merged into draft call)
   research          → Sonnet  (deep synthesis for high-PQS; Haiku for low-PQS via research.py)
   linkedin_msg      → Haiku
@@ -68,16 +69,22 @@ def get_model_for_outreach(
     sequence_step: int,
     open_count: int = 0,
     click_count: int = 0,
+    prior_rejection_count: int = 0,
 ) -> str:
-    """Engagement-aware model selection for outreach drafts.
+    """Engagement- and rejection-aware model selection for outreach drafts.
 
     Step 1 always uses Sonnet — cold opens, first impression.
     Step 2+: Sonnet if contact has opened or clicked (warm signal),
              Haiku otherwise (cold follow-up, formulaic, cost-efficient).
 
-    Why: opened/clicked contacts have shown intent; a higher-quality
-    personalised message at step 2 is worth ~6x the token cost.
+    Rejection escalation: if a prior draft for this contact+step was rejected
+    (manually or auto), always use Sonnet regardless of step or engagement.
+    A rejection signals the default model produced insufficient quality — pay
+    the 6x token cost to get a materially better attempt.
     """
+    # Rejection always escalates to Sonnet — quality is clearly insufficient
+    if prior_rejection_count > 0:
+        return SONNET
     if sequence_step <= 1:
         return SONNET
     if open_count > 0 or click_count > 0:
