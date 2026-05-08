@@ -28,8 +28,79 @@ logger = logging.getLogger(__name__)
 # Data collection
 # ---------------------------------------------------------------------------
 
+_PLAN_CLAUDE_MONTHLY = 21.0   # from docs/FINANCIAL_PROJECTIONS.md
+_PLAN_CLAUDE_DAILY   = _PLAN_CLAUDE_MONTHLY / 30
+_BUDGET_CAP          = 200.0  # monthly hard cap (Claude only)
+
+
 def _iso_days_ago(n: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
+
+
+def _collect_financial_metrics(client) -> dict:
+    """Collect Claude API spend + pipeline activity for the financial section."""
+    now = datetime.now(timezone.utc)
+    today_start  = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    month_start  = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    def fetch_costs(since: str) -> list[dict]:
+        rows = (
+            client.table("api_costs")
+            .select("provider,model,estimated_cost_usd")
+            .gte("created_at", since)
+            .execute()
+            .data or []
+        )
+        return [r for r in rows if r.get("provider") != "apollo"]
+
+    today_rows = fetch_costs(today_start)
+    month_rows = fetch_costs(month_start)
+
+    def sum_claude(rows: list[dict]) -> float:
+        return sum(float(r.get("estimated_cost_usd") or 0) for r in rows if r.get("provider") == "anthropic")
+
+    today_claude = sum_claude(today_rows)
+    mtd_claude   = sum_claude(month_rows)
+
+    # Top models today
+    by_model: dict[str, float] = {}
+    for r in today_rows:
+        key = f"{r.get('provider','?')}/{r.get('model','?')}"
+        by_model[key] = by_model.get(key, 0) + float(r.get("estimated_cost_usd") or 0)
+    top_models = dict(sorted(by_model.items(), key=lambda x: -x[1])[:4])
+
+    # Web search alert
+    web_search_today = [r for r in today_rows if "web_search" in (r.get("model") or "")]
+
+    # Sends today and MTD
+    sends_today = (
+        client.table("outreach_drafts").select("id", count="exact")
+        .not_.is_("sent_at", "null").gte("sent_at", today_start).execute().count or 0
+    )
+    sends_mtd = (
+        client.table("outreach_drafts").select("id", count="exact")
+        .not_.is_("sent_at", "null").gte("sent_at", month_start).execute().count or 0
+    )
+
+    # Apollo calls today (proxy for credit usage)
+    apollo_today = (
+        client.table("api_costs").select("id", count="exact")
+        .eq("provider", "apollo").gte("created_at", today_start).execute().count or 0
+    )
+
+    return {
+        "today_claude": today_claude,
+        "mtd_claude": mtd_claude,
+        "budget_cap": _BUDGET_CAP,
+        "plan_daily": _PLAN_CLAUDE_DAILY,
+        "plan_monthly": _PLAN_CLAUDE_MONTHLY,
+        "top_models": top_models,
+        "web_search_alert": len(web_search_today) > 0,
+        "sends_today": sends_today,
+        "sends_mtd": sends_mtd,
+        "apollo_calls_today": apollo_today,
+        "cost_per_email_mtd": round(mtd_claude / sends_mtd, 4) if sends_mtd else None,
+    }
 
 
 def _collect_metrics(client) -> dict:
@@ -310,7 +381,78 @@ def _call_claude(prompt: str, api_key: str) -> str:
 # HTML formatter
 # ---------------------------------------------------------------------------
 
-def _render_html(narrative: str, m: dict, date_str: str) -> str:
+def _render_financial_section(fin: dict) -> str:
+    today_claude = fin.get("today_claude", 0.0)
+    mtd_claude   = fin.get("mtd_claude", 0.0)
+    cap          = fin.get("budget_cap", 200.0)
+    plan_daily   = fin.get("plan_daily", 0.70)
+    plan_monthly = fin.get("plan_monthly", 21.0)
+    sends_today  = fin.get("sends_today", 0)
+    sends_mtd    = fin.get("sends_mtd", 0)
+    apollo_today = fin.get("apollo_calls_today", 0)
+    cost_per_email = fin.get("cost_per_email_mtd")
+    top_models   = fin.get("top_models", {})
+    web_alert    = fin.get("web_search_alert", False)
+
+    budget_pct   = (mtd_claude / cap * 100) if cap else 0
+    cap_color    = "#16a34a" if budget_pct < 60 else "#d97706" if budget_pct < 85 else "#dc2626"
+    day_over     = today_claude > plan_daily
+    mtd_over     = mtd_claude > plan_monthly
+
+    model_rows = "".join(
+        f"<tr><td style='padding:5px 12px;border-top:1px solid #e5e7eb;font-size:12px'>{k}</td>"
+        f"<td style='text-align:right;padding:5px 12px;border-top:1px solid #e5e7eb;font-size:12px'>${v:.4f}</td></tr>"
+        for k, v in top_models.items()
+    ) or "<tr><td colspan='2' style='padding:5px 12px;font-size:12px;color:#9ca3af'>No API calls today</td></tr>"
+
+    web_banner = (
+        "<div style='background:#fee2e2;border-left:4px solid #dc2626;padding:8px 12px;"
+        "border-radius:4px;margin-bottom:12px;font-size:12px'>"
+        "<strong>ALERT: web_search model triggered today.</strong> Disabled on 2026-05-02 — investigate.</div>"
+    ) if web_alert else ""
+
+    return f"""
+  <div style="margin-top:24px;border-top:2px solid #eee;padding-top:20px">
+    <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#888;margin-bottom:12px">Financial Summary</div>
+    {web_banner}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+        <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Today (Claude)</div>
+        <div style="font-size:22px;font-weight:700;margin-top:2px">${today_claude:.4f}</div>
+        <div style="font-size:11px;color:{'#dc2626' if day_over else '#16a34a'}">${plan_daily:.2f} plan {'OVER' if day_over else 'under'}</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+        <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">MTD (Claude)</div>
+        <div style="font-size:22px;font-weight:700;margin-top:2px">${mtd_claude:.2f}</div>
+        <div style="font-size:11px;color:{'#dc2626' if mtd_over else '#16a34a'}">${plan_monthly:.0f} plan {'OVER' if mtd_over else 'under'}</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+        <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Budget cap</div>
+        <div style="font-size:22px;font-weight:700;margin-top:2px;color:{cap_color}">{budget_pct:.0f}%</div>
+        <div style="font-size:11px;color:#888">${cap - mtd_claude:.2f} remaining</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+        <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Cost / email</div>
+        <div style="font-size:22px;font-weight:700;margin-top:2px">${f'{cost_per_email:.4f}' if cost_per_email else '—'}</div>
+        <div style="font-size:11px;color:#888">{sends_today} sent today · {sends_mtd} MTD</div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:10px">
+      <tr style="background:#f3f4f6">
+        <th style="text-align:left;padding:6px 12px;font-size:12px">Model (today)</th>
+        <th style="text-align:right;padding:6px 12px;font-size:12px">Cost</th>
+      </tr>
+      {model_rows}
+    </table>
+    <p style="font-size:11px;color:#9ca3af;margin:6px 0">
+      Apollo enrichment: {apollo_today} API calls today.
+      Apollo credit balance — check <a href="https://app.apollo.io/#/settings/credits/current" style="color:#1a56db">Apollo dashboard</a>.
+      Railway (~$50/mo) billed separately.
+    </p>
+  </div>"""
+
+
+def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None) -> str:
     email_7d = m.get("email_7d", {})
     pipeline = m.get("pipeline", {})
     spend = m.get("api_spend", {})
@@ -380,6 +522,9 @@ def _render_html(narrative: str, m: dict, date_str: str) -> str:
     </table>
   </div>
 
+  <!-- Financial summary -->
+  {_render_financial_section(fin) if fin else ''}
+
   <div style="font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:12px">
     Generated by ProspectIQ GTM Engine · {m.get('as_of','')}
   </div>
@@ -401,13 +546,14 @@ def run_daily_report() -> bool:
         client = get_supabase_client()
         logger.info("Daily report: collecting metrics...")
         m = _collect_metrics(client)
+        fin = _collect_financial_metrics(client)
 
         logger.info("Daily report: generating Claude narrative...")
         prompt = _build_report_prompt(m)
         narrative = _call_claude(prompt, settings.anthropic_api_key)
 
         date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
-        html = _render_html(narrative, m, date_str)
+        html = _render_html(narrative, m, date_str, fin)
 
         subject = f"ProspectIQ GTM Brief — {date_str}"
         logger.info(f"Daily report: sending to {recipient}...")
