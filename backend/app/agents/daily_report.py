@@ -132,14 +132,24 @@ def _collect_financial_metrics(client) -> dict:
     month_start  = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
     def fetch_costs(since: str) -> list[dict]:
-        rows = (
-            client.table("api_costs")
-            .select("provider,model,estimated_cost_usd")
-            .gte("created_at", since)
-            .execute()
-            .data or []
-        )
-        return [r for r in rows if r.get("provider") != "apollo"]
+        """Paginate through all api_costs rows — PostgREST caps at 1000/request."""
+        all_rows: list[dict] = []
+        batch = 1000
+        page = 0
+        while True:
+            rows = (
+                client.table("api_costs")
+                .select("provider,model,estimated_cost_usd")
+                .gte("created_at", since)
+                .range(page * batch, (page + 1) * batch - 1)
+                .execute()
+                .data or []
+            )
+            all_rows.extend(rows)
+            if len(rows) < batch:
+                break
+            page += 1
+        return all_rows
 
     today_rows = fetch_costs(today_start)
     month_rows = fetch_costs(month_start)
@@ -364,21 +374,28 @@ def _collect_metrics(client) -> dict:
     )
     m["engaged_companies"] = [c["name"] for c in engaged_companies]
 
-    # --- API spend ---
-    week_costs = (
-        client.table("api_costs")
-        .select("provider, model, estimated_cost_usd")
-        .gte("created_at", week_ago)
-        .execute()
-        .data or []
-    )
-    month_costs = (
-        client.table("api_costs")
-        .select("estimated_cost_usd")
-        .gte("created_at", month_start)
-        .execute()
-        .data or []
-    )
+    # --- API spend (paginated — PostgREST caps at 1000 rows per request) ---
+    def _paginate_costs(since: str, select: str) -> list[dict]:
+        all_rows: list[dict] = []
+        batch = 1000
+        page = 0
+        while True:
+            rows = (
+                client.table("api_costs")
+                .select(select)
+                .gte("created_at", since)
+                .range(page * batch, (page + 1) * batch - 1)
+                .execute()
+                .data or []
+            )
+            all_rows.extend(rows)
+            if len(rows) < batch:
+                break
+            page += 1
+        return all_rows
+
+    week_costs = _paginate_costs(week_ago, "provider, model, estimated_cost_usd")
+    month_costs = _paginate_costs(month_start, "estimated_cost_usd")
     by_model: dict[str, float] = {}
     for r in week_costs:
         key = f"{r.get('provider','?')}/{r.get('model','?')}"

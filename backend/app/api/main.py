@@ -1988,26 +1988,21 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         # Gmail intake: every 15 min so replies surface quickly for triage
         scheduler.add_job(_run_gmail_intake, "interval", minutes=15, id="gmail_intake")
-        # Research: every 20 min 24/7 — 150 companies per run, budget-gated.
-        # 5-min startup delay prevents first tick from firing into cold DB connection
-        # on Railway deploy (cold connection causes research_budget_ok to throw and
-        # fail-open, bypassing the cap — now fail-closed, but delay is belt-and-suspenders).
-        from datetime import datetime, timezone, timedelta as _td
-        scheduler.add_job(
-            _run_research, "interval", minutes=20, id="research",
-            next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
-        )
+        # Research: PAUSED 2026-05-07 — GTM assessment in progress.
+        # Re-enable when ready to resume pipeline growth.
+        # scheduler.add_job(
+        #     _run_research, "interval", minutes=20, id="research",
+        #     next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
+        # )
         # Qualification: every 15 min 24/7 — stays ahead of research output
         scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
         # Draft generation: every 5 min — drains qualified-but-undrafted companies fast.
         # Enrichment now runs every 3 min; draft gen follows at 5 min to close the gap
         # between a contact being found and a draft existing for it.
         scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
-        # Enrichment: every 15 min — Apollo credit-gated (1 credit/contact).
-        # 15 min gives ~68 credits/hr vs 340/hr at 3 min; extends 4,855 remaining credits
-        # to ~71 hrs (vs 14 hrs at 3 min). Pipeline drains at 50/day so no benefit
-        # to faster enrichment — the draft approval queue is the real bottleneck.
-        scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
+        # Enrichment: PAUSED 2026-05-07 — Apollo spend $101 MTD, GTM assessment in progress.
+        # Re-enable when ready to resume pipeline growth.
+        # scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
         # Pipeline monitor email disabled 2026-05-07 — replaced by daily_report.
         # scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
         # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
@@ -2019,20 +2014,17 @@ async def lifespan(app: FastAPI):
             id="auto_approve",
         )
         # Limit ramp job removed 2026-05-03 — daily_limit set to 500 directly in outreach_send_config.
-        # Pipeline advance heartbeat: every 4 hours.
-        # The orchestrator checks pipeline depth vs. capacity-aware watermark and fires
-        # discovery + learning only when needed. Reactive triggers (post-send, post-reply)
-        # schedule one-shot advances via _schedule_pipeline_advance(); this is the backstop.
-        scheduler.add_job(
-            _run_pipeline_advance, "interval", hours=4, id="pipeline_advance_heartbeat",
-        )
-        # Fire one advance immediately at startup to catch any pipeline gaps.
-        scheduler.add_job(
-            _run_pipeline_advance, "date",
-            run_date=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
-            + __import__("datetime").timedelta(seconds=90),
-            id="pipeline_advance_startup",
-        )
+        # Pipeline advance heartbeat: PAUSED 2026-05-07 — GTM assessment in progress.
+        # This triggers discovery; paused alongside research/enrichment/discovery.
+        # scheduler.add_job(
+        #     _run_pipeline_advance, "interval", hours=4, id="pipeline_advance_heartbeat",
+        # )
+        # scheduler.add_job(
+        #     _run_pipeline_advance, "date",
+        #     run_date=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        #     + __import__("datetime").timedelta(seconds=90),
+        #     id="pipeline_advance_startup",
+        # )
         # Weekly post-send audit: Sunday 7am Chicago
         scheduler.add_job(
             _run_weekly_post_send_audit, "cron",
@@ -2102,20 +2094,20 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="intent_refresh",
         )
-        # Discovery: weekly runs to keep the pipeline full with fresh companies.
-        # F&B (Mon 7am) and manufacturing (Wed 7am) staggered to spread Apollo load.
-        scheduler.add_job(
-            _run_fb_discovery, "cron",
-            day_of_week="mon", hour=7, minute=0,
-            timezone="America/Chicago",
-            id="fb_discovery",
-        )
-        scheduler.add_job(
-            _run_mfg_discovery, "cron",
-            day_of_week="wed", hour=7, minute=0,
-            timezone="America/Chicago",
-            id="mfg_discovery",
-        )
+        # Discovery: PAUSED 2026-05-07 — GTM assessment in progress.
+        # Re-enable when ready to resume top-of-funnel growth.
+        # scheduler.add_job(
+        #     _run_fb_discovery, "cron",
+        #     day_of_week="mon", hour=7, minute=0,
+        #     timezone="America/Chicago",
+        #     id="fb_discovery",
+        # )
+        # scheduler.add_job(
+        #     _run_mfg_discovery, "cron",
+        #     day_of_week="wed", hour=7, minute=0,
+        #     timezone="America/Chicago",
+        #     id="mfg_discovery",
+        # )
         scheduler.start()
         logger.info(
             "APScheduler started — "
