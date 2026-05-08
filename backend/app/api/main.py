@@ -2008,8 +2008,8 @@ async def lifespan(app: FastAPI):
         # to ~71 hrs (vs 14 hrs at 3 min). Pipeline drains at 50/day so no benefit
         # to faster enrichment — the draft approval queue is the real bottleneck.
         scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
-        # Pipeline monitor: email pipeline stats every hour (researched/qualified/enriched/credits/outreach)
-        scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
+        # Pipeline monitor email disabled 2026-05-07 — replaced by daily_report.
+        # scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
         # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
         # Runs hourly Mon-Fri during business hours so drafts are ready for morning send
         scheduler.add_job(
@@ -2079,15 +2079,13 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="weekly_cost_summary",
         )
-        # Daily financial summary: 7am Chicago every day for first 30 days post cost-optimisation.
-        # Shows actual vs planned Claude API spend, model breakdown, sends, and pending approvals.
-        # Switches to weekly after 2026-06-02.
-        scheduler.add_job(
-            _run_daily_financial_summary, "cron",
-            hour=7, minute=0,
-            timezone="America/Chicago",
-            id="daily_financial_summary",
-        )
+        # Daily financial summary disabled 2026-05-07 — cost data covered in daily_report.
+        # scheduler.add_job(
+        #     _run_daily_financial_summary, "cron",
+        #     hour=7, minute=0,
+        #     timezone="America/Chicago",
+        #     id="daily_financial_summary",
+        # )
         # Daily GTM brief: 6am Chicago Mon-Fri — Claude-written analysis + email to Avi
         scheduler.add_job(
             _run_daily_report, "cron",
