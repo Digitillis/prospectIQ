@@ -43,7 +43,7 @@ def _collect_engagement_spotlight(client) -> list[dict]:
     # Get all sent drafts with message IDs (for interaction join)
     sent_drafts = (
         client.table("outreach_drafts")
-        .select("id, company_id, company_name, contact_name, contact_title, sequence_step, resend_message_id, sent_at")
+        .select("id, company_id, contact_id, sequence_step, resend_message_id, sent_at, companies(name), contacts(first_name, last_name, title)")
         .eq("approval_status", "approved")
         .not_.is_("sent_at", "null")
         .not_.is_("resend_message_id", "null")
@@ -87,12 +87,18 @@ def _collect_engagement_spotlight(client) -> list[dict]:
         ivs = by_msg.get(mid, [])
         if not ivs:
             continue
-        cname = draft.get("company_name") or "Unknown"
+        co = draft.get("companies") or {}
+        ct = draft.get("contacts") or {}
+        cname = co.get("name") or draft.get("company_id") or "Unknown"
+        fname = ct.get("first_name") or ""
+        lname = ct.get("last_name") or ""
+        contact_name = f"{fname} {lname}".strip()
+        contact_title = ct.get("title") or ""
         if cname not in company_agg:
             company_agg[cname] = {
                 "company_name": cname,
-                "contact_name": draft.get("contact_name", ""),
-                "contact_title": draft.get("contact_title", ""),
+                "contact_name": contact_name,
+                "contact_title": contact_title,
                 "sequence_step": draft.get("sequence_step", 1),
                 "opens": 0, "clicks": 0, "replies": 0,
                 "last_interaction": None,
@@ -281,7 +287,7 @@ def _collect_metrics(client) -> dict:
     # --- Approval queue with rejection category breakdown ---
     approval_queue = (
         client.table("outreach_drafts")
-        .select("approval_status, sequence_name, rejection_category, quality_score")
+        .select("approval_status, sequence_name, rejection_category")
         .in_("approval_status", ["pending", "rejected"])
         .execute()
         .data or []
