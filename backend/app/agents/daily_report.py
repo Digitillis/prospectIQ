@@ -289,13 +289,13 @@ def _collect_metrics(client) -> dict:
     pending = [d for d in approval_queue if d.get("approval_status") == "pending"]
     rejected = [d for d in approval_queue if d.get("approval_status") == "rejected"]
     rejection_cats = Counter(d.get("rejection_category") or "uncategorized" for d in rejected)
-    genuine_rej = rejection_cats.get("quality_manual", 0) + rejection_cats.get("quality_auto", 0)
     m["approval_queue"] = {
         "pending_count": len(pending),
         "rejected_count": len(rejected),
         "rejection_categories": dict(rejection_cats),
-        "genuine_rejections": genuine_rej,
+        "genuine_rejections": rejection_cats.get("quality_manual", 0),
         "systemic_rejections": rejection_cats.get("systemic", 0),
+        "hallucination_rejections": rejection_cats.get("model_hallucination", 0),
         "targeting_rejections": rejection_cats.get("targeting", 0),
     }
 
@@ -320,7 +320,7 @@ def _collect_metrics(client) -> dict:
         "outreach_conversion_pct": round(outreach_total / qualified_total * 100, 1) if qualified_total else 0,
     }
 
-    # --- Draft quality metrics (all-time, excluding systemic) ---
+    # --- Draft quality metrics (all-time, genuine GTM quality only) ---
     approved_count = (
         client.table("outreach_drafts").select("id", count="exact")
         .eq("approval_status", "approved").execute().count or 0
@@ -328,7 +328,7 @@ def _collect_metrics(client) -> dict:
     genuine_rejected_count = (
         client.table("outreach_drafts").select("id", count="exact")
         .eq("approval_status", "rejected")
-        .in_("rejection_category", ["quality_manual", "quality_auto"])
+        .eq("rejection_category", "quality_manual")
         .execute().count or 0
     )
     total_decided = approved_count + genuine_rejected_count
@@ -456,9 +456,10 @@ REPLY BREAKDOWN (last 7 days):
 RESEARCH (last 24h):
 - Companies researched: {research_count} | Avg PQS: {avg_pqs} | Scoring 20+ (proceed): {qualified_pct}%
 
-DRAFT QUALITY (all-time, systemic rejections excluded):
-- Approved: {approved_drafts} | Genuine rejections: {genuine_rejected} | Approval rate: {approval_rate}%
-- Rejection categories: systemic={systemic_rej} (engineering bugs, fixed) | targeting={targeting_rej} | quality={genuine_rejected}
+DRAFT QUALITY (all-time, four-bucket breakdown):
+- Approved: {approved_drafts} | GTM quality rejections: {genuine_rejected} | Approval rate vs quality denominator: {approval_rate}%
+- systemic={systemic_rej} (code bugs, fixed) | model_hallucination={hallucination_rej} (prompt failures, now filtered) | targeting={targeting_rej} | genuine_quality={genuine_rejected}
+- Only genuine_quality rejections count toward GTM health scoring
 
 APPROVAL QUEUE NOW:
 - Pending approval: {pending_drafts}
@@ -524,6 +525,7 @@ def _build_report_prompt(m: dict) -> str:
         genuine_rejected=dq.get("genuine_rejected", 0),
         approval_rate=dq.get("approval_rate_pct", 0),
         systemic_rej=queue.get("systemic_rejections", 0),
+        hallucination_rej=queue.get("hallucination_rejections", 0),
         targeting_rej=queue.get("targeting_rejections", 0),
         pending_drafts=queue.get("pending_count", 0),
         rejected_drafts=queue.get("rejected_count", 0),
@@ -712,9 +714,10 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
 
     # Rejection breakdown bar
     systemic = queue.get("systemic_rejections", 0)
+    hallucination = queue.get("hallucination_rejections", 0)
     targeting = queue.get("targeting_rejections", 0)
     genuine = queue.get("genuine_rejections", 0)
-    total_rej = systemic + targeting + genuine or 1
+    total_rej = systemic + hallucination + targeting + genuine or 1
 
     def pct_bar(val, total, color):
         pct = round(val / total * 100)
@@ -762,10 +765,11 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
 
   <!-- Rejection breakdown -->
   <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:12px 16px;margin-bottom:20px">
-    <div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Rejection Breakdown (all-time)</div>
-    <div style="margin-bottom:4px">Systemic (bugs, fixed): {pct_bar(systemic, total_rej, '#d1d5db')}</div>
-    <div style="margin-bottom:4px">Targeting (wrong persona): {pct_bar(targeting, total_rej, '#fbbf24')}</div>
-    <div>Quality (genuine): {pct_bar(genuine, total_rej, '#ef4444')}</div>
+    <div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Rejection Breakdown — {systemic + hallucination + targeting + genuine} total (all-time)</div>
+    <div style="margin-bottom:5px">Systemic / code bugs (fixed): {pct_bar(systemic, total_rej, '#d1d5db')}</div>
+    <div style="margin-bottom:5px">Model hallucination (now filtered): {pct_bar(hallucination, total_rej, '#c4b5fd')}</div>
+    <div style="margin-bottom:5px">Targeting / wrong persona: {pct_bar(targeting, total_rej, '#fbbf24')}</div>
+    <div>GTM quality — genuine: {pct_bar(genuine, total_rej, '#ef4444')}</div>
   </div>
 
   <!-- Engagement spotlight -->
