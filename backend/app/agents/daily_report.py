@@ -223,14 +223,29 @@ def _collect_metrics(client) -> dict:
     # --- Email activity last 7 days ---
     email_events = (
         client.table("interactions")
-        .select("type, created_at")
+        .select("type, metadata, created_at")
         .in_("type", ["email_sent", "email_opened", "email_clicked",
                        "email_replied", "email_bounced"])
         .gte("created_at", week_ago)
         .execute()
         .data or []
     )
-    event_counts = Counter(e["type"] for e in email_events)
+
+    def _is_auto_reply(ev: dict) -> bool:
+        meta = ev.get("metadata") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        return bool(meta.get("auto_reply"))
+
+    # Exclude auto-replies (OOO, retirement notices) from reply count
+    legit_events = [
+        e for e in email_events
+        if not (e["type"] == "email_replied" and _is_auto_reply(e))
+    ]
+    event_counts = Counter(e["type"] for e in legit_events)
     sent = event_counts.get("email_sent", 0)
     m["email_7d"] = {
         "sent": sent,
@@ -242,15 +257,8 @@ def _collect_metrics(client) -> dict:
         "reply_rate_pct": round(event_counts.get("email_replied", 0) / sent * 100, 1) if sent else 0,
     }
 
-    # --- Reply classifications last 7 days ---
-    reply_interactions = (
-        client.table("interactions")
-        .select("metadata")
-        .eq("type", "email_replied")
-        .gte("created_at", week_ago)
-        .execute()
-        .data or []
-    )
+    # --- Reply classifications last 7 days (legit replies only) ---
+    reply_interactions = [e for e in legit_events if e["type"] == "email_replied"]
     classifications: dict[str, int] = {}
     urgencies: dict[str, int] = {}
     for r in reply_interactions:
@@ -423,24 +431,29 @@ replies > clicks > bounces > delivered volume
 Open rate is NOISE in this vertical — corporate Outlook pre-fetches pixels. Never use it to assess health.
 
 REJECTION INTERPRETATION:
-- systemic = engineering bug (URL in step 1, step-label leaks) — these are FIXED, do not penalize GTM quality
+- systemic = engineering bug (URL in step 1, step-label leaks) — FIXED, do not penalize GTM quality
+- model_hallucination = prompt failure (fabricated customer stories) — FIXED by filter, do not penalize
 - targeting = wrong persona/role — reflects ICP calibration accuracy
-- quality_manual / quality_auto = genuine draft quality failures — these ARE the GTM signal
-Use only genuine quality rejections in your GTM health assessment.
+- quality_manual = genuine GTM draft failures — the only rejection category that counts
 
 Tone: direct, critical, no hedging, no reassurance. If something is broken, name it plainly.
 Write like a fractional CMO who has seen the full data and has zero patience for spin.
 
-FORMAT — you must use EXACTLY these section headers (bold, followed by colon):
-**GTM HEALTH SCORECARD:**
-**TOP OF FUNNEL:**
-**OUTREACH QUALITY:**
-**ENGAGEMENT & SIGNALS:**
-**PIPELINE VELOCITY:**
-**ACTIONS FOR AVI:**
-**WATCH THIS WEEK:**
-
-Keep the entire report under 750 words. Be ruthless with cuts."""
+FORMAT RULES — critical:
+- Use these exact section headers on their own line, followed by a colon, no asterisks or markdown:
+  GTM HEALTH SCORECARD:
+  TOP OF FUNNEL:
+  OUTREACH QUALITY:
+  ENGAGEMENT AND SIGNALS:
+  PIPELINE VELOCITY:
+  ACTIONS FOR AVI:
+  WATCH THIS WEEK:
+- Do NOT use asterisks (**) anywhere in your response
+- Do NOT use markdown bold or italic formatting
+- For scores, write: Score: X/10
+- For cause/fix pairs, write: Cause: ... then Fix: ... on separate lines
+- Use plain numbered lists for actions (1. 2. 3.)
+- Keep the entire report under 750 words"""
 
 REPORT_USER_TEMPLATE = """Pipeline state as of {as_of}:
 
@@ -685,6 +698,118 @@ def _render_engagement_spotlight(companies: list[dict]) -> str:
   </div>"""
 
 
+_SECTION_HEADERS = {
+    "GTM HEALTH SCORECARD",
+    "TOP OF FUNNEL",
+    "OUTREACH QUALITY",
+    "ENGAGEMENT AND SIGNALS",
+    "PIPELINE VELOCITY",
+    "ACTIONS FOR AVI",
+    "WATCH THIS WEEK",
+}
+
+_SECTION_ANCHORS = {
+    "GTM HEALTH SCORECARD": "scorecard",
+    "TOP OF FUNNEL": "funnel",
+    "OUTREACH QUALITY": "outreach",
+    "ENGAGEMENT AND SIGNALS": "engagement",
+    "PIPELINE VELOCITY": "velocity",
+    "ACTIONS FOR AVI": "actions",
+    "WATCH THIS WEEK": "watch",
+}
+
+_SECTION_COLORS = {
+    "GTM HEALTH SCORECARD": "#1a1a2e",
+    "TOP OF FUNNEL": "#1e40af",
+    "OUTREACH QUALITY": "#7c3aed",
+    "ENGAGEMENT AND SIGNALS": "#065f46",
+    "PIPELINE VELOCITY": "#92400e",
+    "ACTIONS FOR AVI": "#9f1239",
+    "WATCH THIS WEEK": "#374151",
+}
+
+_SUB_LABELS = {"Score:", "Cause:", "Fix:"}
+
+
+def _parse_narrative(narrative: str) -> str:
+    """Convert plain-text Claude narrative to clean HTML. No markdown, no ** leakage."""
+    import re
+
+    # Strip any ** the model snuck in despite instructions
+    narrative = narrative.replace("**", "")
+
+    html = ""
+    in_list = False
+
+    def close_list():
+        nonlocal in_list, html
+        if in_list:
+            html += "</ul>"
+            in_list = False
+
+    for raw_line in narrative.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            close_list()
+            continue
+
+        # Detect section headers — e.g. "GTM HEALTH SCORECARD:"
+        header_key = line.rstrip(":").strip().upper()
+        if header_key in _SECTION_HEADERS:
+            close_list()
+            anchor = _SECTION_ANCHORS.get(header_key, "")
+            color = _SECTION_COLORS.get(header_key, "#1a1a2e")
+            label = line.rstrip(":")
+            html += (
+                f"<div id='{anchor}' style='margin-top:28px;margin-bottom:8px;"
+                f"border-left:3px solid {color};padding-left:10px'>"
+                f"<span style='font-size:10px;letter-spacing:1.5px;text-transform:uppercase;"
+                f"color:{color};font-weight:700'>{label}</span></div>"
+            )
+            continue
+
+        # Sub-labels: Score: / Cause: / Fix:
+        for sub in _SUB_LABELS:
+            if line.startswith(sub):
+                close_list()
+                rest = line[len(sub):].strip()
+                color = "#dc2626" if sub == "Cause:" else "#16a34a" if sub == "Fix:" else "#1a1a2e"
+                html += (
+                    f"<div style='margin:6px 0;font-size:13px'>"
+                    f"<span style='font-weight:700;color:{color}'>{sub}</span> {rest}</div>"
+                )
+                break
+        else:
+            # Numbered list items
+            num_match = re.match(r"^(\d+)\.\s+(.+)$", line)
+            if num_match:
+                close_list()
+                html += (
+                    f"<div style='display:flex;gap:10px;margin:8px 0;align-items:flex-start'>"
+                    f"<span style='min-width:20px;font-weight:700;color:#6b7280'>{num_match.group(1)}.</span>"
+                    f"<span style='line-height:1.6'>{num_match.group(2)}</span></div>"
+                )
+                continue
+
+            # Bullet items
+            if line.startswith("- ") or line.startswith("* "):
+                if not in_list:
+                    html += "<ul style='margin:6px 0;padding-left:18px'>"
+                    in_list = True
+                html += f"<li style='margin:4px 0;line-height:1.6'>{line[2:]}</li>"
+                continue
+
+            # [TODAY] / [THIS WEEK] action tags
+            line = line.replace("[TODAY]", "<span style='background:#fee2e2;color:#9f1239;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700'>TODAY</span>")
+            line = line.replace("[THIS WEEK]", "<span style='background:#e0f2fe;color:#0369a1;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700'>THIS WEEK</span>")
+
+            close_list()
+            html += f"<p style='margin:7px 0;line-height:1.65;font-size:14px'>{line}</p>"
+
+    close_list()
+    return html
+
+
 def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None, spotlight: list | None = None) -> str:
     email_7d = m.get("email_7d", {})
     pipeline = m.get("pipeline", {})
@@ -694,111 +819,155 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
     dq = m.get("draft_quality", {})
 
     pipeline_rows = "".join(
-        f"<tr><td style='padding:4px 12px 4px 0;color:#555'>{s}</td>"
-        f"<td style='padding:4px 0;font-weight:600'>{cnt}</td></tr>"
+        f"<tr>"
+        f"<td style='padding:6px 16px 6px 0;color:#555;font-size:13px;border-bottom:1px solid #f0f0f0'>{s}</td>"
+        f"<td style='padding:6px 0;font-weight:600;font-size:13px;text-align:right;border-bottom:1px solid #f0f0f0'>{cnt}</td>"
+        f"</tr>"
         for s, cnt in sorted(pipeline.items(), key=lambda x: -x[1])
     )
 
-    # Convert narrative markdown-ish to basic HTML
-    html_body = ""
-    for line in narrative.split("\n"):
-        stripped = line.strip()
-        if not stripped:
-            html_body += "<br>"
-        elif stripped.startswith("**") and stripped.endswith("**") and len(stripped) > 4:
-            label = stripped.strip("*").rstrip(":")
-            html_body += f"<h3 style='color:#1a1a2e;margin:22px 0 6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px'>{label}</h3>"
-        elif stripped.startswith("##"):
-            label = stripped.lstrip("#").strip()
-            html_body += f"<h3 style='color:#1a1a2e;margin:22px 0 6px'>{label}</h3>"
-        elif stripped.startswith("- ") or stripped.startswith("* "):
-            html_body += f"<li style='margin:4px 0'>{stripped[2:]}</li>"
-        elif stripped and stripped[0].isdigit() and len(stripped) > 2 and stripped[1] in ".)":
-            html_body += f"<li style='margin:6px 0'>{stripped[2:].strip()}</li>"
-        else:
-            html_body += f"<p style='margin:8px 0;line-height:1.6'>{stripped}</p>"
+    html_body = _parse_narrative(narrative)
 
-    # Rejection breakdown bar
+    # TOC nav links
+    toc_links = " &nbsp;·&nbsp; ".join(
+        f"<a href='#{anchor}' style='color:#6b7280;text-decoration:none;font-size:11px;"
+        f"letter-spacing:.5px;text-transform:uppercase'>{label}</a>"
+        for label, anchor in _SECTION_ANCHORS.items()
+    )
+
+    # Rejection breakdown bars
     systemic = queue.get("systemic_rejections", 0)
     hallucination = queue.get("hallucination_rejections", 0)
     targeting = queue.get("targeting_rejections", 0)
     genuine = queue.get("genuine_rejections", 0)
     total_rej = systemic + hallucination + targeting + genuine or 1
 
-    def pct_bar(val, total, color):
+    def pct_bar(val, total, color, label):
         pct = round(val / total * 100)
+        bar_w = max(pct, 1)
         return (
-            f"<div style='background:{color};height:8px;border-radius:2px;width:{pct}%;display:inline-block'></div>"
-            f"<span style='font-size:11px;color:#555;margin-left:6px'>{val} ({pct}%)</span>"
+            f"<tr>"
+            f"<td style='font-size:12px;color:#555;padding:4px 12px 4px 0;white-space:nowrap'>{label}</td>"
+            f"<td style='width:100%;padding:4px 0'>"
+            f"<div style='background:#f3f4f6;border-radius:3px;height:10px;position:relative'>"
+            f"<div style='background:{color};border-radius:3px;height:10px;width:{bar_w}%'></div>"
+            f"</div></td>"
+            f"<td style='font-size:12px;color:#374151;font-weight:600;text-align:right;padding:4px 0 4px 10px;white-space:nowrap'>{val} &nbsp;<span style='color:#9ca3af;font-weight:400'>({pct}%)</span></td>"
+            f"</tr>"
+        )
+
+    # Score tiles from narrative — extract Score: X/10 per section
+    import re
+    scores = re.findall(r"(?i)score:\s*(\d+)/10", narrative)
+    score_labels = ["Funnel", "Outreach", "Engagement", "Velocity"]
+    score_tiles = ""
+    for i, (lbl, score) in enumerate(zip(score_labels, scores)):
+        s = int(score)
+        color = "#16a34a" if s >= 7 else "#d97706" if s >= 5 else "#dc2626"
+        score_tiles += (
+            f"<div style='text-align:center;flex:1;min-width:80px;background:#fafafa;"
+            f"border:1px solid #e5e7eb;border-radius:6px;padding:10px 8px'>"
+            f"<div style='font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px'>{lbl}</div>"
+            f"<div style='font-size:26px;font-weight:700;color:{color}'>{s}</div>"
+            f"<div style='font-size:10px;color:#aaa'>/10</div></div>"
         )
 
     return f"""<!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"></head>
-<body style="font-family:system-ui,sans-serif;max-width:700px;margin:0 auto;padding:24px;color:#222">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ProspectIQ GTM Brief — {date_str}</title>
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:0 auto;padding:20px;color:#111;background:#fff;line-height:1.5">
 
-  <div style="background:#1a1a2e;color:#fff;padding:20px 24px;border-radius:8px;margin-bottom:24px">
-    <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.7">Daily GTM Brief</div>
-    <div style="font-size:22px;font-weight:700;margin-top:4px">ProspectIQ — {date_str}</div>
-    <div style="font-size:12px;opacity:.6;margin-top:4px">{funnel.get('discovered',0)} companies discovered · {funnel.get('qualified',0)} qualified · {funnel.get('in_outreach',0)} in outreach</div>
+  <!-- Header -->
+  <div style="background:#1a1a2e;color:#fff;padding:22px 28px;border-radius:10px;margin-bottom:8px">
+    <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;opacity:.6;margin-bottom:6px">Daily GTM Brief</div>
+    <div style="font-size:24px;font-weight:700">ProspectIQ &mdash; {date_str}</div>
+    <div style="font-size:12px;opacity:.55;margin-top:6px">
+      {funnel.get('discovered',0):,} discovered &nbsp;&middot;&nbsp;
+      {funnel.get('qualified',0):,} qualified ({funnel.get('qualification_rate_pct',0)}%) &nbsp;&middot;&nbsp;
+      {funnel.get('in_outreach',0):,} in outreach
+    </div>
   </div>
 
-  <!-- Stats row -->
-  <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
-      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Sent (7d)</div>
-      <div style="font-size:24px;font-weight:700;margin-top:4px">{email_7d.get('sent',0)}</div>
+  <!-- Navigation -->
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 16px;margin-bottom:20px;text-align:center">
+    {toc_links}
+  </div>
+
+  <!-- KPI tiles -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
+      <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Sent (7d)</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">{email_7d.get('sent',0):,}</div>
     </div>
-    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
-      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Clicks (7d)</div>
-      <div style="font-size:24px;font-weight:700;margin-top:4px">{email_7d.get('clicked',0)}</div>
+    <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
+      <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Clicks (7d)</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">{email_7d.get('clicked',0):,}</div>
+      <div style="font-size:11px;color:#9ca3af;text-align:right">{round(email_7d.get('clicked',0)/email_7d.get('sent',1)*100,1)}% CTR</div>
     </div>
-    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
-      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Replies (7d)</div>
-      <div style="font-size:24px;font-weight:700;margin-top:4px;color:{'#16a34a' if email_7d.get('replied',0)>0 else '#111'}">{email_7d.get('replied',0)}</div>
-      <div style="font-size:11px;color:#888">{email_7d.get('reply_rate_pct',0)}% rate</div>
+    <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
+      <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Replies (7d)</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right;color:{'#16a34a' if email_7d.get('replied',0)>0 else '#374151'}">{email_7d.get('replied',0)}</div>
+      <div style="font-size:11px;color:#9ca3af;text-align:right">{email_7d.get('reply_rate_pct',0)}% rate</div>
     </div>
-    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
-      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Approval rate</div>
-      <div style="font-size:24px;font-weight:700;margin-top:4px">{dq.get('approval_rate_pct',0)}%</div>
-      <div style="font-size:11px;color:#888">{dq.get('approved',0)} approved</div>
+    <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
+      <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Bounces (7d)</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right;color:{'#dc2626' if email_7d.get('bounced',0)>20 else '#374151'}">{email_7d.get('bounced',0)}</div>
+      <div style="font-size:11px;color:#9ca3af;text-align:right">{round(email_7d.get('bounced',0)/email_7d.get('sent',1)*100,1)}% rate</div>
     </div>
-    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
-      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">API spend MTD</div>
-      <div style="font-size:24px;font-weight:700;margin-top:4px">${spend.get('month_usd',0):.0f}</div>
+    <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
+      <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Spend MTD</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">${spend.get('month_usd',0):.0f}</div>
+      <div style="font-size:11px;color:#9ca3af;text-align:right">of $100 budget</div>
     </div>
   </div>
+
+  <!-- Process score tiles -->
+  {'<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">' + score_tiles + '</div>' if score_tiles else ''}
 
   <!-- Rejection breakdown -->
-  <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:12px 16px;margin-bottom:20px">
-    <div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Rejection Breakdown — {systemic + hallucination + targeting + genuine} total (all-time)</div>
-    <div style="margin-bottom:5px">Systemic / code bugs (fixed): {pct_bar(systemic, total_rej, '#d1d5db')}</div>
-    <div style="margin-bottom:5px">Model hallucination (now filtered): {pct_bar(hallucination, total_rej, '#c4b5fd')}</div>
-    <div style="margin-bottom:5px">Targeting / wrong persona: {pct_bar(targeting, total_rej, '#fbbf24')}</div>
-    <div>GTM quality — genuine: {pct_bar(genuine, total_rej, '#ef4444')}</div>
+  <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px 18px;margin-bottom:20px">
+    <div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;font-weight:600">
+      Draft Rejection Breakdown &mdash; {systemic + hallucination + targeting + genuine} total (all-time)
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      {pct_bar(systemic,    total_rej, '#d1d5db', 'Code bugs (fixed)')}
+      {pct_bar(hallucination, total_rej, '#a78bfa', 'Model hallucination (filtered)')}
+      {pct_bar(targeting,   total_rej, '#fbbf24', 'Wrong persona / targeting')}
+      {pct_bar(genuine,     total_rej, '#f87171', 'Genuine GTM quality')}
+    </table>
   </div>
 
   <!-- Engagement spotlight -->
   {_render_engagement_spotlight(spotlight or [])}
 
-  <!-- Claude narrative -->
-  <div style="margin-top:24px;margin-bottom:28px">
+  <!-- Analyst narrative -->
+  <div id="scorecard" style="margin-top:28px;margin-bottom:32px">
     {html_body}
   </div>
 
-  <!-- Pipeline table -->
-  <div style="background:#f9f9f9;border-radius:6px;padding:16px 20px;margin-bottom:24px">
-    <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#888;margin-bottom:10px">Pipeline Snapshot</div>
+  <!-- Pipeline snapshot -->
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:18px 22px;margin-bottom:24px">
+    <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#6b7280;margin-bottom:12px;font-weight:600">Pipeline Snapshot</div>
     <table style="border-collapse:collapse;width:100%">
-      {pipeline_rows}
+      <thead>
+        <tr>
+          <th style="text-align:left;font-size:11px;color:#9ca3af;font-weight:500;padding:0 0 8px;border-bottom:1px solid #e5e7eb">Stage</th>
+          <th style="text-align:right;font-size:11px;color:#9ca3af;font-weight:500;padding:0 0 8px;border-bottom:1px solid #e5e7eb">Count</th>
+        </tr>
+      </thead>
+      <tbody>{pipeline_rows}</tbody>
     </table>
   </div>
 
   <!-- Financial summary -->
   {_render_financial_section(fin) if fin else ''}
 
-  <div style="font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:12px;margin-top:16px">
-    ProspectIQ GTM Engine · {m.get('as_of','')}
+  <div style="font-size:11px;color:#9ca3af;border-top:1px solid #f0f0f0;padding-top:14px;margin-top:20px;text-align:center">
+    ProspectIQ GTM Engine &nbsp;&middot;&nbsp; {m.get('as_of','')}
   </div>
 
 </body>
