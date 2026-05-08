@@ -37,6 +37,88 @@ def _iso_days_ago(n: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
 
 
+def _collect_engagement_spotlight(client) -> list[dict]:
+    """Return top engaged companies with click/open/reply counts and last interaction."""
+    week_ago = _iso_days_ago(7)
+    # Get all sent drafts with message IDs (for interaction join)
+    sent_drafts = (
+        client.table("outreach_drafts")
+        .select("id, company_id, company_name, contact_name, contact_title, sequence_step, resend_message_id, sent_at")
+        .eq("approval_status", "approved")
+        .not_.is_("sent_at", "null")
+        .not_.is_("resend_message_id", "null")
+        .gte("sent_at", _iso_days_ago(30))
+        .execute()
+        .data or []
+    )
+    if not sent_drafts:
+        return []
+
+    msg_ids = [d["resend_message_id"] for d in sent_drafts if d.get("resend_message_id")]
+    if not msg_ids:
+        return []
+
+    interactions = (
+        client.table("interactions")
+        .select("type, metadata, created_at")
+        .in_("type", ["email_opened", "email_clicked", "email_replied"])
+        .gte("created_at", week_ago)
+        .execute()
+        .data or []
+    )
+
+    # Build resend_message_id → interaction list from metadata
+    by_msg: dict[str, list] = {}
+    for iv in interactions:
+        meta = iv.get("metadata") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        mid = meta.get("resend_message_id") or meta.get("message_id")
+        if mid:
+            by_msg.setdefault(mid, []).append(iv)
+
+    # Aggregate per company
+    company_agg: dict[str, dict] = {}
+    for draft in sent_drafts:
+        mid = draft.get("resend_message_id")
+        ivs = by_msg.get(mid, [])
+        if not ivs:
+            continue
+        cname = draft.get("company_name") or "Unknown"
+        if cname not in company_agg:
+            company_agg[cname] = {
+                "company_name": cname,
+                "contact_name": draft.get("contact_name", ""),
+                "contact_title": draft.get("contact_title", ""),
+                "sequence_step": draft.get("sequence_step", 1),
+                "opens": 0, "clicks": 0, "replies": 0,
+                "last_interaction": None,
+            }
+        agg = company_agg[cname]
+        for iv in ivs:
+            t = iv.get("type", "")
+            if t == "email_opened":
+                agg["opens"] += 1
+            elif t == "email_clicked":
+                agg["clicks"] += 1
+            elif t == "email_replied":
+                agg["replies"] += 1
+            ts = iv.get("created_at")
+            if ts and (agg["last_interaction"] is None or ts > agg["last_interaction"]):
+                agg["last_interaction"] = ts
+
+    # Sort by signal strength: replies first, then clicks, then opens
+    result = sorted(
+        company_agg.values(),
+        key=lambda x: (x["replies"] * 100 + x["clicks"] * 10 + x["opens"]),
+        reverse=True,
+    )
+    return result[:5]
+
+
 def _collect_financial_metrics(client) -> dict:
     """Collect Claude API spend + pipeline activity for the financial section."""
     now = datetime.now(timezone.utc)
@@ -196,19 +278,64 @@ def _collect_metrics(client) -> dict:
         ) if pqs_scores else 0,
     }
 
-    # --- Approval queue ---
+    # --- Approval queue with rejection category breakdown ---
     approval_queue = (
         client.table("outreach_drafts")
-        .select("approval_status, sequence_name")
+        .select("approval_status, sequence_name, rejection_category, quality_score")
         .in_("approval_status", ["pending", "rejected"])
         .execute()
         .data or []
     )
     pending = [d for d in approval_queue if d.get("approval_status") == "pending"]
     rejected = [d for d in approval_queue if d.get("approval_status") == "rejected"]
+    rejection_cats = Counter(d.get("rejection_category") or "uncategorized" for d in rejected)
+    genuine_rej = rejection_cats.get("quality_manual", 0) + rejection_cats.get("quality_auto", 0)
     m["approval_queue"] = {
         "pending_count": len(pending),
         "rejected_count": len(rejected),
+        "rejection_categories": dict(rejection_cats),
+        "genuine_rejections": genuine_rej,
+        "systemic_rejections": rejection_cats.get("systemic", 0),
+        "targeting_rejections": rejection_cats.get("targeting", 0),
+    }
+
+    # --- Top-of-funnel metrics ---
+    # Total discovered vs qualified (qualification funnel health)
+    discovered_total = (
+        client.table("companies").select("id", count="exact").execute().count or 0
+    )
+    qualified_total = sum(
+        stage_counts.get(s, 0)
+        for s in ["qualified", "outreach_pending", "contacted", "engaged"]
+    )
+    outreach_total = sum(
+        stage_counts.get(s, 0)
+        for s in ["outreach_pending", "contacted", "engaged"]
+    )
+    m["funnel"] = {
+        "discovered": discovered_total,
+        "qualified": qualified_total,
+        "in_outreach": outreach_total,
+        "qualification_rate_pct": round(qualified_total / discovered_total * 100, 1) if discovered_total else 0,
+        "outreach_conversion_pct": round(outreach_total / qualified_total * 100, 1) if qualified_total else 0,
+    }
+
+    # --- Draft quality metrics (all-time, excluding systemic) ---
+    approved_count = (
+        client.table("outreach_drafts").select("id", count="exact")
+        .eq("approval_status", "approved").execute().count or 0
+    )
+    genuine_rejected_count = (
+        client.table("outreach_drafts").select("id", count="exact")
+        .eq("approval_status", "rejected")
+        .in_("rejection_category", ["quality_manual", "quality_auto"])
+        .execute().count or 0
+    )
+    total_decided = approved_count + genuine_rejected_count
+    m["draft_quality"] = {
+        "approved": approved_count,
+        "genuine_rejected": genuine_rejected_count,
+        "approval_rate_pct": round(approved_count / total_decided * 100, 1) if total_decided else 0,
     }
 
     # --- Companies that moved to engaged (positive replies) ---
@@ -268,56 +395,84 @@ def _collect_metrics(client) -> dict:
 # ---------------------------------------------------------------------------
 
 REPORT_SYSTEM_PROMPT = """You are the GTM analyst for ProspectIQ, an AI-powered B2B outreach platform
-targeting North American manufacturing companies (revenue $100M-$2B, 300-3,500 employees).
+targeting North American manufacturing companies (revenue $50M-$500M, VP Ops / VP Quality personas).
 
-You receive structured pipeline metrics each day and write a concise daily brief for the founder (Avi).
-Your job is NOT to restate the numbers — Avi can read tables. Your job is to:
-1. Interpret what the numbers mean for the overall GTM strategy
-2. Identify trends, anomalies, and leading indicators
-3. Give specific, prioritized recommendations
-4. Call out actions Avi must take today or this week
+You receive structured pipeline metrics daily and write a critical, deeply analytical brief for the founder (Avi).
+Your job is NOT to restate numbers. Your job is:
+1. Critically assess the health of each stage of the GTM machine — discovery through engagement
+2. Score each process 1-10 with sharp reasoning (not vague praise)
+3. Identify root causes, not symptoms — if a metric is bad, say WHY and what specifically to fix
+4. Separate systemic problems (require code/config changes) from execution problems (require decisions)
+5. Give Avi a precise, prioritized action list — no more than 5 items, each actionable today or this week
 
-IMPORTANT: Open rate is unreliable in B2B manufacturing outreach — corporate Outlook clients
-block or pre-fetch tracking pixels. Do NOT use open rate to assess campaign health.
-The reliable signals in order of trustworthiness: replies > clicks > bounces > delivered.
-Grade GTM health on reply rate and pipeline velocity, not open rate.
+SCORING RULES:
+- 9-10: World class. Benchmarked against best-in-class B2B outreach (reply rate >3%, 0 systemic failures)
+- 7-8: Healthy. Minor issues but no structural problem
+- 5-6: Marginal. Pattern of underperformance that compounds if unaddressed
+- 3-4: Broken. One or more core processes failing; pipeline at risk
+- 1-2: Critical. Immediate intervention required
 
-Tone: direct, sharp, no fluff. Write like a trusted advisor who has seen the full picture.
-Format: structured sections with headers. Keep the whole report under 600 words."""
+SIGNAL HIERARCHY (most to least reliable for B2B manufacturing):
+replies > clicks > bounces > delivered volume
+Open rate is NOISE in this vertical — corporate Outlook pre-fetches pixels. Never use it to assess health.
 
-REPORT_USER_TEMPLATE = """Today's pipeline metrics (as of {as_of}):
+REJECTION INTERPRETATION:
+- systemic = engineering bug (URL in step 1, step-label leaks) — these are FIXED, do not penalize GTM quality
+- targeting = wrong persona/role — reflects ICP calibration accuracy
+- quality_manual / quality_auto = genuine draft quality failures — these ARE the GTM signal
+Use only genuine quality rejections in your GTM health assessment.
+
+Tone: direct, critical, no hedging, no reassurance. If something is broken, name it plainly.
+Write like a fractional CMO who has seen the full data and has zero patience for spin.
+
+FORMAT — you must use EXACTLY these section headers (bold, followed by colon):
+**GTM HEALTH SCORECARD:**
+**TOP OF FUNNEL:**
+**OUTREACH QUALITY:**
+**ENGAGEMENT & SIGNALS:**
+**PIPELINE VELOCITY:**
+**ACTIONS FOR AVI:**
+**WATCH THIS WEEK:**
+
+Keep the entire report under 750 words. Be ruthless with cuts."""
+
+REPORT_USER_TEMPLATE = """Pipeline state as of {as_of}:
+
+FUNNEL OVERVIEW:
+- Total companies discovered: {discovered}
+- Qualified (ICP match): {qualified} ({qualification_rate}% of discovered)
+- In active outreach: {in_outreach} ({outreach_conversion}% of qualified)
 
 PIPELINE STAGES:
 {pipeline_table}
 
 EMAIL PERFORMANCE (last 7 days):
-- Sent: {email_sent} | Opens: {email_opened} ({open_rate}%) | Replies: {email_replied} ({reply_rate}%) | Bounces: {email_bounced}
+- Sent: {email_sent} | Clicks: {email_clicked} | Replies: {email_replied} ({reply_rate}%) | Bounces: {email_bounced}
+- Note: open rate ({open_rate}%) is unreliable — pixel pre-fetch noise. Ignore it.
 
 REPLY BREAKDOWN (last 7 days):
 {reply_breakdown}
 
 RESEARCH (last 24h):
-- Companies researched: {research_count}
-- Avg PQS post-research: {avg_pqs}
-- % scoring 20+ (proceed to pipeline): {qualified_pct}%
+- Companies researched: {research_count} | Avg PQS: {avg_pqs} | Scoring 20+ (proceed): {qualified_pct}%
 
-APPROVAL QUEUE:
-- Pending your approval: {pending_drafts}
-- Rejected (need regen): {rejected_drafts}
+DRAFT QUALITY (all-time, systemic rejections excluded):
+- Approved: {approved_drafts} | Genuine rejections: {genuine_rejected} | Approval rate: {approval_rate}%
+- Rejection categories: systemic={systemic_rej} (engineering bugs, fixed) | targeting={targeting_rej} | quality={genuine_rejected}
 
-ENGAGED COMPANIES (positive replies, most recent):
+APPROVAL QUEUE NOW:
+- Pending approval: {pending_drafts}
+- In rejected state: {rejected_drafts}
+
+ENGAGED COMPANIES (positive signals — clicks/replies, last 7 days):
 {engaged_list}
 
 API SPEND:
-- This week: ${week_usd} | Month-to-date: ${month_usd} / $100.00 budget
-- Top cost drivers: {top_models}
+- This week: ${week_usd} | MTD: ${month_usd} / $100.00 budget | Top drivers: {top_models}
 
-Write the daily brief now. Structure it as:
-1. Overall GTM Health (1-2 sentences, a letter grade A-F with brief rationale)
-2. What's Working
-3. What Needs Attention
-4. Recommended Actions (numbered, prioritized — separate Avi's actions from automated pipeline actions)
-5. Leading Indicators to Watch This Week"""
+Write the daily brief using the required section headers. Score each process section 1-10.
+For each score below 7, include: (a) specific cause, (b) precise fix.
+For ACTIONS FOR AVI: no more than 5 items. Mark each as [TODAY] or [THIS WEEK]."""
 
 
 def _build_report_prompt(m: dict) -> str:
@@ -336,18 +491,26 @@ def _build_report_prompt(m: dict) -> str:
     )
 
     engaged = m.get("engaged_companies", [])
-    engaged_list = "\n".join(f"  - {n}" for n in engaged[:8]) or "  None yet"
+    engaged_list = "\n".join(f"  - {n}" for n in engaged[:8]) or "  None yet (0 confirmed replies)"
 
     spend = m.get("api_spend", {})
     top_models = ", ".join(f"{k} ${v:.2f}" for k, v in spend.get("top_models", {}).items())
 
     research = m.get("research_24h", {})
     queue = m.get("approval_queue", {})
+    funnel = m.get("funnel", {})
+    dq = m.get("draft_quality", {})
 
     return REPORT_USER_TEMPLATE.format(
         as_of=m.get("as_of", "today"),
+        discovered=funnel.get("discovered", 0),
+        qualified=funnel.get("qualified", 0),
+        qualification_rate=funnel.get("qualification_rate_pct", 0),
+        in_outreach=funnel.get("in_outreach", 0),
+        outreach_conversion=funnel.get("outreach_conversion_pct", 0),
         pipeline_table=pipeline_table,
         email_sent=email.get("sent", 0),
+        email_clicked=email.get("clicked", 0),
         email_opened=email.get("opened", 0),
         open_rate=email.get("open_rate_pct", 0),
         email_replied=email.get("replied", 0),
@@ -357,6 +520,11 @@ def _build_report_prompt(m: dict) -> str:
         research_count=research.get("companies_researched", 0),
         avg_pqs=research.get("avg_pqs", 0),
         qualified_pct=research.get("qualified_pct", 0),
+        approved_drafts=dq.get("approved", 0),
+        genuine_rejected=dq.get("genuine_rejected", 0),
+        approval_rate=dq.get("approval_rate_pct", 0),
+        systemic_rej=queue.get("systemic_rejections", 0),
+        targeting_rej=queue.get("targeting_rejections", 0),
         pending_drafts=queue.get("pending_count", 0),
         rejected_drafts=queue.get("rejected_count", 0),
         engaged_list=engaged_list,
@@ -452,10 +620,70 @@ def _render_financial_section(fin: dict) -> str:
   </div>"""
 
 
-def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None) -> str:
+def _render_engagement_spotlight(companies: list[dict]) -> str:
+    """Visual card section for top engaged companies (click/reply behavior)."""
+    if not companies:
+        return ""
+
+    def signal_badge(company: dict) -> str:
+        if company["replies"] > 0:
+            return "<span style='background:#7c3aed;color:#fff;border-radius:12px;padding:2px 9px;font-size:11px;font-weight:700'>REPLIED</span>"
+        if company["clicks"] > 0:
+            return "<span style='background:#16a34a;color:#fff;border-radius:12px;padding:2px 9px;font-size:11px;font-weight:700'>CLICKED</span>"
+        return "<span style='background:#2563eb;color:#fff;border-radius:12px;padding:2px 9px;font-size:11px;font-weight:700'>OPENED</span>"
+
+    def signal_bar(opens: int, clicks: int, replies: int) -> str:
+        bars = ""
+        for i in range(min(clicks, 10)):
+            bars += "<span style='display:inline-block;width:10px;height:10px;background:#16a34a;border-radius:2px;margin-right:2px'></span>"
+        for i in range(min(opens, 10)):
+            bars += "<span style='display:inline-block;width:10px;height:10px;background:#93c5fd;border-radius:2px;margin-right:2px'></span>"
+        return bars or "<span style='color:#d1d5db;font-size:11px'>no engagement</span>"
+
+    cards = ""
+    for c in companies:
+        last_ts = c.get("last_interaction", "")
+        if last_ts:
+            try:
+                dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                last_ts = dt.strftime("%-m/%-d %H:%M CT")
+            except Exception:
+                last_ts = last_ts[:10]
+
+        cards += f"""
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;flex:1;min-width:160px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:13px;color:#111">{c['company_name']}</div>
+            <div style="font-size:11px;color:#666;margin-top:2px">{c.get('contact_name','')} · {c.get('contact_title','')[:28]}</div>
+          </div>
+          {signal_badge(c)}
+        </div>
+        <div style="margin-bottom:8px">{signal_bar(c['opens'], c['clicks'], c['replies'])}</div>
+        <div style="font-size:11px;color:#888;display:flex;gap:12px">
+          <span><strong style="color:#16a34a">{c['clicks']}</strong> clicks</span>
+          <span><strong style="color:#93c5fd">{c['opens']}</strong> opens</span>
+          <span>Step {c.get('sequence_step',1)}</span>
+        </div>
+        {'<div style="font-size:10px;color:#aaa;margin-top:6px">Last: ' + last_ts + '</div>' if last_ts else ''}
+      </div>"""
+
+    return f"""
+  <div style="margin-top:24px;border-top:2px solid #eee;padding-top:20px">
+    <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#888;margin-bottom:12px">Engagement Spotlight — Last 7 Days</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      {cards}
+    </div>
+  </div>"""
+
+
+def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None, spotlight: list | None = None) -> str:
     email_7d = m.get("email_7d", {})
     pipeline = m.get("pipeline", {})
     spend = m.get("api_spend", {})
+    queue = m.get("approval_queue", {})
+    funnel = m.get("funnel", {})
+    dq = m.get("draft_quality", {})
 
     pipeline_rows = "".join(
         f"<tr><td style='padding:4px 12px 4px 0;color:#555'>{s}</td>"
@@ -469,48 +697,82 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
         stripped = line.strip()
         if not stripped:
             html_body += "<br>"
-        elif stripped.startswith("##") or stripped.startswith("**") and stripped.endswith("**"):
-            label = stripped.lstrip("#").strip().strip("*")
-            html_body += f"<h3 style='color:#1a1a2e;margin:20px 0 6px'>{label}</h3>"
+        elif stripped.startswith("**") and stripped.endswith("**") and len(stripped) > 4:
+            label = stripped.strip("*").rstrip(":")
+            html_body += f"<h3 style='color:#1a1a2e;margin:22px 0 6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px'>{label}</h3>"
+        elif stripped.startswith("##"):
+            label = stripped.lstrip("#").strip()
+            html_body += f"<h3 style='color:#1a1a2e;margin:22px 0 6px'>{label}</h3>"
         elif stripped.startswith("- ") or stripped.startswith("* "):
             html_body += f"<li style='margin:4px 0'>{stripped[2:]}</li>"
-        elif stripped[0].isdigit() and stripped[1] in ".)" and len(stripped) > 2:
-            html_body += f"<li style='margin:4px 0'>{stripped[2:].strip()}</li>"
+        elif stripped and stripped[0].isdigit() and len(stripped) > 2 and stripped[1] in ".)":
+            html_body += f"<li style='margin:6px 0'>{stripped[2:].strip()}</li>"
         else:
-            html_body += f"<p style='margin:8px 0'>{stripped}</p>"
+            html_body += f"<p style='margin:8px 0;line-height:1.6'>{stripped}</p>"
+
+    # Rejection breakdown bar
+    systemic = queue.get("systemic_rejections", 0)
+    targeting = queue.get("targeting_rejections", 0)
+    genuine = queue.get("genuine_rejections", 0)
+    total_rej = systemic + targeting + genuine or 1
+
+    def pct_bar(val, total, color):
+        pct = round(val / total * 100)
+        return (
+            f"<div style='background:{color};height:8px;border-radius:2px;width:{pct}%;display:inline-block'></div>"
+            f"<span style='font-size:11px;color:#555;margin-left:6px'>{val} ({pct}%)</span>"
+        )
 
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="font-family:system-ui,sans-serif;max-width:680px;margin:0 auto;padding:24px;color:#222">
+<body style="font-family:system-ui,sans-serif;max-width:700px;margin:0 auto;padding:24px;color:#222">
 
   <div style="background:#1a1a2e;color:#fff;padding:20px 24px;border-radius:8px;margin-bottom:24px">
     <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.7">Daily GTM Brief</div>
     <div style="font-size:22px;font-weight:700;margin-top:4px">ProspectIQ — {date_str}</div>
+    <div style="font-size:12px;opacity:.6;margin-top:4px">{funnel.get('discovered',0)} companies discovered · {funnel.get('qualified',0)} qualified · {funnel.get('in_outreach',0)} in outreach</div>
   </div>
 
   <!-- Stats row -->
-  <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap">
-    <div style="flex:1;min-width:120px;background:#f5f5f5;border-radius:6px;padding:14px 16px">
-      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px">Sent (7d)</div>
-      <div style="font-size:26px;font-weight:700;margin-top:4px">{email_7d.get('sent',0)}</div>
+  <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Sent (7d)</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px">{email_7d.get('sent',0)}</div>
     </div>
-    <div style="flex:1;min-width:120px;background:#f5f5f5;border-radius:6px;padding:14px 16px">
-      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px">Open rate</div>
-      <div style="font-size:26px;font-weight:700;margin-top:4px">{email_7d.get('open_rate_pct',0)}%</div>
+    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Clicks (7d)</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px">{email_7d.get('clicked',0)}</div>
     </div>
-    <div style="flex:1;min-width:120px;background:#f5f5f5;border-radius:6px;padding:14px 16px">
-      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px">Reply rate</div>
-      <div style="font-size:26px;font-weight:700;margin-top:4px">{email_7d.get('reply_rate_pct',0)}%</div>
+    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Replies (7d)</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px;color:{'#16a34a' if email_7d.get('replied',0)>0 else '#111'}">{email_7d.get('replied',0)}</div>
+      <div style="font-size:11px;color:#888">{email_7d.get('reply_rate_pct',0)}% rate</div>
     </div>
-    <div style="flex:1;min-width:120px;background:#f5f5f5;border-radius:6px;padding:14px 16px">
-      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px">API spend MTD</div>
-      <div style="font-size:26px;font-weight:700;margin-top:4px">${spend.get('month_usd',0):.0f}</div>
+    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Approval rate</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px">{dq.get('approval_rate_pct',0)}%</div>
+      <div style="font-size:11px;color:#888">{dq.get('approved',0)} approved</div>
+    </div>
+    <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
+      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">API spend MTD</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px">${spend.get('month_usd',0):.0f}</div>
     </div>
   </div>
 
+  <!-- Rejection breakdown -->
+  <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:12px 16px;margin-bottom:20px">
+    <div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Rejection Breakdown (all-time)</div>
+    <div style="margin-bottom:4px">Systemic (bugs, fixed): {pct_bar(systemic, total_rej, '#d1d5db')}</div>
+    <div style="margin-bottom:4px">Targeting (wrong persona): {pct_bar(targeting, total_rej, '#fbbf24')}</div>
+    <div>Quality (genuine): {pct_bar(genuine, total_rej, '#ef4444')}</div>
+  </div>
+
+  <!-- Engagement spotlight -->
+  {_render_engagement_spotlight(spotlight or [])}
+
   <!-- Claude narrative -->
-  <div style="margin-bottom:28px">
+  <div style="margin-top:24px;margin-bottom:28px">
     {html_body}
   </div>
 
@@ -525,8 +787,8 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
   <!-- Financial summary -->
   {_render_financial_section(fin) if fin else ''}
 
-  <div style="font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:12px">
-    Generated by ProspectIQ GTM Engine · {m.get('as_of','')}
+  <div style="font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:12px;margin-top:16px">
+    ProspectIQ GTM Engine · {m.get('as_of','')}
   </div>
 
 </body>
@@ -547,13 +809,14 @@ def run_daily_report() -> bool:
         logger.info("Daily report: collecting metrics...")
         m = _collect_metrics(client)
         fin = _collect_financial_metrics(client)
+        spotlight = _collect_engagement_spotlight(client)
 
         logger.info("Daily report: generating Claude narrative...")
         prompt = _build_report_prompt(m)
         narrative = _call_claude(prompt, settings.anthropic_api_key)
 
         date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
-        html = _render_html(narrative, m, date_str, fin)
+        html = _render_html(narrative, m, date_str, fin=fin, spotlight=spotlight)
 
         subject = f"ProspectIQ GTM Brief — {date_str}"
         logger.info(f"Daily report: sending to {recipient}...")
