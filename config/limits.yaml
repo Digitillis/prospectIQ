@@ -105,6 +105,15 @@ send_config:
   ramp_batch_size: 25            # _run_limit_ramp target (scheduled 2026-05-07)
 
 # ---------------------------------------------------------------------------
+# Notifications — reply SLA and owner routing
+# ---------------------------------------------------------------------------
+notifications:
+  workspace_owner_email: "avi@digitillis.com"
+  reply_sla_hours: 24          # Max hours before a genuine reply must be actioned
+  notify_on_positive: true     # Fire email to owner on positive reply classification
+  notify_on_question: true     # Fire email to owner on question reply classification
+
+# ---------------------------------------------------------------------------
 # Queue manager
 # ---------------------------------------------------------------------------
 queue:

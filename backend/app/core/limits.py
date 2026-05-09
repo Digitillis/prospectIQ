@@ -190,6 +190,23 @@ class _Limits:
     def max_approvals_per_reviewer_per_day(self) -> int:
         return int(_load()["outreach"].get("max_approvals_per_reviewer_per_day", 30))
 
+    # -- Notifications --------------------------------------------------------
+    @property
+    def workspace_owner_email(self) -> str:
+        return str(_load().get("notifications", {}).get("workspace_owner_email", "avi@digitillis.com"))
+
+    @property
+    def reply_sla_hours(self) -> int:
+        return int(_load().get("notifications", {}).get("reply_sla_hours", 24))
+
+    @property
+    def notify_on_positive(self) -> bool:
+        return bool(_load().get("notifications", {}).get("notify_on_positive", True))
+
+    @property
+    def notify_on_question(self) -> bool:
+        return bool(_load().get("notifications", {}).get("notify_on_question", True))
+
 
 L = _Limits()
 

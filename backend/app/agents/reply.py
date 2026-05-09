@@ -6,6 +6,7 @@ determine sentiment, and draft appropriate follow-up responses.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -14,6 +15,8 @@ from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import get_settings, get_sequences_config
+from backend.app.core.limits import L
+from backend.app.core.notifications import notify_reply_received
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -280,7 +283,16 @@ class ReplyAgent(BaseAgent):
                     "priority_flag": urgency == "high",
                 })
 
-                console.print(f"  [green]{company_name}: POSITIVE reply -- response draft created, status -> engaged[/green]")
+                if L.notify_on_positive and L.workspace_owner_email:
+                    contact_name = contact.get("full_name") or contact.get("email", "Unknown")
+                    asyncio.run(notify_reply_received(
+                        company_name=company_name,
+                        contact_name=contact_name,
+                        reply_preview=reply_body,
+                        workspace_email=L.workspace_owner_email,
+                    ))
+
+                console.print(f"  [green]{company_name}: POSITIVE reply -- response draft created, status -> engaged, owner notified[/green]")
 
             elif classification == "question":
                 # Create a new outreach draft with the answer
@@ -297,7 +309,16 @@ class ReplyAgent(BaseAgent):
                 }
                 self.db.insert_outreach_draft(draft_data)
 
-                console.print(f"  [blue]{company_name}: QUESTION reply -- answer draft created[/blue]")
+                if L.notify_on_question and L.workspace_owner_email:
+                    contact_name = contact.get("full_name") or contact.get("email", "Unknown")
+                    asyncio.run(notify_reply_received(
+                        company_name=company_name,
+                        contact_name=contact_name,
+                        reply_preview=reply_body,
+                        workspace_email=L.workspace_owner_email,
+                    ))
+
+                console.print(f"  [blue]{company_name}: QUESTION reply -- answer draft created, owner notified[/blue]")
 
             elif classification == "negative":
                 # Update company status to not_interested
