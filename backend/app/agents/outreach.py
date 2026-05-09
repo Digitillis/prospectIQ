@@ -802,6 +802,24 @@ class OutreachAgent(BaseAgent):
                     except Exception:
                         pass
 
+                    # Fetch company signals (FDA recalls, OSHA, MEP grants) up-front so
+                    # the top signal can be (a) injected into the prompt and (b) recorded
+                    # on the draft for reply-attribution analytics.
+                    _sig_rows: list[dict] = []
+                    try:
+                        _sig_rows = (
+                            self.db.client.table("company_signals")
+                            .select("id,signal_type,signal_text,observed_at")
+                            .eq("company_id", company["id"])
+                            .order("observed_at", desc=True)
+                            .limit(5)
+                            .execute()
+                            .data or []
+                        )
+                    except Exception:
+                        _sig_rows = []
+                    _top_signal = _sig_rows[0] if _sig_rows else None
+
                     # Build the prompt
                     prompt = self._build_prompt(
                         company=company,
@@ -817,6 +835,7 @@ class OutreachAgent(BaseAgent):
                         prior_messages=prior_messages,
                         prior_rejections=prior_rejections,
                         edit_signals=edit_signals,
+                        sig_rows=_sig_rows,
                     )
 
                     # Call Claude
@@ -889,6 +908,8 @@ class OutreachAgent(BaseAgent):
                         "personalization_notes": _clean(parsed.get("personalization_notes", "")),
                         "approval_status": "pending",
                         "model": _draft_model,
+                        "top_signal_id":   _top_signal["id"]   if _top_signal else None,
+                        "top_signal_type": _top_signal.get("signal_type") if _top_signal else None,
                     }
 
                     # Post-generation integrity check — auto-reject before save if
@@ -1179,6 +1200,7 @@ class OutreachAgent(BaseAgent):
         prior_messages: list[dict] | None = None,
         prior_rejections: list[dict] | None = None,
         edit_signals: list[dict] | None = None,
+        sig_rows: list[dict] | None = None,
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -1250,23 +1272,27 @@ class OutreachAgent(BaseAgent):
 
         max_words = instructions.get("max_words", 150)
 
-        # Fetch company signals (FDA recalls, OSHA, MEP grants) for personalization
-        try:
-            _sig_rows = (
-                self.db.client.table("company_signals")
-                .select("signal_type,signal_text,observed_at")
-                .eq("company_id", company["id"])
-                .order("observed_at", desc=True)
-                .limit(5)
-                .execute()
-                .data or []
-            )
-            company_signals_text = (
-                "\n".join(f"- [{s['signal_type']}] {s.get('signal_text', '')}" for s in _sig_rows)
-                if _sig_rows else "None available"
-            )
-        except Exception:
-            company_signals_text = "None available"
+        # Format company signals (FDA recalls, OSHA, MEP grants) for personalization.
+        # Caller pre-fetches sig_rows so the same data feeds both the prompt and
+        # draft-level signal attribution. Falls back to a fresh fetch if not provided.
+        _sig_rows = sig_rows
+        if _sig_rows is None:
+            try:
+                _sig_rows = (
+                    self.db.client.table("company_signals")
+                    .select("id,signal_type,signal_text,observed_at")
+                    .eq("company_id", company["id"])
+                    .order("observed_at", desc=True)
+                    .limit(5)
+                    .execute()
+                    .data or []
+                )
+            except Exception:
+                _sig_rows = []
+        company_signals_text = (
+            "\n".join(f"- [{s['signal_type']}] {s.get('signal_text', '')}" for s in _sig_rows)
+            if _sig_rows else "None available"
+        )
 
         # Build prior thread block — full text of every previously sent email
         if prior_messages:

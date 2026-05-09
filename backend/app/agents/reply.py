@@ -192,6 +192,9 @@ class ReplyAgent(BaseAgent):
             original_draft = draft_result.data[0] if draft_result.data else None
             original_subject = original_draft.get("subject", reply_subject) if original_draft else reply_subject
             original_body = original_draft.get("body", "(Original message not available)") if original_draft else "(Original message not available)"
+            # Reply-to-signal attribution: surface which signal personalised the
+            # original outreach so notifications reveal what triggered the reply.
+            top_signal_type = original_draft.get("top_signal_type") if original_draft else None
 
             # Get research for company context
             research = self.db.get_research(company_id)
@@ -290,6 +293,7 @@ class ReplyAgent(BaseAgent):
                         contact_name=contact_name,
                         reply_preview=reply_body,
                         workspace_email=L.workspace_owner_email,
+                        signal_context=top_signal_type,
                     ))
 
                 console.print(f"  [green]{company_name}: POSITIVE reply -- response draft created, status -> engaged, owner notified[/green]")
@@ -316,6 +320,7 @@ class ReplyAgent(BaseAgent):
                         contact_name=contact_name,
                         reply_preview=reply_body,
                         workspace_email=L.workspace_owner_email,
+                        signal_context=top_signal_type,
                     ))
 
                 console.print(f"  [blue]{company_name}: QUESTION reply -- answer draft created, owner notified[/blue]")
