@@ -2445,3 +2445,151 @@ async def trigger_send():
     import threading
     threading.Thread(target=_run_send_approved, daemon=True).start()
     return {"status": "triggered", "message": "send_approved job started in background"}
+
+
+@app.get("/api/prospectiq/admin/cadence-velocity")
+async def cadence_velocity(window_days: int = 30):
+    """Cadence-velocity SLO data (P4.4 — GTM rebuild 2026-05-08).
+
+    Returns the median elapsed hours for each of the three cadence stages
+    against their SLO targets. Computed from outreach_drafts (approval +
+    send timestamps), company_outreach_state (last engagement), and
+    interactions (engagement events that should have triggered step 2).
+
+    Args:
+        window_days: how many days back to include (default 30).
+    """
+    from datetime import datetime, timedelta, timezone
+    from statistics import median
+
+    from backend.app.core.database import get_supabase_client
+
+    client = get_supabase_client()
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(days=window_days)).isoformat()
+
+    # ---- Stage 1: median hours from approval to step-1 send ----
+    approval_to_step1: list[float] = []
+    try:
+        rows = (
+            client.table("outreach_drafts")
+            .select("approved_at, sent_at, sequence_step")
+            .gte("approved_at", since)
+            .not_.is_("approved_at", "null")
+            .not_.is_("sent_at", "null")
+            .eq("sequence_step", 1)
+            .limit(2000)
+            .execute()
+            .data or []
+        )
+        for r in rows:
+            try:
+                approved = datetime.fromisoformat(str(r["approved_at"]).replace("Z", "+00:00"))
+                sent = datetime.fromisoformat(str(r["sent_at"]).replace("Z", "+00:00"))
+                approval_to_step1.append((sent - approved).total_seconds() / 3600.0)
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.warning("cadence_velocity: approval→step1 query failed: %s", exc)
+
+    # ---- Stage 2: last_engagement → step-2 send ----
+    last_engagement_to_step2: list[float] = []
+    try:
+        # Pull recent step-2 sends in the window
+        step2_rows = (
+            client.table("outreach_drafts")
+            .select("contact_id, sent_at, sequence_step")
+            .gte("sent_at", since)
+            .not_.is_("sent_at", "null")
+            .eq("sequence_step", 2)
+            .limit(2000)
+            .execute()
+            .data or []
+        )
+        contact_ids = list({r["contact_id"] for r in step2_rows if r.get("contact_id")})
+        engagements_by_contact: dict[str, datetime] = {}
+        if contact_ids:
+            # Pull the most recent engagement event for each contact
+            for chunk_start in range(0, len(contact_ids), 100):
+                chunk = contact_ids[chunk_start : chunk_start + 100]
+                ev_rows = (
+                    client.table("interactions")
+                    .select("contact_id, created_at, type")
+                    .in_("contact_id", chunk)
+                    .in_("type", ["email_opened", "email_clicked", "email_replied"])
+                    .order("created_at", desc=True)
+                    .limit(1000)
+                    .execute()
+                    .data or []
+                )
+                for ev in ev_rows:
+                    cid = ev.get("contact_id")
+                    if not cid:
+                        continue
+                    try:
+                        ts = datetime.fromisoformat(str(ev["created_at"]).replace("Z", "+00:00"))
+                    except Exception:
+                        continue
+                    cur = engagements_by_contact.get(cid)
+                    if cur is None or ts > cur:
+                        engagements_by_contact[cid] = ts
+        for r in step2_rows:
+            cid = r.get("contact_id")
+            last_eng = engagements_by_contact.get(cid)
+            if last_eng is None:
+                continue
+            try:
+                sent = datetime.fromisoformat(str(r["sent_at"]).replace("Z", "+00:00"))
+                if sent > last_eng:
+                    last_engagement_to_step2.append((sent - last_eng).total_seconds() / 3600.0)
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.warning("cadence_velocity: engagement→step2 query failed: %s", exc)
+
+    # ---- Stage 3: hot trigger → founder action ----
+    hot_to_founder_action: list[float] = []
+    try:
+        # company_outreach_state may carry hot_at and last_founder_action_at
+        state_rows = (
+            client.table("company_outreach_state")
+            .select("company_id, hot_at, last_founder_action_at")
+            .gte("hot_at", since)
+            .not_.is_("hot_at", "null")
+            .not_.is_("last_founder_action_at", "null")
+            .limit(1000)
+            .execute()
+            .data or []
+        )
+        for r in state_rows:
+            try:
+                hot = datetime.fromisoformat(str(r["hot_at"]).replace("Z", "+00:00"))
+                act = datetime.fromisoformat(str(r["last_founder_action_at"]).replace("Z", "+00:00"))
+                if act >= hot:
+                    hot_to_founder_action.append((act - hot).total_seconds() / 3600.0)
+            except Exception:
+                continue
+    except Exception as exc:
+        # Table or columns may not exist yet — return zeros and log once.
+        logger.info("cadence_velocity: hot→founder query unavailable: %s", exc)
+
+    def _med(xs: list[float]) -> float:
+        return round(median(xs), 2) if xs else 0.0
+
+    return {
+        "approval_to_step1_median_hours": _med(approval_to_step1),
+        "last_engagement_to_step2_median_hours": _med(last_engagement_to_step2),
+        "hot_to_founder_action_median_hours": _med(hot_to_founder_action),
+        "slo_targets": {
+            "approval_to_step1": 24,
+            "last_engagement_to_step2": 72,
+            "hot_to_founder_action": 24,
+        },
+        "computed_at": now.isoformat(),
+        "window_days": window_days,
+        "samples": {
+            "approval_to_step1_n": len(approval_to_step1),
+            "last_engagement_to_step2_n": len(last_engagement_to_step2),
+            "hot_to_founder_action_n": len(hot_to_founder_action),
+        },
+    }

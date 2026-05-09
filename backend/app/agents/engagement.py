@@ -10,12 +10,23 @@ Delivery architecture:
 - FROM address and sender identity configured in config/outreach_guidelines.yaml (sender section)
 - Full per-lead custom subject + body — no template variable limitations
 - Replies land in the sender's inbox
+
+P4.1 — Three-tier engagement state machine
+==========================================
+COLD     — no opens in past 14 days, or no sends yet
+WARMING  — at least 1 open or human-class click in past 14 days, no reply
+HOT      — 2+ distinct human-class engagements within 7 days, OR any reply
+
+`classify_engagement_tier()` is the public function called from the
+scheduler. HOT prospects are written to a manual-action row in the daily
+report queue and are NEVER auto-sent.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 from rich.console import Console
 
@@ -25,6 +36,117 @@ from backend.app.integrations.instantly import InstantlyClient
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# P4.1 — Engagement-tier state machine
+# ---------------------------------------------------------------------------
+
+# State labels — used as the column value for `engagement_tier` (TODO migration).
+# TODO: run migration adding companies.engagement_tier (TEXT) and the matching
+#       index on (engagement_tier, last_engagement_at).
+COLD = "cold"
+WARMING = "warming"
+HOT = "hot"
+
+# Time windows used to classify the tier
+_WARMING_WINDOW_DAYS = 14
+_HOT_WINDOW_DAYS = 7
+_HOT_MIN_HUMAN_EVENTS = 2  # distinct human-class engagements within HOT window
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _ensure_dt(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    return None
+
+
+def classify_engagement_tier(
+    company_id: str,
+    interactions: list[dict],
+    click_classifier: Callable[[dict], str] | None = None,
+    *,
+    now: datetime | None = None,
+) -> str:
+    """Return one of COLD / WARMING / HOT for a given company.
+
+    Args:
+        company_id: For logging only — the function operates entirely on the
+                    interactions list passed in.
+        interactions: List of interaction dicts. Each dict should carry at
+                    minimum 'type' and a timestamp (created_at | event_at |
+                    timestamp). Click events should also carry the fields the
+                    `click_classifier` looks for (latency_seconds, user_agent,
+                    open_timestamp, click_timestamp).
+        click_classifier: Optional callable that takes a click event and
+                    returns 'bot' | 'human' | 'unclear'. When None, an
+                    instance of ClickClassifier is used.
+        now: Override "current time" — primarily for tests.
+
+    Returns:
+        One of the three tier constants.
+    """
+    if click_classifier is None:
+        from backend.app.core.click_classifier import ClickClassifier
+        click_classifier = ClickClassifier().classify
+
+    current = now or _utcnow()
+    warming_floor = current - timedelta(days=_WARMING_WINDOW_DAYS)
+    hot_floor = current - timedelta(days=_HOT_WINDOW_DAYS)
+
+    # Replies are an unconditional HOT trigger
+    has_reply = any(i.get("type") == "email_replied" for i in interactions)
+    if has_reply:
+        return HOT
+
+    # Categorize human-class events within the relevant windows
+    human_events_in_hot_window: list[datetime] = []
+    has_open_or_human_click_14d = False
+
+    for ev in interactions:
+        ts = (
+            _ensure_dt(ev.get("event_at"))
+            or _ensure_dt(ev.get("created_at"))
+            or _ensure_dt(ev.get("timestamp"))
+        )
+        if ts is None:
+            continue
+        ev_type = ev.get("type")
+
+        if ev_type == "email_opened" and ts >= warming_floor:
+            has_open_or_human_click_14d = True
+            if ts >= hot_floor:
+                human_events_in_hot_window.append(ts)
+
+        elif ev_type == "email_clicked":
+            verdict = click_classifier(ev)
+            if verdict != "human":
+                continue
+            if ts >= warming_floor:
+                has_open_or_human_click_14d = True
+            if ts >= hot_floor:
+                human_events_in_hot_window.append(ts)
+
+    # Distinct human events within HOT window — distinct by minute granularity
+    distinct_hot = {(t.year, t.month, t.day, t.hour, t.minute) for t in human_events_in_hot_window}
+    if len(distinct_hot) >= _HOT_MIN_HUMAN_EVENTS:
+        return HOT
+
+    if has_open_or_human_click_14d:
+        return WARMING
+
+    return COLD
 
 
 class EngagementAgent(BaseAgent):
