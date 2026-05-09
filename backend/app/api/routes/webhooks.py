@@ -592,6 +592,15 @@ def _handle_email_opened(db, payload: dict) -> dict:
     except Exception as exc:
         logger.debug("open_count update failed (column may not exist): %s", exc)
 
+    # A/B tracker — record open event (non-blocking)
+    try:
+        from backend.app.analytics.ab_tracker import ABTracker
+        _cid = str(contact_id).replace("-", "")
+        ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
+        ABTracker(db).record_open(contact_id=contact_id, variant=ab_variant)
+    except Exception:
+        pass  # A/B tracking is non-blocking
+
     # Pull next step forward — opened contacts are higher-intent, serve them sooner
     _advance_warm_sequence(db, contact_id, days_advance=2)
 

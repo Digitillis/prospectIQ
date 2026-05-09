@@ -11,14 +11,12 @@ import json
 import logging
 
 import anthropic
-from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import get_settings, get_sequences_config
 from backend.app.core.limits import L
 from backend.app.core.notifications import notify_reply_received
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 
@@ -140,7 +138,7 @@ class ReplyAgent(BaseAgent):
         result = AgentResult()
 
         if not reply_data:
-            console.print("[red]No reply_data provided. Expected dict with company_id, contact_id, subject, body, outreach_draft_id.[/red]")
+            logger.warning("No reply_data provided. Expected dict with company_id, contact_id, subject, body, outreach_draft_id.")
             result.success = False
             result.errors = 1
             result.add_detail("N/A", "error", "No reply_data provided")
@@ -150,7 +148,7 @@ class ReplyAgent(BaseAgent):
         required_fields = ["company_id", "contact_id", "subject", "body", "outreach_draft_id"]
         missing = [f for f in required_fields if not reply_data.get(f)]
         if missing:
-            console.print(f"[red]Missing required fields in reply_data: {', '.join(missing)}[/red]")
+            logger.warning(f"Missing required fields in reply_data: {', '.join(missing)}")
             result.success = False
             result.errors = 1
             result.add_detail("N/A", "error", f"Missing fields: {', '.join(missing)}")
@@ -179,7 +177,7 @@ class ReplyAgent(BaseAgent):
             contacts = self.db.get_contacts_for_company(company_id)
             contact = next((c for c in contacts if c.get("id") == contact_id), None)
             if not contact:
-                console.print(f"  [yellow]{company_name}: Contact {contact_id} not found. Proceeding with limited context.[/yellow]")
+                logger.warning(f"{company_name}: Contact {contact_id} not found. Proceeding with limited context.")
                 contact = {"full_name": "Unknown", "title": "Unknown"}
 
             # Get original outreach draft
@@ -218,7 +216,7 @@ class ReplyAgent(BaseAgent):
             )
 
             # Call Claude Haiku for classification
-            console.print(f"  [dim]{company_name} -- Classifying reply from {contact.get('full_name', 'Unknown')}...[/dim]")
+            logger.info(f"{company_name} -- Classifying reply from {contact.get('full_name', 'Unknown')}...")
 
             client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             response = client.messages.create(
@@ -256,9 +254,9 @@ class ReplyAgent(BaseAgent):
             notes = parsed.get("notes", "")
             urgency = parsed.get("urgency", "medium")
 
-            console.print(
-                f"  [cyan]{company_name}: Classification = {classification} | "
-                f"Sentiment = {sentiment} | Urgency = {urgency}[/cyan]"
+            logger.info(
+                f"{company_name}: Classification = {classification} | "
+                f"Sentiment = {sentiment} | Urgency = {urgency}"
             )
 
             # Take action based on classification
@@ -292,7 +290,16 @@ class ReplyAgent(BaseAgent):
                         workspace_email=L.workspace_owner_email,
                     ))
 
-                console.print(f"  [green]{company_name}: POSITIVE reply -- response draft created, status -> engaged, owner notified[/green]")
+                # A/B tracker — record reply event (non-blocking)
+                try:
+                    from backend.app.analytics.ab_tracker import ABTracker
+                    _cid = str(contact_id).replace("-", "")
+                    ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
+                    ABTracker(self.db).record_reply(contact_id=contact_id, variant=ab_variant)
+                except Exception:
+                    pass  # A/B tracking is non-blocking
+
+                logger.info(f"{company_name}: POSITIVE reply -- response draft created, status -> engaged, owner notified")
 
             elif classification == "question":
                 # Create a new outreach draft with the answer
@@ -318,7 +325,16 @@ class ReplyAgent(BaseAgent):
                         workspace_email=L.workspace_owner_email,
                     ))
 
-                console.print(f"  [blue]{company_name}: QUESTION reply -- answer draft created, owner notified[/blue]")
+                # A/B tracker — record reply event (non-blocking)
+                try:
+                    from backend.app.analytics.ab_tracker import ABTracker
+                    _cid = str(contact_id).replace("-", "")
+                    ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
+                    ABTracker(self.db).record_reply(contact_id=contact_id, variant=ab_variant)
+                except Exception:
+                    pass  # A/B tracking is non-blocking
+
+                logger.info(f"{company_name}: QUESTION reply -- answer draft created, owner notified")
 
             elif classification == "negative":
                 # Update company status to not_interested
@@ -327,11 +343,11 @@ class ReplyAgent(BaseAgent):
                 # Cancel any active engagement sequences for this company
                 self._cancel_active_sequences(company_id)
 
-                console.print(f"  [yellow]{company_name}: NEGATIVE reply -- status -> not_interested, sequences cancelled[/yellow]")
+                logger.warning(f"{company_name}: NEGATIVE reply -- status -> not_interested, sequences cancelled")
 
             elif classification == "out_of_office":
                 # Log but don't change status -- follow up later
-                console.print(f"  [dim]{company_name}: OUT OF OFFICE -- logged, no status change[/dim]")
+                logger.info(f"{company_name}: OUT OF OFFICE -- logged, no status change")
 
             elif classification == "unsubscribe":
                 # Update contact status to unsubscribed
@@ -340,17 +356,17 @@ class ReplyAgent(BaseAgent):
                 # Cancel active sequences
                 self._cancel_active_sequences(company_id)
 
-                console.print(f"  [yellow]{company_name}: UNSUBSCRIBE -- contact unsubscribed, sequences cancelled[/yellow]")
+                logger.warning(f"{company_name}: UNSUBSCRIBE -- contact unsubscribed, sequences cancelled")
 
             elif classification == "bounce":
                 # Update contact status to bounced, company status to bounced
                 self.db.update_contact(contact_id, {"status": "bounced"})
                 self.db.update_company(company_id, {"status": "bounced"})
 
-                console.print(f"  [red]{company_name}: BOUNCE -- contact and company marked bounced[/red]")
+                logger.warning(f"{company_name}: BOUNCE -- contact and company marked bounced")
 
             else:
-                console.print(f"  [yellow]{company_name}: Unknown classification '{classification}' -- logged for review[/yellow]")
+                logger.warning(f"{company_name}: Unknown classification '{classification}' -- logged for review")
 
             # Log interaction for all classifications
             self.db.insert_interaction({
