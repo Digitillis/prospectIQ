@@ -913,6 +913,21 @@ class OutreachAgent(BaseAgent):
                         )
                         continue
 
+                    # Hard block: step-1 cold opens may never contain a URL.
+                    # Reject up-front; do not push to approval queue.
+                    from backend.app.core.draft_quality import is_step_1_url_violation
+                    if is_step_1_url_violation(draft_data):
+                        logger.warning(
+                            "Step-1 URL violation auto-rejected for %s (%s)",
+                            company_name,
+                            contact.get("full_name") or contact.get("first_name", ""),
+                        )
+                        draft_data["approval_status"] = "rejected"
+                        draft_data["rejection_reason"] = "url_in_step_1"
+                        self.db.insert_outreach_draft(draft_data)
+                        result.errors += 1
+                        continue
+
                     inserted_draft = self.db.insert_outreach_draft(draft_data)
 
                     # Threading state update — mark contact queued/sent

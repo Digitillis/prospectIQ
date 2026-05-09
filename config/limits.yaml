@@ -1,0 +1,108 @@
+# ProspectIQ — Centralized Limits & Thresholds
+# Single source of truth for all spend caps, pipeline guards, and batch sizes.
+# Edit here — no hardcoded values live in pipeline scripts.
+#
+# Loaded by: backend/app/core/limits.py
+# Used by:   weekend_run.py, workspace_scheduler.py, QC monitoring
+# Last updated: 2026-05-03
+
+# ---------------------------------------------------------------------------
+# Spend caps
+# ---------------------------------------------------------------------------
+spend:
+  monthly_cap_usd: 200.00           # Total monthly budget (all providers). QC monitor alert.
+  monthly_hard_limit_usd: 270.00    # weekend_run stop condition (90% of $300 Anthropic plan)
+  research_cap_usd: 93.00           # QC monitor alert threshold for research-only spend
+  research_hard_limit_usd: 135.00   # weekend_run stop condition (90% of $150 research budget)
+  workspace_monthly_default_usd: 200.00   # Default for workspace_scheduler budget_ok check
+  workspace_research_default_usd: null    # null = no per-workspace research cap by default
+
+# ---------------------------------------------------------------------------
+# QC monitor alert thresholds
+# ---------------------------------------------------------------------------
+qc_alerts:
+  acct_warn_usd: 10.00        # Anthropic account balance — warn below this
+  acct_urgent_usd: 5.00       # Anthropic account balance — urgent below this
+  cap_warn_usd: 10.00         # Monthly cap remaining — warn below this
+  research_alert_usd: 92.69   # Research MTD — alert at or above this (within $0.31 of cap)
+  open_rate_min_pct: 30.0     # Minimum acceptable open rate (%) once >= 10 sent
+  stuck_threshold_days: 3     # Days in outreach_pending before a company is "stuck"
+  outreach_pnd_max: 500       # Flag if outreach_pending exceeds this
+
+# ---------------------------------------------------------------------------
+# weekend_run.py pipeline guards
+# ---------------------------------------------------------------------------
+pipeline:
+  draft_buffer_target: 600    # Stop when (pending + approved unsent) drafts >= this
+  enrichment_cap: 3000        # Max companies enriched per weekend_run session
+  apollo_min_buffer: 2000     # Stop enrichment when Apollo credits remaining <= this
+  max_error_cycles: 5         # Stop after this many consecutive all-error pipeline cycles
+
+# ---------------------------------------------------------------------------
+# Pipeline agent kill switches (P1.5 — freeze new contact ingestion)
+# When false the agent's run() exits cleanly with status 0 instead of
+# making any API calls or DB writes. Re-enable per-agent as the GTM
+# rebuild progresses (P3.5 will flip discovery.enabled back to true with
+# a NAICS-allowlist filter wired in).
+# ---------------------------------------------------------------------------
+agents:
+  discovery:
+    enabled: false
+    # P3.5 — when true, discovery rejects companies whose NAICS prefix is not
+    # in the ICP allowlist. Has no effect while discovery.enabled is false.
+    required_naics_match: true
+  enrichment:
+    enabled: false
+
+# ---------------------------------------------------------------------------
+# Batch sizes (companies processed per step per cycle)
+# Smaller = more frequent guard checks; larger = fewer API round-trips
+# ---------------------------------------------------------------------------
+batch_sizes:
+  research: 10
+  qualify: 20
+  enrich: 15
+  outreach: 10
+
+# ---------------------------------------------------------------------------
+# Sleep intervals (seconds)
+# ---------------------------------------------------------------------------
+sleep_seconds:
+  inter_step: 3       # Pause between pipeline steps within a cycle
+  inter_cycle: 10     # Pause between full pipeline cycles
+
+# ---------------------------------------------------------------------------
+# Send window
+# ---------------------------------------------------------------------------
+send_window:
+  days: [Mon, Tue, Wed, Thu, Fri]   # Days sends are allowed
+  start_hour_ct: 8                  # 8 AM CDT
+  end_hour_ct: 11                   # 11 AM CDT
+
+# ---------------------------------------------------------------------------
+# Daily send limits
+# ---------------------------------------------------------------------------
+outreach:
+  daily_send_limit: 125             # Default per-workspace daily send cap
+  # Per-reviewer 24-hour approval cap. The approve endpoint returns
+  # HTTP 429 once a reviewer hits this number (P1.4 — GTM rebuild 2026-05-08).
+  max_approvals_per_reviewer_per_day: 30
+
+# ---------------------------------------------------------------------------
+# outreach_send_config table — defaults for code fallbacks and onboarding
+# All code that touches outreach_send_config must read from here, not hardcode.
+# ---------------------------------------------------------------------------
+send_config:
+  onboarding_daily_limit: 125    # inserted into outreach_send_config at workspace creation
+  onboarding_batch_size: 25      # inserted into outreach_send_config at workspace creation
+  fallback_daily_limit: 125      # code-side fallback when the DB row is absent
+  fallback_batch_size: 25        # code-side fallback when the DB row is absent
+  fallback_min_gap_minutes: 4    # code-side fallback when the DB row is absent
+  ramp_daily_limit: 150          # _run_limit_ramp target (scheduled 2026-05-07)
+  ramp_batch_size: 25            # _run_limit_ramp target (scheduled 2026-05-07)
+
+# ---------------------------------------------------------------------------
+# Queue manager
+# ---------------------------------------------------------------------------
+queue:
+  priority_score_batch: 500      # contacts processed per update_priority_scores() call

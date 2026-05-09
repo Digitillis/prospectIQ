@@ -214,7 +214,14 @@ class EngagementAgent(BaseAgent):
         # when the queue has many old locked drafts at the front, that cap would
         # prevent newer sendable drafts further back from being reached at all.
         fetch_limit = send_limit * 5
-        drafts = (
+        # P1.3: send query MUST require both `approved_by IS NOT NULL` and
+        # `reviewed_at IS NOT NULL`. The reviewer columns are added by a
+        # migration noted as a TODO; until that migration runs, fall back to
+        # `approval_status='approved'` only and emit a single warning so the
+        # gap is visible in logs.
+        # TODO: run migration adding outreach_drafts.approved_by (UUID FK to users)
+        # TODO: run migration adding outreach_drafts.reviewed_at (TIMESTAMPTZ)
+        _draft_query = (
             self.db.client.table("outreach_drafts")
             .select("id, company_id, contact_id, channel, sequence_name, sequence_step, subject, body, edited_body, workspace_id, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
             .eq("approval_status", "approved")
@@ -222,11 +229,35 @@ class EngagementAgent(BaseAgent):
             .eq("channel", "email")
             .not_.is_("subject", "null")
             .neq("subject", "")
-            .order("created_at")
-            .limit(fetch_limit)
-            .execute()
-            .data
         )
+        try:
+            # Require explicit human attestation: both reviewer fields populated
+            _strict_query = (
+                _draft_query.not_.is_("approved_by", "null").not_.is_("reviewed_at", "null")
+                .order("created_at")
+                .limit(fetch_limit)
+            )
+            drafts = _strict_query.execute().data
+            if not getattr(self, "_logged_strict_send_filter", False):
+                logger.info(
+                    "Send query enforcing approved_by IS NOT NULL AND reviewed_at IS NOT NULL"
+                )
+                self._logged_strict_send_filter = True
+        except Exception as exc:
+            # Migration not yet applied — column doesn't exist. Log once and
+            # fall back to approval_status='approved' only (still a hard gate;
+            # no auto-approve job runs anymore).
+            if not getattr(self, "_logged_send_filter_fallback", False):
+                logger.warning(
+                    "outreach_drafts.approved_by/reviewed_at columns not present (%s) — "
+                    "falling back to approval_status='approved' filter only. "
+                    "Run the reviewer-columns migration to enable strict gate.",
+                    exc,
+                )
+                self._logged_send_filter_fallback = True
+            drafts = (
+                _draft_query.order("created_at").limit(fetch_limit).execute().data
+            )
 
         if not drafts:
             console.print("[yellow]No approved email drafts to send.[/yellow]")

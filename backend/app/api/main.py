@@ -966,41 +966,29 @@ def _run_research() -> None:
 
 
 def _auto_approve_workspace(ws: dict) -> None:
-    from backend.app.core.database import get_supabase_client
-    client = get_supabase_client()
-    ws_id = ws["id"]
-    ws_settings = ws.get("settings") or {}
-    pqs_threshold = int(ws_settings.get("auto_approve_pqs_threshold", 70))
+    """DISABLED (P1.3 — GTM rebuild 2026-05-08).
 
-    rows = (
-        client.table("outreach_drafts")
-        .select("id, company_id, companies(pqs_total)")
-        .eq("approval_status", "pending")
-        .is_("sent_at", "null")
-        .eq("workspace_id", ws_id)
-        .limit(200)
-        .execute()
-        .data or []
+    Auto-approval based on a PQS threshold is the rubber stamp that allowed
+    low-quality drafts (URLs in step 1, fabricated benchmarks, wrong-function
+    contacts) to slip past the approval queue and into the send pipeline.
+
+    All drafts now require explicit human approval via /api/approvals/{id}/approve
+    with a reviewer attestation (P2.2). This function is a no-op kept for
+    backwards compatibility with any caller still importing it.
+    """
+    logger.info(
+        "Auto-approve disabled (P1.3 — GTM rebuild). Workspace %s: no drafts auto-approved.",
+        ws.get("name") or ws.get("id"),
     )
-
-    approved = 0
-    for r in rows:
-        pqs = (r.get("companies") or {}).get("pqs_total") or 0
-        if pqs >= pqs_threshold:
-            client.table("outreach_drafts").update({"approval_status": "approved"}).eq("id", r["id"]).execute()
-            approved += 1
-
-    if approved:
-        logger.info("Auto-approve [%s]: approved %d drafts (PQS >= %d)", ws["name"], approved, pqs_threshold)
 
 
 def _run_auto_approve() -> None:
-    """Auto-approve high-PQS pending drafts across all active workspaces."""
-    try:
-        from backend.app.core.workspace_scheduler import for_each_workspace
-        for_each_workspace(_auto_approve_workspace, "auto_approve")
-    except Exception as e:
-        logger.error(f"Auto-approve failed: {e}", exc_info=True)
+    """DISABLED (P1.3 — GTM rebuild 2026-05-08).
+
+    Kept as a no-op so any external scheduler entry referencing this id by
+    mistake does not error. The cron registration has been removed.
+    """
+    logger.info("Auto-approve cron is disabled (P1.3 — GTM rebuild).")
 
 
 def _run_limit_ramp() -> None:
@@ -2005,14 +1993,16 @@ async def lifespan(app: FastAPI):
         # scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
         # Pipeline monitor email disabled 2026-05-07 — replaced by daily_report.
         # scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
-        # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
-        # Runs hourly Mon-Fri during business hours so drafts are ready for morning send
-        scheduler.add_job(
-            _run_auto_approve, "cron",
-            day_of_week="mon-fri", hour="7-18", minute=0,
-            timezone="America/Chicago",
-            id="auto_approve",
-        )
+        # Auto-approve: DISABLED 2026-05-08 (P1.3 — GTM rebuild).
+        # Auto-approval based on PQS threshold was the rubber stamp that let
+        # low-quality drafts reach the send pipeline. All drafts now require
+        # explicit human approval with a reviewer attestation (P2.2).
+        # scheduler.add_job(
+        #     _run_auto_approve, "cron",
+        #     day_of_week="mon-fri", hour="7-18", minute=0,
+        #     timezone="America/Chicago",
+        #     id="auto_approve",
+        # )
         # Limit ramp job removed 2026-05-03 — daily_limit set to 500 directly in outreach_send_config.
         # Pipeline advance heartbeat: PAUSED 2026-05-07 — GTM assessment in progress.
         # This triggers discovery; paused alongside research/enrichment/discovery.

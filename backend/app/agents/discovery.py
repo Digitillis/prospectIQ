@@ -243,6 +243,19 @@ class DiscoveryAgent(BaseAgent):
             AgentResult with processing stats.
         """
         result = AgentResult()
+
+        # P1.5 — kill switch: when disabled, exit cleanly without doing any
+        # API calls or DB writes. Logs a structured event so the freeze is
+        # visible in monitoring.
+        from backend.app.core.limits import L
+        if not L.discovery_enabled:
+            logger.info(
+                {"event": "agent_disabled_via_config", "agent": "discovery"}
+            )
+            console.print("[yellow]discovery: disabled via config — exiting cleanly[/yellow]")
+            result.success = True
+            return result
+
         icp = get_icp_config()
 
         # Validate ICP config against GTM ground truth — exits on hard errors

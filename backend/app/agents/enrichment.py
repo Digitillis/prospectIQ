@@ -75,6 +75,17 @@ class EnrichmentAgent(BaseAgent):
         """
         result = AgentResult()
 
+        # P1.5 — kill switch: when disabled, exit cleanly without spending
+        # Apollo credits or writing any contact rows.
+        from backend.app.core.limits import L
+        if not L.enrichment_enabled:
+            logger.info(
+                {"event": "agent_disabled_via_config", "agent": "enrichment"}
+            )
+            console.print("[yellow]enrichment: disabled via config — exiting cleanly[/yellow]")
+            result.success = True
+            return result
+
         # Apollo credit guard — halt before the batch if buffer is low
         workspace_id = getattr(self.db, "workspace_id", None)
         from backend.app.core.workspace_scheduler import apollo_credits_ok
