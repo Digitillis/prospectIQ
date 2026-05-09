@@ -108,7 +108,7 @@ send_config:
 # Notifications — reply SLA and owner routing
 # ---------------------------------------------------------------------------
 notifications:
-  workspace_owner_email: "avi@digitillis.com"
+  workspace_owner_email: "avi@digitillis.io"
   reply_sla_hours: 24          # Max hours before a genuine reply must be actioned
   notify_on_positive: true     # Fire email to owner on positive reply classification
   notify_on_question: true     # Fire email to owner on question reply classification
