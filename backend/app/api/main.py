@@ -1470,6 +1470,24 @@ def _run_weekly_post_send_audit() -> None:
         logger.error(f"Scheduled post-send audit failed: {e}", exc_info=True)
 
 
+def _run_weekly_approval_audit() -> None:
+    """Friday 09:00 CT job (P2.4): sample 20 approvals from the prior week,
+    run BenchmarkDetector, and write a JSON report to data/exports/.
+    """
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _audit_workspace(ws: dict) -> None:
+            from backend.app.agents.post_send_audit import PostSendAuditAgent
+            PostSendAuditAgent(workspace_id=ws["id"]).audit_approvals(
+                sample_size=20, window_days=7,
+            )
+
+        for_each_workspace(_audit_workspace, "approval_audit")
+    except Exception as e:
+        logger.error(f"Scheduled approval audit failed: {e}", exc_info=True)
+
+
 def _run_weekly_contact_backup() -> None:
     """Saturday 5am job: export all contact profiles to local JSON backup."""
     try:
@@ -2021,6 +2039,15 @@ async def lifespan(app: FastAPI):
             day_of_week="sun", hour=7, minute=0,
             timezone="America/Chicago",
             id="weekly_post_send_audit",
+        )
+        # Weekly approval audit (P2.4 — GTM rebuild): Friday 9am Chicago
+        # Samples 20 approved drafts from the prior 7 days and runs them
+        # through the benchmark detector.
+        scheduler.add_job(
+            _run_weekly_approval_audit, "cron",
+            day_of_week="fri", hour=9, minute=0,
+            timezone="America/Chicago",
+            id="weekly_approval_audit",
         )
         # Weekly contact backup: Saturday 5am Chicago → /Volumes/Digitillis/Data/prospectiq_backups/
         scheduler.add_job(
