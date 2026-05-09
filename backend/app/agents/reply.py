@@ -292,6 +292,15 @@ class ReplyAgent(BaseAgent):
                         workspace_email=L.workspace_owner_email,
                     ))
 
+                # A/B tracker — record reply event (non-blocking)
+                try:
+                    from backend.app.analytics.ab_tracker import ABTracker
+                    _cid = str(contact_id).replace("-", "")
+                    ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
+                    ABTracker(self.db).record_reply(contact_id=contact_id, variant=ab_variant)
+                except Exception:
+                    pass  # A/B tracking is non-blocking
+
                 console.print(f"  [green]{company_name}: POSITIVE reply -- response draft created, status -> engaged, owner notified[/green]")
 
             elif classification == "question":
@@ -317,6 +326,15 @@ class ReplyAgent(BaseAgent):
                         reply_preview=reply_body,
                         workspace_email=L.workspace_owner_email,
                     ))
+
+                # A/B tracker — record reply event (non-blocking)
+                try:
+                    from backend.app.analytics.ab_tracker import ABTracker
+                    _cid = str(contact_id).replace("-", "")
+                    ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
+                    ABTracker(self.db).record_reply(contact_id=contact_id, variant=ab_variant)
+                except Exception:
+                    pass  # A/B tracking is non-blocking
 
                 console.print(f"  [blue]{company_name}: QUESTION reply -- answer draft created, owner notified[/blue]")
 
