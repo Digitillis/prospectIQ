@@ -35,10 +35,6 @@ TIER_1_REQUIRES_DUAL_REVIEW: bool = True
 # When the migration hasn't run yet, the code below logs a single warning and
 # proceeds without writing those fields, so the API stays functional.
 # TODO: run migration adding outreach_drafts.approved_by (UUID, FK to users)
-# TODO: run migration adding outreach_drafts.reviewed_at (TIMESTAMPTZ)
-# TODO: run migration adding outreach_drafts.attestation (JSONB)
-# TODO: run migration extending approval_status enum: 'pending_second_review'
-
 # Required attestation keys — every one must be True for an approval to proceed.
 _REQUIRED_ATTESTATION_KEYS: tuple[str, ...] = (
     "numeric_claims_attributed",
@@ -443,7 +439,7 @@ async def approve_draft(
     is_tier_1 = (
         str(company_tier_raw) == "1"
         or company_tier_raw == 1
-        or str(company_tier_raw).lower() in {"t1", "tier1", "tier-1", "tier_1"}
+        or str(company_tier_raw).lower() in {"t1", "tier1", "tier-1", "tier_1", "mfg1"}
     )
     existing_approver = current_row.get("approved_by") or None
     existing_status = current_row.get("approval_status") or "pending"

@@ -152,11 +152,13 @@ _PERSONA_TYPE_TO_CLASSIFICATION: dict[str, str | None] = {
     "vp_quality_food_safety":       "vp_quality",
     "director_quality_food_safety": "director_quality",
     "vp_food_safety":               "vp_quality",
+    # maintenance_leader is in the allowlist: for PdM / furnace reliability
+    # pitch, the Reliability/Maintenance Manager is often the first buyer.
+    "maintenance_leader":           "director_manufacturing",
     # Roles below are intentionally NOT in the allowlist — they map to None
     # so is_eligible() will reject them even though they used to score above 0.
     "regulatory_affairs_director":  None,
     "compliance_manager_fb":        None,
-    "maintenance_leader":           None,
     "digital_transformation":       None,
     "cio":                          None,
 }

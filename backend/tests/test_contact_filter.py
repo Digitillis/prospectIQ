@@ -123,8 +123,9 @@ def test_persona_type_to_classification_mapping() -> None:
     assert normalize_persona_classification("plant_manager") == "plant_manager"
     assert normalize_persona_classification("coo") == "coo"
 
-    # Roles previously soft-scored that must now fall outside the allowlist
-    assert normalize_persona_classification("maintenance_leader") is None
+    # maintenance_leader is allowed (PdM / furnace reliability buyer)
+    assert normalize_persona_classification("maintenance_leader") == "director_manufacturing"
+    # Other soft-scored roles that remain outside the allowlist
     assert normalize_persona_classification("digital_transformation") is None
     assert normalize_persona_classification("cio") is None
     assert normalize_persona_classification(None) is None
@@ -132,8 +133,10 @@ def test_persona_type_to_classification_mapping() -> None:
 
 def test_eligible_via_legacy_persona_type_only() -> None:
     """A contact with only the legacy `persona_type` field must still gate correctly."""
-    allowed = {"persona_type": "vp_ops"}            # → vp_operations (allow)
-    blocked = {"persona_type": "maintenance_leader"} # → None (block)
+    allowed_ops = {"persona_type": "vp_ops"}            # → vp_operations (allow)
+    allowed_maint = {"persona_type": "maintenance_leader"}  # → director_manufacturing (allow)
+    blocked = {"persona_type": "cio"}                   # → None (block)
 
-    assert is_eligible(allowed) is True
+    assert is_eligible(allowed_ops) is True
+    assert is_eligible(allowed_maint) is True
     assert is_eligible(blocked) is False
