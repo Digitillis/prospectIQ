@@ -220,6 +220,28 @@ def is_eligible(contact: dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Manufacturer-only structural filter (P3.2)
+# ---------------------------------------------------------------------------
+
+def is_manufacturer_company(company: dict | None) -> bool:
+    """Return True only when the company.tier is set and is not 'non_mfg'.
+
+    Used as a hard structural gate everywhere outreach is generated. This
+    duplicates the SQL-level `WHERE tier IS NOT NULL AND tier != 'non_mfg'`
+    so the in-process pipeline cannot accidentally route to a non-manufacturer
+    if a stale row sneaks through.
+    """
+    if not company:
+        return False
+    tier = company.get("tier")
+    if tier is None or tier == "":
+        return False
+    if str(tier).lower() == "non_mfg":
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Core classification
 # ---------------------------------------------------------------------------
 

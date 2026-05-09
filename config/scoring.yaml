@@ -569,3 +569,26 @@ thresholds:
 # Set to 0: People API search doesn't return revenue/employee data,
 # so discovered companies start at PQS=0. Research fills in the gaps.
 min_firmographic_for_research: 0
+
+# ---------------------------------------------------------------------------
+# Signal evidence policy (P3.3 — GTM rebuild 2026-05-08)
+#
+# Caps the contribution of any signal that lacks a verifiable evidence URL.
+# Applied at score-computation time in intent_engine.compute_company_intent_score.
+# A signal whose evidence_url is null OR whose evidence_type is not in the
+# acceptable list is capped at `unevidenced_cap` regardless of its raw weight.
+#
+# Acceptable evidence types are determined by the source field on the signal
+# record (e.g. company_intent_signals.source) and by URL-pattern detection
+# in confidence_engine.classify_evidence_url().
+# ---------------------------------------------------------------------------
+signal_evidence_policy:
+  required_above_score: 0.50
+  unevidenced_cap: 0.30
+  acceptable_evidence_types:
+    - press_release
+    - sec_filing
+    - job_posting
+    - news_article
+    - company_blog
+    - regulatory_filing

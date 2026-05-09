@@ -78,17 +78,23 @@ class Database:
         limit: int = 100,
         offset: int = 0,
         oec_only: bool = False,
+        manufacturer_only: bool = True,
     ) -> list[dict]:
         """Query companies with optional filters.
 
         When oec_only=True, only returns companies that have at least one contact
         in outbound_eligible_contacts, ordered by pqs_total desc. Uses a Python-side
         join to avoid large IN-clause URL limits in PostgREST.
+
+        manufacturer_only (P3.2): when True (default for outreach paths), the
+        query rejects companies with tier IS NULL or tier='non_mfg'. Callers that
+        need raw access (admin, audit) can pass manufacturer_only=False.
         """
         if oec_only:
             return self._get_companies_oec_filtered(
                 status=status, tier=tier, tiers=tiers,
                 min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+                manufacturer_only=manufacturer_only,
             )
         query = self._filter_ws(self.client.table("companies").select("*"))
         if status:
@@ -103,6 +109,9 @@ class Database:
             query = query.eq("batch_id", batch_id)
         if search:
             query = query.ilike("name", f"%{search}%")
+        if manufacturer_only:
+            # Hard structural filter — tier must exist and not equal 'non_mfg'
+            query = query.not_.is_("tier", "null").neq("tier", "non_mfg")
         query = query.order("pqs_total", desc=True).range(offset, offset + limit - 1)
         return query.execute().data
 
@@ -114,6 +123,7 @@ class Database:
         min_pqs: int | None,
         batch_id: str | None,
         limit: int,
+        manufacturer_only: bool = True,
     ) -> list[dict]:
         """Return up to `limit` companies that have an eligible contact, ordered by PQS.
 
@@ -125,6 +135,7 @@ class Database:
             return self.get_companies(
                 status=status, tier=tier, tiers=tiers,
                 min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+                manufacturer_only=manufacturer_only,
             )
 
         oec_ids: set[str] = set()
@@ -148,6 +159,7 @@ class Database:
             return self.get_companies(
                 status=status, tier=tier, tiers=tiers,
                 min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+                manufacturer_only=manufacturer_only,
             )
 
         # Scan companies in PQS order, collecting those present in OEC.
@@ -168,6 +180,9 @@ class Database:
                 query = query.gte("pqs_total", min_pqs)
             if batch_id:
                 query = query.eq("batch_id", batch_id)
+            if manufacturer_only:
+                # P3.2 — structural manufacturer-only filter
+                query = query.not_.is_("tier", "null").neq("tier", "non_mfg")
             page = (
                 query.order("pqs_total", desc=True)
                 .range(fetch_offset, fetch_offset + fetch_size - 1)

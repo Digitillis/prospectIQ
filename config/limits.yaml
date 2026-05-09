@@ -41,15 +41,18 @@ pipeline:
 # ---------------------------------------------------------------------------
 # Pipeline agent kill switches (P1.5 — freeze new contact ingestion)
 # When false the agent's run() exits cleanly with status 0 instead of
-# making any API calls or DB writes. Re-enable per-agent as the GTM
-# rebuild progresses (P3.5 will flip discovery.enabled back to true with
-# a NAICS-allowlist filter wired in).
+# making any API calls or DB writes.
+#
+# P3.5 — GTM rebuild 2026-05-08: discovery flipped back on, gated by
+# required_naics_match. Enrichment stays frozen until the NAICS-tightened
+# discovery has populated the pipeline with companies that match the new
+# allowlist (otherwise we burn Apollo credits on still-broad data).
 # ---------------------------------------------------------------------------
 agents:
   discovery:
-    enabled: false
-    # P3.5 — when true, discovery rejects companies whose NAICS prefix is not
-    # in the ICP allowlist. Has no effect while discovery.enabled is false.
+    enabled: true
+    # When true, discovery rejects companies whose NAICS prefix is not in
+    # the ICP allowlist (icp.yaml -> company_filters.industries[*].naics_prefix).
     required_naics_match: true
   enrichment:
     enabled: false

@@ -34,136 +34,17 @@ target_market:
 company_filters:
   industries:
     # ================================================================
-    # PRIMARY VERTICAL — Discrete Manufacturing
-    # NAICS 332–336, 339, 3364
-    # Value prop: PdM, OEE, equipment health, anomaly detection
+    # P3.4 — TIGHTENED ICP (GTM rebuild 2026-05-08).
+    # The ICP is now restricted to NAICS prefixes where Digitillis has a
+    # demonstrated operational wedge. Broad 333 (machinery), 334
+    # (electronics), 335 (electrical), 336 (auto), 326 (plastics), 327
+    # (non-metallic mineral), 331 (primary metals), 322 (paper),
+    # 325 (chemicals — full breadth), 211/212/221/324/3254 (energy/util/
+    # pharma), 311/3114/3115*/3117*/3119*-bakery legacy entries are removed
+    # below. Only the listed prefixes remain ICP for cold outreach.
     # ================================================================
-    - naics_prefix: "333"
-      tier: "mfg1"
-      label: "Industrial Machinery & Heavy Equipment"
-      apollo_industry: "machinery"
-      priority: "primary"
-      segment: 1
 
-    - naics_prefix: "332"
-      tier: "mfg2"
-      label: "Metal Fabrication & Precision Machining"
-      apollo_industry: "fabricated metal products"
-      priority: "primary"
-      segment: 1
-
-    - naics_prefix: "336"
-      tier: "mfg3"
-      label: "Automotive Parts & Transportation Equipment"
-      apollo_industry: "automotive"
-      priority: "primary"
-      segment: 1
-
-    - naics_prefix: "335"
-      tier: "mfg4"
-      label: "Electrical Equipment & Components"
-      apollo_industry: "electrical/electronic manufacturing"
-      priority: "primary"
-      segment: 1
-
-    - naics_prefix: "334"
-      tier: "mfg5"
-      label: "Computer & Electronic Manufacturing"
-      apollo_industry: "semiconductors"
-      priority: "primary"
-      segment: 1
-
-    - naics_prefix: "3364"
-      tier: "mfg6"
-      label: "Aerospace & Defense Manufacturing"
-      apollo_industry: "aviation & aerospace"
-      priority: "primary"
-      segment: 4   # watch-list — vendor qualification wall, not in tier_run_order
-
-    - naics_prefix: "331"
-      tier: "mfg7"
-      label: "Primary Metals — Steel, Aluminum, Foundry"
-      apollo_industry: "metals"
-      priority: "primary"
-      segment: 2
-
-    - naics_prefix: "326"
-      tier: "mfg8"
-      label: "Plastics & Rubber Manufacturing"
-      apollo_industry: "plastics"
-      priority: "primary"
-      segment: 1
-
-    # ================================================================
-    # PRIMARY VERTICAL — Process Manufacturing
-    # NAICS 211, 212, 221, 324, 325, 322, 3254
-    # Value prop: asset reliability, process uptime, safety compliance
-    # ================================================================
-    - naics_prefix: "325"
-      tier: "pmfg1"
-      label: "Chemical Manufacturing"
-      apollo_industry: "chemicals"
-      priority: "primary"
-      segment: 2
-
-    - naics_prefix: "211"
-      tier: "pmfg2"
-      label: "Oil & Gas Extraction"
-      apollo_industry: "oil & energy"
-      priority: "primary"
-      segment: 4   # watch-list — enterprise procurement, safety reg complexity
-
-    - naics_prefix: "324"
-      tier: "pmfg3"
-      label: "Petroleum Refining & Coal Products"
-      apollo_industry: "oil & energy"
-      priority: "primary"
-      segment: 2
-
-    - naics_prefix: "212"
-      tier: "pmfg4"
-      label: "Mining & Quarrying"
-      apollo_industry: "mining & metals"
-      priority: "primary"
-      segment: 2   # active but lower volume
-
-    - naics_prefix: "221"
-      tier: "pmfg5"
-      label: "Utilities — Power Generation & Water"
-      apollo_industry: "utilities"
-      priority: "primary"
-      segment: 4   # watch-list — regulated monopolies, govt procurement
-
-    - naics_prefix: "3254"
-      tier: "pmfg6"
-      label: "Pharmaceutical & Biotech Manufacturing"
-      apollo_industry: "pharmaceuticals"
-      priority: "primary"
-      segment: 4   # watch-list — 21 CFR Part 11, vendor qualification wall
-
-    - naics_prefix: "322"
-      tier: "pmfg7"
-      label: "Paper & Pulp Manufacturing"
-      apollo_industry: "paper & forest products"
-      priority: "primary"
-      segment: 2   # activated — large continuous-process plants, high downtime cost
-
-    - naics_prefix: "327"
-      tier: "pmfg8"
-      label: "Non-Metallic Mineral Products — Cement, Glass, Ceramics"
-      apollo_industry: "glass, ceramics & concrete"
-      priority: "primary"
-      segment: 2   # activated — kilns/crushers, 24/7 ops, expensive downtime
-
-    # ================================================================
-    # F&B FSMA 204 VERTICAL — Co-Primary (Segment 2)
-    # NAICS 311–312 + sub-codes
-    # Revenue: $50M–$500M (lower floor than mfg — asset intensity justifies)
-    # Door-opener: FSMA 204 compliance enforcement is LIVE (deadline passed Jan 20 2026)
-    # Two-touch cold outreach: VP Ops (Contact 1) + VP Food Safety (Contact 2) simultaneously
-    # Ranked by FTL exposure + asset intensity:
-    #   Dairy > Seafood > Produce > Meat > Beverage > General > Bakery
-    # ================================================================
+    # ----- F&B FSMA 204 (NAICS 3115–3119, 312) ----------------------
     - naics_prefix: "3115"
       tier: "fb_dairy"
       label: "Dairy Processing — Yogurt, Cheese, Fluid Milk, Cream"
@@ -173,29 +54,7 @@ company_filters:
       revenue: {min: 50000000, max: 500000000}
       tranche_map: {T1: [50000000, 150000000], T2: [150000000, 500000000]}
       campaign_cluster: "fsma_dairy"
-      fsma_exposure: "high"    # Soft cheeses, ricotta, queso fresco on FTL
-
-    - naics_prefix: "3117"
-      tier: "fb_seafood"
-      label: "Seafood Processing — Finfish, Crustaceans, Mollusks"
-      apollo_industry: "food production"
-      priority: "primary"
-      segment: 2
-      revenue: {min: 50000000, max: 300000000}
-      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
-      campaign_cluster: "fsma_seafood"
-      fsma_exposure: "high"    # Finfish + crustaceans directly on FTL
-
-    - naics_prefix: "3114"
-      tier: "fb_produce"
-      label: "Fruit, Vegetable & Fresh-Cut Produce Processing"
-      apollo_industry: "food production"
-      priority: "primary"
-      segment: 2
-      revenue: {min: 50000000, max: 300000000}
-      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
-      campaign_cluster: "fsma_produce"
-      fsma_exposure: "high"    # Leafy greens, peppers, sprouts, herbs, melons on FTL
+      fsma_exposure: "high"
 
     - naics_prefix: "3116"
       tier: "fb_meat"
@@ -208,6 +67,39 @@ company_filters:
       campaign_cluster: "fsma_meat"
       fsma_exposure: "high"
 
+    - naics_prefix: "3117"
+      tier: "fb_seafood"
+      label: "Seafood Processing — Finfish, Crustaceans, Mollusks"
+      apollo_industry: "food production"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 300000000}
+      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
+      campaign_cluster: "fsma_seafood"
+      fsma_exposure: "high"
+
+    - naics_prefix: "3118"
+      tier: "fb_bakery"
+      label: "Bakeries & Tortillas"
+      apollo_industry: "food production"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 300000000}
+      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
+      campaign_cluster: "fsma_bakery"
+      fsma_exposure: "medium"
+
+    - naics_prefix: "3119"
+      tier: "fb_food_general"
+      label: "Other Food Manufacturing — Specialty, Nut Butters, Condiments"
+      apollo_industry: "food production"
+      priority: "primary"
+      segment: 2
+      revenue: {min: 50000000, max: 500000000}
+      tranche_map: {T1: [50000000, 150000000], T2: [150000000, 500000000]}
+      campaign_cluster: "fsma_food"
+      fsma_exposure: "medium"
+
     - naics_prefix: "312"
       tier: "fb_bev"
       label: "Beverage Manufacturing — Juice, RTD, Aseptic, Energy"
@@ -217,29 +109,41 @@ company_filters:
       revenue: {min: 50000000, max: 500000000}
       tranche_map: {T1: [50000000, 150000000], T2: [150000000, 500000000]}
       campaign_cluster: "fsma_beverage"
-      fsma_exposure: "medium"  # Aseptic/juice less FTL exposure; OEE is primary wedge
+      fsma_exposure: "medium"
 
-    - naics_prefix: "311"
-      tier: "fb_food_general"
-      label: "Food Manufacturing — General (nut butters, condiments, canned)"
-      apollo_industry: "food production"
+    # ----- Fabricated metal where heat treat / coatings apply (332) -
+    - naics_prefix: "332"
+      tier: "mfg2"
+      label: "Fabricated Metal Products (heat treat / coatings focus)"
+      apollo_industry: "fabricated metal products"
       priority: "primary"
-      segment: 2
-      revenue: {min: 50000000, max: 500000000}
-      tranche_map: {T1: [50000000, 150000000], T2: [150000000, 500000000]}
-      campaign_cluster: "fsma_food"
-      fsma_exposure: "medium"  # Nut butters on FTL; general 311 varies
+      segment: 1
 
-    - naics_prefix: "3119"
-      tier: "fb_bakery"
-      label: "Bakery, Snack & Specialty Food"
-      apollo_industry: "food & beverages"
-      priority: "secondary"
-      segment: 2
-      revenue: {min: 50000000, max: 300000000}
-      tranche_map: {T1: [50000000, 100000000], T2: [100000000, 300000000]}
-      campaign_cluster: "fsma_bakery"
-      fsma_exposure: "low"     # Allergen changeover is the wedge, not FTL
+    # ----- Coating, Engraving, Heat Treating (3328) ------------------
+    - naics_prefix: "3328"
+      tier: "mfg2"
+      label: "Coating, Engraving, Heat Treating & Allied Activities"
+      apollo_industry: "industrial automation"
+      priority: "primary"
+      segment: 1
+      campaign_cluster: "coatings"
+
+    # ----- Semiconductors WITH explicit furnace operations (3344) ---
+    # Note: only a subset of 3344 firms run thermal/furnace processes
+    # (epitaxy, diffusion, oxidation, anneal). Discovery should pair
+    # this prefix with explicit furnace keywords before qualifying.
+    - naics_prefix: "3344"
+      tier: "mfg5"
+      label: "Semiconductor & Other Electronic Components — Furnace Ops Only"
+      apollo_industry: "semiconductors"
+      priority: "primary"
+      segment: 1
+      campaign_cluster: "semi_furnace"
+      qualification_notes: >
+        Only qualify when company description, equipment list, or job
+        postings reference furnace operations: epitaxy, diffusion, anneal,
+        oxidation, RTP, thermal CVD. Plain assembly / packaging shops in
+        3344 are out of ICP.
 
   revenue:
     min: 75000000     # $75M minimum — lowered to capture mid-market manufacturers
