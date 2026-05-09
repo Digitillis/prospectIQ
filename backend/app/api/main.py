@@ -1912,6 +1912,28 @@ def _run_auto_action_low_priority() -> None:
         logger.error(f"Scheduled auto_action_low_priority failed: {e}")
 
 
+def _run_bounce_hygiene() -> None:
+    """Daily 3am job: reconcile bounced drafts to contact + DNC suppression."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _hygiene_workspace(ws: dict) -> None:
+            from backend.app.agents.bounce_hygiene import BounceHygieneAgent
+            summary = BounceHygieneAgent(workspace_id=ws["id"]).run()
+            logger.info(
+                "Bounce hygiene [%s]: contacts=%d domains=%d already=%d errors=%d",
+                ws.get("name", ws["id"]),
+                summary.get("contacts_suppressed", 0),
+                summary.get("domains_suppressed", 0),
+                summary.get("already_suppressed", 0),
+                len(summary.get("errors") or []),
+            )
+
+        for_each_workspace(_hygiene_workspace, "bounce_hygiene")
+    except Exception as e:
+        logger.error(f"Scheduled bounce hygiene failed: {e}", exc_info=True)
+
+
 def _validate_scheduler_signatures() -> None:
     """Crash at startup if any scheduler→agent kwarg is wrong.
 
@@ -2111,6 +2133,15 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="intent_refresh",
         )
+        # Daily bounce hygiene: 3am Chicago — reconcile outreach_drafts.bounced_at
+        # back onto contacts.status + the do_not_contact registry so the next
+        # send cycle never re-targets a known bounce.
+        scheduler.add_job(
+            _run_bounce_hygiene, "cron",
+            hour=3, minute=0,
+            timezone="America/Chicago",
+            id="bounce_hygiene",
+        )
         # Discovery: PAUSED 2026-05-07 — GTM assessment in progress.
         # Re-enable when ready to resume top-of-funnel growth.
         # scheduler.add_job(
@@ -2194,6 +2225,7 @@ app.include_router(instantly_webhooks.router)
 app.include_router(sequences.router)
 app.include_router(sequences.v2_router)
 app.include_router(monitoring.router)
+app.include_router(monitoring.admin_router)
 app.include_router(workspaces.router)
 app.include_router(invite.router)
 app.include_router(billing.router)
