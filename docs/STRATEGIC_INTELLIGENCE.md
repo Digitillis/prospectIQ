@@ -11,9 +11,10 @@
 1. [Pipeline Status Snapshots](#pipeline-status-snapshots)
 2. [Failure Analysis](#failure-analysis)
 3. [Adversarial Strategic Redesign](#adversarial-strategic-redesign)
-4. [Architecture Decisions & Course Corrections](#architecture-decisions--course-corrections)
-5. [Signal Intelligence Backlog](#signal-intelligence-backlog)
-6. [Open Questions](#open-questions)
+4. [Constrained Pragmatic Redesign](#constrained-pragmatic-redesign)
+5. [Architecture Decisions & Course Corrections](#architecture-decisions--course-corrections)
+6. [Signal Intelligence Backlog](#signal-intelligence-backlog)
+7. [Open Questions](#open-questions)
 
 ---
 
@@ -467,6 +468,153 @@ Operate a top-50 precision list. Run founder-led outreach on the top 10 accounts
 Reserve automation for what it is actually good at: making the founder impossibly well-informed, surfacing new trigger signals as they emerge, preparing account briefings that would take a researcher a week to compile, and continuously updating the scoring model as you learn.
 
 The system should make Avanish the most operationally credible voice in the AI manufacturing intelligence market. Not the system with the highest email throughput. The most credible voice.
+
+---
+
+## Constrained Pragmatic Redesign
+
+### 2026-05-12 — Scope-Controlled Recovery Plan
+
+#### Scope-Control Warning
+
+The current codebase is approximately three engineering-months ahead of its validated GTM motion. 32 agents, 57 tables, multi-tenant workspace architecture, billing SDK, learning agent, HITL queue, AB test infrastructure — for a pipeline that has generated one reply from 1,084 sends. The bias must shift hard toward minimum viable, toward deletion, and toward buying rather than building.
+
+---
+
+#### Do Not Build Now
+
+- **Multi-tenant architecture** — workspace_scheduler, WorkspaceMiddleware, workspace credentials, billing, invite system. ProspectIQ has one workspace. This is SaaS infrastructure for a founder GTM tool.
+- **Learning agent** — one reply total. Nothing to learn from. Disable until 50+ replies.
+- **HITL queue system** — currently empty. The outreach_drafts approval workflow is sufficient.
+- **Voice of prospect, multi-thread, ghostwriting, deals, meetings routes** — CRM features. HubSpot exists.
+- **Pipeline orchestrator autonomous discovery logic** — watermark calculation, lead-time forecasting, auto-discovery triggers. Over-engineered for a precision top-50 playbook.
+- **Personalization refresh job** — burning API credits refreshing 100 companies that aren't active.
+- **Intent signal monitoring agent** — signal sources not yet integrated. Useful eventually, not now.
+- **Health snapshots every 15 minutes** — operational overhead for a tool with one user.
+- **Content archive, knowledge items, memory nodes** — not on the critical path to qualified meetings.
+- **AB test infrastructure** — no volume for meaningful tests.
+- **Reply classifier agent** — one reply. Classify manually.
+- **Post-send audit agent** — not needed at current send volume.
+
+---
+
+#### Must Build Internally
+
+Only what encodes Digitillis-specific domain intelligence that cannot be purchased:
+
+- **Manufacturing-specific research extraction** — research prompt encodes industrial domain knowledge. Fix JSON parsing (done — PR #76). Add evidence attribution.
+- **Industrial qualification scoring** — PQS model and ICP tier definitions encode Digitillis's proprietary view of manufacturer readiness.
+- **Evidence-grounded draft generation** — draft agent with retrieval constraints. Core trust-safety mechanism. Currently broken (hallucination problem). Fix before any sends resume.
+- **Email verification gate** — wire ZeroBounce as hard pre-send gate. 20-line fix.
+- **Apollo 422 input validation** — reject enrichment requests missing minimum fields before hitting API. 30-line fix.
+- **Outreach_drafts approval workflow** — already works. Keep exactly as is.
+- **Basic send/open/click/reply tracking** — already implemented. Keep.
+
+---
+
+#### Use Existing Tools Instead of Building
+
+| Function | Tool | Notes |
+|---|---|---|
+| Contact discovery | Apollo (existing) | Keep |
+| Email enrichment | Apollo (fixed) or Clay ($349/mo) | Evaluate Clay at day 30 |
+| Email verification | ZeroBounce (existing, fix gate) | ~$25/mo |
+| Email warmup | Instantly (existing) | Keep as-is |
+| Email delivery | Resend (existing) | Keep as-is |
+| Account list management | Google Sheets | Top-50 list is a judgment call, not a DB table |
+| CRM / meeting tracking | HubSpot free | Do not build this in ProspectIQ |
+| Signal monitoring | Google Alerts + Apollo signals | Free, good enough now |
+| One-off account briefings | Claude chat | No code needed for <5 accounts/week |
+
+---
+
+#### Build vs. Buy Decision Matrix
+
+| Capability | Decision | Reason |
+|---|---|---|
+| Contact discovery | Buy (Apollo) | Commodity |
+| Enrichment waterfall | Buy (Clay) or fix (Apollo) | No domain differentiation |
+| Email verification | Buy (ZeroBounce) | Commodity |
+| Email warmup | Buy (Instantly) | Commodity |
+| CRM / pipeline | Buy (HubSpot) | No GTM advantage in building |
+| Signal alerting | Buy (Google Alerts) | Commodity for basic alerting |
+| Manufacturing research extraction | Build | Digitillis domain IP |
+| Industrial qualification scoring | Build | Proprietary ICP logic |
+| Evidence-grounded draft generation | Build | Trust-safety mechanism |
+| Industrial signal ontology | Build — but not now | Long-term moat, premature today |
+
+**Rule:** build only what encodes Digitillis-specific manufacturing domain knowledge. Buy everything that is plumbing.
+
+---
+
+#### Minimum Viable ProspectIQ — Five Components Only
+
+1. Account intelligence store — `companies` table with research fields populated for top 50 accounts. Nothing else.
+2. Research agent (fixed) — runs on demand for specific accounts. Not autonomous on thousands.
+3. Evidence-constrained draft generation — draft agent receives only sourced fields from company record.
+4. Send pipeline (simple) — approved drafts via Resend, verification gate enforced, no autonomous scheduling.
+5. Basic engagement tracking — sent/opened/clicked/replied. Already implemented.
+
+---
+
+#### What Remains Manual
+
+- Account selection — top-50 list is a strategic judgment, reviewed weekly in Google Sheets
+- First touch to any account — Avanish writes or substantively rewrites every first message
+- Research briefing review — Avanish reads and validates each brief before account enters active list
+- All follow-up after engagement signals — human conversation, not sequence event
+- Qualification decisions for ambiguous accounts (PQS 40-70 range)
+
+---
+
+#### Claude Code Execution Scope — Next 30 Days Only
+
+1. Fix Apollo 422 — input validation gate before `/people/match`. ~30 lines.
+2. Wire email verification gate — `outreach_eligible = true` requires `email_status = verified`. ~20 lines.
+3. Retrieval-constrained draft generation — rewrite draft agent prompt, add plausibility checks. ~100 lines.
+4. Restart pipeline orchestrator — diagnose Railway scheduler, raise budget cap. Config change + debug.
+
+**Nothing else.** After these four, evaluate Clay before writing more enrichment code.
+
+---
+
+#### 30-Day Recovery Plan
+
+- Week 1: Merge PR #76, fix Apollo 422, fix verification gate, raise budget cap, confirm Railway scheduler
+- Week 2: Fix draft agent retrieval constraint. Run research on 7 engaged accounts. Avanish reviews and rewrites drafts. Send those 7 manually.
+- Week 3: Build top-30 list in Google Sheets. Run research on unresearched accounts in list. Review all briefings.
+- Week 4: Begin controlled sends — max 20/day, verified only. Set up HubSpot free. Track meetings booked only.
+
+#### 60-Day Stabilization Plan
+
+- Establish weekly cadence: Monday review top-50 list, Tue/Wed research, Thu draft review, Fri send batch (20-30 emails)
+- Single success metric: qualified meetings booked per week. Target 1-2.
+- Evaluate Clay if Apollo quality/reliability remains a problem
+- First retrospective: which accounts responded, what did they have in common
+
+#### 90-Day Learning Plan
+
+- Goal: answer one question — what account profile + message frame + timing produces qualified meetings?
+- Expected outputs: 3-5 qualified meetings, clear pattern on responding account archetypes, clear pattern on which message frames earned engagement
+- Design the next build phase at day 60 based on proven GTM learning — not upfront architecture
+
+---
+
+#### Risks of Overbuilding
+
+Engineering time spent on infrastructure that hasn't validated its GTM assumption. $300-400 more in API costs on a broken pipeline. Delayed learning by a full quarter. Codebase becomes harder to debug and harder to hand to a future hire. Most likely outcome: Clay + HubSpot + a good research prompt would have served better than the custom pipeline.
+
+#### Risks of Underbuilding
+
+Research quality degrades to generic GPT output. Without evidence-grounded draft fix, hallucinations reach prospects. Without verification gate, bounce rate stays above danger threshold and domains get blacklisted. Without qualification scoring, sends to non-buyers crowd out real opportunities.
+
+---
+
+#### Final Recommendation
+
+Stop. Fix four things. Run a precision list. Learn.
+
+ProspectIQ's job for the next 90 days is not to be a great system. Its job is to get Avanish in front of three qualified manufacturing decision-makers who articulate a real operational problem that Digitillis can solve. Everything else is a distraction.
 
 ---
 
