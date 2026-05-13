@@ -399,8 +399,10 @@ function SendQueueTab() {
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
-  const [pushResult, setPushResult] = useState<string | null>(null);
+  const [pushResult, setPushResult] = useState<{ text: string; ok: boolean } | null>(null);
   const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -416,22 +418,6 @@ function SendQueueTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const pushAll = async () => {
-    setPushing(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/sequences/send-approved`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-      const json = await res.json();
-      if (res.ok) {
-        setPushResult(`${json.processed ?? 0} sent, ${json.skipped ?? 0} skipped`);
-        load();
-      } else {
-        setPushResult(json.detail || "Failed");
-      }
-    } catch (e) {
-      setPushResult(e instanceof Error ? e.message : "Failed");
-    } finally { setPushing(false); setTimeout(() => setPushResult(null), 5000); }
-  };
-
   const q = search.trim().toLowerCase();
   const filtered = q
     ? drafts.filter((d) =>
@@ -442,6 +428,58 @@ function SendQueueTab() {
         (d.sequence_name ?? "").toLowerCase().includes(q)
       )
     : drafts;
+
+  const allFilteredIds = filtered.map((d) => d.id);
+  const allSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.has(id));
+  const someSelected = allFilteredIds.some((id) => selectedIds.has(id));
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        allFilteredIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => new Set([...prev, ...allFilteredIds]));
+    }
+  };
+
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectedInView = filtered.filter((d) => selectedIds.has(d.id));
+
+  const sendSelected = async () => {
+    if (selectedInView.length === 0) return;
+    setPushing(true);
+    try {
+      const ids = selectedInView.map((d) => d.id);
+      const res = await fetch(`${API_BASE}/api/sequences/send-approved`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draft_ids: ids }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setPushResult({ text: `${json.processed ?? 0} sent, ${json.skipped ?? 0} skipped`, ok: true });
+        setSelectedIds(new Set());
+        load();
+      } else {
+        setPushResult({ text: json.detail || "Failed", ok: false });
+      }
+    } catch (e) {
+      setPushResult({ text: e instanceof Error ? e.message : "Failed", ok: false });
+    } finally {
+      setPushing(false);
+      setTimeout(() => setPushResult(null), 6000);
+    }
+  };
 
   const emailStatusBadge = (status?: string | null) => {
     if (status === "verified") return <span className="ml-1 rounded px-1 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">verified</span>;
@@ -460,14 +498,25 @@ function SendQueueTab() {
           className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
         />
         <p className="shrink-0 text-xs text-gray-500 dark:text-gray-500">
-          {filtered.length}{q && filtered.length !== drafts.length ? ` of ${drafts.length}` : ""} queued
+          {someSelected
+            ? `${selectedInView.length} selected of ${filtered.length}`
+            : `${filtered.length}${q && filtered.length !== drafts.length ? ` of ${drafts.length}` : ""} queued`}
         </p>
         <div className="flex items-center gap-2">
-          {pushResult && <span className="text-xs text-gray-600 dark:text-gray-400">{pushResult}</span>}
+          {pushResult && (
+            <span className={cn("text-xs", pushResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400")}>
+              {pushResult.text}
+            </span>
+          )}
           <button onClick={load} className="rounded p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"><RefreshCw className="h-3.5 w-3.5" /></button>
-          <button onClick={pushAll} disabled={pushing || drafts.length === 0} className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50">
+          <button
+            onClick={sendSelected}
+            disabled={pushing || selectedInView.length === 0}
+            title={selectedInView.length === 0 ? "Select emails to send using the checkboxes" : `Send ${selectedInView.length} selected email${selectedInView.length !== 1 ? "s" : ""}`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             {pushing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-            Send Now
+            {selectedInView.length > 0 ? `Send ${selectedInView.length}` : "Send Now"}
           </button>
         </div>
       </div>
@@ -482,24 +531,72 @@ function SendQueueTab() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+                  <th className="w-8 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                      onChange={toggleAll}
+                      className="h-3.5 w-3.5 cursor-pointer accent-gray-700"
+                      title="Select all visible"
+                    />
+                  </th>
+                  <th className="w-6 px-2 py-2" />
                   {["Company", "Contact", "Subject", "Seq", "Step"].map((h) => (
                     <th key={h} className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {filtered.map((d) => (
-                  <tr key={d.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                    <td className="px-4 py-2 font-medium text-gray-900 dark:text-gray-100">{d.companies?.name ?? "—"}</td>
-                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                      {d.contacts?.full_name ?? "—"}
-                      {emailStatusBadge((d.contacts as { email_status?: string | null })?.email_status)}
-                    </td>
-                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400 max-w-[260px] truncate">{d.subject ?? "—"}</td>
-                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{d.sequence_name ?? "—"}</td>
-                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{d.sequence_step ?? "—"}</td>
-                  </tr>
-                ))}
+                {filtered.map((d) => {
+                  const isOpen = expandedId === d.id;
+                  const isChecked = selectedIds.has(d.id);
+                  const body = (d as { edited_body?: string; body?: string }).edited_body || d.body;
+                  return (
+                    <>
+                      <tr
+                        key={d.id}
+                        className={cn(
+                          "hover:bg-gray-50 dark:hover:bg-gray-800/50",
+                          isChecked && "bg-blue-50/60 dark:bg-blue-900/10",
+                        )}
+                      >
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleOne(d.id)}
+                            className="h-3.5 w-3.5 cursor-pointer accent-gray-700"
+                          />
+                        </td>
+                        <td
+                          className="px-2 py-2 text-gray-400 cursor-pointer"
+                          onClick={() => setExpandedId(isOpen ? null : d.id)}
+                        >
+                          {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </td>
+                        <td className="px-4 py-2 font-medium text-gray-900 dark:text-gray-100 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : d.id)}>{d.companies?.name ?? "—"}</td>
+                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : d.id)}>
+                          {d.contacts?.full_name ?? "—"}
+                          {emailStatusBadge((d.contacts as { email_status?: string | null })?.email_status)}
+                        </td>
+                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400 max-w-[260px] truncate cursor-pointer" onClick={() => setExpandedId(isOpen ? null : d.id)}>{d.subject ?? "—"}</td>
+                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : d.id)}>{d.sequence_name ?? "—"}</td>
+                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : d.id)}>{d.sequence_step ?? "—"}</td>
+                      </tr>
+                      {isOpen && (
+                        <tr key={`${d.id}-body`} className="bg-gray-50 dark:bg-gray-800/40">
+                          <td colSpan={7} className="px-6 py-4">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Subject</p>
+                            <p className="mb-3 text-xs font-medium text-gray-800 dark:text-gray-200">{d.subject}</p>
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Body</p>
+                            <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-700 dark:text-gray-300">{body ?? "—"}</p>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>
