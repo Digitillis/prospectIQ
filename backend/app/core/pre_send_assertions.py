@@ -151,7 +151,8 @@ def assert_persona_target(db: Any, contact: dict, assertion_context: str = "draf
 
 
 def assert_no_recent_company_send(db: Any, contact: dict, company: dict, days: int = COMPANY_COOLDOWN_DAYS,
-                                   assertion_context: str = "draft_gen") -> None:
+                                   assertion_context: str = "draft_gen",
+                                   current_draft_id: str | None = None) -> None:
     """No send to this company in the last N days (to same contact)."""
     company_id = company.get("id") or contact.get("company_id")
     if not company_id:
@@ -159,15 +160,18 @@ def assert_no_recent_company_send(db: Any, contact: dict, company: dict, days: i
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     try:
-        result = (
+        q = (
             db.client.table("outreach_drafts")
             .select("id,sent_at")
             .eq("contact_id", contact["id"])
             .not_.is_("sent_at", "null")
             .gte("sent_at", cutoff)
-            .limit(1)
-            .execute()
         )
+        # Exclude the draft being processed: its sent_at was set by the atomic
+        # claim before this assertion runs and must not be treated as a prior send.
+        if current_draft_id:
+            q = q.neq("id", current_draft_id)
+        result = q.limit(1).execute()
         if result.data:
             sent_at = result.data[0].get("sent_at", "")[:10]
             detail = f"Last send to {contact.get('full_name')} was {sent_at} (cooldown={days}d)"
@@ -300,6 +304,7 @@ def run_pre_send_assertions(
     cooldown_days: int = COMPANY_COOLDOWN_DAYS,
     sequence_step: int = 1,
     assertion_context: str = "draft_gen",
+    current_draft_id: str | None = None,
 ) -> None:
     """Run all pre-send invariants. Raises AssertionFailure on first violation.
 
@@ -318,7 +323,8 @@ def run_pre_send_assertions(
     assert_email_name_consistent(db, contact, assertion_context)
     assert_outreach_eligible(db, contact, assertion_context)
     assert_persona_target(db, contact, assertion_context)
-    assert_no_recent_company_send(db, contact, company, days=cooldown_days, assertion_context=assertion_context)
+    assert_no_recent_company_send(db, contact, company, days=cooldown_days, assertion_context=assertion_context,
+                                   current_draft_id=current_draft_id)
     assert_sender_under_daily_cap(db, sender_email, daily_cap, assertion_context)
     # Follow-up sequence guards
     assert_prior_step_sent(db, contact, sequence_step, assertion_context)

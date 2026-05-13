@@ -646,6 +646,7 @@ class EngagementAgent(BaseAgent):
                         cooldown_days=_cooldown,
                         sequence_step=_seq_step,
                         assertion_context="send_path",
+                        current_draft_id=_draft_id,
                     )
                 except AssertionFailure as _af:
                     _elapsed = (datetime.now(timezone.utc) - _assert_start).total_seconds()
