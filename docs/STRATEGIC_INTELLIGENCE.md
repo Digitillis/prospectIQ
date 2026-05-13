@@ -12,9 +12,10 @@
 2. [Failure Analysis](#failure-analysis)
 3. [Adversarial Strategic Redesign](#adversarial-strategic-redesign)
 4. [Constrained Pragmatic Redesign](#constrained-pragmatic-redesign)
-5. [Architecture Decisions & Course Corrections](#architecture-decisions--course-corrections)
-6. [Signal Intelligence Backlog](#signal-intelligence-backlog)
-7. [Open Questions](#open-questions)
+5. [90-Day Precision GTM Operating Model](#90-day-precision-gtm-operating-model)
+6. [Architecture Decisions & Course Corrections](#architecture-decisions--course-corrections)
+7. [Signal Intelligence Backlog](#signal-intelligence-backlog)
+8. [Open Questions](#open-questions)
 
 ---
 
@@ -615,6 +616,173 @@ Research quality degrades to generic GPT output. Without evidence-grounded draft
 Stop. Fix four things. Run a precision list. Learn.
 
 ProspectIQ's job for the next 90 days is not to be a great system. Its job is to get Avanish in front of three qualified manufacturing decision-makers who articulate a real operational problem that Digitillis can solve. Everything else is a distraction.
+
+---
+
+## 90-Day Precision GTM Operating Model
+
+### 2026-05-12 — Operating Blueprint
+
+#### Operating Philosophy
+
+ProspectIQ is a copilot, not a pilot. It prepares Avanish for conversations. It does not have conversations. Three constraints must not erode:
+
+1. **Founder bandwidth is the scarcest resource.** The system must fit inside four to six hours of focused GTM work per week.
+2. **Reputation is harder to rebuild than to protect.** Every governance decision biases toward protection over throughput.
+3. **Learning is the primary output for 90 days, not pipeline.** The goal is to identify what combination of account profile, message frame, and timing earns a qualified conversation.
+
+---
+
+#### Weekly Operating Cadence (4-5 hours/week total)
+
+| Day | Block | Time | Purpose |
+|---|---|---|---|
+| Monday | Account Intelligence Review | 30 min | Review top-50 list, check new signals, update stages |
+| Tuesday | Research and Briefing Review | 60 min | Trigger research agent on new accounts, review briefs |
+| Wednesday | Messaging Review and Approval | 90 min | Review AI drafts, make substantive edits, approve/reject (max 10 drafts) |
+| Thursday | Send and Follow-up | 30 min | Execute sends (max 20/day), handle HubSpot follow-ups |
+| Friday | Weekly Retrospective | 30 min | Update GTM Learning Log, one observation per week |
+
+---
+
+#### Account Stage Model
+
+| Stage | Description | Gate In | Gate Out |
+|---|---|---|---|
+| **Watchlist** | Identified, not researched | Any ICP match | Avanish decides worth researching |
+| **Researched** | Brief generated and reviewed | Research agent run + Avanish validates | PQS ≥ 40, verified email exists, timing signal present |
+| **Active Outreach** | On send list. Max 30 accounts. | All three gates above | Engagement signal → Engaged; full sequence no response → Dormant |
+| **Engaged** | Showed signal (click/open/reply) | Any engagement signal | Real exchange → Conversation Active |
+| **Conversation Active** | Real dialogue happening | Avanish has had an actual exchange | Stalls → Dormant; not a fit → Disqualified |
+| **Dormant** | Full sequence, no response | Active or Engaged, no response | New trigger signal → back to Researched |
+| **Disqualified** | Researched but not a fit | Human decision | N/A — log the reason |
+
+Hard cap: 30 accounts in Active Outreach at any time for the first 60 days. 50 by day 90.
+
+---
+
+#### Founder Workflow
+
+**Time budget: 4-6 hours/week. Ceiling, not floor.**
+
+Delegated to ProspectIQ: research brief generation, draft candidates, contact enrichment/verification, send execution, engagement tracking, qualification scoring.
+
+Remains fully human: account selection decisions, first-touch message ownership (substantive edit required before every approval), all post-engagement communication, weekly retrospective.
+
+**Brief consumption:** 10 minutes per account. Highlight 1-3 facts that would demonstrate operational credibility. If the brief doesn't surface anything usable in a sentence to a plant manager, flag for a follow-up research pass.
+
+**Approval rule:** Avanish must make at least one substantive edit before approving any draft. No exceptions. The edit is the quality gate.
+
+**Engagement escalation:** any reply, multiple opens, or click → immediate personal response within 24 hours → HubSpot active deal → no more automated touches.
+
+---
+
+#### ProspectIQ Role Boundaries
+
+**IS:** research generator on demand, evidence-constrained draft generator, verified contact database, send executor, engagement tracker, qualification scorer.
+
+**IS NOT:** account selector, decision maker, conversation manager, CRM, autonomous SDR, signal monitor, learning system.
+
+**System boundary in one sentence:** ProspectIQ prepares Avanish to have conversations. Everything after "a conversation begins" is human territory.
+
+---
+
+#### Tool Stack
+
+| Function | Tool |
+|---|---|
+| Account list management | Google Sheets |
+| CRM / meeting tracking | HubSpot free |
+| Signal monitoring | Google Alerts + Apollo signals |
+| Email verification | ZeroBounce (enforced gate) |
+| Email warmup | Instantly (existing) |
+| Email delivery | Resend (existing) |
+| Contact enrichment | Apollo (fixed) — evaluate Clay at day 30 |
+| One-off account briefs | Claude chat |
+| Code implementation | Claude Code |
+| Draft second opinion | ChatGPT cross-check for tier-1 accounts |
+
+---
+
+#### Messaging Governance — Non-Negotiable Rules
+
+**Trust rules:** every specific operational claim must trace to a sourced field in the company record.
+
+**Evidence hierarchy:** primary source (filings, press releases) = fact; secondary source (trade coverage, job postings) = hedged claim; inferred = context frame only, never stated as company-specific fact.
+
+**Prohibited patterns:** "We noticed you recently [unsourced event]" / reference to unconfirmed technology systems / subject lines containing "AI," "platform," or "solution" / messages over 200 words for first touch / undated trigger events (no date = likely fabricated).
+
+**Founder review rule:** substantive edit required before every approval. Cosmetic edits do not count.
+
+---
+
+#### KPI Framework — 4 Metrics Only
+
+| Metric | Definition | Target |
+|---|---|---|
+| Qualified conversations | Real dialogue with operational decision-maker about a specific problem | 0 wks 1-2 / 1/wk by wk 4 / 2/wk by wk 8 |
+| Active accounts | Accounts in Active Outreach stage | 10 by wk 2 / 20 by wk 4 / 30 by wk 6 |
+| Bounce rate | Hard bounces / sends (rolling 7-day) | Below 2% always — kill switch if exceeded |
+| Draft approval rate | Approved / total reviewed | Above 60% — below 50% signals research or prompt quality problem |
+
+Do NOT track: emails sent, open rates, click rates, pipeline volume, enrichment completion, agent runs.
+
+---
+
+#### 90-Day Blueprint
+
+**Days 1-14 — Foundation**
+- Engineering: fix Apollo 422, verification gate, evidence-constrained drafts, Railway scheduler, budget cap
+- Action: build top-30 list in Google Sheets, run research on 7 engaged accounts
+- Outreach: Avanish writes personal first touches to all 7 engaged accounts — this week, before any code changes
+- Tooling: HubSpot free set up, Google Alerts active, GTM Learning Log created
+
+**Days 15-30 — First Cadence**
+- Weekly rhythm established
+- First send wave: 10 accounts, verified only, Avanish-reviewed
+- First 10 rows in GTM Learning Log
+- Day 30 retrospective: 2 paragraphs in STRATEGIC_INTELLIGENCE.md
+
+**Days 31-45 — Controlled Expansion**
+- All 30 accounts in Researched or Active
+- Follow-up touches running alongside new first touches
+- First qualified conversation target: at least 1 by day 45
+- Monthly ICP review: one concrete update to account selection or PQS weighting
+
+**Days 46-60 — Learning and Adjustment**
+- Apply first lessons to message framing
+- Day 60 evaluation: is cadence sustainable? At least 2 qualified conversations? Expand to 50? Evaluate Clay?
+- Adjust active list based on Dormant/Disqualified patterns
+
+**Days 61-75 — Validated Motion**
+- 3-4 qualified conversations total
+- Clear picture of which account archetypes respond
+- Clear picture of which message angles work
+- Second cohort of accounts added using refined criteria
+
+**Days 76-90 — Retrospective and Planning**
+- 90-day retrospective committed to STRATEGIC_INTELLIGENCE.md
+- Next 90-day plan defined based on actual GTM data
+- 5+ qualified conversations total, at least 1 in active discovery stage
+- Engineering scope for next phase defined from validated GTM learning — not speculation
+
+---
+
+#### Anti-Patterns to Avoid
+
+1. Approving drafts without editing them
+2. Letting the account list exceed the cadence's quality capacity
+3. Treating an engaged account as a pipeline statistic — they get a personal response within 24 hours
+4. Optimizing for sends instead of conversations
+5. Building new ProspectIQ features before the day-60 retrospective
+6. Using email as the only channel — LinkedIn and community engagement run in parallel
+7. Waiting for the system to be perfect before sending to the 7 engaged accounts — send those this week
+
+---
+
+#### First Action Item
+
+Send personal, founder-written first-touch messages to all 7 engaged accounts (Waupaca Foundry, Richline Group, Precoat Metals, Friedman Industries, Westrock Coffee, AMETEK, Tsubaki) this week. Before any code changes. These accounts showed signal. They have been waiting.
 
 ---
 
