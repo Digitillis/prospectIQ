@@ -467,7 +467,7 @@ function SendQueueTab() {
           <button onClick={load} className="rounded p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"><RefreshCw className="h-3.5 w-3.5" /></button>
           <button onClick={pushAll} disabled={pushing || drafts.length === 0} className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50">
             {pushing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-            Push All to Instantly
+            Send Now
           </button>
         </div>
       </div>
