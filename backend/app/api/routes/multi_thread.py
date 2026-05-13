@@ -15,7 +15,6 @@ single-contact outreach only. Multi-thread campaigns add coordination complexity
 without enough active accounts to justify it (current cap: 30 accounts).
 Re-evaluate when active accounts consistently exceed 30 and reply rate is above 3%.
 """
-"""
 
 from __future__ import annotations
 
