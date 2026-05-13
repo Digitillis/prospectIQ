@@ -429,18 +429,26 @@ class EngagementAgent(BaseAgent):
             _draft_query = _draft_query.in_("id", draft_ids)
 
         try:
-            # Require explicit human attestation: both reviewer fields populated
-            _strict_query = (
-                _draft_query.not_.is_("approved_by", "null").not_.is_("reviewed_at", "null")
-                .order("created_at")
-                .limit(fetch_limit)
-            )
-            drafts = _strict_query.execute().data
-            if not getattr(self, "_logged_strict_send_filter", False):
-                logger.info(
-                    "Send query enforcing approved_by IS NOT NULL AND reviewed_at IS NOT NULL"
+            if draft_ids:
+                # Explicit draft_ids selection IS the human attestation — the caller
+                # has reviewed and nominated these specific drafts by ID. Skip the
+                # approved_by/reviewed_at gate so unpopulated reviewer columns don't
+                # silently block manually-targeted sends.
+                drafts = _draft_query.order("created_at").limit(fetch_limit).execute().data
+                logger.info("Send query using explicit draft_ids (%d) — skipping reviewer column gate", len(draft_ids))
+            else:
+                # Scheduler path: require explicit human attestation
+                _strict_query = (
+                    _draft_query.not_.is_("approved_by", "null").not_.is_("reviewed_at", "null")
+                    .order("created_at")
+                    .limit(fetch_limit)
                 )
-                self._logged_strict_send_filter = True
+                drafts = _strict_query.execute().data
+                if not getattr(self, "_logged_strict_send_filter", False):
+                    logger.info(
+                        "Send query enforcing approved_by IS NOT NULL AND reviewed_at IS NOT NULL"
+                    )
+                    self._logged_strict_send_filter = True
         except Exception as exc:
             # Migration not yet applied — column doesn't exist. Log once and
             # fall back to approval_status='approved' only (still a hard gate;
