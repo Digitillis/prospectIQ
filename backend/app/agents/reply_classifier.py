@@ -15,7 +15,6 @@ is reviewed by the founder directly. The classifier runs but its output is
 advisory only — no automated account state changes should result from it.
 Do not wire classification output to automatic account promotion or pipeline
 advancement without explicit founder review of each reply.
-"""
 
 Cost: ~$0.0005/reply. Output cached by reply hash to avoid double-spend.
 """
