@@ -60,7 +60,7 @@ def _log_assertion(db: Any, contact_id: str, company_id: str, assertion: str,
     try:
         db.client.table("send_assertions").insert({
             "contact_id": contact_id,
-            "company_id": company_id,
+            "company_id": company_id or None,
             "assertion": assertion,
             "passed": passed,
             "detail": detail,
