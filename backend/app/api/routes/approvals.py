@@ -119,6 +119,38 @@ async def list_sent_emails(
     return {"data": data, "count": len(data)}
 
 
+@router.get("/approved-queue")
+async def list_approved_queue(limit: int = 200):
+    """Return approved, unsent drafts in scheduler selection order (oldest first).
+
+    Powers the Send Queue tab. These are the exact drafts the scheduler will
+    pick up on the next run, in the order it will process them.
+    """
+    db = get_db()
+    try:
+        rows = (
+            db._filter_ws(
+                db.client.table("outreach_drafts")
+                .select(
+                    "id, company_id, contact_id, subject, sequence_name, sequence_step, "
+                    "channel, created_at, approval_status, "
+                    "companies(name, tier), "
+                    "contacts(full_name, email, email_status)"
+                )
+            )
+            .eq("approval_status", "approved")
+            .is_("sent_at", "null")
+            .eq("channel", "email")
+            .order("created_at")
+            .limit(limit)
+            .execute()
+        ).data or []
+    except Exception as exc:
+        logger.error("list_approved_queue failed: %s", exc)
+        rows = []
+    return {"data": rows, "count": len(rows)}
+
+
 @router.get("/")
 async def list_pending_drafts(limit: int = 100):
     """Get pending outreach drafts with company/contact info and quality scores.
