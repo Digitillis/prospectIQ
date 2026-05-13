@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from rich.console import Console
 
@@ -17,6 +18,46 @@ from backend.app.core.models import ResearchResult
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+def _extract_json(text: str) -> dict | None:
+    """Extract a JSON object from a Claude response using multiple fallback strategies.
+
+    Claude occasionally wraps output in markdown fences, adds a preamble sentence,
+    or varies the fence label (```json vs ```). This function tries four strategies
+    in order and returns the first successful parse, or None if all fail.
+    """
+    if not text:
+        return None
+
+    text = text.strip()
+
+    # Strategy 1: direct parse (already valid JSON)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 2: strip any markdown code fence, regardless of label or case
+    # Handles ```json, ```JSON, ```, ``` json, etc.
+    fence_stripped = re.sub(r"^```[a-zA-Z]*\s*\n?", "", text)
+    fence_stripped = re.sub(r"\n?```\s*$", "", fence_stripped).strip()
+    if fence_stripped != text:
+        try:
+            return json.loads(fence_stripped)
+        except json.JSONDecodeError:
+            pass
+
+    # Strategy 3: find the first {...} block spanning the full depth
+    # Handles preamble text before the JSON object
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
 
 # Sonnet for high-PQS, Haiku for low-PQS firmographic match.
 # Threshold raised to 20 (out of 30 max) so Sonnet fires only for genuinely
@@ -536,14 +577,11 @@ class ResearchAgent(BaseAgent):
                 output_tokens=usage.output_tokens,
             )
 
-            content = response.content[0].text.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
-
-            return json.loads(content)
+            content = response.content[0].text
+            parsed = _extract_json(content)
+            if parsed is None:
+                logger.error("Slim research JSON parse failed. Raw: %s", content[:300])
+            return parsed
         except json.JSONDecodeError as e:
             logger.error(f"Slim research JSON parse failed: {e}")
             return None
@@ -595,15 +633,11 @@ class ResearchAgent(BaseAgent):
             )
 
             # Parse JSON response
-            content = response.content[0].text.strip()
-            # Handle potential markdown wrapping
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
-
-            parsed = json.loads(content)
+            content = response.content[0].text
+            parsed = _extract_json(content)
+            if parsed is None:
+                logger.error("Failed to parse Claude JSON response. Raw: %s", content[:500])
+                return None
 
             # Validate against our model
             validated = ResearchResult(**parsed)
@@ -611,7 +645,6 @@ class ResearchAgent(BaseAgent):
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Claude JSON response: {e}")
-            logger.debug(f"Raw response: {content[:500]}")
             return None
         except Exception as e:
             logger.error(f"Claude research error: {e}")

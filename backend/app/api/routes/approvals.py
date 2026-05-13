@@ -3,28 +3,74 @@
 Manage outreach draft approvals and rejections.
 Approval only queues drafts — interactions and company status updates
 happen exclusively when email is actually sent via Resend.
+
+GTM rebuild (2026-05-08):
+  P1.3 — auto-approval cron disabled; this endpoint is the sole approval path
+  P1.4 — daily approval cap per reviewer (config: outreach.max_approvals_per_reviewer_per_day)
+  P2.2 — reviewer attestation checklist required on POST
+  P2.3 — tier-1 accounts require two distinct reviewers
 """
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.core.audit import log_audit_event_from_ctx
-from backend.app.core.auth import require_role
+from backend.app.core.auth import require_role, get_current_user
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/approvals", tags=["approvals"])
+
+# Tier-1 accounts require two distinct reviewers (P2.3).
+# Toggleable via config; here as a constant so behavior is auditable from code.
+TIER_1_REQUIRES_DUAL_REVIEW: bool = True
+
+# Persisted columns added by future migrations (P1.3, P2.2, P2.3, P1.4).
+# When the migration hasn't run yet, the code below logs a single warning and
+# proceeds without writing those fields, so the API stays functional.
+# TODO: run migration adding outreach_drafts.approved_by (UUID, FK to users)
+# Required attestation keys — every one must be True for an approval to proceed.
+_REQUIRED_ATTESTATION_KEYS: tuple[str, ...] = (
+    "numeric_claims_attributed",
+    "persona_in_allowlist",
+    "no_url_step_1",
+    "company_is_manufacturer",
+    "specific_opener",
+)
 
 
 def get_db() -> Database:
     return Database(workspace_id=get_workspace_id())
 
 
+def _max_approvals_per_reviewer_per_day() -> int:
+    """Read the daily reviewer cap from config at request time (not boot time)."""
+    try:
+        from backend.app.core.limits import _load
+        cfg = _load() or {}
+        outreach = cfg.get("outreach") or {}
+        return int(outreach.get("max_approvals_per_reviewer_per_day", 30))
+    except Exception:
+        return 30
+
+
+class AttestationModel(BaseModel):
+    numeric_claims_attributed: bool
+    persona_in_allowlist: bool
+    no_url_step_1: bool
+    company_is_manufacturer: bool
+    specific_opener: bool
+
+
 class ApproveRequest(BaseModel):
     edited_body: Optional[str] = None
+    attestation: Optional[AttestationModel] = None
 
 
 class RejectRequest(BaseModel):
@@ -265,6 +311,7 @@ async def list_alerts(hours: int = 24):
 @router.post("/{draft_id}/approve")
 async def approve_draft(
     draft_id: str,
+    request: Request,
     body: Optional[ApproveRequest] = None,
     _role=Depends(require_role("member")),
     force: bool = False,
@@ -276,8 +323,65 @@ async def approve_draft(
     actually sent via Resend (in the engagement agent / gtm_send).
 
     Set ?force=true to bypass the quality gate (admin use only).
+
+    The reviewer must include an `attestation` object in the body asserting:
+      numeric_claims_attributed, persona_in_allowlist, no_url_step_1,
+      company_is_manufacturer, specific_opener — all must be true (P2.2).
+
+    Tier-1 accounts require two distinct reviewers (P2.3). The first
+    approval transitions the draft to `pending_second_review`; a second
+    distinct reviewer transitions it to `approved`.
+
+    Daily approval cap per reviewer is enforced via config (P1.4).
     """
     db = get_db()
+
+    # ----- P2.2: reviewer attestation required -----
+    if not force:
+        if body is None or body.attestation is None:
+            raise HTTPException(status_code=400, detail={"error": "attestation_incomplete"})
+        att = body.attestation.model_dump()
+        for key in _REQUIRED_ATTESTATION_KEYS:
+            if not att.get(key, False):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "attestation_incomplete", "field": key},
+                )
+
+    # ----- Resolve the current reviewer's user id -----
+    reviewer_user: dict = {}
+    try:
+        reviewer_user = await get_current_user(request)
+    except Exception:
+        reviewer_user = {}
+    reviewer_id = reviewer_user.get("user_id") or ""
+
+    # ----- P1.4: daily approval cap per reviewer -----
+    if reviewer_id and not force:
+        cap = _max_approvals_per_reviewer_per_day()
+        try:
+            since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            count_q = (
+                db._filter_ws(
+                    db.client.table("outreach_drafts").select("id", count="exact")
+                )
+                .eq("approved_by", reviewer_id)
+                .gte("reviewed_at", since)
+            )
+            existing_count = count_q.execute().count or 0
+        except Exception as exc:
+            # Reviewer columns missing → cannot enforce cap. Surface a single warning.
+            logger.warning(
+                "Daily approval cap not enforced — outreach_drafts.approved_by/reviewed_at "
+                "columns unavailable (%s). Run reviewer-columns migration.",
+                exc,
+            )
+            existing_count = 0
+        if existing_count >= cap:
+            raise HTTPException(
+                status_code=429,
+                detail={"error": "daily_approval_cap_reached", "cap": cap},
+            )
 
     # Quality gate — block approval if draft has error-severity issues.
     # Run against edited_body if provided, otherwise the stored body.
@@ -315,15 +419,75 @@ async def approve_draft(
                     },
                 )
 
+    # ----- P2.3: tier-1 dual-reviewer rule -----
+    # Re-fetch the current draft + company tier and any prior approvals.
+    target_status = "approved"
+    is_tier_1 = False
+    draft_lookup = (
+        db._filter_ws(
+            db.client.table("outreach_drafts")
+            .select("id, approval_status, approved_by, companies(tier)")
+        )
+        .eq("id", draft_id)
+        .execute()
+    ).data
+    if not draft_lookup:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    current_row = draft_lookup[0]
+    company_tier_raw = (current_row.get("companies") or {}).get("tier") or ""
+    # tier may be int (1) or string ("1" or "mfg1"). Treat any of those as tier-1.
+    is_tier_1 = (
+        str(company_tier_raw) == "1"
+        or company_tier_raw == 1
+        or str(company_tier_raw).lower() in {"t1", "tier1", "tier-1", "tier_1", "mfg1"}
+    )
+    existing_approver = current_row.get("approved_by") or None
+    existing_status = current_row.get("approval_status") or "pending"
+
+    if TIER_1_REQUIRES_DUAL_REVIEW and is_tier_1 and not force:
+        if existing_status not in ("pending_second_review", "approved", "edited"):
+            # First approval → set pending_second_review
+            target_status = "pending_second_review"
+        elif existing_status == "pending_second_review":
+            if existing_approver and existing_approver == reviewer_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "tier1_requires_different_reviewer"},
+                )
+            target_status = "approved"
+
     update_data: dict = {
-        "approval_status": "approved",
+        "approval_status": target_status,
         "approved_at": datetime.now(timezone.utc).isoformat(),
     }
     if body and body.edited_body:
         update_data["edited_body"] = body.edited_body
-        update_data["approval_status"] = "edited"
+        if target_status == "approved":
+            update_data["approval_status"] = "edited"
 
-    draft = db.update_outreach_draft(draft_id, update_data)
+    # P1.3 / P2.2 — write reviewer fields and attestation. Each is wrapped in
+    # try/except because the columns are added by a TODO migration; if absent
+    # the rest of the approval still succeeds.
+    if reviewer_id:
+        update_data["approved_by"] = reviewer_id
+    update_data["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+    if body and body.attestation is not None:
+        update_data["attestation"] = body.attestation.model_dump()
+
+    try:
+        draft = db.update_outreach_draft(draft_id, update_data)
+    except Exception as exc:
+        # Likely an unknown-column error from a missing migration. Strip the
+        # new fields and retry with the legacy columns only so reviewer flow
+        # stays unblocked. Log a warning so the migration gap is visible.
+        logger.warning(
+            "Approval write hit unknown column (%s) — retrying without "
+            "reviewer/attestation fields. Run the reviewer-columns migration.",
+            exc,
+        )
+        legacy_only = {k: v for k, v in update_data.items()
+                       if k not in {"approved_by", "reviewed_at", "attestation"}}
+        draft = db.update_outreach_draft(draft_id, legacy_only)
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 

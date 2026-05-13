@@ -264,6 +264,7 @@ async def notify_reply_received(
     contact_name: str,
     reply_preview: str,
     workspace_email: str,
+    signal_context: str | None = None,
 ) -> bool:
     """Fire when the Instantly webhook delivers an email_replied event.
 
@@ -272,11 +273,21 @@ async def notify_reply_received(
         contact_name: Full name (or email) of the contact who replied.
         reply_preview: First ~300 chars of the reply body.
         workspace_email: Recipient — workspace owner's email.
+        signal_context: Optional signal_type (e.g. 'fda_warning_letter',
+            'osha_citation', 'mep_grant') that personalised the original
+            outreach. Surfaced in the notification so the reviewer knows
+            which signal triggered the reply.
 
     Returns:
         True if the email was accepted by Resend, False otherwise.
     """
     preview_safe = reply_preview[:300] if reply_preview else "(no preview available)"
+
+    signal_html = ""
+    if signal_context:
+        signal_html = _paragraph(
+            f"<strong>Signal context:</strong> {signal_context}"
+        )
 
     body = f"""
     {_heading(f"Reply from {contact_name}")}
@@ -284,6 +295,7 @@ async def notify_reply_received(
         f"<strong>{contact_name}</strong> at <strong>{company_name}</strong> "
         f"just replied to your outreach."
     )}
+    {signal_html}
     <div style="background:#f8fafc;border-left:4px solid #3b82f6;
                 padding:16px 20px;border-radius:0 6px 6px 0;margin:20px 0;">
       <p style="margin:0;font-size:14px;line-height:1.7;color:#475569;

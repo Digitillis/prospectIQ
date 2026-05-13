@@ -45,3 +45,14 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Conservative rule set focused on real bugs rather than style:
+# E9 = syntax errors, F63 = invalid not-comparisons, F7 = syntax-level
+# issues. Forward-reference string annotations and existing style debt
+# would create noise without these limits.
+select = ["E9", "F63", "F7"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-q --tb=short"

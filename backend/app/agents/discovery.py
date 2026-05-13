@@ -243,7 +243,36 @@ class DiscoveryAgent(BaseAgent):
             AgentResult with processing stats.
         """
         result = AgentResult()
+
+        # P1.5 — kill switch: when disabled, exit cleanly without doing any
+        # API calls or DB writes. Logs a structured event so the freeze is
+        # visible in monitoring.
+        from backend.app.core.limits import L
+        if not L.discovery_enabled:
+            logger.info(
+                {"event": "agent_disabled_via_config", "agent": "discovery"}
+            )
+            console.print("[yellow]discovery: disabled via config — exiting cleanly[/yellow]")
+            result.success = True
+            return result
+
         icp = get_icp_config()
+
+        # P3.5 — Build the NAICS allowlist from the ICP industries block.
+        # When `discovery.required_naics_match` is true (default), companies
+        # whose NAICS prefix does not match this allowlist are rejected at
+        # ingestion with a structured log line.
+        self._naics_allowlist = tuple(
+            sorted(
+                {
+                    str(ind.get("naics_prefix"))
+                    for ind in icp.get("company_filters", {}).get("industries", [])
+                    if ind.get("naics_prefix")
+                },
+                key=lambda p: -len(p),  # longer prefixes checked first
+            )
+        )
+        self._require_naics_match = L.discovery_required_naics_match
 
         # Validate ICP config against GTM ground truth — exits on hard errors
         validate_and_exit_on_error(icp)
@@ -325,6 +354,20 @@ class DiscoveryAgent(BaseAgent):
                         contact_data = ApolloClient.extract_contact_data(person)
 
                         if not company_data.get("name"):
+                            result.skipped += 1
+                            continue
+
+                        # P3.5 — NAICS allowlist gate. Reject companies whose
+                        # NAICS prefix is outside the ICP allowlist. Emits a
+                        # structured log event for monitoring.
+                        if self._require_naics_match and not self._naics_in_allowlist(company_data):
+                            logger.info(
+                                {
+                                    "event": "rejected_naics_not_in_allowlist",
+                                    "naics": company_data.get("naics_code"),
+                                    "company": company_data.get("name"),
+                                }
+                            )
                             result.skipped += 1
                             continue
 
@@ -480,6 +523,24 @@ class DiscoveryAgent(BaseAgent):
                         )
 
         return result
+
+    def _naics_in_allowlist(self, company_data: dict) -> bool:
+        """Return True when the company's NAICS code matches an ICP prefix.
+
+        Allowlist is built from icp.yaml at run-start. A missing NAICS code
+        is treated as a non-match (rejected) — we do not want to admit
+        companies we cannot classify.
+        """
+        if not getattr(self, "_naics_allowlist", None):
+            return True  # No allowlist configured — fail open
+
+        naics = (company_data.get("naics_code") or "").strip()
+        if not naics:
+            return False
+        for prefix in self._naics_allowlist:
+            if naics.startswith(prefix):
+                return True
+        return False
 
     def _calc_firmographic_score(
         self, company_data: dict, classification: dict, icp: dict

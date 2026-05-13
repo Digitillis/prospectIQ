@@ -966,41 +966,29 @@ def _run_research() -> None:
 
 
 def _auto_approve_workspace(ws: dict) -> None:
-    from backend.app.core.database import get_supabase_client
-    client = get_supabase_client()
-    ws_id = ws["id"]
-    ws_settings = ws.get("settings") or {}
-    pqs_threshold = int(ws_settings.get("auto_approve_pqs_threshold", 70))
+    """DISABLED (P1.3 — GTM rebuild 2026-05-08).
 
-    rows = (
-        client.table("outreach_drafts")
-        .select("id, company_id, companies(pqs_total)")
-        .eq("approval_status", "pending")
-        .is_("sent_at", "null")
-        .eq("workspace_id", ws_id)
-        .limit(200)
-        .execute()
-        .data or []
+    Auto-approval based on a PQS threshold is the rubber stamp that allowed
+    low-quality drafts (URLs in step 1, fabricated benchmarks, wrong-function
+    contacts) to slip past the approval queue and into the send pipeline.
+
+    All drafts now require explicit human approval via /api/approvals/{id}/approve
+    with a reviewer attestation (P2.2). This function is a no-op kept for
+    backwards compatibility with any caller still importing it.
+    """
+    logger.info(
+        "Auto-approve disabled (P1.3 — GTM rebuild). Workspace %s: no drafts auto-approved.",
+        ws.get("name") or ws.get("id"),
     )
-
-    approved = 0
-    for r in rows:
-        pqs = (r.get("companies") or {}).get("pqs_total") or 0
-        if pqs >= pqs_threshold:
-            client.table("outreach_drafts").update({"approval_status": "approved"}).eq("id", r["id"]).execute()
-            approved += 1
-
-    if approved:
-        logger.info("Auto-approve [%s]: approved %d drafts (PQS >= %d)", ws["name"], approved, pqs_threshold)
 
 
 def _run_auto_approve() -> None:
-    """Auto-approve high-PQS pending drafts across all active workspaces."""
-    try:
-        from backend.app.core.workspace_scheduler import for_each_workspace
-        for_each_workspace(_auto_approve_workspace, "auto_approve")
-    except Exception as e:
-        logger.error(f"Auto-approve failed: {e}", exc_info=True)
+    """DISABLED (P1.3 — GTM rebuild 2026-05-08).
+
+    Kept as a no-op so any external scheduler entry referencing this id by
+    mistake does not error. The cron registration has been removed.
+    """
+    logger.info("Auto-approve cron is disabled (P1.3 — GTM rebuild).")
 
 
 def _run_limit_ramp() -> None:
@@ -1482,6 +1470,24 @@ def _run_weekly_post_send_audit() -> None:
         logger.error(f"Scheduled post-send audit failed: {e}", exc_info=True)
 
 
+def _run_weekly_approval_audit() -> None:
+    """Friday 09:00 CT job (P2.4): sample 20 approvals from the prior week,
+    run BenchmarkDetector, and write a JSON report to data/exports/.
+    """
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _audit_workspace(ws: dict) -> None:
+            from backend.app.agents.post_send_audit import PostSendAuditAgent
+            PostSendAuditAgent(workspace_id=ws["id"]).audit_approvals(
+                sample_size=20, window_days=7,
+            )
+
+        for_each_workspace(_audit_workspace, "approval_audit")
+    except Exception as e:
+        logger.error(f"Scheduled approval audit failed: {e}", exc_info=True)
+
+
 def _run_weekly_contact_backup() -> None:
     """Saturday 5am job: export all contact profiles to local JSON backup."""
     try:
@@ -1906,6 +1912,28 @@ def _run_auto_action_low_priority() -> None:
         logger.error(f"Scheduled auto_action_low_priority failed: {e}")
 
 
+def _run_bounce_hygiene() -> None:
+    """Daily 3am job: reconcile bounced drafts to contact + DNC suppression."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+
+        def _hygiene_workspace(ws: dict) -> None:
+            from backend.app.agents.bounce_hygiene import BounceHygieneAgent
+            summary = BounceHygieneAgent(workspace_id=ws["id"]).run()
+            logger.info(
+                "Bounce hygiene [%s]: contacts=%d domains=%d already=%d errors=%d",
+                ws.get("name", ws["id"]),
+                summary.get("contacts_suppressed", 0),
+                summary.get("domains_suppressed", 0),
+                summary.get("already_suppressed", 0),
+                len(summary.get("errors") or []),
+            )
+
+        for_each_workspace(_hygiene_workspace, "bounce_hygiene")
+    except Exception as e:
+        logger.error(f"Scheduled bounce hygiene failed: {e}", exc_info=True)
+
+
 def _validate_scheduler_signatures() -> None:
     """Crash at startup if any scheduler→agent kwarg is wrong.
 
@@ -1988,57 +2016,60 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         # Gmail intake: every 15 min so replies surface quickly for triage
         scheduler.add_job(_run_gmail_intake, "interval", minutes=15, id="gmail_intake")
-        # Research: every 20 min 24/7 — 150 companies per run, budget-gated.
-        # 5-min startup delay prevents first tick from firing into cold DB connection
-        # on Railway deploy (cold connection causes research_budget_ok to throw and
-        # fail-open, bypassing the cap — now fail-closed, but delay is belt-and-suspenders).
-        from datetime import datetime, timezone, timedelta as _td
-        scheduler.add_job(
-            _run_research, "interval", minutes=20, id="research",
-            next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
-        )
+        # Research: PAUSED 2026-05-07 — GTM assessment in progress.
+        # Re-enable when ready to resume pipeline growth.
+        # scheduler.add_job(
+        #     _run_research, "interval", minutes=20, id="research",
+        #     next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
+        # )
         # Qualification: every 15 min 24/7 — stays ahead of research output
         scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
         # Draft generation: every 5 min — drains qualified-but-undrafted companies fast.
         # Enrichment now runs every 3 min; draft gen follows at 5 min to close the gap
         # between a contact being found and a draft existing for it.
         scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
-        # Enrichment: every 15 min — Apollo credit-gated (1 credit/contact).
-        # 15 min gives ~68 credits/hr vs 340/hr at 3 min; extends 4,855 remaining credits
-        # to ~71 hrs (vs 14 hrs at 3 min). Pipeline drains at 50/day so no benefit
-        # to faster enrichment — the draft approval queue is the real bottleneck.
-        scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
+        # Enrichment: PAUSED 2026-05-07 — Apollo spend $101 MTD, GTM assessment in progress.
+        # Re-enable when ready to resume pipeline growth.
+        # scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
         # Pipeline monitor email disabled 2026-05-07 — replaced by daily_report.
         # scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
-        # Auto-approve: high-PQS pending drafts (PQS >= 70) approved without manual review
-        # Runs hourly Mon-Fri during business hours so drafts are ready for morning send
-        scheduler.add_job(
-            _run_auto_approve, "cron",
-            day_of_week="mon-fri", hour="7-18", minute=0,
-            timezone="America/Chicago",
-            id="auto_approve",
-        )
+        # Auto-approve: DISABLED 2026-05-08 (P1.3 — GTM rebuild).
+        # Auto-approval based on PQS threshold was the rubber stamp that let
+        # low-quality drafts reach the send pipeline. All drafts now require
+        # explicit human approval with a reviewer attestation (P2.2).
+        # scheduler.add_job(
+        #     _run_auto_approve, "cron",
+        #     day_of_week="mon-fri", hour="7-18", minute=0,
+        #     timezone="America/Chicago",
+        #     id="auto_approve",
+        # )
         # Limit ramp job removed 2026-05-03 — daily_limit set to 500 directly in outreach_send_config.
-        # Pipeline advance heartbeat: every 4 hours.
-        # The orchestrator checks pipeline depth vs. capacity-aware watermark and fires
-        # discovery + learning only when needed. Reactive triggers (post-send, post-reply)
-        # schedule one-shot advances via _schedule_pipeline_advance(); this is the backstop.
-        scheduler.add_job(
-            _run_pipeline_advance, "interval", hours=4, id="pipeline_advance_heartbeat",
-        )
-        # Fire one advance immediately at startup to catch any pipeline gaps.
-        scheduler.add_job(
-            _run_pipeline_advance, "date",
-            run_date=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
-            + __import__("datetime").timedelta(seconds=90),
-            id="pipeline_advance_startup",
-        )
+        # Pipeline advance heartbeat: PAUSED 2026-05-07 — GTM assessment in progress.
+        # This triggers discovery; paused alongside research/enrichment/discovery.
+        # scheduler.add_job(
+        #     _run_pipeline_advance, "interval", hours=4, id="pipeline_advance_heartbeat",
+        # )
+        # scheduler.add_job(
+        #     _run_pipeline_advance, "date",
+        #     run_date=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        #     + __import__("datetime").timedelta(seconds=90),
+        #     id="pipeline_advance_startup",
+        # )
         # Weekly post-send audit: Sunday 7am Chicago
         scheduler.add_job(
             _run_weekly_post_send_audit, "cron",
             day_of_week="sun", hour=7, minute=0,
             timezone="America/Chicago",
             id="weekly_post_send_audit",
+        )
+        # Weekly approval audit (P2.4 — GTM rebuild): Friday 9am Chicago
+        # Samples 20 approved drafts from the prior 7 days and runs them
+        # through the benchmark detector.
+        scheduler.add_job(
+            _run_weekly_approval_audit, "cron",
+            day_of_week="fri", hour=9, minute=0,
+            timezone="America/Chicago",
+            id="weekly_approval_audit",
         )
         # Weekly contact backup: Saturday 5am Chicago → /Volumes/Digitillis/Data/prospectiq_backups/
         scheduler.add_job(
@@ -2102,20 +2133,29 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="intent_refresh",
         )
-        # Discovery: weekly runs to keep the pipeline full with fresh companies.
-        # F&B (Mon 7am) and manufacturing (Wed 7am) staggered to spread Apollo load.
+        # Daily bounce hygiene: 3am Chicago — reconcile outreach_drafts.bounced_at
+        # back onto contacts.status + the do_not_contact registry so the next
+        # send cycle never re-targets a known bounce.
         scheduler.add_job(
-            _run_fb_discovery, "cron",
-            day_of_week="mon", hour=7, minute=0,
+            _run_bounce_hygiene, "cron",
+            hour=3, minute=0,
             timezone="America/Chicago",
-            id="fb_discovery",
+            id="bounce_hygiene",
         )
-        scheduler.add_job(
-            _run_mfg_discovery, "cron",
-            day_of_week="wed", hour=7, minute=0,
-            timezone="America/Chicago",
-            id="mfg_discovery",
-        )
+        # Discovery: PAUSED 2026-05-07 — GTM assessment in progress.
+        # Re-enable when ready to resume top-of-funnel growth.
+        # scheduler.add_job(
+        #     _run_fb_discovery, "cron",
+        #     day_of_week="mon", hour=7, minute=0,
+        #     timezone="America/Chicago",
+        #     id="fb_discovery",
+        # )
+        # scheduler.add_job(
+        #     _run_mfg_discovery, "cron",
+        #     day_of_week="wed", hour=7, minute=0,
+        #     timezone="America/Chicago",
+        #     id="mfg_discovery",
+        # )
         scheduler.start()
         logger.info(
             "APScheduler started — "
@@ -2185,6 +2225,7 @@ app.include_router(instantly_webhooks.router)
 app.include_router(sequences.router)
 app.include_router(sequences.v2_router)
 app.include_router(monitoring.router)
+app.include_router(monitoring.admin_router)
 app.include_router(workspaces.router)
 app.include_router(invite.router)
 app.include_router(billing.router)
@@ -2436,3 +2477,151 @@ async def trigger_send():
     import threading
     threading.Thread(target=_run_send_approved, daemon=True).start()
     return {"status": "triggered", "message": "send_approved job started in background"}
+
+
+@app.get("/api/prospectiq/admin/cadence-velocity")
+async def cadence_velocity(window_days: int = 30):
+    """Cadence-velocity SLO data (P4.4 — GTM rebuild 2026-05-08).
+
+    Returns the median elapsed hours for each of the three cadence stages
+    against their SLO targets. Computed from outreach_drafts (approval +
+    send timestamps), company_outreach_state (last engagement), and
+    interactions (engagement events that should have triggered step 2).
+
+    Args:
+        window_days: how many days back to include (default 30).
+    """
+    from datetime import datetime, timedelta, timezone
+    from statistics import median
+
+    from backend.app.core.database import get_supabase_client
+
+    client = get_supabase_client()
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(days=window_days)).isoformat()
+
+    # ---- Stage 1: median hours from approval to step-1 send ----
+    approval_to_step1: list[float] = []
+    try:
+        rows = (
+            client.table("outreach_drafts")
+            .select("approved_at, sent_at, sequence_step")
+            .gte("approved_at", since)
+            .not_.is_("approved_at", "null")
+            .not_.is_("sent_at", "null")
+            .eq("sequence_step", 1)
+            .limit(2000)
+            .execute()
+            .data or []
+        )
+        for r in rows:
+            try:
+                approved = datetime.fromisoformat(str(r["approved_at"]).replace("Z", "+00:00"))
+                sent = datetime.fromisoformat(str(r["sent_at"]).replace("Z", "+00:00"))
+                approval_to_step1.append((sent - approved).total_seconds() / 3600.0)
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.warning("cadence_velocity: approval→step1 query failed: %s", exc)
+
+    # ---- Stage 2: last_engagement → step-2 send ----
+    last_engagement_to_step2: list[float] = []
+    try:
+        # Pull recent step-2 sends in the window
+        step2_rows = (
+            client.table("outreach_drafts")
+            .select("contact_id, sent_at, sequence_step")
+            .gte("sent_at", since)
+            .not_.is_("sent_at", "null")
+            .eq("sequence_step", 2)
+            .limit(2000)
+            .execute()
+            .data or []
+        )
+        contact_ids = list({r["contact_id"] for r in step2_rows if r.get("contact_id")})
+        engagements_by_contact: dict[str, datetime] = {}
+        if contact_ids:
+            # Pull the most recent engagement event for each contact
+            for chunk_start in range(0, len(contact_ids), 100):
+                chunk = contact_ids[chunk_start : chunk_start + 100]
+                ev_rows = (
+                    client.table("interactions")
+                    .select("contact_id, created_at, type")
+                    .in_("contact_id", chunk)
+                    .in_("type", ["email_opened", "email_clicked", "email_replied"])
+                    .order("created_at", desc=True)
+                    .limit(1000)
+                    .execute()
+                    .data or []
+                )
+                for ev in ev_rows:
+                    cid = ev.get("contact_id")
+                    if not cid:
+                        continue
+                    try:
+                        ts = datetime.fromisoformat(str(ev["created_at"]).replace("Z", "+00:00"))
+                    except Exception:
+                        continue
+                    cur = engagements_by_contact.get(cid)
+                    if cur is None or ts > cur:
+                        engagements_by_contact[cid] = ts
+        for r in step2_rows:
+            cid = r.get("contact_id")
+            last_eng = engagements_by_contact.get(cid)
+            if last_eng is None:
+                continue
+            try:
+                sent = datetime.fromisoformat(str(r["sent_at"]).replace("Z", "+00:00"))
+                if sent > last_eng:
+                    last_engagement_to_step2.append((sent - last_eng).total_seconds() / 3600.0)
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.warning("cadence_velocity: engagement→step2 query failed: %s", exc)
+
+    # ---- Stage 3: hot trigger → founder action ----
+    hot_to_founder_action: list[float] = []
+    try:
+        # company_outreach_state may carry hot_at and last_founder_action_at
+        state_rows = (
+            client.table("company_outreach_state")
+            .select("company_id, hot_at, last_founder_action_at")
+            .gte("hot_at", since)
+            .not_.is_("hot_at", "null")
+            .not_.is_("last_founder_action_at", "null")
+            .limit(1000)
+            .execute()
+            .data or []
+        )
+        for r in state_rows:
+            try:
+                hot = datetime.fromisoformat(str(r["hot_at"]).replace("Z", "+00:00"))
+                act = datetime.fromisoformat(str(r["last_founder_action_at"]).replace("Z", "+00:00"))
+                if act >= hot:
+                    hot_to_founder_action.append((act - hot).total_seconds() / 3600.0)
+            except Exception:
+                continue
+    except Exception as exc:
+        # Table or columns may not exist yet — return zeros and log once.
+        logger.info("cadence_velocity: hot→founder query unavailable: %s", exc)
+
+    def _med(xs: list[float]) -> float:
+        return round(median(xs), 2) if xs else 0.0
+
+    return {
+        "approval_to_step1_median_hours": _med(approval_to_step1),
+        "last_engagement_to_step2_median_hours": _med(last_engagement_to_step2),
+        "hot_to_founder_action_median_hours": _med(hot_to_founder_action),
+        "slo_targets": {
+            "approval_to_step1": 24,
+            "last_engagement_to_step2": 72,
+            "hot_to_founder_action": 24,
+        },
+        "computed_at": now.isoformat(),
+        "window_days": window_days,
+        "samples": {
+            "approval_to_step1_n": len(approval_to_step1),
+            "last_engagement_to_step2_n": len(last_engagement_to_step2),
+            "hot_to_founder_action_n": len(hot_to_founder_action),
+        },
+    }

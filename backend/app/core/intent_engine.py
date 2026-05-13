@@ -526,13 +526,40 @@ class IntentEngine:
             except Exception as exc:
                 logger.warning(f"[intent] Failed to deactivate expired signal {sid}: {exc}")
 
-        # Sum points — apply FSMA multiplier for F&B companies
+        # Sum points — apply FSMA multiplier for F&B companies, then enforce
+        # the signal evidence policy (P3.3). A signal with no acceptable
+        # evidence URL is capped at the unevidenced_cap when its weight
+        # exceeds required_above_score (normalized against MAX_INTENT_SCORE).
+        from backend.app.core.confidence_engine import apply_evidence_cap
+
         raw_score = 0
         for s in active_signals:
             pts = SIGNAL_POINTS.get(s.get("signal_type", ""), 0)
             if is_fb and s.get("signal_type") in _FSMA_ENFORCEMENT_SIGNALS:
                 pts = int(pts * 1.3)
-            raw_score += pts
+
+            # Normalize this signal's contribution to [0, 1] so the
+            # evidence policy thresholds (0.50 required, 0.30 cap) make sense.
+            denom = float(MAX_INTENT_SCORE) if MAX_INTENT_SCORE else 1.0
+            normalized = float(pts) / denom
+
+            # Pull the evidence url from raw_data first, then fall back to a
+            # `signal_url` or `evidence_url` field if present, then to source.
+            raw = s.get("raw_data") or {}
+            evidence_url = (
+                raw.get("evidence_url")
+                or raw.get("source_url")
+                or raw.get("url")
+                or s.get("evidence_url")
+            )
+            evidence_type = raw.get("evidence_type") or s.get("evidence_type")
+
+            capped_normalized = apply_evidence_cap(
+                normalized,
+                evidence_url=evidence_url,
+                evidence_type=evidence_type,
+            )
+            raw_score += int(round(capped_normalized * denom))
 
         score = min(raw_score, MAX_INTENT_SCORE)
 

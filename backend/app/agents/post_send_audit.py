@@ -8,18 +8,35 @@ Scans all emails sent in the past N days and flags:
 
 Writes findings to the outreach_audit_log table and sends a Slack digest.
 Run weekly via the workspace scheduler.
+
+SCOPE FREEZE — 2026-05-12:
+Post-send audit runs are fine for data quality — do NOT extend this agent
+to drive automated account disqualification or list pruning. During the
+precision GTM phase, disqualification decisions are made by the founder
+after reviewing each audit result. The agent reports; it does not act.
+
+Also exposes `audit_approvals()` (P2.4 — GTM rebuild). That method samples
+20 approved drafts from the prior week, runs BenchmarkDetector against
+each, and writes a JSON report to data/exports/approval_audit_<date>.json.
+The runner cron is registered separately in backend/app/api/main.py for
+Friday 09:00 CT.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import random
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 from rich.table import Table
 
 from backend.app.agents.base import BaseAgent, AgentResult
+from backend.app.core.benchmark_detector import BenchmarkDetector
 from backend.app.core.contact_filter import (
     check_email_name_consistency,
     classify_contact_tier,
@@ -231,3 +248,158 @@ class PostSendAuditAgent(BaseAgent):
             f"{len(drafts)} sends, {len(critical)} critical, {len(high)} high, {len(warnings)} warnings",
         )
         return result
+
+    # ------------------------------------------------------------------
+    # P2.4 — Weekly approval audit (BenchmarkDetector against approvals)
+    # ------------------------------------------------------------------
+
+    def audit_approvals(
+        self,
+        sample_size: int = 20,
+        window_days: int = 7,
+        export_dir: Path | None = None,
+    ) -> dict:
+        """Sample approved drafts from the past `window_days` and run them
+        through BenchmarkDetector. Writes a JSON report and returns it.
+
+        Output schema:
+          {
+            "date": "YYYY-MM-DD",
+            "total_sampled": int,
+            "false_negative_count": int,    # benchmark fabrications that
+                                            # slipped past human review
+            "attestation_defects": int,     # approved rows missing/false
+                                            # required attestation keys
+            "post_send_rejections": int,    # bounces, complaints, hard rejects
+                                            # in the same window
+            "findings": [...]
+          }
+        """
+        now = datetime.now(timezone.utc)
+        since = (now - timedelta(days=window_days)).isoformat()
+
+        # Gather candidates: drafts approved in window. Some installs may not
+        # yet have reviewed_at — fall back to approved_at if so.
+        approved_rows: list[dict] = []
+        try:
+            approved_rows = (
+                self.db.client.table("outreach_drafts")
+                .select(
+                    "id, body, edited_body, approval_status, approved_at, "
+                    "reviewed_at, approved_by, attestation, sequence_step, "
+                    "company_id, contact_id"
+                )
+                .in_("approval_status", ["approved", "edited"])
+                .gte("approved_at", since)
+                .limit(500)
+                .execute()
+                .data or []
+            )
+        except Exception as exc:
+            logger.warning("audit_approvals: approved-drafts query failed: %s", exc)
+
+        if not approved_rows:
+            console.print("[yellow]audit_approvals: no approved drafts in window.[/yellow]")
+            report = {
+                "date": now.date().isoformat(),
+                "window_days": window_days,
+                "total_sampled": 0,
+                "false_negative_count": 0,
+                "attestation_defects": 0,
+                "post_send_rejections": 0,
+                "findings": [],
+            }
+            self._write_audit_report(report, export_dir)
+            return report
+
+        # Sample without replacement
+        n = min(sample_size, len(approved_rows))
+        sample = random.sample(approved_rows, n)
+
+        detector = BenchmarkDetector(llm_enabled=bool(os.environ.get("ANTHROPIC_API_KEY")))
+
+        false_negatives = 0
+        attestation_defects = 0
+        findings_out: list[dict] = []
+
+        for row in sample:
+            body = row.get("edited_body") or row.get("body") or ""
+            analysis = detector.analyze(body)
+            if analysis.has_violations:
+                false_negatives += 1
+
+            att = row.get("attestation") or {}
+            required = (
+                "numeric_claims_attributed",
+                "persona_in_allowlist",
+                "no_url_step_1",
+                "company_is_manufacturer",
+                "specific_opener",
+            )
+            att_missing = [k for k in required if not att.get(k)]
+            if att_missing:
+                attestation_defects += 1
+
+            findings_out.append({
+                "draft_id": row.get("id"),
+                "company_id": row.get("company_id"),
+                "contact_id": row.get("contact_id"),
+                "approved_by": row.get("approved_by"),
+                "approved_at": row.get("approved_at"),
+                "reviewed_at": row.get("reviewed_at"),
+                "sequence_step": row.get("sequence_step"),
+                "benchmark_verdict": analysis.verdict,
+                "benchmark_findings": [
+                    {
+                        "layer": f.layer,
+                        "rule": f.rule,
+                        "verdict": f.verdict,
+                        "excerpt": f.excerpt,
+                        "evidence_id": f.evidence_id,
+                    }
+                    for f in analysis.findings
+                ],
+                "attestation_missing_keys": att_missing,
+            })
+
+        # Post-send rejections in the same window — bounces, complaints,
+        # hard fails recorded in interactions.
+        post_send_rejections = 0
+        try:
+            ev = (
+                self.db.client.table("interactions")
+                .select("id, type")
+                .in_("type", ["email_bounced", "email_complained", "email_failed"])
+                .gte("created_at", since)
+                .limit(1000)
+                .execute()
+                .data or []
+            )
+            post_send_rejections = len(ev)
+        except Exception as exc:
+            logger.info("audit_approvals: post-send rejection lookup skipped: %s", exc)
+
+        report = {
+            "date": now.date().isoformat(),
+            "window_days": window_days,
+            "total_sampled": n,
+            "false_negative_count": false_negatives,
+            "attestation_defects": attestation_defects,
+            "post_send_rejections": post_send_rejections,
+            "findings": findings_out,
+        }
+        self._write_audit_report(report, export_dir)
+        return report
+
+    @staticmethod
+    def _write_audit_report(report: dict, export_dir: Path | None = None) -> Path:
+        """Write `report` to data/exports/approval_audit_<date>.json."""
+        target_dir = Path(export_dir) if export_dir else (
+            Path(__file__).resolve().parents[3] / "data" / "exports"
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+        out_path = target_dir / f"approval_audit_{report['date']}.json"
+        with open(out_path, "w") as fh:
+            json.dump(report, fh, indent=2, default=str)
+        console.print(f"[green]Approval audit report written: {out_path}[/green]")
+        return out_path

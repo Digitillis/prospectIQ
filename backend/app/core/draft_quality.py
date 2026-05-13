@@ -13,6 +13,7 @@ Quality checks:
 4. Appropriate length (not too short, not a wall of text)
 5. Has a clear, single CTA
 6. Subject line is relevant and short
+7. URL hard-block at sequence step 1 (cold opens never carry links)
 """
 
 from __future__ import annotations
@@ -22,6 +23,38 @@ import logging
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+# Step-1 URL hard-block regex (case-insensitive). Cold opens must never carry
+# a link — links in step 1 burn deliverability and look like vendor pitch.
+_URL_PATTERN = re.compile(r"https?://", re.IGNORECASE)
+
+
+def contains_url(text: str | None) -> bool:
+    """Return True if `text` contains an http(s) URL."""
+    if not text:
+        return False
+    return bool(_URL_PATTERN.search(text))
+
+
+def is_step_1_url_violation(draft: dict) -> bool:
+    """Return True if this draft is sequence_step==1 and the body has a URL.
+
+    `sequence_step` is normalized via int() — accepts 1, "1", "touch_1", etc.
+    """
+    raw_step = draft.get("sequence_step")
+    step: int
+    if isinstance(raw_step, int):
+        step = raw_step
+    elif isinstance(raw_step, str):
+        # Pull first integer if step is "touch_1" etc.
+        m = re.search(r"\d+", raw_step)
+        step = int(m.group()) if m else 0
+    else:
+        step = 0
+    if step != 1:
+        return False
+    body = draft.get("edited_body") or draft.get("body") or ""
+    return contains_url(body)
 
 # Spam trigger words that activate email filters
 SPAM_TRIGGER_WORDS = [
@@ -173,6 +206,14 @@ def validate_draft(
                     "Body doesn't reference any research-derived personalization hooks — "
                     "may feel generic to the prospect"
                 )
+
+    # 4b. URL hard-block at sequence step 1 (cold opens must never carry links)
+    if is_step_1_url_violation(draft):
+        report.add_issue(
+            "error", "url_in_step_1",
+            "Step 1 cold opens may not contain a URL — links in cold opens "
+            "burn deliverability and look like vendor pitch.",
+        )
 
     # 5. Banned phrases check
     for phrase in _BANNED_PHRASES:

@@ -10,8 +10,6 @@ import json
 import logging
 import random
 
-from rich.console import Console
-
 from backend.app.agents.base import BaseAgent, AgentResult
 from backend.app.core.config import (
     get_settings,
@@ -21,7 +19,6 @@ from backend.app.core.config import (
     get_offer_context,
 )
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 # Persona priority order — higher value = preferred primary contact
@@ -158,6 +155,24 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
 
     # ── Unverified precision metrics ─────────────────────────────────────────
     (r"\b87\s*%\s*confidence\b",           "unverified_metric",    "87% confidence"),
+
+    # ── Unsourced company-specific events ────────────────────────────────────
+    # Catches "your recent acquisition/merger/expansion/partnership/announcement"
+    # when those events were not in the sourced research data.
+    (r"\byour\s+recent\s+(acquisition|merger|expansion|partnership|announcement|launch|investment|funding|ipo|recall|audit|inspection)\b",
+                                           "unsourced_company_event", "your recent [event] — not in sourced research"),
+    # Catches "since you (recently|just) [verb]ed"
+    (r"\bsince\s+you\s+(recently|just)\s+\w+(ed|d)\b",
+                                           "unsourced_company_event", "since you recently/just [verb]ed"),
+    # Catches "I saw that [Company] recently [verb]"
+    (r"\bi\s+saw\s+that\b",               "unsourced_company_event", "I saw that [Company] — implies unverified web knowledge"),
+    # Catches "I noticed that [Company]" as opener (implies general web scraping, not sourced data)
+    (r"\bi\s+noticed\s+that\b",           "unsourced_company_event", "I noticed that — use specific hook from research instead"),
+    # Catches "I read that [Company]" / "I read about [Company]"
+    (r"\bi\s+read\s+(that|about)\b",      "unsourced_company_event", "I read that/about — unverified source reference"),
+    # Catches "according to [LinkedIn/your website/Glassdoor]" — implies browsing, not sourced data
+    (r"\baccording\s+to\s+(linkedin|your\s+website|glassdoor|indeed|crunchbase|bloomberg)\b",
+                                           "unsourced_company_event", "according to [external source] — only sourced fields permitted"),
 ]
 
 
@@ -348,6 +363,24 @@ RESEARCH INTELLIGENCE:
 PERSONALIZATION HOOKS:
 {personalization_hooks}
 
+⚠️ SOURCED EVIDENCE CONSTRAINT — READ BEFORE WRITING ANY CLAIM:
+Every company-specific claim in this email MUST be directly traceable to one of:
+  1. RESEARCH INTELLIGENCE section above
+  2. PERSONALIZATION HOOKS above
+  3. TECHNOLOGY STACK section above
+  4. PAIN SIGNALS section above
+  5. COMPANY SIGNALS section above
+  6. Published industry benchmarks (SMRP, ARC Advisory, FDA, EPA, Deloitte, OSHA data)
+
+You may NOT:
+  - Reference any company event (acquisition, expansion, recall, funding, audit) not in the sections above
+  - Claim "I saw/read/noticed that [Company]..." based on general knowledge
+  - Reference any named customer, supplier, or partner of this company not listed above
+  - Invent specific facts about their equipment, headcount, or operations beyond what is stated
+
+If you cannot source a claim to one of the sections above, DELETE the claim rather than rewriting it.
+A shorter, sourced email always outperforms a longer, hallucinated one.
+
 ⚠️ HOOK USAGE MANDATE — READ BEFORE WRITING:
 The PERSONALIZATION HOOKS above are your most valuable asset. They are specific,
 verified facts about this company that no generic email could contain.
@@ -491,7 +524,7 @@ class OutreachAgent(BaseAgent):
 
         sequence = seq_config["sequences"].get(sequence_name)
         if not sequence:
-            console.print(f"[red]Sequence '{sequence_name}' not found in config.[/red]")
+            logger.warning(f"Sequence '{sequence_name}' not found in config.")
             result.success = False
             return result
 
@@ -503,7 +536,7 @@ class OutreachAgent(BaseAgent):
                 break
 
         if not step_config:
-            console.print(f"[red]Step {sequence_step} not found in sequence '{sequence_name}'.[/red]")
+            logger.warning(f"Step {sequence_step} not found in sequence '{sequence_name}'.")
             result.success = False
             return result
 
@@ -515,12 +548,12 @@ class OutreachAgent(BaseAgent):
             companies = self.db.get_companies(status="qualified", tiers=tiers, limit=limit, oec_only=True)
 
         if not companies:
-            console.print("[yellow]No companies ready for outreach.[/yellow]")
+            logger.warning("No companies ready for outreach.")
             return result
 
-        console.print(
-            f"[cyan]Generating outreach for {len(companies)} companies "
-            f"(sequence={sequence_name}, step={sequence_step})...[/cyan]"
+        logger.info(
+            f"Generating outreach for {len(companies)} companies "
+            f"(sequence={sequence_name}, step={sequence_step})..."
         )
 
         import anthropic
@@ -537,8 +570,8 @@ class OutreachAgent(BaseAgent):
 
                 suppressed, reason = is_suppressed(self.db, company_id)
                 if suppressed:
-                    console.print(
-                        f"  [dim]{company_name}: Suppressed ({reason}). Skipping.[/dim]"
+                    logger.info(
+                        f"{company_name}: Suppressed ({reason}). Skipping."
                     )
                     result.skipped += 1
                     result.add_detail(company_name, "suppressed", reason or "")
@@ -548,8 +581,8 @@ class OutreachAgent(BaseAgent):
                 from backend.app.core.icp_manager import ICPManager
                 _icp_excluded, _icp_reason = ICPManager(self.db).is_company_excluded(company_id)
                 if _icp_excluded:
-                    console.print(
-                        f"  [dim]{company_name}: ICP excluded ({_icp_reason}). Skipping.[/dim]"
+                    logger.info(
+                        f"{company_name}: ICP excluded ({_icp_reason}). Skipping."
                     )
                     result.skipped += 1
                     result.add_detail(company_name, "icp_excluded", _icp_reason or "")
@@ -577,7 +610,7 @@ class OutreachAgent(BaseAgent):
                     from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
                     locked, lock_reason = is_company_locked(self.db, company_id)
                     if locked:
-                        console.print(f"  [dim]{company_name}: company locked — {lock_reason}[/dim]")
+                        logger.info(f"{company_name}: company locked — {lock_reason}")
                         result.skipped += 1
                         continue
 
@@ -586,7 +619,7 @@ class OutreachAgent(BaseAgent):
                     _tc = ThreadingCoordinator(self.db)
                     _tc_ok, _tc_reason = _tc.can_send_contact_1(company)
                     if not _tc_ok:
-                        console.print(f"  [dim]{company_name}: threading gate — {_tc_reason}[/dim]")
+                        logger.info(f"{company_name}: threading gate — {_tc_reason}")
                         result.skipped += 1
                         continue
 
@@ -603,7 +636,7 @@ class OutreachAgent(BaseAgent):
                         target_contacts = [primary] if primary else []
 
                     if not target_contacts:
-                        console.print(f"  [yellow]{company_name}: No suitable contact found. Skipping.[/yellow]")
+                        logger.warning(f"{company_name}: No suitable contact found. Skipping.")
                         result.skipped += 1
                         result.add_detail(company_name, "skipped", "No suitable contact")
                         continue
@@ -615,8 +648,8 @@ class OutreachAgent(BaseAgent):
                             self.db, company_id, contact["id"]
                         )
                         if contact_suppressed:
-                            console.print(
-                                f"  [dim]{company_name}: {contact.get('full_name', '?')} suppressed ({contact_reason})[/dim]"
+                            logger.info(
+                                f"{company_name}: {contact.get('full_name', '?')} suppressed ({contact_reason})"
                             )
                         else:
                             _filtered.append(contact)
@@ -650,24 +683,24 @@ class OutreachAgent(BaseAgent):
                             _tc2_ok, _tc2_reason = _tc.can_send_contact_2(company)
 
                         if not _tc2_ok:
-                            console.print(f"  [dim]{company_name}: contact 2 threading gate — {_tc2_reason}[/dim]")
+                            logger.info(f"{company_name}: contact 2 threading gate — {_tc2_reason}")
                             continue
 
                     # Hard gate: DB-level eligibility flag (set at import by contact_filter)
                     # This catches contacts that slipped through before the filter existed.
                     if contact.get("is_outreach_eligible") is False:
-                        console.print(
-                            f"  [dim]{company_name}: {contact.get('full_name', '?')} — "
-                            f"is_outreach_eligible=False (tier={contact.get('contact_tier','?')}). Skipping.[/dim]"
+                        logger.info(
+                            f"{company_name}: {contact.get('full_name', '?')} — "
+                            f"is_outreach_eligible=False (tier={contact.get('contact_tier','?')}). Skipping."
                         )
                         continue
 
                     # Email-name consistency gate: block if email was flagged as belonging
                     # to a different person (email_name_verified=False from import check)
                     if contact.get("email_name_verified") is False:
-                        console.print(
-                            f"  [dim]{company_name}: {contact.get('full_name', '?')} — "
-                            f"email_name_verified=False. Email may belong to different person. Skipping.[/dim]"
+                        logger.info(
+                            f"{company_name}: {contact.get('full_name', '?')} — "
+                            f"email_name_verified=False. Email may belong to different person. Skipping."
                         )
                         continue
 
@@ -675,9 +708,9 @@ class OutreachAgent(BaseAgent):
                     # intro is in progress for this contact
                     contact_status = contact.get("linkedin_status", "") or ""
                     if "warm" in contact_status.lower():
-                        console.print(
-                            f"  [dim]{company_name}: {contact.get('full_name', '?')} "
-                            f"— warm intro in progress ({contact_status}). Skipping cold outreach.[/dim]"
+                        logger.info(
+                            f"{company_name}: {contact.get('full_name', '?')} "
+                            f"— warm intro in progress ({contact_status}). Skipping cold outreach."
                         )
                         continue
 
@@ -687,15 +720,15 @@ class OutreachAgent(BaseAgent):
                         from backend.app.core.channel_coordinator import can_use_channel, has_recent_activity
                         channel_ok, channel_reason = can_use_channel(self.db, contact["id"], "email")
                         if not channel_ok:
-                            console.print(
-                                f"  [dim]{company_name}: {contact.get('full_name', '?')} — email blocked ({channel_reason})[/dim]"
+                            logger.info(
+                                f"{company_name}: {contact.get('full_name', '?')} — email blocked ({channel_reason})"
                             )
                             continue
 
                         # 48-hour activity cooldown — prevent rapid-fire first touches
                         recent, activity_desc = has_recent_activity(self.db, contact["id"])
                         if recent:
-                            console.print(f"  [dim]{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}[/dim]")
+                            logger.info(f"{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}")
                             continue
 
                     # Pre-send invariant library — hard block before any draft generation
@@ -714,9 +747,9 @@ class OutreachAgent(BaseAgent):
                             sequence_step=sequence_step,
                         )
                     except AssertionFailure as _af:
-                        console.print(
-                            f"  [red]{company_name}: {contact.get('full_name', '?')} — "
-                            f"assertion failed: {_af.assertion} ({_af.detail}). Skipping.[/red]"
+                        logger.warning(
+                            f"{company_name}: {contact.get('full_name', '?')} — "
+                            f"assertion failed: {_af.assertion} ({_af.detail}). Skipping."
                         )
                         result.skipped += 1
                         result.add_detail(company_name, "assertion_failed", str(_af))
@@ -802,6 +835,24 @@ class OutreachAgent(BaseAgent):
                     except Exception:
                         pass
 
+                    # Fetch company signals (FDA recalls, OSHA, MEP grants) up-front so
+                    # the top signal can be (a) injected into the prompt and (b) recorded
+                    # on the draft for reply-attribution analytics.
+                    _sig_rows: list[dict] = []
+                    try:
+                        _sig_rows = (
+                            self.db.client.table("company_signals")
+                            .select("id,signal_type,signal_text,observed_at")
+                            .eq("company_id", company["id"])
+                            .order("observed_at", desc=True)
+                            .limit(5)
+                            .execute()
+                            .data or []
+                        )
+                    except Exception:
+                        _sig_rows = []
+                    _top_signal = _sig_rows[0] if _sig_rows else None
+
                     # Build the prompt
                     prompt = self._build_prompt(
                         company=company,
@@ -817,10 +868,11 @@ class OutreachAgent(BaseAgent):
                         prior_messages=prior_messages,
                         prior_rejections=prior_rejections,
                         edit_signals=edit_signals,
+                        sig_rows=_sig_rows,
                     )
 
                     # Call Claude
-                    console.print(f"  [dim]{company_name} → {contact.get('full_name', 'Unknown')}...[/dim]")
+                    logger.info(f"{company_name} → {contact.get('full_name', 'Unknown')}...")
 
                     from backend.app.core.model_router import get_model_for_outreach
                     _draft_model = get_model_for_outreach(
@@ -889,6 +941,8 @@ class OutreachAgent(BaseAgent):
                         "personalization_notes": _clean(parsed.get("personalization_notes", "")),
                         "approval_status": "pending",
                         "model": _draft_model,
+                        "top_signal_id":   _top_signal["id"]   if _top_signal else None,
+                        "top_signal_type": _top_signal.get("signal_type") if _top_signal else None,
                     }
 
                     # Post-generation integrity check — auto-reject before save if
@@ -911,6 +965,21 @@ class OutreachAgent(BaseAgent):
                             contact["id"], company_id, company_name,
                             contact.get("full_name", ""), sequence_name, sequence_step,
                         )
+                        continue
+
+                    # Hard block: step-1 cold opens may never contain a URL.
+                    # Reject up-front; do not push to approval queue.
+                    from backend.app.core.draft_quality import is_step_1_url_violation
+                    if is_step_1_url_violation(draft_data):
+                        logger.warning(
+                            "Step-1 URL violation auto-rejected for %s (%s)",
+                            company_name,
+                            contact.get("full_name") or contact.get("first_name", ""),
+                        )
+                        draft_data["approval_status"] = "rejected"
+                        draft_data["rejection_reason"] = "url_in_step_1"
+                        self.db.insert_outreach_draft(draft_data)
+                        result.errors += 1
                         continue
 
                     inserted_draft = self.db.insert_outreach_draft(draft_data)
@@ -973,9 +1042,9 @@ class OutreachAgent(BaseAgent):
                     except Exception:
                         pass  # A/B tracking is non-blocking
 
-                    console.print(
-                        f"  [green]{company_name} → {contact.get('full_name', 'Unknown')}: Draft created. "
-                        f"Subject: \"{parsed.get('subject', '')[:50]}\"[/green]"
+                    logger.info(
+                        f"{company_name} → {contact.get('full_name', 'Unknown')}: Draft created. "
+                        f"Subject: \"{parsed.get('subject', '')[:50]}\""
                     )
 
                     result.processed += 1
@@ -1164,6 +1233,7 @@ class OutreachAgent(BaseAgent):
         prior_messages: list[dict] | None = None,
         prior_rejections: list[dict] | None = None,
         edit_signals: list[dict] | None = None,
+        sig_rows: list[dict] | None = None,
     ) -> str:
         """Build the Claude prompt with all context.
 
@@ -1235,23 +1305,27 @@ class OutreachAgent(BaseAgent):
 
         max_words = instructions.get("max_words", 150)
 
-        # Fetch company signals (FDA recalls, OSHA, MEP grants) for personalization
-        try:
-            _sig_rows = (
-                self.db.client.table("company_signals")
-                .select("signal_type,signal_text,observed_at")
-                .eq("company_id", company["id"])
-                .order("observed_at", desc=True)
-                .limit(5)
-                .execute()
-                .data or []
-            )
-            company_signals_text = (
-                "\n".join(f"- [{s['signal_type']}] {s.get('signal_text', '')}" for s in _sig_rows)
-                if _sig_rows else "None available"
-            )
-        except Exception:
-            company_signals_text = "None available"
+        # Format company signals (FDA recalls, OSHA, MEP grants) for personalization.
+        # Caller pre-fetches sig_rows so the same data feeds both the prompt and
+        # draft-level signal attribution. Falls back to a fresh fetch if not provided.
+        _sig_rows = sig_rows
+        if _sig_rows is None:
+            try:
+                _sig_rows = (
+                    self.db.client.table("company_signals")
+                    .select("id,signal_type,signal_text,observed_at")
+                    .eq("company_id", company["id"])
+                    .order("observed_at", desc=True)
+                    .limit(5)
+                    .execute()
+                    .data or []
+                )
+            except Exception:
+                _sig_rows = []
+        company_signals_text = (
+            "\n".join(f"- [{s['signal_type']}] {s.get('signal_text', '')}" for s in _sig_rows)
+            if _sig_rows else "None available"
+        )
 
         # Build prior thread block — full text of every previously sent email
         if prior_messages:

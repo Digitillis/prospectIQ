@@ -1,6 +1,19 @@
 # ProspectIQ — Engagement Sequence Definitions
 # Single-channel sequences only. Channels are NEVER blended in a single sequence.
 # Each sequence is one channel end-to-end.
+#
+# =====================================================================
+# P4.3 — GTM rebuild placeholder (2026-05-08)
+# =====================================================================
+# TODO: cold_v1, warming_v1, hot_v1 — pending messaging review
+#
+# The new tiered cadence sequences (cold_v1, warming_v1, hot_v1) have NOT
+# been added yet. They require explicit messaging approval from Avanish
+# before being committed. The engagement-tier state machine and the
+# bot-vs-human click classifier (P4.1, P4.2) have shipped without them;
+# until messaging is signed off, the scheduler should continue to pull
+# from the existing sequences below.
+# =====================================================================
 
 version: "2.0"
 

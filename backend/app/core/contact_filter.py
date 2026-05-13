@@ -117,6 +117,133 @@ _ARTIFACT_PATTERNS = (
 
 
 # ---------------------------------------------------------------------------
+# Persona allowlist (P1.2 — hard gate for cold outreach draft generation)
+#
+# Replaces soft persona scoring. Only contacts whose normalized persona
+# classification is in this allowlist AND whose classification confidence
+# is >= 0.70 are eligible for draft generation.
+# ---------------------------------------------------------------------------
+
+_ALLOWED_PERSONAS: frozenset[str] = frozenset({
+    "vp_operations",
+    "vp_quality",
+    "plant_manager",
+    "director_operations",
+    "director_quality",
+    "director_manufacturing",
+    "coo",
+    "vp_supply_chain",
+})
+
+# Minimum classification confidence required for outreach eligibility.
+# Below this floor, even an allowlisted persona is rejected (low confidence
+# means we cannot trust the role label).
+_PERSONA_CONFIDENCE_FLOOR: float = 0.70
+
+# Map the existing `contacts.persona_type` values produced by classify_persona()
+# in discovery.py to the canonical allowlist names above. Anything not in this
+# map (or mapped to None) is NOT in the allowlist and will be rejected.
+_PERSONA_TYPE_TO_CLASSIFICATION: dict[str, str | None] = {
+    "vp_ops":                       "vp_operations",
+    "coo":                          "coo",
+    "plant_manager":                "plant_manager",
+    "director_ops":                 "director_operations",
+    "vp_supply_chain":              "vp_supply_chain",
+    "vp_quality_food_safety":       "vp_quality",
+    "director_quality_food_safety": "director_quality",
+    "vp_food_safety":               "vp_quality",
+    # maintenance_leader is in the allowlist: for PdM / furnace reliability
+    # pitch, the Reliability/Maintenance Manager is often the first buyer.
+    "maintenance_leader":           "director_manufacturing",
+    # Roles below are intentionally NOT in the allowlist — they map to None
+    # so is_eligible() will reject them even though they used to score above 0.
+    "regulatory_affairs_director":  None,
+    "compliance_manager_fb":        None,
+    "digital_transformation":       None,
+    "cio":                          None,
+}
+
+
+def normalize_persona_classification(persona_type: str | None) -> str | None:
+    """Map a `contacts.persona_type` value to a canonical allowlist name.
+
+    Returns None if the persona_type is not in the allowlist. The contact
+    record may itself carry a `persona_classification` key already in the
+    canonical form — if so, it is returned as-is.
+    """
+    if not persona_type:
+        return None
+    if persona_type in _ALLOWED_PERSONAS:
+        return persona_type
+    return _PERSONA_TYPE_TO_CLASSIFICATION.get(persona_type)
+
+
+def is_eligible(contact: dict) -> bool:
+    """Hard allowlist gate for draft generation eligibility.
+
+    Returns True only when:
+      1. The contact's persona classification is in `_ALLOWED_PERSONAS`,
+         AND
+      2. Classification confidence is >= 0.70.
+
+    Reads `contact["persona_classification"]` if present (canonical form),
+    otherwise falls back to mapping `contact["persona_type"]` via
+    `normalize_persona_classification()`.
+
+    Confidence is read from `contact["persona_confidence"]`. If absent, we
+    treat it as 1.0 only when the source is a deterministic keyword match —
+    i.e. when `contact["persona_source"]` is "keyword" or unset (legacy data).
+    For LLM-classified contacts (`persona_source == "llm"`), missing
+    confidence is treated as below the floor.
+    """
+    classification = (
+        contact.get("persona_classification")
+        or normalize_persona_classification(contact.get("persona_type"))
+    )
+    if classification not in _ALLOWED_PERSONAS:
+        return False
+
+    confidence = contact.get("persona_confidence")
+    if confidence is None:
+        # Deterministic keyword classification has no confidence score; treat
+        # an explicit non-llm source as "trusted" (1.0). LLM-source rows must
+        # provide a numeric confidence to clear the floor.
+        source = contact.get("persona_source") or "keyword"
+        if source != "keyword":
+            return False
+        confidence = 1.0
+
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError):
+        return False
+
+    return confidence >= _PERSONA_CONFIDENCE_FLOOR
+
+
+# ---------------------------------------------------------------------------
+# Manufacturer-only structural filter (P3.2)
+# ---------------------------------------------------------------------------
+
+def is_manufacturer_company(company: dict | None) -> bool:
+    """Return True only when the company.tier is set and is not 'non_mfg'.
+
+    Used as a hard structural gate everywhere outreach is generated. This
+    duplicates the SQL-level `WHERE tier IS NOT NULL AND tier != 'non_mfg'`
+    so the in-process pipeline cannot accidentally route to a non-manufacturer
+    if a stale row sneaks through.
+    """
+    if not company:
+        return False
+    tier = company.get("tier")
+    if tier is None or tier == "":
+        return False
+    if str(tier).lower() == "non_mfg":
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Core classification
 # ---------------------------------------------------------------------------
 

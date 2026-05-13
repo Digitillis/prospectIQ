@@ -1,9 +1,14 @@
 # Copyright © 2026 ProspectIQ. All rights reserved.
-# Authors: ProspectIQ Technical Team
+# Authors: Avanish Mehrotra & Digitillis Technical Team
 """Ghostwriting Engine — voice calibration and AI-powered content generation.
 
 Generates LinkedIn posts and short-form thought leadership content calibrated
 to the user's writing style, extracted from writing samples they provide.
+
+SCOPE FREEZE — 2026-05-12:
+Ghostwriting and voice calibration are frozen for the 90-day precision GTM phase.
+Founder writes all content manually. No automated content generation beyond
+outreach draft generation (handled separately in outreach.py).
 
 Usage:
     engine = GhostwritingEngine()

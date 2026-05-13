@@ -31,6 +31,11 @@ MAX_BOUNCE_RATE = 0.02
 # Minimum days between any two emails to the same contact (hard floor)
 MIN_STEP_GAP_DAYS = 5
 
+# Email statuses that are safe to send to. NULL/unverified statuses block the send.
+# - "verified": ZeroBounce/Apollo confirmed deliverable
+# - "catch_all": domain accepts all mail; individual address unverifiable — allowed with caution
+SENDABLE_EMAIL_STATUSES = frozenset({"verified", "catch_all"})
+
 
 class AssertionFailure(Exception):
     """Raised when a pre-send invariant fails. Blocks the send."""
@@ -75,6 +80,34 @@ def assert_email_deliverable(db: Any, contact: dict) -> None:
         _alert(f":red_circle: Pre-send assertion failed: email_deliverable — {contact.get('full_name')} ({detail})")
         raise AssertionFailure("email_deliverable", detail)
     _log_assertion(db, contact["id"], contact.get("company_id", ""), "email_deliverable", True, f"status={email_status or 'unknown'}")
+
+
+def assert_email_status_verified(db: Any, contact: dict) -> None:
+    """Email must have a known-safe verification status before entering the send queue.
+
+    Blocks: NULL (never verified), 'unverified' (verification attempted but unresolved).
+    Allows: 'verified' (confirmed deliverable), 'catch_all' (domain accepts all — allowed
+    with caution because individual verification is impossible on catch-all domains).
+
+    This is the primary gate against the 4.15% bounce rate — 55% of bounces came from
+    contacts that had no email verification at all.
+    """
+    email_status = contact.get("email_status")
+    if email_status not in SENDABLE_EMAIL_STATUSES:
+        detail = (
+            f"email_status={email_status!r} for {contact.get('email')} — "
+            f"must be one of {sorted(SENDABLE_EMAIL_STATUSES)}"
+        )
+        _log_assertion(db, contact["id"], contact.get("company_id", ""), "email_status_verified", False, detail)
+        _alert(
+            f":red_circle: Pre-send assertion failed: email_status_verified — "
+            f"{contact.get('full_name')} ({detail})"
+        )
+        raise AssertionFailure("email_status_verified", detail)
+    _log_assertion(
+        db, contact["id"], contact.get("company_id", ""),
+        "email_status_verified", True, f"status={email_status}",
+    )
 
 
 def assert_email_name_consistent(db: Any, contact: dict) -> None:
@@ -264,6 +297,7 @@ def run_pre_send_assertions(
     - minimum_step_gap: at least MIN_STEP_GAP_DAYS since the preceding send
     """
     assert_email_deliverable(db, contact)
+    assert_email_status_verified(db, contact)
     assert_email_name_consistent(db, contact)
     assert_outreach_eligible(db, contact)
     assert_persona_target(db, contact)

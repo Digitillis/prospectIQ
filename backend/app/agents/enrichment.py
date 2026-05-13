@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
@@ -74,6 +75,17 @@ class EnrichmentAgent(BaseAgent):
             AgentResult with enrichment stats.
         """
         result = AgentResult()
+
+        # P1.5 — kill switch: when disabled, exit cleanly without spending
+        # Apollo credits or writing any contact rows.
+        from backend.app.core.limits import L
+        if not L.enrichment_enabled:
+            logger.info(
+                {"event": "agent_disabled_via_config", "agent": "enrichment"}
+            )
+            console.print("[yellow]enrichment: disabled via config — exiting cleanly[/yellow]")
+            result.success = True
+            return result
 
         # Apollo credit guard — halt before the batch if buffer is low
         workspace_id = getattr(self.db, "workspace_id", None)
@@ -271,7 +283,7 @@ class EnrichmentAgent(BaseAgent):
                     # Enrich each selected contact (1 credit each if Apollo returns a match)
                     for contact in contacts_to_enrich:
                         contact_name = contact.get("full_name") or contact.get("first_name") or "Unknown"
-                        apollo_id = contact.get("apollo_id")
+                        apollo_id = (contact.get("apollo_id") or "").strip()
 
                         if not apollo_id:
                             console.print(
@@ -281,17 +293,49 @@ class EnrichmentAgent(BaseAgent):
                             result.add_detail(company_name, "skipped", f"No Apollo ID for {contact_name}")
                             continue
 
+                        # Basic format guard — Apollo IDs are alphanumeric hex strings.
+                        # A blank or obviously invalid ID will 422 immediately; reject early.
+                        if len(apollo_id) < 8 or not apollo_id.replace("-", "").isalnum():
+                            logger.warning(
+                                "Skipping enrichment for %s — malformed Apollo ID: %r",
+                                contact_name, apollo_id,
+                            )
+                            result.skipped += 1
+                            result.add_detail(company_name, "skipped", f"Malformed Apollo ID for {contact_name}")
+                            continue
+
                         # Call Apollo enrichment (1 credit if matched, 0 if no match)
                         console.print(
                             f"  [dim]{company_name} → enriching {contact_name} "
                             f"({contact.get('title', '')}, persona={contact.get('persona_type','?')})...[/dim]"
                         )
 
-                        enriched = apollo.enrich_person(
-                            person_id=apollo_id,
-                            reveal_personal_emails=True,
-                            reveal_phone_number=include_phone,
-                        )
+                        try:
+                            enriched = apollo.enrich_person(
+                                person_id=apollo_id,
+                                reveal_personal_emails=True,
+                                reveal_phone_number=include_phone,
+                            )
+                        except httpx.HTTPStatusError as http_err:
+                            status_code = http_err.response.status_code if http_err.response is not None else 0
+                            if status_code == 422:
+                                # 422 = Apollo rejected the ID as unprocessable (expired, invalid, or
+                                # missing required fields). Retrying will always fail — exhaust the
+                                # attempt counter immediately so the contact is not cycled again.
+                                self.db.update_contact(contact["id"], {"enrichment_attempts": 3})
+                                logger.warning(
+                                    "Apollo 422 for %s (%s) — ID %r rejected as unprocessable. "
+                                    "Marking attempts exhausted.",
+                                    contact_name, company_name, apollo_id,
+                                )
+                                result.skipped += 1
+                                result.add_detail(
+                                    company_name, "apollo_422",
+                                    f"{contact_name}: Apollo ID {apollo_id!r} returned 422 — attempts exhausted",
+                                )
+                            else:
+                                raise
+                            continue
 
                         # 1 Apollo credit per people/match call
                         self.track_cost(
