@@ -5,6 +5,12 @@ and generate actionable insights for improving engagement strategy.
 
 When auto_apply=True, writes scoring adjustments back to scoring.yaml
 and ICP refinements back to icp.yaml — closing the feedback loop.
+
+SCOPE FREEZE — 2026-05-12:
+Do not extend or activate this agent during the 90-day precision GTM phase.
+The learning loop requires sufficient reply volume (target: 5+ qualified replies)
+before statistical patterns are meaningful. Premature activation on thin data
+would produce false signals. Re-evaluate when qualified_conversations >= 5.
 """
 
 import json

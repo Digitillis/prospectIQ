@@ -1,4 +1,10 @@
-"""Intent Signals API — Detect and surface buying signals & outreach triggers."""
+"""Intent Signals API — Detect and surface buying signals & outreach triggers.
+
+SCOPE FREEZE — 2026-05-12:
+Intent signal detection is frozen. Do not add automated account promotion or
+outreach triggering based on signal scores during the 90-day precision GTM phase.
+Signal data may be read and reviewed manually; no automated actions should result.
+"""
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List

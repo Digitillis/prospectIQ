@@ -8,6 +8,12 @@ When a signal fires:
   - Creates/updates a company_intent_signals record
   - Recalculates PQS timing dimension with signal weight
   - Re-queues company for research refresh if research is >14 days old (2.9)
+
+SCOPE FREEZE — 2026-05-12:
+Intent signal monitoring is frozen for the 90-day precision GTM phase.
+The active account list is capped at 30 and managed manually. Automated
+signal re-research would expand scope and spend without founder review.
+Re-evaluate for Phase 2 when active account volume justifies automation.
   - Logs a Slack notification for high-value signals
 
 Designed to run as a scheduled background job or triggered via API.

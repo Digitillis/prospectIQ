@@ -13,9 +13,10 @@
 3. [Adversarial Strategic Redesign](#adversarial-strategic-redesign)
 4. [Constrained Pragmatic Redesign](#constrained-pragmatic-redesign)
 5. [90-Day Precision GTM Operating Model](#90-day-precision-gtm-operating-model)
-6. [Architecture Decisions & Course Corrections](#architecture-decisions--course-corrections)
-7. [Signal Intelligence Backlog](#signal-intelligence-backlog)
-8. [Open Questions](#open-questions)
+6. [Doctrine Lock — 2026-05-12](#doctrine-lock--2026-05-12)
+7. [Architecture Decisions & Course Corrections](#architecture-decisions--course-corrections)
+8. [Signal Intelligence Backlog](#signal-intelligence-backlog)
+9. [Open Questions](#open-questions)
 
 ---
 
@@ -786,19 +787,36 @@ Send personal, founder-written first-touch messages to all 7 engaged accounts (W
 
 ---
 
+## Doctrine Lock — 2026-05-12
+
+These four principles are locked as non-negotiable operating doctrine for the 90-day precision GTM phase. No code change, product decision, or pipeline configuration may contradict them without explicit written revision.
+
+| # | Principle | Implication |
+|---|---|---|
+| 1 | **ProspectIQ is a copilot, not a pilot** | Every send, draft approval, and account promotion requires a human decision. No autonomous sending. No autonomous account graduation without founder sign-off. |
+| 2 | **90-day goal is GTM learning, not pipeline volume** | Success is not measured in emails sent or contacts enriched. Success is measured in qualified manufacturing conversations started and lessons extracted from every reply. |
+| 3 | **Success metric is qualified manufacturing conversations** | The only metric that matters: did a real decision-maker at a real manufacturing company respond and engage on a specific operational problem Digitillis can solve? |
+| 4 | **No autonomous SDR expansion during this phase** | Discovery agents, automated cadence sequences, multi-thread nurture flows, and autonomous reply classification are frozen. They will not be built, activated, or expanded until GTM learning from manual precision outreach justifies it. |
+
+Full operating model: `docs/PROSPECTIQ_90_DAY_OPERATING_MODEL.md`
+
+---
+
 ## Architecture Decisions & Course Corrections
 
 ### 2026-05-12 — Fixes Applied
 
-| # | Area | Status | PR |
+| # | Area | Status | Notes |
 |---|---|---|---|
-| 1 | Research JSON parse bug (78K errors) | Shipped | #76 |
-| 2 | Apollo 422 enrichment validation gate | Pending | — |
-| 3 | Email verification pre-send gate | Pending | — |
-| 4 | Retrieval-constrained draft generation | Pending | — |
-| 5 | Pipeline orchestrator restart (Railway) | Pending — operational | — |
-| 6 | Subdomain migration + 30-contact diagnostic | Pending — operational | — |
-| 7 | Monthly budget cap raise | Pending — config | — |
+| 1 | Research JSON parse bug (78K errors) | Shipped (PR #76) | `_extract_json()` with 3-strategy fallback |
+| 2 | Apollo 422 enrichment validation gate | Shipped (this session) | Catch 422 → exhaust attempt counter; validate apollo_id format before calling API |
+| 3 | Email verification pre-send gate | Shipped (this session) | `assert_email_status_verified` in pre_send_assertions; blocks NULL + 'unverified' |
+| 4 | Evidence-constrained draft generation | Shipped (this session) | SOURCED EVIDENCE CONSTRAINT in prompt; 6 new regex patterns for unsourced company events |
+| 5 | Pipeline scheduler restart | Diagnosed — not broken | Scheduler runs correctly; research/enrichment/discovery jobs are deliberately PAUSED (2026-05-07) for GTM rebuild. Not a bug. |
+| 6 | Monthly budget cap | Script ready | Spend $242 vs $200 cap. Run `backend/scripts/fix_workspace_budget.py --budget 350` before re-enabling pipeline jobs. |
+| 7 | Subdomain migration + 30-contact diagnostic | Pending — operational | Required before re-enabling sends. |
+
+**Scheduler diagnosis (2026-05-12):** The APScheduler in Railway was not broken by the April 3 restart — the process recovered correctly. Jobs that stopped running were explicitly commented out in `main.py` lifespan on 2026-05-07 during the GTM assessment (`research`, `enrichment`, `pipeline_advance_heartbeat`, `auto_approve`). These remain paused by design. The jobs still running: `gmail_intake`, `send_approved` (blocked by `send_enabled=false`), `qualification`, `draft_generation`, `health_snapshot`, `pipeline_qc`, `process_due`, `poll_instantly`. The pipeline is not dead — discovery is intentionally frozen per the 90-day doctrine.
 
 ### 2026-05-08 — Send Pause
 

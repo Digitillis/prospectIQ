@@ -10,6 +10,11 @@ Endpoints:
     PATCH /api/hitl/queue/{id}/action     — take action on a queue item
     GET  /api/hitl/stats                  — queue statistics
     POST /api/hitl/queue/{id}/suggest-response — AI-drafted reply suggestion
+
+SCOPE FREEZE — 2026-05-12:
+The HITL queue infra exists and may be used for reply review. Do NOT extend
+with: auto-routing, auto-escalation, or automated reply sending. The precision
+GTM phase requires the founder to read and respond to every reply manually.
 """
 
 from __future__ import annotations

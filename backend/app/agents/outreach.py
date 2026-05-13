@@ -155,6 +155,24 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
 
     # ── Unverified precision metrics ─────────────────────────────────────────
     (r"\b87\s*%\s*confidence\b",           "unverified_metric",    "87% confidence"),
+
+    # ── Unsourced company-specific events ────────────────────────────────────
+    # Catches "your recent acquisition/merger/expansion/partnership/announcement"
+    # when those events were not in the sourced research data.
+    (r"\byour\s+recent\s+(acquisition|merger|expansion|partnership|announcement|launch|investment|funding|ipo|recall|audit|inspection)\b",
+                                           "unsourced_company_event", "your recent [event] — not in sourced research"),
+    # Catches "since you (recently|just) [verb]ed"
+    (r"\bsince\s+you\s+(recently|just)\s+\w+(ed|d)\b",
+                                           "unsourced_company_event", "since you recently/just [verb]ed"),
+    # Catches "I saw that [Company] recently [verb]"
+    (r"\bi\s+saw\s+that\b",               "unsourced_company_event", "I saw that [Company] — implies unverified web knowledge"),
+    # Catches "I noticed that [Company]" as opener (implies general web scraping, not sourced data)
+    (r"\bi\s+noticed\s+that\b",           "unsourced_company_event", "I noticed that — use specific hook from research instead"),
+    # Catches "I read that [Company]" / "I read about [Company]"
+    (r"\bi\s+read\s+(that|about)\b",      "unsourced_company_event", "I read that/about — unverified source reference"),
+    # Catches "according to [LinkedIn/your website/Glassdoor]" — implies browsing, not sourced data
+    (r"\baccording\s+to\s+(linkedin|your\s+website|glassdoor|indeed|crunchbase|bloomberg)\b",
+                                           "unsourced_company_event", "according to [external source] — only sourced fields permitted"),
 ]
 
 
@@ -344,6 +362,24 @@ RESEARCH INTELLIGENCE:
 
 PERSONALIZATION HOOKS:
 {personalization_hooks}
+
+⚠️ SOURCED EVIDENCE CONSTRAINT — READ BEFORE WRITING ANY CLAIM:
+Every company-specific claim in this email MUST be directly traceable to one of:
+  1. RESEARCH INTELLIGENCE section above
+  2. PERSONALIZATION HOOKS above
+  3. TECHNOLOGY STACK section above
+  4. PAIN SIGNALS section above
+  5. COMPANY SIGNALS section above
+  6. Published industry benchmarks (SMRP, ARC Advisory, FDA, EPA, Deloitte, OSHA data)
+
+You may NOT:
+  - Reference any company event (acquisition, expansion, recall, funding, audit) not in the sections above
+  - Claim "I saw/read/noticed that [Company]..." based on general knowledge
+  - Reference any named customer, supplier, or partner of this company not listed above
+  - Invent specific facts about their equipment, headcount, or operations beyond what is stated
+
+If you cannot source a claim to one of the sections above, DELETE the claim rather than rewriting it.
+A shorter, sourced email always outperforms a longer, hallucinated one.
 
 ⚠️ HOOK USAGE MANDATE — READ BEFORE WRITING:
 The PERSONALIZATION HOOKS above are your most valuable asset. They are specific,

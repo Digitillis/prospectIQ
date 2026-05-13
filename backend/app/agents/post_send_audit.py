@@ -9,6 +9,12 @@ Scans all emails sent in the past N days and flags:
 Writes findings to the outreach_audit_log table and sends a Slack digest.
 Run weekly via the workspace scheduler.
 
+SCOPE FREEZE — 2026-05-12:
+Post-send audit runs are fine for data quality — do NOT extend this agent
+to drive automated account disqualification or list pruning. During the
+precision GTM phase, disqualification decisions are made by the founder
+after reviewing each audit result. The agent reports; it does not act.
+
 Also exposes `audit_approvals()` (P2.4 — GTM rebuild). That method samples
 20 approved drafts from the prior week, runs BenchmarkDetector against
 each, and writes a JSON report to data/exports/approval_audit_<date>.json.
