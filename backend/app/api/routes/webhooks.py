@@ -485,7 +485,11 @@ def _handle_email_reply(db, payload: dict) -> dict:
 
 
 def _handle_email_bounced(db, payload: dict) -> dict:
-    """Handle hard/soft bounce events."""
+    """Handle hard/soft bounce events (legacy Instantly path).
+
+    Uses tiered suppression — contact-level only unless multi-contact threshold
+    is reached. Does not propagate to company.status.
+    """
     from_email: str = payload.get("from_email") or payload.get("to", "") or ""
     company_id, contact_id = _lookup_company_contact(db, from_email)
 
@@ -493,11 +497,18 @@ def _handle_email_bounced(db, payload: dict) -> dict:
         return {"status": "ignored", "reason": f"no contact found for {from_email}"}
 
     try:
-        db.update_contact(contact_id, {"outreach_state": "bounced"})
-        db.update_company(company_id, {"status": "bounced"})
+        db.update_contact(contact_id, {"outreach_state": "bounced", "status": "bounced"})
         db.add_to_dnc(from_email, reason="bounced", added_by="instantly_webhook")
 
-        # Update thread if one exists
+        from backend.app.core.suppression import record_suppression, maybe_escalate_to_company
+        sup_id = record_suppression(
+            db, scope="contact", reason="hard_bounce_contact",
+            contact_id=contact_id, company_id=company_id, email=from_email,
+            bounce_classification="hard",
+            metadata={"source": "instantly_webhook"},
+        )
+        maybe_escalate_to_company(db, company_id, triggering_suppression_id=sup_id)
+
         thread = _find_thread(db, contact_id, company_id)
         if thread:
             db.client.table("campaign_threads").update({"status": "bounced"}).eq("id", thread["id"]).execute()
@@ -911,6 +922,8 @@ async def resend_webhook(
             action = "bounced" if event_type == "email.bounced" else "complained"
             dnc_reason = "bounced" if action == "bounced" else "spam_complaint"
             draft_time_col = "bounced_at" if action == "bounced" else "complained_at"
+            is_bounce = event_type == "email.bounced"
+            is_complaint = event_type == "email.complained"
 
             try:
                 # Stamp draft with bounce/complaint time + sender
@@ -927,12 +940,61 @@ async def resend_webhook(
                 except Exception as exc:
                     logger.debug("Draft bounce stamp failed: %s", exc)
 
+                # Update contact status — contact-level suppression always applies
                 contact_update: dict = {"outreach_state": action}
                 if action in ("bounced", "not_interested"):
                     contact_update["status"] = action
                 db.update_contact(contact_id, contact_update)
-                if company_id:
-                    db.update_company(company_id, {"status": "bounced"}, allow_downgrade=True)
+
+                # Tiered suppression: record in suppression_log at contact scope.
+                # Do NOT propagate bounces to company.status — a single contact
+                # bounce does not block other contacts at the same company.
+                # Company-level escalation happens only when multiple distinct
+                # contacts at the same company have bounced (see maybe_escalate_to_company).
+                from backend.app.core.suppression import record_suppression, maybe_escalate_to_company
+                suppression_reason = "spam_complaint" if is_complaint else "hard_bounce_contact"
+                bounce_class = "complaint" if is_complaint else "hard"
+                provider_code = str(payload.get("data", {}).get("bounce", {}).get("code", "")) or None
+                provider_msg = str(payload.get("data", {}).get("bounce", {}).get("message", ""))[:500] or None
+                sup_id = record_suppression(
+                    db,
+                    scope="contact",
+                    reason=suppression_reason,
+                    contact_id=contact_id,
+                    company_id=company_id or None,
+                    email=recipient_email,
+                    bounce_classification=bounce_class,
+                    provider_code=provider_code,
+                    provider_message=provider_msg,
+                    metadata={"event_type": event_type, "draft_id": draft_row["id"] if draft_row else None},
+                )
+                logger.info(
+                    "suppression: contact-scope %s recorded for contact=%s company=%s (suppression_id=%s)",
+                    suppression_reason, contact_id, company_id, sup_id,
+                )
+
+                # Spam complaints always escalate to company scope immediately
+                if is_complaint and company_id:
+                    record_suppression(
+                        db,
+                        scope="company",
+                        reason="spam_complaint",
+                        company_id=company_id,
+                        contact_id=contact_id,
+                        email=recipient_email,
+                        bounce_classification="complaint",
+                        escalated_from=sup_id,
+                        metadata={"escalated_immediately": True},
+                    )
+                    db.update_company(company_id, {"status": "not_interested"}, allow_downgrade=False)
+                    logger.warning(
+                        "suppression: company %s escalated to company scope (spam complaint from %s)",
+                        company_id, contact_id,
+                    )
+                elif is_bounce and company_id:
+                    # Check multi-contact bounce threshold — escalates only if ≥2 distinct contacts
+                    maybe_escalate_to_company(db, company_id, triggering_suppression_id=sup_id)
+
                 if recipient_email:
                     db.add_to_dnc(recipient_email, reason=dnc_reason, added_by="resend_webhook")
 
