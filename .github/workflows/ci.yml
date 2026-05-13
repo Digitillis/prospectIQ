@@ -49,6 +49,12 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest
 
+      # Catch syntax errors in every .py under backend/app before pytest runs.
+      # Prevents import-time crashes (like the multi_thread.py SyntaxError that
+      # crash-looped Railway production on 2026-05-13) from reaching deployment.
+      - name: Syntax check (compileall)
+        run: python -m compileall -q backend/app
+
       - name: Run pytest
         env:
           # Tests stub the Supabase client; provide harmless placeholders so
@@ -56,4 +62,6 @@ jobs:
           SUPABASE_URL: https://example.supabase.co
           SUPABASE_SERVICE_KEY: test-service-key
           SUPABASE_ANON_KEY: test-anon-key
+          # Ensure no outbound email path can execute during tests.
+          SEND_ENABLED: "false"
         run: pytest backend/tests/ -x -q --tb=short
