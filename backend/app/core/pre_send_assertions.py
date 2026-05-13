@@ -201,14 +201,14 @@ def assert_sender_under_daily_cap(db: Any, sender_email: str, daily_cap: int,
         count = result.count or 0
         if count >= daily_cap:
             detail = f"{sender_email} has sent {count}/{daily_cap} today"
-            _log_assertion(db, "", "", "sender_daily_cap", False, detail, assertion_context)
+            _log_assertion(db, None, None, "sender_daily_cap", False, detail, assertion_context)
             raise AssertionFailure("sender_daily_cap", detail)
     except AssertionFailure:
         raise
     except Exception as e:
         logger.warning("Could not check daily cap for %s: %s", sender_email, e)
 
-    _log_assertion(db, "", "", "sender_daily_cap", True, f"{sender_email}: under cap", assertion_context)
+    _log_assertion(db, None, None, "sender_daily_cap", True, f"{sender_email}: under cap", assertion_context)
 
 
 def assert_prior_step_sent(db: Any, contact: dict, sequence_step: int,
@@ -275,6 +275,10 @@ def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
         )
         if result.data and result.data[0].get("sent_at"):
             sent_str = result.data[0]["sent_at"].replace("Z", "+00:00")
+            # Normalize fractional seconds to 6 digits — Supabase occasionally
+            # returns truncated microseconds (e.g. .11174 instead of .111740).
+            import re as _re
+            sent_str = _re.sub(r'(\.\d{1,5})(?=[+-]|$)', lambda m: m.group(1).ljust(7, '0'), sent_str)
             try:
                 last_sent = datetime.fromisoformat(sent_str)
             except ValueError:
