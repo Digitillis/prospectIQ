@@ -98,6 +98,7 @@ class LaunchSequenceRequest(BaseModel):
 
 class SendApprovedRequest(BaseModel):
     campaign_name: Optional[str] = None  # Instantly campaign name override
+    draft_ids: Optional[List[str]] = None  # Explicit list of draft IDs to send; omit to use scheduler selection
 
 
 # ---------------------------------------------------------------------------
@@ -674,14 +675,18 @@ async def trigger_send_approved(body: SendApprovedRequest = SendApprovedRequest(
 
     from backend.app.agents.engagement import EngagementAgent
     agent = EngagementAgent()
-    result = agent.run(action="send_approved", campaign_name=body.campaign_name)
+    result = agent.run(
+        action="send_approved",
+        campaign_name=body.campaign_name,
+        draft_ids=body.draft_ids,
+    )
 
     return {
         "message": f"Send complete: {result.processed} sent, {result.skipped} skipped, {result.errors} errors",
         "processed": result.processed,
         "skipped": result.skipped,
         "errors": result.errors,
-        "details": result.details[:50],  # Cap details to avoid huge responses
+        "details": result.details[:50],
     }
 
 

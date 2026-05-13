@@ -216,6 +216,7 @@ class EngagementAgent(BaseAgent):
         self,
         action: str = "send_approved",
         campaign_name: str | None = None,
+        draft_ids: list[str] | None = None,
     ) -> AgentResult:
         """Execute engagement actions.
 
@@ -225,12 +226,15 @@ class EngagementAgent(BaseAgent):
                 - "process_due": Process sequences with due follow-ups
                 - "check_status": Check and log campaign analytics
             campaign_name: Instantly campaign name (created if not exists).
+            draft_ids: Optional explicit list of draft IDs to send. When
+                provided, batch_size is ignored and only these drafts are
+                attempted (still subject to daily_limit and all safety gates).
 
         Returns:
             AgentResult with engagement stats.
         """
         if action == "send_approved":
-            return self._send_approved_drafts(campaign_name)
+            return self._send_approved_drafts(campaign_name, draft_ids=draft_ids)
         elif action == "process_due":
             return self._process_due_sequences()
         elif action == "jit_pregenerate":
@@ -283,13 +287,21 @@ class EngagementAgent(BaseAgent):
         except Exception:
             return 0
 
-    def _send_approved_drafts(self, campaign_name: str | None = None) -> AgentResult:
+    def _send_approved_drafts(
+        self,
+        campaign_name: str | None = None,
+        draft_ids: list[str] | None = None,
+    ) -> AgentResult:
         """Send approved unsent outreach drafts via Resend.
 
         Limits are read from outreach_send_config table (not hardcoded):
         - daily_limit: max emails per calendar day
-        - batch_size:  max emails per scheduler run
+        - batch_size:  max emails per scheduler run (bypassed when draft_ids provided)
         - min_gap_minutes: stagger between sends within a batch
+
+        When draft_ids is provided, only those specific drafts are attempted
+        and the batch_size cap is bypassed. daily_limit and all safety gates
+        (suppression, company lock, assertion gate) still apply.
 
         FROM address is read from config/outreach_guidelines.yaml (sender.email).
         """
@@ -385,15 +397,18 @@ class EngagementAgent(BaseAgent):
         if not self.db.workspace_id:
             self.db.workspace_id = settings.default_workspace_id
 
-        # Fetch a larger candidate pool so blocked drafts (suppressed / locked
-        # companies) don't silently consume all batch slots. The oldest drafts
-        # are checked first; we stop sending once batch_size emails have gone out.
-        send_limit = min(batch_size, max(0, remaining_today))
-        # Fetch up to 5× the send limit so locked/suppressed drafts don't
-        # consume all batch slots. The secondary cap (remaining+40) is removed:
-        # when the queue has many old locked drafts at the front, that cap would
-        # prevent newer sendable drafts further back from being reached at all.
-        fetch_limit = send_limit * 5
+        # When the caller passes explicit draft_ids, send only those drafts and
+        # bypass the batch_size cap. Daily limit still applies.
+        if draft_ids:
+            send_limit = min(len(draft_ids), max(0, remaining_today))
+            fetch_limit = len(draft_ids)
+        else:
+            # Fetch a larger candidate pool so blocked drafts (suppressed / locked
+            # companies) don't silently consume all batch slots. The oldest drafts
+            # are checked first; we stop sending once batch_size emails have gone out.
+            send_limit = min(batch_size, max(0, remaining_today))
+            fetch_limit = send_limit * 5
+
         # P1.3: send query MUST require both `approved_by IS NOT NULL` and
         # `reviewed_at IS NOT NULL`. The reviewer columns are added by a
         # migration noted as a TODO; until that migration runs, fall back to
@@ -410,6 +425,9 @@ class EngagementAgent(BaseAgent):
             .not_.is_("subject", "null")
             .neq("subject", "")
         )
+        if draft_ids:
+            _draft_query = _draft_query.in_("id", draft_ids)
+
         try:
             # Require explicit human attestation: both reviewer fields populated
             _strict_query = (
@@ -443,10 +461,16 @@ class EngagementAgent(BaseAgent):
             console.print("[yellow]No approved email drafts to send.[/yellow]")
             return result
 
-        console.print(
-            f"[cyan]Checking up to {fetch_limit} draft candidates, sending up to {send_limit} "
-            f"(batch_size={batch_size}, {sent_today}/{daily_limit} sent today)...[/cyan]"
-        )
+        if draft_ids:
+            console.print(
+                f"[cyan]Sending {len(drafts)} explicitly selected draft(s) "
+                f"({sent_today}/{daily_limit} sent today)...[/cyan]"
+            )
+        else:
+            console.print(
+                f"[cyan]Checking up to {fetch_limit} draft candidates, sending up to {send_limit} "
+                f"(batch_size={batch_size}, {sent_today}/{daily_limit} sent today)...[/cyan]"
+            )
 
         # Track companies sent in this batch to prevent same-run multi-contact collision
         company_ids_sent_this_batch: set[str] = set()
