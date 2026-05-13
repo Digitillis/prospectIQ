@@ -213,10 +213,24 @@ export default function ApprovalsPage() {
     setBulkProgress(null);
   };
 
-  const allVisibleIds = drafts.map((d) => d.id);
+  const [search, setSearch] = useState("");
+  const visibleDrafts = search.trim()
+    ? drafts.filter((d) => {
+        const q = search.trim().toLowerCase();
+        return (
+          (d.companies?.name ?? "").toLowerCase().includes(q) ||
+          (d.contacts?.full_name ?? "").toLowerCase().includes(q) ||
+          (d.contacts?.email ?? "").toLowerCase().includes(q) ||
+          (d.subject ?? "").toLowerCase().includes(q) ||
+          (d.sequence_name ?? "").toLowerCase().includes(q) ||
+          (d.contacts?.title ?? "").toLowerCase().includes(q)
+        );
+      })
+    : drafts;
+  const allVisibleIds = visibleDrafts.map((d) => d.id);
   const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
   const someSelected = allVisibleIds.some((id) => selected.has(id)) && !allSelected;
-  const highQCount = drafts.filter((d) => (d.quality_score ?? 0) >= 80).length;
+  const highQCount = visibleDrafts.filter((d) => (d.quality_score ?? 0) >= 80).length;
 
   const handleSelectAll = () => {
     if (allSelected) setSelected(new Set());
@@ -380,7 +394,7 @@ export default function ApprovalsPage() {
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">Approval Queue</h2>
           <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-500">
-            {drafts.length}{totalPending > drafts.length ? ` of ${totalPending}` : ""} pending
+            {search.trim() ? `${visibleDrafts.length} of ${drafts.length}` : drafts.length}{totalPending > drafts.length ? ` of ${totalPending}` : ""} pending
           </span>
         </div>
       </div>
@@ -429,6 +443,17 @@ export default function ApprovalsPage() {
         </div>
       )}
 
+      {/* Search bar */}
+      {!loading && drafts.length > 0 && (
+        <input
+          type="text"
+          placeholder="Search by company, contact, email, subject, sequence..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
+        />
+      )}
+
       {/* Bulk action bar */}
       {!loading && drafts.length > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-2">
@@ -468,7 +493,7 @@ export default function ApprovalsPage() {
             <>
               <span className="text-gray-300 dark:text-gray-600 ml-auto">|</span>
               <button
-                onClick={() => handleBulkApprove(drafts.filter((d) => (d.quality_score ?? 0) >= 80).map((d) => d.id))}
+                onClick={() => handleBulkApprove(visibleDrafts.filter((d) => (d.quality_score ?? 0) >= 80).map((d) => d.id))}
                 disabled={bulkApproving}
                 className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50"
               >
@@ -491,10 +516,16 @@ export default function ApprovalsPage() {
           </p>
         </div>
       )}
+      {drafts.length > 0 && visibleDrafts.length === 0 && (
+        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 py-12 text-gray-400">
+          <FileSearch className="h-8 w-8 mb-2" />
+          <p className="text-sm">No drafts match your search</p>
+        </div>
+      )}
 
       {/* Draft Cards */}
       <div className="space-y-4">
-        {drafts.map((draft, idx) => (
+        {visibleDrafts.map((draft, idx) => (
           <div
             id={`draft-${draft.id}`}
             key={draft.id}

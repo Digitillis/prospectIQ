@@ -74,7 +74,17 @@ function DraftQueueTab() {
     const qs = d.quality_score;
     if (filterQuality === "high" && (qs === undefined || qs < 80)) return false;
     if (filterQuality === "low" && (qs === undefined || qs >= 80)) return false;
-    if (filterSequence && !d.sequence_name?.toLowerCase().includes(filterSequence.toLowerCase())) return false;
+    if (filterSequence) {
+      const q = filterSequence.toLowerCase();
+      const matches =
+        (d.companies?.name ?? "").toLowerCase().includes(q) ||
+        (d.contacts?.full_name ?? "").toLowerCase().includes(q) ||
+        (d.contacts?.email ?? "").toLowerCase().includes(q) ||
+        (d.subject ?? "").toLowerCase().includes(q) ||
+        (d.sequence_name ?? "").toLowerCase().includes(q) ||
+        (d.contacts?.title ?? "").toLowerCase().includes(q);
+      if (!matches) return false;
+    }
     return true;
   });
 
@@ -195,10 +205,10 @@ function DraftQueueTab() {
       <div className="flex flex-wrap items-center gap-3">
         <input
           type="text"
-          placeholder="Filter by sequence..."
+          placeholder="Search by company, contact, email, subject, sequence..."
           value={filterSequence}
           onChange={(e) => setFilterSequence(e.target.value)}
-          className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-400"
+          className="min-w-[260px] flex-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-400"
         />
         <div className="flex items-center gap-1">
           {(["all", "high", "low"] as const).map((f) => (
@@ -390,11 +400,12 @@ function SendQueueTab() {
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/approvals?status=approved`);
+      const res = await fetch(`${API_BASE}/api/approvals/approved-queue`);
       if (res.ok) {
         const json = await res.json();
         setDrafts(json.data || []);
@@ -421,45 +432,72 @@ function SendQueueTab() {
     } finally { setPushing(false); setTimeout(() => setPushResult(null), 5000); }
   };
 
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? drafts.filter((d) =>
+        (d.companies?.name ?? "").toLowerCase().includes(q) ||
+        (d.contacts?.full_name ?? "").toLowerCase().includes(q) ||
+        (d.contacts?.email ?? "").toLowerCase().includes(q) ||
+        (d.subject ?? "").toLowerCase().includes(q) ||
+        (d.sequence_name ?? "").toLowerCase().includes(q)
+      )
+    : drafts;
+
+  const emailStatusBadge = (status?: string | null) => {
+    if (status === "verified") return <span className="ml-1 rounded px-1 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">verified</span>;
+    if (status === "catch_all") return <span className="ml-1 rounded px-1 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">catch_all</span>;
+    return <span className="ml-1 rounded px-1 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">{status ?? "unverified"}</span>;
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-500 dark:text-gray-500">{drafts.length} approved draft{drafts.length !== 1 ? "s" : ""} ready to send</p>
-        <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          placeholder="Search by company, contact, email, subject..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
+        />
+        <p className="shrink-0 text-xs text-gray-500 dark:text-gray-500">
+          {filtered.length}{q && filtered.length !== drafts.length ? ` of ${drafts.length}` : ""} queued
+        </p>
+        <div className="flex items-center gap-2">
           {pushResult && <span className="text-xs text-gray-600 dark:text-gray-400">{pushResult}</span>}
+          <button onClick={load} className="rounded p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"><RefreshCw className="h-3.5 w-3.5" /></button>
           <button onClick={pushAll} disabled={pushing || drafts.length === 0} className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50">
             {pushing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-            Push All to Instantly
+            Send Now
           </button>
         </div>
       </div>
       {loading ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />) :
-        drafts.length === 0 ? (
+        filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 py-16 text-gray-400">
             <CheckCircle2 className="h-10 w-10 mb-2" />
-            <p className="text-sm">No approved drafts in queue</p>
+            <p className="text-sm">{q ? "No drafts match your search" : "No approved drafts in queue"}</p>
           </div>
         ) : (
           <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-                  {["Company", "Contact", "Sequence", "Step", "Scheduled", ""].map((h) => (
+                  {["Company", "Contact", "Subject", "Seq", "Step"].map((h) => (
                     <th key={h} className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {drafts.map((d) => (
+                {filtered.map((d) => (
                   <tr key={d.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     <td className="px-4 py-2 font-medium text-gray-900 dark:text-gray-100">{d.companies?.name ?? "—"}</td>
-                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{d.contacts?.full_name ?? "—"}</td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                      {d.contacts?.full_name ?? "—"}
+                      {emailStatusBadge((d.contacts as { email_status?: string | null })?.email_status)}
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400 max-w-[260px] truncate">{d.subject ?? "—"}</td>
                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{d.sequence_name ?? "—"}</td>
                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{d.sequence_step ?? "—"}</td>
-                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">Scheduled</td>
-                    <td className="px-4 py-2">
-                      <button className="text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">Send Now</button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
