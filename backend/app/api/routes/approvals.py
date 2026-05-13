@@ -132,7 +132,8 @@ async def list_approved_queue(limit: int = 200):
             db._filter_ws(
                 db.client.table("outreach_drafts")
                 .select(
-                    "id, company_id, contact_id, subject, sequence_name, sequence_step, "
+                    "id, company_id, contact_id, subject, body, edited_body, "
+                    "sequence_name, sequence_step, "
                     "channel, created_at, approval_status, "
                     "companies(name, tier), "
                     "contacts(full_name, email, email_status)"
