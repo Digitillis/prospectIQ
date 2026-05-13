@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Callable
+from typing import Any, Callable
 
 from rich.console import Console
 
@@ -147,6 +147,64 @@ def classify_engagement_tier(
         return WARMING
 
     return COLD
+
+
+# ---------------------------------------------------------------------------
+# Send-path governance helpers
+# ---------------------------------------------------------------------------
+
+def _rollback_sent_at(
+    db: Any,
+    draft_id: str,
+    contact_id: str,
+    company_id: str,
+    assertion: str,
+    original_exc: Exception,
+) -> None:
+    """Roll back the atomic sent_at claim after a send-path assertion failure.
+
+    Sets sent_at = NULL so the draft re-enters the approval queue on the next
+    scheduler tick. Idempotent: Resend was never called when this runs, so
+    no duplicate-send risk exists.
+
+    On rollback failure the draft is orphaned — sent_at is set but no email
+    was delivered. A CRITICAL log fires with all fields needed for manual
+    resolution. Do not silently continue.
+    """
+    try:
+        db.client.table("outreach_drafts").update(
+            {"sent_at": None}
+        ).eq("id", draft_id).execute()
+        logger.warning(
+            "send_path_governance rollback_success draft_id=%s contact_id=%s "
+            "company_id=%s assertion=%s",
+            draft_id, contact_id, company_id, assertion,
+            extra={
+                "event": "rollback_success",
+                "draft_id": draft_id,
+                "contact_id": contact_id,
+                "company_id": company_id,
+                "assertion": assertion,
+            },
+        )
+    except Exception as rollback_exc:
+        logger.critical(
+            "send_path_governance rollback_failure draft_id=%s contact_id=%s "
+            "company_id=%s assertion=%s rollback_error=%r original_error=%r — "
+            "ORPHANED DRAFT: sent_at is set but no email was delivered. "
+            "Manual intervention required.",
+            draft_id, contact_id, company_id, assertion,
+            str(rollback_exc), str(original_exc),
+            extra={
+                "event": "rollback_failure",
+                "draft_id": draft_id,
+                "contact_id": contact_id,
+                "company_id": company_id,
+                "assertion": assertion,
+                "rollback_error": str(rollback_exc),
+                "original_error": str(original_exc),
+            },
+        )
 
 
 class EngagementAgent(BaseAgent):
@@ -458,6 +516,159 @@ class EngagementAgent(BaseAgent):
                     console.print(f"  [dim]{company_name}: draft already claimed by another instance. Skipping.[/dim]")
                     result.skipped += 1
                     continue
+
+                # ----------------------------------------------------------
+                # Send-path assertion gate (authoritative runtime governance)
+                #
+                # Draft-generation assertions in outreach.py are advisory:
+                # they filter which contacts are ready to draft against the
+                # state at generation time. These send-path assertions are
+                # authoritative: they verify current runtime contact state
+                # immediately before delivery. A failure here rolls back
+                # sent_at and blocks the send — the draft re-enters the queue.
+                #
+                # Insertion point: after atomic claim, before resend.Emails.send().
+                # The claim is the concurrency barrier; assertions run after it
+                # so only one instance ever reaches this check per draft.
+                # ----------------------------------------------------------
+                _draft_id = draft["id"]
+                _contact_id = draft.get("contact_id", "")
+                _company_id = draft.get("company_id", "")
+                _seq_step = int(draft.get("sequence_step") or 1)
+
+                # Fresh reads: contact/company state may have changed between
+                # draft generation and send approval. Assertions must run
+                # against current runtime state, not the draft-batch snapshot.
+                try:
+                    _fresh_contact_rows = (
+                        self.db.client.table("contacts")
+                        .select("id, email, email_status, email_name_verified, "
+                                "is_outreach_eligible, contact_tier, company_id, full_name")
+                        .eq("id", _contact_id)
+                        .limit(1)
+                        .execute()
+                    ).data
+                    _fresh_company_rows = (
+                        self.db.client.table("companies")
+                        .select("id")
+                        .eq("id", _company_id)
+                        .limit(1)
+                        .execute()
+                    ).data
+                    _fresh_contact = _fresh_contact_rows[0] if _fresh_contact_rows else {}
+                    _fresh_company = _fresh_company_rows[0] if _fresh_company_rows else {}
+                except Exception as _fetch_exc:
+                    logger.error(
+                        "send_path_governance assertion_exception draft_id=%s "
+                        "contact_id=%s — runtime state fetch failed, failing closed: %s",
+                        _draft_id, _contact_id, _fetch_exc,
+                        extra={
+                            "event": "assertion_exception",
+                            "draft_id": _draft_id,
+                            "contact_id": _contact_id,
+                            "company_id": _company_id,
+                        },
+                    )
+                    _rollback_sent_at(self.db, _draft_id, _contact_id, _company_id,
+                                      "contact_fetch_failed", _fetch_exc)
+                    result.skipped += 1
+                    result.add_detail(company_name, "assertion_failed_at_send",
+                                      f"contact_fetch_failed: {_fetch_exc}")
+                    continue
+
+                # Sender identity for the per-sender daily cap check.
+                # _pick_sender is deterministic; calling it here (before the
+                # main call below) adds negligible cost.
+                _assert_sender, _ = _pick_sender(contact_email)
+
+                # For follow-up steps, bypass the per-contact cooldown so
+                # legitimate sequences are not blocked by their own prior step.
+                # (Mirroring the cooldown_days=0 logic in outreach.py.)
+                from backend.app.core.pre_send_assertions import (
+                    run_pre_send_assertions, AssertionFailure,
+                    COMPANY_COOLDOWN_DAYS as _COOLDOWN_DAYS,
+                )
+                _cooldown = 0 if _seq_step >= 2 else _COOLDOWN_DAYS
+
+                _assert_start = datetime.now(timezone.utc)
+                logger.info(
+                    "send_path_governance assertion_start draft_id=%s contact_id=%s "
+                    "seq_step=%d",
+                    _draft_id, _contact_id, _seq_step,
+                    extra={
+                        "event": "assertion_start",
+                        "draft_id": _draft_id,
+                        "contact_id": _contact_id,
+                        "company_id": _company_id,
+                        "seq_step": _seq_step,
+                    },
+                )
+
+                try:
+                    run_pre_send_assertions(
+                        db=self.db,
+                        contact=_fresh_contact,
+                        company=_fresh_company,
+                        sender_email=_assert_sender,
+                        daily_cap=daily_limit,
+                        cooldown_days=_cooldown,
+                        sequence_step=_seq_step,
+                        assertion_context="send_path",
+                    )
+                except AssertionFailure as _af:
+                    _elapsed = (datetime.now(timezone.utc) - _assert_start).total_seconds()
+                    logger.warning(
+                        "send_path_governance assertion_fail draft_id=%s contact_id=%s "
+                        "company_id=%s assertion=%s detail=%s elapsed=%.3fs",
+                        _draft_id, _contact_id, _company_id,
+                        _af.assertion, _af.detail, _elapsed,
+                        extra={
+                            "event": "assertion_fail",
+                            "draft_id": _draft_id,
+                            "contact_id": _contact_id,
+                            "company_id": _company_id,
+                            "assertion": _af.assertion,
+                        },
+                    )
+                    _rollback_sent_at(self.db, _draft_id, _contact_id, _company_id,
+                                      _af.assertion, _af)
+                    result.skipped += 1
+                    result.add_detail(company_name, "assertion_failed_at_send",
+                                      f"{_af.assertion}: {_af.detail}")
+                    continue
+                except Exception as _ae:
+                    _elapsed = (datetime.now(timezone.utc) - _assert_start).total_seconds()
+                    logger.error(
+                        "send_path_governance assertion_exception draft_id=%s "
+                        "contact_id=%s company_id=%s elapsed=%.3fs error=%s",
+                        _draft_id, _contact_id, _company_id, _elapsed, _ae,
+                        exc_info=True,
+                        extra={
+                            "event": "assertion_exception",
+                            "draft_id": _draft_id,
+                            "contact_id": _contact_id,
+                            "company_id": _company_id,
+                        },
+                    )
+                    _rollback_sent_at(self.db, _draft_id, _contact_id, _company_id,
+                                      "assertion_exception", _ae)
+                    result.skipped += 1
+                    result.add_detail(company_name, "assertion_failed_at_send",
+                                      f"assertion_exception: {_ae}")
+                    continue
+
+                _elapsed = (datetime.now(timezone.utc) - _assert_start).total_seconds()
+                logger.info(
+                    "send_path_governance assertion_pass draft_id=%s contact_id=%s "
+                    "elapsed=%.3fs",
+                    _draft_id, _contact_id, _elapsed,
+                    extra={
+                        "event": "assertion_pass",
+                        "draft_id": _draft_id,
+                        "contact_id": _contact_id,
+                        "elapsed_s": _elapsed,
+                    },
+                )
 
                 from backend.app.utils.email_html import plain_to_html
                 _from_address, _from_display = _pick_sender(contact_email)
