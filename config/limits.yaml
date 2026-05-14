@@ -75,14 +75,6 @@ sleep_seconds:
   inter_cycle: 10     # Pause between full pipeline cycles
 
 # ---------------------------------------------------------------------------
-# Send window
-# ---------------------------------------------------------------------------
-send_window:
-  days: [Mon, Tue, Wed, Thu, Fri]   # Days sends are allowed
-  start_hour_ct: 8                  # 8 AM CDT
-  end_hour_ct: 11                   # 11 AM CDT
-
-# ---------------------------------------------------------------------------
 # Daily send limits
 # ---------------------------------------------------------------------------
 outreach:

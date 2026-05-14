@@ -229,6 +229,8 @@ def _build_system_prompt(sequence_step: int = 1) -> str:
     facts = g.get("product_facts", g.get("digitillis_facts", []))
     subject_rules = g.get("subject_line_rules", "")
     opening_rules = g.get("opening_line_rules", "")
+    first_email_rules = g.get("first_email_rules", []) if sequence_step <= 1 else []
+    cta_rules = g.get("cta_rules", [])
 
     # Step 1 uses a plain-text, link-free signature to avoid spam filters.
     # Links are permitted from step 2 onwards.
@@ -313,6 +315,20 @@ def _build_system_prompt(sequence_step: int = 1) -> str:
         "SIGNATURE BLOCK (copy exactly):",
         signature,
     ]
+
+    if first_email_rules:
+        parts += [
+            "",
+            "STEP 1 LINK & ATTACHMENT RULES (hard — not a preference):",
+            *[f"- {r}" for r in first_email_rules],
+        ]
+
+    if cta_rules:
+        parts += [
+            "",
+            "CTA RULES (step-dependent — follow exactly for this step):",
+            *[f"- {r}" for r in cta_rules],
+        ]
 
     # Inject offer context if available
     if offer:
