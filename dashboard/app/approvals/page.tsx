@@ -212,8 +212,7 @@ export default function ApprovalsPage() {
       setEditingId(null);
       return;
     }
-    // Attestation panel is open — proceed only if complete
-    if (!attestationComplete(id)) return;
+    // Attestation panel is open — proceed regardless of which boxes are checked
     setActionLoading(id);
     try {
       await approveDraft(id, getAttestation(id));
