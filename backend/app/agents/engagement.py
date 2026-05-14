@@ -255,11 +255,11 @@ class EngagementAgent(BaseAgent):
         Falls back to safe defaults if table doesn't exist yet.
         Returns: {daily_limit, batch_size, min_gap_minutes, send_enabled}
         """
-        defaults = {"daily_limit": 30, "batch_size": 10, "min_gap_minutes": 4, "send_enabled": True}
+        defaults = {"daily_limit": 30, "batch_size": 10, "min_gap_minutes": 4, "min_gap_seconds": 0, "send_enabled": True}
         try:
             row = (
                 self.db.client.table("outreach_send_config")
-                .select("daily_limit, batch_size, min_gap_minutes, send_enabled")
+                .select("daily_limit, batch_size, min_gap_minutes, min_gap_seconds, send_enabled")
                 .eq("workspace_id", self.db.workspace_id)
                 .limit(1)
                 .execute()
@@ -324,8 +324,9 @@ class EngagementAgent(BaseAgent):
 
         # Load limits from DB — no hardcoding
         send_cfg = self._load_send_config()
-        daily_limit = send_cfg["daily_limit"]
-        batch_size  = send_cfg["batch_size"]
+        daily_limit     = send_cfg["daily_limit"]
+        batch_size      = send_cfg["batch_size"]
+        stagger_seconds = send_cfg.get("min_gap_seconds") or int(send_cfg.get("min_gap_minutes", 0) * 60)
 
         # Check daily cap before fetching drafts
         sent_today = self._count_sent_today()
@@ -871,6 +872,10 @@ class EngagementAgent(BaseAgent):
                 console.print(f"  [green]{company_name} → {contact_email}: Sent[/green]")
                 result.processed += 1
                 result.add_detail(company_name, "sent", f"To: {contact_email}")
+
+                if stagger_seconds > 0 and sent_this_batch < send_limit:
+                    import time as _time
+                    _time.sleep(stagger_seconds)
 
             except Exception as e:
                 logger.error(f"Error sending to {company_name}: {e}", exc_info=True)
