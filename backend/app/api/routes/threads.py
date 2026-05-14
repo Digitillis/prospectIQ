@@ -50,6 +50,11 @@ class RegenerateRequest(BaseModel):
     instruction: Optional[str] = None  # Optional free-text instruction to guide regeneration
 
 
+class EditDraftRequest(BaseModel):
+    body: Optional[str] = None
+    subject: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -485,3 +490,60 @@ async def regenerate_draft(thread_id: str, body: RegenerateRequest):
         "body": draft.get("body", ""),
         "strategy_used": draft.get("strategy_used", ""),
     }
+
+
+@router.patch("/{thread_id}/draft/{draft_id}")
+async def edit_draft(thread_id: str, draft_id: str, body: EditDraftRequest):
+    """Edit the body or subject of a pending draft.
+
+    Returns HTTP 409 if the draft has already been sent (sent_at IS NOT NULL).
+    The DB trigger trg_draft_immutability enforces the same rule at the database
+    layer; this Python guard converts trigger exceptions to 409 rather than 500.
+    """
+    db = get_db()
+
+    # Fetch draft — verify it exists and check sent state
+    try:
+        result = (
+            db.client.table("outreach_drafts")
+            .select("id, sent_at, approval_status")
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
+        draft = result.data[0]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Draft lookup failed: {exc}")
+
+    # Guard: content fields of sent drafts are immutable
+    if draft.get("sent_at") is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="draft_immutability: cannot edit body or subject of a sent draft",
+        )
+
+    updates: dict = {}
+    if body.body is not None:
+        updates["body"] = body.body
+    if body.subject is not None:
+        updates["subject"] = body.subject
+
+    if not updates:
+        return {"message": "No changes", "draft_id": draft_id}
+
+    try:
+        db.client.table("outreach_drafts").update(updates).eq("id", draft_id).execute()
+    except Exception as exc:
+        err = str(exc).lower()
+        if "draft_immutability" in err or "p0001" in err:
+            raise HTTPException(
+                status_code=409,
+                detail="draft_immutability: cannot edit body or subject of a sent draft",
+            )
+        raise HTTPException(status_code=500, detail=f"Update failed: {exc}")
+
+    return {"message": "Draft updated", "draft_id": draft_id}
