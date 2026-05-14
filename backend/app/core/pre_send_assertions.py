@@ -299,6 +299,67 @@ def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
     _log_assertion(db, contact_id, contact.get("company_id", ""), "minimum_step_gap", True, f"gap ok for step {sequence_step}", assertion_context)
 
 
+def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None:
+    """7-day rolling hard bounce rate must not exceed MAX_BOUNCE_RATE (2%).
+
+    Source of truth: outreach_drafts where resend_status = 'bounced' (Resend
+    confirmed hard bounce) within the last 7 days. Records with bounced_at set
+    but resend_status != 'bounced' are system classification artifacts from the
+    pre-ZeroBounce era and are excluded from this calculation.
+
+    Denominator: outreach_drafts where sent_at is within the last 7 days.
+
+    This is a system-level (not per-contact) gate — it fires once per send batch,
+    not per individual contact. Wire it into the top of the send loop so a single
+    bounce spike pauses all subsequent sends in that scheduler tick.
+
+    Safe to call even if no sends exist: 0/0 => 0.0 => passes.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    try:
+        sends_result = (
+            db.client.table("outreach_drafts")
+            .select("id", count="exact")
+            .not_.is_("sent_at", "null")
+            .gte("sent_at", cutoff)
+            .execute()
+        )
+        bounces_result = (
+            db.client.table("outreach_drafts")
+            .select("id", count="exact")
+            .eq("resend_status", "bounced")
+            .gte("sent_at", cutoff)
+            .execute()
+        )
+        send_count = sends_result.count or 0
+        bounce_count = bounces_result.count or 0
+
+        if send_count == 0:
+            _log_assertion(db, None, None, "bounce_rate_ok", True,
+                           "no sends in 7d window — rate undefined, passing", assertion_context)
+            return
+
+        rate = bounce_count / send_count
+        detail = (
+            f"7d rolling: {bounce_count} bounces / {send_count} sends = {rate:.2%} "
+            f"(threshold {MAX_BOUNCE_RATE:.0%})"
+        )
+        if rate > MAX_BOUNCE_RATE:
+            _log_assertion(db, None, None, "bounce_rate_ok", False, detail, assertion_context)
+            _alert(
+                f":rotating_light: BOUNCE RATE GATE TRIGGERED — {detail}. "
+                f"All sends blocked until rate drops below {MAX_BOUNCE_RATE:.0%}."
+            )
+            raise AssertionFailure("bounce_rate_ok", detail)
+
+        _log_assertion(db, None, None, "bounce_rate_ok", True, detail, assertion_context)
+
+    except AssertionFailure:
+        raise
+    except Exception as e:
+        logger.warning("assert_bounce_rate_ok could not compute rate: %s — passing to avoid false block", e)
+
+
 def run_pre_send_assertions(
     db: Any,
     contact: dict,
@@ -321,7 +382,16 @@ def run_pre_send_assertions(
     For follow-up steps (sequence_step ≥ 2) two additional checks run:
     - prior_step_sent: the preceding step was actually delivered
     - minimum_step_gap: at least MIN_STEP_GAP_DAYS since the preceding send
+
+    bounce_rate_ok is a system-level gate that runs once per send invocation
+    in send_path context only — it checks the 7-day rolling bounce rate and
+    blocks the entire send batch if the rate exceeds MAX_BOUNCE_RATE.
     """
+    # System-level gate: check rolling bounce rate before per-contact checks.
+    # Only enforced in send_path — not advisory in draft_gen.
+    if assertion_context == "send_path":
+        assert_bounce_rate_ok(db, assertion_context)
+
     assert_email_deliverable(db, contact, assertion_context)
     assert_email_status_verified(db, contact, assertion_context)
     assert_email_name_consistent(db, contact, assertion_context)

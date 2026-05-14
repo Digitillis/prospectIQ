@@ -6,6 +6,7 @@ Scheduler recovery: 2026-05-04T22:51Z.
 """
 
 import logging
+import os
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from time import time
@@ -379,14 +380,27 @@ def _gmail_intake_workspace(ws: dict) -> None:
     processed = 0
     skipped = 0
 
+    # Prefer Gmail API (OAuth) when credentials are available — fetches all
+    # messages in a lookback window regardless of SEEN/UNSEEN state, so replies
+    # read manually in Gmail are not permanently lost.
+    _use_gmail_api = bool(
+        os.environ.get("GMAIL_CLIENT_ID")
+        and os.environ.get("GMAIL_CLIENT_SECRET")
+        and os.environ.get("GMAIL_REFRESH_TOKEN")
+    )
+
     for gmail_user, gmail_password in accounts_to_poll:
         try:
-            with GmailImapClient(gmail_user, gmail_password) as gmail:
-                replies = gmail.fetch_unseen_replies()
-                if not replies:
-                    continue
+            if _use_gmail_api:
+                from backend.app.integrations.gmail_api_client import fetch_recent_replies
+                replies = fetch_recent_replies(gmail_user)
+            else:
+                with GmailImapClient(gmail_user, gmail_password) as gmail:
+                    replies = gmail.fetch_unseen_replies()
+            if not replies:
+                continue
 
-                for reply in replies:
+            for reply in replies:
                     from_email = reply["from_email"]
                     subject = reply["subject"]
                     body = reply["body"]
@@ -428,7 +442,8 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             ).data
 
                     if not match:
-                        gmail.mark_as_read(reply["uid"])
+                        if not _use_gmail_api:
+                            gmail.mark_as_read(reply["uid"])
                         skipped += 1
                         continue
 
@@ -436,20 +451,35 @@ def _gmail_intake_workspace(ws: dict) -> None:
                     company_id = draft["company_id"]
                     contact_id = draft["contact_id"]
 
-                    existing = (
-                        db.client.table("thread_messages")
-                        .select("id")
-                        .eq("contact_id", contact_id)
-                        .eq("direction", "inbound")
-                        .gte("created_at", (
-                            datetime.fromisoformat(received_at.replace("Z", "+00:00"))
-                            - timedelta(minutes=5)
-                        ).isoformat())
-                        .limit(1)
-                        .execute()
-                    ).data
+                    # Dedup: for Gmail API path check raw_message_id in metadata;
+                    # for IMAP path use the 5-minute timestamp window.
+                    raw_message_id = reply.get("raw_message_id", "")
+                    if _use_gmail_api and raw_message_id:
+                        existing = (
+                            db.client.table("interactions")
+                            .select("id")
+                            .eq("contact_id", contact_id)
+                            .eq("type", "email_replied")
+                            .contains("metadata", {"raw_message_id": raw_message_id})
+                            .limit(1)
+                            .execute()
+                        ).data
+                    else:
+                        existing = (
+                            db.client.table("thread_messages")
+                            .select("id")
+                            .eq("contact_id", contact_id)
+                            .eq("direction", "inbound")
+                            .gte("created_at", (
+                                datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+                                - timedelta(minutes=5)
+                            ).isoformat())
+                            .limit(1)
+                            .execute()
+                        ).data
                     if existing:
-                        gmail.mark_as_read(reply["uid"])
+                        if not _use_gmail_api:
+                            gmail.mark_as_read(reply["uid"])
                         skipped += 1
                         continue
 
@@ -486,17 +516,20 @@ def _gmail_intake_workspace(ws: dict) -> None:
                         logger.warning(f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}")
 
                     try:
-                        db.client.table("thread_messages").insert({
-                            "thread_id": thread_id,
-                            "company_id": company_id,
-                            "contact_id": contact_id,
+                        # thread_messages schema does NOT include company_id, contact_id,
+                        # or workspace_id — those are inferred via the thread_id FK.
+                        # Sending those columns causes a PGRST204 column-not-found error
+                        # and silently drops the record. Only send columns that exist.
+                        _tm_payload = {
                             "direction": "inbound",
                             "body": body[:4000],
                             "subject": subject,
                             "classification": intent,
                             "source": "gmail_imap",
-                            "workspace_id": ws_id,
-                        }).execute()
+                        }
+                        if thread_id:
+                            _tm_payload["thread_id"] = thread_id
+                        db.client.table("thread_messages").insert(_tm_payload).execute()
                     except Exception as e:
                         logger.warning(f"Gmail intake [{ws['name']}]: thread_message insert failed: {e}")
 
@@ -509,7 +542,8 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             "subject": subject,
                             "body": body[:4000],
                             "source": "gmail_imap",
-                            "metadata": {"intent": intent, "from": from_email},
+                            "metadata": {"intent": intent, "from": from_email,
+                                         "raw_message_id": raw_message_id},
                             "workspace_id": ws_id,
                         }).execute()
                     except Exception as e:
@@ -593,12 +627,23 @@ def _push_reply_to_hitl(db, thread_id: str, workspace_id: str, intent: str) -> N
 
 
 def _run_gmail_intake() -> None:
-    """Every-15-min job: poll Gmail IMAP for replies across all active workspaces."""
+    """Every-15-min job: poll Gmail IMAP for replies across all active workspaces.
+
+    Heartbeat: logs a structured event at each tick so Railway monitoring can
+    detect a silent failure (no log = cron stopped running).
+    """
+    from datetime import datetime, timezone as _tz
+    _tick_start = datetime.now(_tz.utc).isoformat()
+    logger.info("gmail_intake_heartbeat tick_start=%s", _tick_start,
+                extra={"event": "gmail_intake_heartbeat", "tick_start": _tick_start})
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_gmail_intake_workspace, "gmail_intake")
     except Exception as e:
         logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
+    _tick_end = datetime.now(_tz.utc).isoformat()
+    logger.info("gmail_intake_heartbeat tick_end=%s", _tick_end,
+                extra={"event": "gmail_intake_complete", "tick_end": _tick_end})
 
 
 def _run_gmail_intake_LEGACY() -> None:
