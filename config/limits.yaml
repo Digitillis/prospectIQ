@@ -81,7 +81,7 @@ outreach:
   daily_send_limit: 125             # Default per-workspace daily send cap
   # Per-reviewer 24-hour approval cap. The approve endpoint returns
   # HTTP 429 once a reviewer hits this number (P1.4 — GTM rebuild 2026-05-08).
-  max_approvals_per_reviewer_per_day: 30
+  max_approvals_per_reviewer_per_day: 500
 
 # ---------------------------------------------------------------------------
 # outreach_send_config table — defaults for code fallbacks and onboarding
