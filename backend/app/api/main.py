@@ -2201,9 +2201,44 @@ async def lifespan(app: FastAPI):
         #     timezone="America/Chicago",
         #     id="mfg_discovery",
         # )
-        scheduler.start()
+        # Advisory lock — prevents a second replica from running the scheduler.
+        # pg_try_advisory_lock acquires a session-level lock identified by the
+        # integer key. If another process already holds it, returns false and
+        # we skip starting the scheduler on this replica.
+        _scheduler_lock_acquired = False
+        _advisory_lock_key = 9182736450  # arbitrary stable integer; must be unique in pg_locks
+        try:
+            from backend.app.core.database import Database as _DB
+            _lock_db = _DB()
+            _lock_result = _lock_db.client.rpc(
+                "pg_try_advisory_lock", {"key": _advisory_lock_key}
+            ).execute()
+            _scheduler_lock_acquired = bool(
+                (_lock_result.data or [True])[0]
+                if isinstance((_lock_result.data or [True])[0], bool)
+                else True
+            )
+        except Exception as _lock_exc:
+            # If the advisory lock call fails (e.g., Supabase doesn't expose pg_try_advisory_lock
+            # via RPC), assume we should start the scheduler — single-replica is safe.
+            logger.warning("Advisory lock unavailable — starting scheduler without lock guard: %s", _lock_exc)
+            _scheduler_lock_acquired = True
+
+        if not _scheduler_lock_acquired:
+            logger.warning(
+                "Another replica holds the scheduler advisory lock — "
+                "this replica will run web-only (scheduler disabled). "
+                "This is expected when Railway scales to >1 replica."
+            )
+            _scheduler = None
+        else:
+            logger.info("Scheduler advisory lock acquired (key=%d)", _advisory_lock_key)
+
+        if _scheduler is not None:
+            scheduler.start()
         logger.info(
-            "APScheduler started — "
+            "APScheduler %s — ",
+            "started" if _scheduler is not None else "skipped (not lock holder)",
             "pipeline_advance every 4h (event-driven: capacity-aware discovery + learning trigger), "
             "send_approved cron Mon-Fri 8:00-11:00 Chicago (reactive advance after each batch), "
             "gmail_intake every 15m across all sender_pool mailboxes (reply draft + HITL on interested/question/objection), "

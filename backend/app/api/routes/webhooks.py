@@ -795,6 +795,47 @@ async def resend_webhook(
     if not event_type:
         return {"status": "ignored", "reason": "no event type"}
 
+    # Idempotent intake: write to provider_events before processing.
+    # For one-shot events (delivered/bounced/complained), dedup on event_type+message_id.
+    # For multi-fire events (opened/clicked), include created_at so Resend retries
+    # at the same timestamp are dropped while real subsequent events pass through.
+    _dedup_suffix = ""
+    if event_type in ("email.opened", "email.clicked"):
+        _dedup_suffix = f":{data.get('created_at', '')}"
+    _provider_event_id = f"{event_type}:{resend_message_id}{_dedup_suffix}"
+    _provider_event_row_id: str | None = None
+    try:
+        _pe_db = _get_db_and_workspace()
+        from backend.app.core.workspace import get_workspace_id as _get_ws_id
+        _ws_id = _get_ws_id() or get_settings().default_workspace_id
+        _pe_row: dict = {
+            "provider": "resend",
+            "provider_event_id": _provider_event_id,
+            "event_type": event_type,
+            "recipient_email": recipient_email or None,
+            "raw_payload": payload,
+        }
+        if _ws_id:
+            _pe_row["workspace_id"] = _ws_id
+        _pe_result = (
+            _pe_db.client.table("provider_events")
+            .upsert(
+                _pe_row,
+                on_conflict="provider,provider_event_id",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )
+        if _pe_result.data:
+            _provider_event_row_id = _pe_result.data[0].get("id")
+        else:
+            # Row already existed (duplicate) — this is a Resend retry; skip processing
+            logger.info("resend_webhook: duplicate event skipped (%s)", _provider_event_id)
+            return {"status": "deduplicated", "provider_event_id": _provider_event_id}
+    except Exception as _pe_exc:
+        # provider_events table may not exist yet (migration pending) — log and continue
+        logger.debug("provider_events intake failed (non-fatal): %s", _pe_exc)
+
     try:
         db = _get_db_and_workspace()
 
@@ -986,7 +1027,7 @@ async def resend_webhook(
                         escalated_from=sup_id,
                         metadata={"escalated_immediately": True},
                     )
-                    db.update_company(company_id, {"status": "not_interested"}, allow_downgrade=False)
+                    db.update_company(company_id, {"status": "not_interested"})
                     logger.warning(
                         "suppression: company %s escalated to company scope (spam complaint from %s)",
                         company_id, contact_id,

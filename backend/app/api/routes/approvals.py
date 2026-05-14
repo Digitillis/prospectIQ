@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from backend.app.core.audit import log_audit_event_from_ctx
 from backend.app.core.auth import require_role, get_current_user
+from backend.app.core.context_intelligence import emit_workflow_event
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
@@ -541,6 +542,35 @@ async def approve_draft(
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
+    # Audit: emit an immutable workflow_event for this state transition
+    try:
+        _event_type = (
+            "draft.edited" if (body and body.edited_body and target_status == "edited")
+            else "draft.pending_second_review" if target_status == "pending_second_review"
+            else "draft.approved"
+        )
+        emit_workflow_event(
+            db,
+            workspace_id=get_workspace_id() or "",
+            entity_type="draft",
+            entity_id=draft_id,
+            event_type=_event_type,
+            from_state=existing_status,
+            to_state=target_status,
+            actor_type="human",
+            actor_id=reviewer_id or "unknown",
+            triggered_by="/api/approvals/{draft_id}/approve",
+            metadata={
+                "has_edit": bool(body and body.edited_body),
+                "force": force,
+                "is_tier_1": is_tier_1,
+                "sequence_step": draft.get("sequence_step"),
+                "sequence_name": draft.get("sequence_name"),
+            },
+        )
+    except Exception:
+        pass  # workflow_events write is non-fatal — never block approval
+
     # Capture edit feedback when reviewer modified the body — used as a
     # positive learning signal for future drafts to the same contact.
     if body and body.edited_body:
@@ -630,9 +660,41 @@ async def reject_draft(
         "rejection_reason": body.rejection_reason,
     }
 
+    # Capture pre-rejection status for audit trail
+    _prior_status = "pending"
+    try:
+        _prior_row = (
+            db._filter_ws(
+                db.client.table("outreach_drafts").select("approval_status")
+            )
+            .eq("id", draft_id)
+            .execute()
+        ).data
+        if _prior_row:
+            _prior_status = _prior_row[0].get("approval_status", "pending")
+    except Exception:
+        pass
+
     draft = db.update_outreach_draft(draft_id, update_data)
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
+
+    # Audit: emit workflow_event for rejection
+    try:
+        emit_workflow_event(
+            db,
+            workspace_id=get_workspace_id() or "",
+            entity_type="draft",
+            entity_id=draft_id,
+            event_type="draft.rejected",
+            from_state=_prior_status,
+            to_state="rejected",
+            actor_type="human",
+            triggered_by="/api/approvals/{draft_id}/reject",
+            metadata={"rejection_reason": body.rejection_reason},
+        )
+    except Exception:
+        pass
 
     log_audit_event_from_ctx(
         "draft.rejected",
