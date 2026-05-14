@@ -368,14 +368,18 @@ async def get_admin_metrics():
 
     # ------------------------------------------------------------------
     # Bounces — total, rate, unsuppressed count (the data quality signal)
+    # Only count drafts where Resend explicitly confirmed a bounce
+    # (resend_status = 'bounced'). Records with bounced_at set but
+    # resend_status != 'bounced' are system classification errors from
+    # the pre-ZeroBounce era and must not inflate the bounce rate.
     # ------------------------------------------------------------------
     bounced_drafts = (
         db._filter_ws(
             db.client.table("outreach_drafts").select(
-                "id, bounced_at, contacts(is_outreach_eligible)"
+                "id, bounced_at, resend_status, contacts(is_outreach_eligible)"
             )
         )
-        .not_.is_("bounced_at", "null")
+        .eq("resend_status", "bounced")
         .execute()
         .data or []
     )
