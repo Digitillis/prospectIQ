@@ -153,7 +153,7 @@ async def list_approved_queue(limit: int = 200):
 
 
 @router.get("/")
-async def list_pending_drafts(limit: int = 100):
+async def list_pending_drafts(limit: int = 200):
     """Get pending outreach drafts with company/contact info and quality scores.
 
     Companies and research are fetched in two bulk queries rather than one
@@ -255,6 +255,7 @@ async def list_pending_drafts(limit: int = 100):
                     step_engagement_by_draft[d["id"]] = eng_map
         except Exception:
             pass
+
 
     for draft in drafts:
         company_id = draft.get("company_id")
