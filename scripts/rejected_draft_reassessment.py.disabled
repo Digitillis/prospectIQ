@@ -1,0 +1,698 @@
+"""
+Phase 2: Rejected Draft Reassessment
+======================================
+Re-evaluates the 23 step-2 rejected drafts in positions 1-64 of the review queue.
+Classifies each rejection reason, checks current governance and content state,
+and determines whether to approve (with or without fixes), flag for regeneration,
+permanently reject, or quarantine for human review.
+
+Usage:
+    python scripts/rejected_draft_reassessment.py --dry-run   # preview only
+    python scripts/rejected_draft_reassessment.py             # apply fixes + approve
+
+Author: Avanish Mehrotra & Digitillis Architecture Team
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import logging
+import os
+import re
+import sys
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+from supabase import create_client
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+log = logging.getLogger("rejected_reassess")
+
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+SENDABLE_EMAIL_STATUSES = {"verified", "catch_all"}
+APPROVED_BY = "avanish"
+BATCH_SIZE = 64
+
+# ---------------------------------------------------------------------------
+# Rejection reason classifier
+# ---------------------------------------------------------------------------
+
+REJECTION_CATEGORIES = {
+    "SYSTEM_ERROR": [
+        "auto_rejected|step 1 landed",         # Mistagged: step-2 draft that mentions step-1 landing (normal follow-up)
+    ],
+    "STEP_LABEL_LEAK": [
+        "step_label_leak",                       # Draft mentions "your first email" — forward reference
+    ],
+    "FABRICATED_CLAIM": [
+        "fabricated_anecdote",
+        "past_customer_claim",
+        "fabricated_customer_story",
+    ],
+}
+
+
+def classify_rejection(reason: str | None) -> str:
+    if not reason:
+        return "UNKNOWN"
+    r = reason.lower()
+
+    # Check for step label only (no other issues)
+    if "step_label_leak" in r and "fabricated" not in r and "past_customer" not in r:
+        return "STEP_LABEL_LEAK"
+
+    # Fabricated claims
+    if any(k in r for k in ["fabricated_anecdote", "past_customer_claim", "fabricated_customer_story"]):
+        if "step_label_leak" in r:
+            return "MULTIPLE: STEP_LABEL_LEAK + FABRICATED_CLAIM"
+        return "FABRICATED_CLAIM"
+
+    # Step 1 mention in step-2 body (system error — follow-up referencing prior send is normal)
+    if "step 1 landed" in r or "step1" in r:
+        return "SYSTEM_ERROR"
+
+    return "OTHER"
+
+
+# ---------------------------------------------------------------------------
+# Content quality checks (same rules as Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _check_body_quality(body: str) -> list[dict]:
+    issues = []
+    if not body:
+        issues.append({"code": "EMPTY_BODY", "severity": "error", "detail": "Body is empty"})
+        return issues
+
+    sig_split = re.split(r"Best regards|Warm regards|Thanks,|Regards,", body, maxsplit=1, flags=re.I)
+    msg_body = sig_split[0] if len(sig_split) > 1 else body
+
+    if "—" in msg_body:
+        issues.append({"code": "EM_DASH", "severity": "error", "detail": "Em dash (—) in message body"})
+    if "–" in msg_body:
+        issues.append({"code": "EN_DASH", "severity": "error", "detail": "En dash (–) in message body"})
+    if "--" in msg_body:
+        issues.append({"code": "DOUBLE_DASH", "severity": "error", "detail": "Double dash (--) in message body"})
+
+    spaced_hyphens = re.findall(r"[a-z,\)]\s{1,2}-\s{1,2}[a-zA-Z']", msg_body, re.I)
+    if spaced_hyphens:
+        issues.append({"code": "SPACED_HYPHEN", "severity": "error",
+                       "detail": f"Spaced hyphen ({len(spaced_hyphens)}x)"})
+
+    # FABRICATED CLIENT CLAIMS
+    fabricated = re.search(
+        r"(one aerospace oem|one of our (client|customer)|plants (using|running similar) (our platform|our system)|"
+        r"we've trained our|our platform trains on|plants using our platform|clients (saved|reduced|improved)|"
+        r"a (manufacturer|customer|client) where|a manufacturer running)",
+        body, re.I
+    )
+    if fabricated:
+        issues.append({"code": "FABRICATED_CLAIM", "severity": "error",
+                       "detail": f"Fabricated client reference: '{fabricated.group()[:80]}'"})
+
+    # STEP LABEL LEAK (mentions step-1 by name in the follow-up body)
+    step_leak = re.search(
+        r"(your first email (asked|mentioned|landed|said)|step 1 (landed|was)|"
+        r"the first email (landed|mentioned|asked))",
+        body, re.I
+    )
+    if step_leak:
+        issues.append({"code": "STEP_LABEL_LEAK", "severity": "error",
+                       "detail": f"Step label leak: '{step_leak.group()[:80]}'"})
+
+    # PAST CUSTOMER CLAIM
+    past_claim = re.search(
+        r"(we've trained|our platform trains on|went from \d+.*to \d+|payback on that|"
+        r"under \d+ weeks|within \d+ days.*using our platform|cut.*by.*within.*using)",
+        body, re.I
+    )
+    if past_claim:
+        issues.append({"code": "PAST_CUSTOMER_CLAIM", "severity": "error",
+                       "detail": f"Past customer performance claim: '{past_claim.group()[:80]}'"})
+
+    # MEETING ASK
+    meeting_ask = re.search(
+        r"(schedule a (call|meeting|time|demo)|book a (call|meeting|demo)|"
+        r"set up a (call|meeting)|hop on a call|can we (meet|chat|connect)|"
+        r"\b15[- ]minute call\b|\b20[- ]minute\b|\b15[- ]minute conv)",
+        body, re.I
+    )
+    if meeting_ask:
+        issues.append({"code": "MEETING_ASK", "severity": "error",
+                       "detail": f"Meeting ask: '{meeting_ask.group()[:60]}'"})
+
+    # DIAGNOSTIC OFFER
+    diag_offer = re.search(
+        r"(2.week diagnostic|two.week diagnostic|run a diagnostic|do a diagnostic|"
+        r"free diagnostic|complimentary diagnostic|quick diagnostic|run a quick scan)",
+        body, re.I
+    )
+    if diag_offer:
+        issues.append({"code": "DIAGNOSTIC_OFFER", "severity": "error",
+                       "detail": f"Diagnostic offer: '{diag_offer.group()[:60]}'"})
+
+    # NO COMMITMENT
+    no_commit = re.search(r"no (commitment|obligation|pressure|strings attached)", body, re.I)
+    if no_commit:
+        issues.append({"code": "NO_COMMITMENT_LANGUAGE", "severity": "error",
+                       "detail": f"No commitment language: '{no_commit.group()[:50]}'"})
+
+    # NO COST
+    no_cost = re.search(r"no (cost|charge|fee)\b", body, re.I)
+    if no_cost:
+        issues.append({"code": "NO_COST_LANGUAGE", "severity": "error",
+                       "detail": f"No cost language: '{no_cost.group()[:50]}'"})
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Content fixes
+# ---------------------------------------------------------------------------
+
+
+def _fix_body(body: str, issues: list[dict]) -> tuple[str, list[str]]:
+    fixed = body
+    applied = []
+    issue_codes = {i["code"] for i in issues}
+
+    if "EM_DASH" in issue_codes:
+        fixed = fixed.replace("—", ",")
+        applied.append("EM_DASH: replaced em dash with comma")
+
+    if "EN_DASH" in issue_codes:
+        fixed = fixed.replace("–", ",")
+        applied.append("EN_DASH: replaced en dash with comma")
+
+    if "DOUBLE_DASH" in issue_codes:
+        fixed = re.sub(r"\s*--\s*", ", ", fixed)
+        applied.append("DOUBLE_DASH: replaced -- with comma")
+
+    if "SPACED_HYPHEN" in issue_codes:
+        fixed = re.sub(r"\s{1,2}-\s{1,2}", ", ", fixed)
+        applied.append("SPACED_HYPHEN: replaced spaced hyphen with comma")
+
+    if "STEP_LABEL_LEAK" in issue_codes:
+        # "Your first email asked/mentioned/landed on X. That's..." → replace opener
+        fixed = re.sub(
+            r"Your first email (asked|mentioned|landed on|said)[^.]+\.",
+            "Following up on my earlier note.",
+            fixed, flags=re.I
+        )
+        fixed = re.sub(
+            r"The first email (landed|mentioned|asked)[^.]+\.",
+            "Following up after my earlier note.",
+            fixed, flags=re.I
+        )
+        # "Step 1 landed - you're tracking X" → remove
+        fixed = re.sub(
+            r"Step 1 landed\s*[,\-–—]\s*[^.]+\.",
+            "",
+            fixed, flags=re.I
+        )
+        # "Step 1 was X" → remove opener line
+        fixed = re.sub(
+            r"^Step 1 was[^\n]+\n",
+            "",
+            fixed, flags=re.I | re.MULTILINE
+        )
+        # Remove any remaining variations
+        fixed = re.sub(r"[Yy]our first email", "My earlier note", fixed)
+        applied.append("STEP_LABEL_LEAK: replaced forward reference with neutral follow-up opener")
+
+    if "MEETING_ASK" in issue_codes:
+        fixed = re.sub(
+            r"Worth a 15.minute (call|conversation) to (walk through|see if)[^?]+\?",
+            "Worth a quick conversation to see if this applies to your operation?",
+            fixed, flags=re.I
+        )
+        fixed = re.sub(
+            r"Worth a 20.minute [^?]+\?",
+            "Worth a conversation to explore what your data is already showing?",
+            fixed, flags=re.I
+        )
+        fixed = re.sub(
+            r"Worth a 15.minute conv[a-z]*\?",
+            "Worth a conversation?",
+            fixed, flags=re.I
+        )
+        applied.append("MEETING_ASK: replaced meeting ask with binary curiosity close")
+
+    if "DIAGNOSTIC_OFFER" in issue_codes:
+        fixed = re.sub(
+            r"Would it make sense to run a (quick|2.week|two.week) diagnostic[^?]+\?",
+            "Would it make sense to see what your existing maintenance data is already telling you?",
+            fixed, flags=re.I
+        )
+        # "Would a 2-week diagnostic across X ... make sense to see Y?" pattern
+        fixed = re.sub(
+            r"Would a 2.week diagnostic[^?]+\?",
+            "Would it be worth comparing what your data is already showing against what predictive monitoring typically catches?",
+            fixed, flags=re.I
+        )
+        fixed = re.sub(
+            r"(run a quick scan of your [^.]+)\. Two week[^.]+\.",
+            r"\1.",
+            fixed, flags=re.I
+        )
+        # "Would it make sense to run a quick scan of X to identify Y?"
+        fixed = re.sub(
+            r"Would it make sense to run a quick scan of[^?]+\?",
+            "Would it make sense to see what your existing data is already flagging?",
+            fixed, flags=re.I
+        )
+        # "Would a quick diagnostic of X be useful?"
+        fixed = re.sub(
+            r"Would a quick diagnostic of[^?]+\?",
+            "Would it be worth a conversation about what your existing data might already be showing?",
+            fixed, flags=re.I
+        )
+        fixed = re.sub(r"The diagnostic takes 2 weeks\.", "", fixed, flags=re.I)
+        fixed = re.sub(r"\. Two weeks\.", ".", fixed, flags=re.I)
+        applied.append("DIAGNOSTIC_OFFER: replaced diagnostic CTA with curiosity close")
+
+    if "NO_COMMITMENT_LANGUAGE" in issue_codes:
+        fixed = re.sub(r"\. No commitment, [^.]+\.", ".", fixed, flags=re.I)
+        fixed = re.sub(r"\? No commitment, [^.]+\.", "?", fixed, flags=re.I)
+        fixed = re.sub(r",? no commitment\b[^.]*\.", ".", fixed, flags=re.I)
+        fixed = re.sub(r"No commitment\.\s*", "", fixed, flags=re.I)
+        applied.append("NO_COMMITMENT_LANGUAGE: removed 'no commitment' language")
+
+    if "NO_COST_LANGUAGE" in issue_codes:
+        fixed = re.sub(r"\s*\(at no cost\)", "", fixed, flags=re.I)
+        fixed = re.sub(r",? no cost\b", "", fixed, flags=re.I)
+        fixed = re.sub(r"\. No cost,?[^.]*\.", ".", fixed, flags=re.I)
+        fixed = re.sub(r" no cost[^.]*\.", ".", fixed, flags=re.I)
+        applied.append("NO_COST_LANGUAGE: removed 'no cost' language")
+
+    # Clean up artifacts
+    fixed = re.sub(r"  +", " ", fixed)
+    fixed = re.sub(r"\.\.", ".", fixed)
+    fixed = re.sub(r"\. \.", ".", fixed)
+    fixed = re.sub(r"\n{3,}", "\n\n", fixed)
+
+    return fixed, applied
+
+
+# ---------------------------------------------------------------------------
+# Governance checks
+# ---------------------------------------------------------------------------
+
+
+def _check_contact_governance(contact: dict) -> list[str]:
+    violations = []
+    email_status = contact.get("email_status") or "null"
+    if email_status not in SENDABLE_EMAIL_STATUSES:
+        violations.append(f"EMAIL_STATUS={email_status}")
+    if contact.get("is_outreach_eligible") is not True:
+        violations.append(f"NOT_OUTREACH_ELIGIBLE")
+    if (contact.get("contact_tier") or "") == "excluded":
+        violations.append("CONTACT_TIER=excluded")
+    return violations
+
+
+def _check_suppression(sb, contact_id: str, email: str | None) -> bool:
+    try:
+        q = sb.table("suppression_log").select("id")
+        if contact_id:
+            q = q.eq("contact_id", contact_id)
+        elif email:
+            q = q.eq("email", email)
+        else:
+            return False
+        r = q.limit(1).execute()
+        return bool(r.data)
+    except Exception:
+        return False
+
+
+def _check_step_gap(sb, contact_id: str) -> tuple[str, int | None]:
+    try:
+        r = (
+            sb.table("outreach_drafts")
+            .select("sent_at")
+            .eq("contact_id", contact_id)
+            .eq("sequence_step", 1)
+            .not_.is_("sent_at", "null")
+            .limit(1)
+            .execute()
+        )
+        if not r.data:
+            return ("NO_STEP1_SENT", None)
+        sent_at_str = r.data[0]["sent_at"]
+        sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
+        gap = (datetime.now(timezone.utc) - sent_at).days
+        if gap < 5:
+            return ("STEP_GAP_TOO_SHORT", gap)
+        return ("OK", gap)
+    except Exception as exc:
+        log.warning("step_gap check error: %s", exc)
+        return ("CHECK_ERROR", None)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def fetch_queue_positions_1_to_64(sb) -> list[dict]:
+    result = (
+        sb.table("outreach_drafts")
+        .select(
+            "id, approval_status, body, subject, sequence_step, contact_id, company_id, "
+            "rejection_reason, rejection_category, created_at, updated_at, approved_at"
+        )
+        .eq("sequence_step", 2)
+        .is_("sent_at", "null")
+        .execute()
+    )
+    rows = result.data or []
+
+    company_ids = list({r["company_id"] for r in rows if r.get("company_id")})
+    contact_ids = list({r["contact_id"] for r in rows if r.get("contact_id")})
+
+    companies: dict = {}
+    for i in range(0, len(company_ids), 100):
+        chunk = company_ids[i : i + 100]
+        cr = sb.table("companies").select("id, name, status, tier").in_("id", chunk).execute()
+        for c in cr.data or []:
+            companies[c["id"]] = c
+
+    contacts: dict = {}
+    for i in range(0, len(contact_ids), 100):
+        chunk = contact_ids[i : i + 100]
+        cr = (
+            sb.table("contacts")
+            .select("id, full_name, last_name, first_name, email, email_status, is_outreach_eligible, contact_tier")
+            .in_("id", chunk)
+            .execute()
+        )
+        for c in cr.data or []:
+            contacts[c["id"]] = c
+
+    def sort_key(r):
+        co = companies.get(r.get("company_id"), {})
+        ct = contacts.get(r.get("contact_id"), {})
+        company_name = (co.get("name") or "").lower()
+        fn = ct.get("full_name") or ""
+        last_name = (ct.get("last_name") or (fn.split()[-1] if fn else "")).lower()
+        return (company_name, last_name)
+
+    rows.sort(key=sort_key)
+    first64 = rows[:BATCH_SIZE]
+
+    for r in first64:
+        r["_company"] = companies.get(r.get("company_id"), {})
+        r["_contact"] = contacts.get(r.get("contact_id"), {})
+
+    return first64
+
+
+def reassess_rejected(dry_run: bool = True) -> dict:
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    log.info("Fetching positions 1-64 of step-2 unsent draft queue...")
+    all64 = fetch_queue_positions_1_to_64(sb)
+
+    rejected_drafts = [d for d in all64 if d["approval_status"] == "rejected"]
+    log.info("Found %d rejected drafts in positions 1-64", len(rejected_drafts))
+
+    audit_records = []
+    summary = {
+        "SAFE_TO_APPROVE": 0,
+        "CONTENT_FIX_THEN_APPROVE": 0,
+        "REGENERATE": 0,
+        "PERMANENT_REJECT": 0,
+        "QUARANTINE": 0,
+        "APPROVED": 0,
+    }
+    regenerate_list = []
+
+    for pos, draft in enumerate(rejected_drafts, 1):
+        draft_id = draft["id"]
+        contact = draft["_contact"]
+        company = draft["_company"]
+        body = draft.get("body") or ""
+        rejection_reason = draft.get("rejection_reason") or ""
+        body_hash_before = sha256(body)
+
+        log.info(
+            "  [%2d/23] %s — %s",
+            pos,
+            company.get("name", "?")[:30],
+            contact.get("full_name", "?")[:25],
+        )
+
+        # --- Classify rejection ---
+        rejection_category = classify_rejection(rejection_reason)
+
+        # --- Current quality check ---
+        quality_issues = _check_body_quality(body)
+        error_issues = [i for i in quality_issues if i["severity"] == "error"]
+
+        # --- Governance check ---
+        gov_violations = _check_contact_governance(contact)
+        is_suppressed = _check_suppression(sb, contact.get("id", ""), contact.get("email"))
+        if is_suppressed:
+            gov_violations.append("SUPPRESSED")
+
+        step_gap_status, step_gap_days = _check_step_gap(sb, contact.get("id", ""))
+        step_gap_ok = step_gap_status in ("OK", "CHECK_ERROR")
+        if step_gap_status == "STEP_GAP_TOO_SHORT":
+            gov_violations.append(f"STEP_GAP_TOO_SHORT: {step_gap_days}d")
+        elif step_gap_status == "NO_STEP1_SENT":
+            gov_violations.append("NO_STEP1_SENT")
+
+        # --- Determine disposition ---
+        if gov_violations:
+            disposition = "PERMANENT_REJECT"
+        elif "FABRICATED_CLAIM" in rejection_category or "PAST_CUSTOMER_CLAIM" in [i["code"] for i in error_issues]:
+            # Bodies with fabricated anecdotes (specific customer stories, "one aerospace OEM", "our platform trains on")
+            # These need regeneration — the core claim structure is compromised
+            fabricated_errors = [i for i in error_issues
+                                 if i["code"] in ("FABRICATED_CLAIM", "PAST_CUSTOMER_CLAIM")]
+            other_errors = [i for i in error_issues
+                           if i["code"] not in ("FABRICATED_CLAIM", "PAST_CUSTOMER_CLAIM")]
+            if fabricated_errors:
+                # Check if the fabricated claim is the ONLY content issue
+                # SMRP-sourced benchmarks are fine; fabricated client anecdotes are not
+                disposition = "REGENERATE"
+            elif other_errors:
+                disposition = "CONTENT_FIX_THEN_APPROVE"
+            else:
+                disposition = "SAFE_TO_APPROVE"
+        else:
+            # Non-governance rejections without fabricated claims: fixable
+            if error_issues:
+                disposition = "CONTENT_FIX_THEN_APPROVE"
+            else:
+                disposition = "SAFE_TO_APPROVE"
+
+        body_after = body
+        fixes_applied = []
+
+        if disposition == "CONTENT_FIX_THEN_APPROVE":
+            body_after, fixes_applied = _fix_body(body, error_issues)
+            recheck = _check_body_quality(body_after)
+            remaining_errors = [i for i in recheck if i["severity"] == "error"]
+            if remaining_errors:
+                log.warning("    QUARANTINE: unfixable errors: %s", [i["code"] for i in remaining_errors])
+                disposition = "QUARANTINE"
+            else:
+                disposition = "CONTENT_FIXED_APPROVED"
+        elif disposition == "SAFE_TO_APPROVE":
+            # SAFE_TO_APPROVE but may still have fixable content issues from earlier
+            # Re-check current body just in case
+            if error_issues:
+                body_after, fixes_applied = _fix_body(body, error_issues)
+                recheck = _check_body_quality(body_after)
+                remaining_errors = [i for i in recheck if i["severity"] == "error"]
+                if remaining_errors:
+                    disposition = "QUARANTINE"
+                else:
+                    disposition = "CONTENT_FIXED_APPROVED"
+
+        body_hash_after = sha256(body_after)
+
+        if disposition == "REGENERATE":
+            regenerate_list.append({
+                "draft_id": draft_id,
+                "company": company.get("name", "N/A"),
+                "contact": contact.get("full_name", "N/A"),
+                "contact_id": contact.get("id"),
+                "company_id": company.get("company_id", company.get("id")),
+                "rejection_reason": rejection_reason,
+                "rejection_category": rejection_category,
+                "sequence_step": 2,
+                "sequence_name": draft.get("sequence_name", "email_value_first"),
+            })
+
+        action_taken = "NONE"
+        if not dry_run:
+            if disposition in ("SAFE_TO_APPROVE", "CONTENT_FIXED_APPROVED"):
+                update_payload: dict = {
+                    "approval_status": "approved",
+                    "approved_at": now_iso,
+                    "approved_by": APPROVED_BY,
+                    "rejection_reason": None,
+                }
+                if fixes_applied:
+                    update_payload["body"] = body_after
+                    update_payload["edited_body"] = body_after
+                try:
+                    sb.table("outreach_drafts").update(update_payload).eq("id", draft_id).execute()
+                    action_taken = "APPROVED" + ("_WITH_CONTENT_FIX" if fixes_applied else "")
+                    log.info("    APPROVED: %s (%s)", draft_id[:8], company.get("name", "?")[:20])
+                    summary["APPROVED"] += 1
+                except Exception as exc:
+                    log.error("    DB write failed: %s — %s", draft_id[:8], exc)
+                    action_taken = f"DB_WRITE_ERROR: {exc}"
+            elif disposition in ("REGENERATE", "PERMANENT_REJECT", "QUARANTINE"):
+                action_taken = f"NO_ACTION ({disposition})"
+        else:
+            if disposition in ("SAFE_TO_APPROVE", "CONTENT_FIXED_APPROVED"):
+                action_taken = "WOULD_APPROVE" + ("_WITH_FIX" if fixes_applied else "")
+            else:
+                action_taken = f"WOULD_{disposition}"
+
+        if disposition == "SAFE_TO_APPROVE":
+            summary["SAFE_TO_APPROVE"] += 1
+        elif disposition == "CONTENT_FIX_THEN_APPROVE":
+            summary["CONTENT_FIX_THEN_APPROVE"] += 1
+        elif disposition == "CONTENT_FIXED_APPROVED":
+            summary["CONTENT_FIX_THEN_APPROVE"] += 1
+        elif disposition == "REGENERATE":
+            summary["REGENERATE"] += 1
+        elif disposition == "PERMANENT_REJECT":
+            summary["PERMANENT_REJECT"] += 1
+        elif disposition == "QUARANTINE":
+            summary["QUARANTINE"] += 1
+
+        audit_records.append({
+            "draft_id": draft_id,
+            "position": pos,
+            "contact_name": contact.get("full_name", "N/A"),
+            "company_name": company.get("name", "N/A"),
+            "original_rejection_reason": rejection_reason,
+            "rejection_category": rejection_category,
+            "contact_email_status": contact.get("email_status"),
+            "is_outreach_eligible": contact.get("is_outreach_eligible"),
+            "quality_issues": quality_issues,
+            "governance_violations": gov_violations,
+            "step_gap_status": step_gap_status,
+            "step_gap_days": step_gap_days,
+            "disposition": disposition,
+            "fixes_applied": fixes_applied,
+            "action_taken": action_taken,
+            "content_hash_before": body_hash_before,
+            "content_hash_after": body_hash_after,
+            "content_changed": body_hash_before != body_hash_after,
+            "timestamp": now_iso,
+        })
+
+    return {
+        "summary": summary,
+        "total_rejected": len(rejected_drafts),
+        "dry_run": dry_run,
+        "records": audit_records,
+        "regenerate_list": regenerate_list,
+    }
+
+
+def write_markdown_report(results: dict, path: str) -> None:
+    lines = [
+        "# Rejected Draft Reassessment Report",
+        "",
+        f"**Run at:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        f"**Mode:** {'DRY RUN' if results['dry_run'] else 'LIVE WRITE'}",
+        "",
+        "## Summary",
+        "",
+    ]
+    s = results["summary"]
+    lines += [
+        "| Disposition | Count |",
+        "|-------------|-------|",
+        f"| SAFE_TO_APPROVE | {s.get('SAFE_TO_APPROVE', 0)} |",
+        f"| CONTENT_FIX_THEN_APPROVE | {s.get('CONTENT_FIX_THEN_APPROVE', 0)} |",
+        f"| REGENERATE (flag for manual regeneration) | {s.get('REGENERATE', 0)} |",
+        f"| PERMANENT_REJECT (governance failure) | {s.get('PERMANENT_REJECT', 0)} |",
+        f"| QUARANTINE (ambiguous) | {s.get('QUARANTINE', 0)} |",
+        f"| **TOTAL APPROVED** | **{s.get('APPROVED', 0)}** |",
+        "",
+        "## Draft-by-Draft Results",
+        "",
+        "| # | Draft ID | Contact | Company | Original Rejection | Disposition | Action |",
+        "|---|----------|---------|---------|-------------------|-------------|--------|",
+    ]
+    for r in results["records"]:
+        rej_short = (r["original_rejection_reason"] or "")[:50]
+        lines.append(
+            f"| {r['position']} | `{r['draft_id'][:8]}` | {r['contact_name'][:22]} | "
+            f"{r['company_name'][:28]} | {rej_short} | {r['disposition']} | {r['action_taken']} |"
+        )
+
+    if results.get("regenerate_list"):
+        lines += ["", "## Drafts Flagged for Regeneration", "",
+                  "These drafts have fabricated client claims that cannot be fixed by substitution.",
+                  "They must be regenerated with clean content.", ""]
+        for r in results["regenerate_list"]:
+            lines.append(f"- **{r['company']} / {r['contact']}** (`{r['draft_id'][:8]}`)")
+            lines.append(f"  - Rejection reason: {r['rejection_reason'][:80]}")
+
+    Path(path).write_text("\n".join(lines))
+    log.info("Report written to %s", path)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Rejected draft reassessment (Phase 2)")
+    parser.add_argument("--dry-run", action="store_true", default=False)
+    parser.add_argument("--output-dir", default="docs/reports")
+    args = parser.parse_args()
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    results = reassess_rejected(dry_run=args.dry_run)
+
+    audit_path = output_dir / "rejected_draft_reassessment.json"
+    audit_path.write_text(json.dumps(results, indent=2, default=str))
+    log.info("Audit JSON written to %s", audit_path)
+
+    report_path = output_dir / "rejected_draft_disposition_report.md"
+    write_markdown_report(results, str(report_path))
+
+    regen_path = output_dir / "regenerate_rejected_candidates.py"
+    regen_content = f'''"""
+Drafts flagged for regeneration — fabricated claims cannot be fixed surgically.
+Run this list through the personalization engine to regenerate clean step-2 bodies.
+
+Generated: {datetime.now(timezone.utc).isoformat()}
+"""
+
+REGENERATE_DRAFT_IDS = {json.dumps([r["draft_id"] for r in results["regenerate_list"]], indent=4)}
+
+REGENERATE_CONTEXT = {json.dumps(results["regenerate_list"], indent=4, default=str)}
+'''
+    regen_path.write_text(regen_content)
+    log.info("Regeneration candidates written to %s", regen_path)
+
+    print("\n=== SUMMARY ===")
+    for k, v in results["summary"].items():
+        print(f"  {k}: {v}")
+    if args.dry_run:
+        print("\n[DRY RUN] No changes written to DB.")

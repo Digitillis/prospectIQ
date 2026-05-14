@@ -986,7 +986,7 @@ async def resend_webhook(
                         escalated_from=sup_id,
                         metadata={"escalated_immediately": True},
                     )
-                    db.update_company(company_id, {"status": "not_interested"}, allow_downgrade=False)
+                    db.update_company(company_id, {"status": "not_interested"})
                     logger.warning(
                         "suppression: company %s escalated to company scope (spam complaint from %s)",
                         company_id, contact_id,
