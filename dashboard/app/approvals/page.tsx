@@ -1070,7 +1070,7 @@ export default function ApprovalsPage() {
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       onClick={() => handleApprove(draft.id)}
-                      disabled={!attestationComplete(draft.id) || actionLoading === draft.id}
+                      disabled={actionLoading === draft.id}
                       className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 disabled:opacity-40"
                     >
                       {actionLoading === draft.id ? (
@@ -1086,11 +1086,6 @@ export default function ApprovalsPage() {
                     >
                       Cancel
                     </button>
-                    {!attestationComplete(draft.id) && (
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">
-                        {Object.values(getAttestation(draft.id)).filter(Boolean).length}/5 confirmed
-                      </span>
-                    )}
                   </div>
                 </div>
               )}

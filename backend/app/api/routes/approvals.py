@@ -369,17 +369,8 @@ async def approve_draft(
     """
     db = get_db()
 
-    # ----- P2.2: reviewer attestation required -----
-    if not force:
-        if body is None or body.attestation is None:
-            raise HTTPException(status_code=400, detail={"error": "attestation_incomplete"})
-        att = body.attestation.model_dump()
-        for key in _REQUIRED_ATTESTATION_KEYS:
-            if not att.get(key, False):
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "attestation_incomplete", "field": key},
-                )
+    # Attestation is recorded for audit purposes but not enforced as a hard gate.
+    # Reviewers may check any, all, or none of the items — the data is informational.
 
     # ----- Resolve the current reviewer's user id -----
     reviewer_user: dict = {}
