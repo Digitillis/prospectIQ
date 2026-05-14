@@ -213,6 +213,81 @@ def _get_db_and_workspace():
     return Database(workspace_id=ws_id)
 
 
+# Event types that must be processed exactly once.
+# email.opened and email.clicked are intentionally excluded: Resend reuses
+# email_id for every open/click on the same message, so there is no stable
+# unique key per individual event delivery. Repeated opens/clicks are
+# legitimate and must not be collapsed.
+_RESEND_DEDUP_EVENT_TYPES: frozenset[str] = frozenset({
+    "email.delivered",
+    "email.bounced",
+    "email.complained",
+})
+
+
+def _try_record_provider_event(
+    db,
+    *,
+    provider: str,
+    provider_event_id: str,
+    event_type: str,
+    recipient_email: str | None = None,
+    contact_id: str | None = None,
+    company_id: str | None = None,
+    raw_payload: dict | None = None,
+    workspace_id: str | None = None,
+) -> bool:
+    """Insert a deduplication record into provider_events.
+
+    Returns True  if this is a new event — caller should proceed with processing.
+    Returns False if this is a duplicate — caller should skip processing.
+
+    If the insert fails for a reason other than a unique-constraint violation,
+    the function logs a WARNING and returns True so the webhook is never silently
+    blocked by a dedup-table failure. The warning must be visible in Railway logs.
+    """
+    try:
+        row: dict = {
+            "provider": provider,
+            "provider_event_id": provider_event_id,
+            "event_type": event_type,
+            "raw_payload": raw_payload or {},
+        }
+        if workspace_id:
+            row["workspace_id"] = workspace_id
+        if recipient_email:
+            row["recipient_email"] = recipient_email
+        if contact_id:
+            row["contact_id"] = contact_id
+        if company_id:
+            row["company_id"] = company_id
+
+        result = db.client.table("provider_events").insert(row).execute()
+        # Success: Supabase returns the inserted row in result.data
+        return bool(result.data)
+
+    except Exception as exc:
+        error_str = str(exc).lower()
+        if (
+            "23505" in error_str
+            or "unique" in error_str
+            or "duplicate" in error_str
+            or "already exists" in error_str
+        ):
+            # Unique-constraint violation — this is a known duplicate
+            return False
+
+        # Unexpected failure — log WARNING and continue so the webhook is
+        # never silently bypassed because of a provider_events table issue.
+        logger.warning(
+            "provider_events: insert failed for %s/%s — continuing without dedup: %s",
+            provider,
+            provider_event_id,
+            exc,
+        )
+        return True
+
+
 def _find_thread(db, contact_id: str, company_id: str, instantly_campaign_id: Optional[str] = None):
     """Find the most recent active/paused/replied thread for a contact."""
     try:
@@ -835,6 +910,31 @@ async def resend_webhook(
 
         # sender_email is in data.from for all Resend events
         sender_email: str = data.get("from") or ""
+
+        # --- One-shot event deduplication via provider_events ---
+        # Only email.delivered, email.bounced, and email.complained are deduped.
+        # email.opened and email.clicked are intentionally excluded: Resend reuses
+        # email_id for every open/click so there is no stable per-delivery key,
+        # and repeated opens/clicks are legitimate engagement signals.
+        if event_type in _RESEND_DEDUP_EVENT_TYPES and resend_message_id:
+            _provider_event_id = f"resend:{resend_message_id}:{event_type}"
+            _is_new = _try_record_provider_event(
+                db,
+                provider="resend",
+                provider_event_id=_provider_event_id,
+                event_type=event_type,
+                recipient_email=recipient_email or None,
+                contact_id=contact_id,
+                company_id=company_id,
+                raw_payload=payload,
+                workspace_id=db.workspace_id,
+            )
+            if not _is_new:
+                return {
+                    "status": "deduplicated",
+                    "provider_event_id": _provider_event_id,
+                    "contact_id": contact_id,
+                }
 
         if event_type == "email.delivered":
             try:
