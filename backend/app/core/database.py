@@ -425,6 +425,7 @@ class Database:
         result = (
             query
             .eq("approval_status", "pending")
+            .order("sequence_step", desc=True)
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
