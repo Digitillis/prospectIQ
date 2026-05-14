@@ -425,6 +425,7 @@ class Database:
         result = (
             query
             .eq("approval_status", "pending")
+            .is_("sent_at", "null")  # exclude already-sent ghosts regardless of approval_status
             .order("sequence_step", desc=True)
             .order("created_at", desc=True)
             .limit(limit)
