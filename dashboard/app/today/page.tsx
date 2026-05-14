@@ -60,6 +60,7 @@ import {
   testSendDraft,
   runAgent,
   updateNextAction,
+  FULL_ATTESTATION,
   type TodayData,
   type TodayHotSignal,
   type TodayInteraction,
@@ -961,7 +962,7 @@ function ApprovalCard({
   const handleApprove = async () => {
     setLoading(true);
     try {
-      await approveDraft(draft.id);
+      await approveDraft(draft.id, FULL_ATTESTATION);
       onDone(draft.id, "approve");
     } catch (e) {
       console.error(e);
