@@ -328,6 +328,24 @@ class EngagementAgent(BaseAgent):
         batch_size      = send_cfg["batch_size"]
         stagger_seconds = send_cfg.get("min_gap_seconds") or int(send_cfg.get("min_gap_minutes", 0) * 60)
 
+        # DB send gate — the DB toggle is the operator kill switch; env var is the
+        # deployment gate. Both must be True. DB flag wins for runtime control.
+        if not send_cfg.get("send_enabled", True):
+            console.print("[yellow]DB send_enabled is false — drafts staged but not sent.[/yellow]")
+            return result
+
+        # Send window check — only enforce when send_window_end > 0.
+        # 8–11 AM CDT = 13–16 UTC (summer) or 14–17 UTC (winter). Set in Railway env.
+        if settings.send_window_end > 0:
+            from datetime import datetime as _dt
+            _hour = _dt.utcnow().hour
+            if not (settings.send_window_start <= _hour < settings.send_window_end):
+                console.print(
+                    f"[yellow]Outside send window ({settings.send_window_start:02d}–{settings.send_window_end:02d} UTC, "
+                    f"current={_hour:02d}). No sends.[/yellow]"
+                )
+                return result
+
         # Check daily cap before fetching drafts
         sent_today = self._count_sent_today()
         remaining_today = daily_limit - sent_today
