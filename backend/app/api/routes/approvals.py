@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.app.core.audit import log_audit_event_from_ctx
+from backend.app.core.audit_events import emit_workflow_event
 from backend.app.core.auth import require_role, get_current_user
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
@@ -587,6 +588,21 @@ async def approve_draft(
             "channel": draft.get("channel"),
         },
     )
+    emit_workflow_event(
+        db,
+        workspace_id=get_workspace_id() or "",
+        entity_type="draft",
+        entity_id=draft_id,
+        event_type=action,
+        to_state=target_status,
+        actor_type="human",
+        actor_id=reviewer_id or None,
+        triggered_by="/api/approvals/{draft_id}/approve",
+        metadata={
+            "sequence_name": draft.get("sequence_name"),
+            "channel": draft.get("channel"),
+        },
+    )
 
     return {"data": draft, "message": "Draft approved"}
 
@@ -638,6 +654,17 @@ async def reject_draft(
         "draft.rejected",
         resource_type="outreach_draft",
         resource_id=draft_id,
+        metadata={"rejection_reason": body.rejection_reason},
+    )
+    emit_workflow_event(
+        db,
+        workspace_id=get_workspace_id() or "",
+        entity_type="draft",
+        entity_id=draft_id,
+        event_type="draft.rejected",
+        to_state="rejected",
+        actor_type="human",
+        triggered_by="/api/approvals/{draft_id}/reject",
         metadata={"rejection_reason": body.rejection_reason},
     )
 
