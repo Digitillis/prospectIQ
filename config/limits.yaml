@@ -90,7 +90,9 @@ outreach:
 # ---------------------------------------------------------------------------
 send_limits:
   company_cooldown_days: 14         # Days before a different contact at the same company can be reached
-  min_step_gap_days: 3              # Minimum days between sequence steps for the same contact
+  min_step_gap_days: 3              # Legacy alias — step-selective values below take precedence
+  step_gap_days_step_2: 3           # Days required between step 1 send and step 2 send (cold open needs time)
+  step_gap_days_step_3_plus: 2      # Days required between step N and step N+1 for steps 3 and beyond
   max_bounce_rate: 0.02             # 7-day rolling hard bounce rate ceiling — do not raise above 0.05
   company_lock_business_days: 5     # Business days no other contact at company may be reached after a send
 

@@ -264,6 +264,23 @@ async def list_pending_drafts(limit: int = 200):
             pass
 
 
+    # Traction detection: for each company, check if any OTHER contact has
+    # positive engagement signals. Surfaces a warning on step-1 cold drafts
+    # when we already have traction at that company via a different contact.
+    from backend.app.core.channel_coordinator import get_company_traction
+    traction_by_company: dict[str, dict] = {}
+    for draft in drafts:
+        company_id = draft.get("company_id")
+        contact_id = draft.get("contact_id")
+        if not company_id or company_id in traction_by_company:
+            continue
+        try:
+            traction_by_company[company_id] = get_company_traction(
+                db, company_id, exclude_contact_id=contact_id
+            )
+        except Exception:
+            traction_by_company[company_id] = {"has_traction": False, "signals": [], "contact_name": "", "contact_id": ""}
+
     for draft in drafts:
         company_id = draft.get("company_id")
         company  = companies_by_id.get(company_id) if company_id else None
@@ -277,6 +294,7 @@ async def list_pending_drafts(limit: int = 200):
             for i in report.issues
         ]
         draft["step_engagement"] = step_engagement_by_draft.get(draft["id"])
+        draft["company_traction"] = traction_by_company.get(company_id) if company_id else None
 
     # Get total pending count (unaffected by limit) for the UI to display
     try:

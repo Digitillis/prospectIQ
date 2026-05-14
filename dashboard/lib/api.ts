@@ -1228,6 +1228,14 @@ export interface OutreachDraft {
   companies?: { name: string; tier?: string; pqs_total: number };
   contacts?: { full_name?: string; title?: string; email?: string; open_count?: number; click_count?: number };
   step_engagement?: Record<string, "clicked" | "opened" | "replied" | "none">;
+  quality_passed?: boolean;
+  quality_issues?: { severity: string; check: string; message: string }[];
+  company_traction?: {
+    has_traction: boolean;
+    signals: string[];
+    contact_name: string;
+    contact_id: string;
+  } | null;
 }
 
 export interface Interaction {

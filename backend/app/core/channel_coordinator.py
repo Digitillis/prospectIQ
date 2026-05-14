@@ -297,6 +297,111 @@ def is_company_locked(
     return (False, None)
 
 
+def get_company_traction(
+    db: Database,
+    company_id: str,
+    exclude_contact_id: str = None,
+) -> dict:
+    """Check if any contact at this company has shown positive engagement signals.
+
+    Used to surface a warning in the approval queue when a step-1 cold outreach
+    is pending for a company where another contact is already warm. The reviewer
+    can then decide whether to proceed (new stakeholder) or hold (duplicate effort).
+
+    Returns:
+        {
+            "has_traction": bool,
+            "signals": list of human-readable signal strings,
+            "contact_name": str (name of the contact with traction, if any),
+            "contact_id": str,
+        }
+    """
+    result: dict = {"has_traction": False, "signals": [], "contact_name": "", "contact_id": ""}
+
+    try:
+        # Get all contact IDs at this company
+        contacts_result = (
+            db.client.table("contacts")
+            .select("id, full_name, reply_sentiment")
+            .eq("company_id", company_id)
+            .execute()
+        )
+        contacts = contacts_result.data or []
+    except Exception:
+        return result
+
+    if not contacts:
+        return result
+
+    contact_map = {c["id"]: c for c in contacts}
+    all_contact_ids = [c["id"] for c in contacts]
+    check_ids = [cid for cid in all_contact_ids if cid != exclude_contact_id]
+    if not check_ids:
+        return result
+
+    signals: list[str] = []
+    traction_contact_id = ""
+    traction_contact_name = ""
+
+    # Check 1: positive reply sentiment on any contact
+    for c in contacts:
+        if c["id"] == exclude_contact_id:
+            continue
+        sentiment = (c.get("reply_sentiment") or "").lower()
+        if sentiment and sentiment not in ("auto_reply_retired", "auto_reply", "bounced", "unsubscribed", ""):
+            signals.append(f"{c.get('full_name', 'A contact')} replied ({sentiment})")
+            traction_contact_id = c["id"]
+            traction_contact_name = c.get("full_name", "")
+
+    # Check 2: email opens or clicks in interactions table
+    try:
+        eng_result = (
+            db.client.table("interactions")
+            .select("contact_id, type, created_at")
+            .in_("contact_id", check_ids)
+            .in_("type", ["email_opened", "email_clicked", "email_replied"])
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        eng_rows = eng_result.data or []
+    except Exception:
+        eng_rows = []
+
+    # Aggregate: count opens/clicks per contact
+    from collections import defaultdict
+    opens_by_contact: dict[str, int] = defaultdict(int)
+    clicks_by_contact: dict[str, int] = defaultdict(int)
+    for row in eng_rows:
+        cid = row.get("contact_id", "")
+        if row["type"] == "email_opened":
+            opens_by_contact[cid] += 1
+        elif row["type"] == "email_clicked":
+            clicks_by_contact[cid] += 1
+
+    for cid, count in clicks_by_contact.items():
+        if count >= 1:
+            name = contact_map.get(cid, {}).get("full_name", "A contact")
+            signals.append(f"{name} clicked a link ({count}x)")
+            if not traction_contact_id:
+                traction_contact_id, traction_contact_name = cid, name
+
+    for cid, count in opens_by_contact.items():
+        if count >= 2 and cid not in clicks_by_contact:
+            name = contact_map.get(cid, {}).get("full_name", "A contact")
+            signals.append(f"{name} opened {count}x")
+            if not traction_contact_id:
+                traction_contact_id, traction_contact_name = cid, name
+
+    if signals:
+        result["has_traction"] = True
+        result["signals"] = signals
+        result["contact_id"] = traction_contact_id
+        result["contact_name"] = traction_contact_name
+
+    return result
+
+
 def has_recent_activity(
     db: Database,
     contact_id: str,
