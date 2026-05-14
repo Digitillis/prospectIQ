@@ -66,14 +66,23 @@ def _company_cooldown_days() -> int:
 def _max_bounce_rate() -> float:
     return _float_limit("max_bounce_rate", "MAX_BOUNCE_RATE", 0.02)
 
-# Minimum days between any two emails to the same contact (hard floor)
-def _min_step_gap_days() -> int:
-    return _int_limit("min_step_gap_days", "MIN_STEP_GAP_DAYS", 3)
+# Minimum days between any two emails to the same contact (hard floor).
+# Step 2 (first follow-up) requires 3 days since step 1.
+# Step 3+ requires 2 days since the prior step.
+def _step_gap_days(sequence_step: int) -> int:
+    """Return the minimum gap (days) required before sending `sequence_step`.
+
+    Step 2 (first follow-up): 3 days — longer window gives the cold open time to land.
+    Step 3+: 2 days — sequence is already warm; shorter gap keeps momentum.
+    """
+    if sequence_step <= 2:
+        return _int_limit("step_gap_days_step_2", "STEP_GAP_DAYS_STEP_2", 3)
+    return _int_limit("step_gap_days_step_3_plus", "STEP_GAP_DAYS_STEP_3_PLUS", 2)
 
 # Keep module-level aliases for callers that reference these directly
 COMPANY_COOLDOWN_DAYS: int = 14
 MAX_BOUNCE_RATE: float = 0.02
-MIN_STEP_GAP_DAYS: int = 3
+MIN_STEP_GAP_DAYS: int = 3  # legacy alias — use _step_gap_days(step) for new code
 
 # Email statuses that are safe to send to. NULL/unverified statuses block the send.
 # - "verified": ZeroBounce/Apollo confirmed deliverable
@@ -297,10 +306,11 @@ def assert_prior_step_sent(db: Any, contact: dict, sequence_step: int,
 
 def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
                             assertion_context: str = "draft_gen") -> None:
-    """For step N ≥ 2, at least MIN_STEP_GAP_DAYS must have passed since the prior step.
+    """For step N >= 2, the required gap since the prior step must have passed.
 
-    Prevents rapid-fire email sequences where the system schedules steps
-    too close together due to sequence state drift.
+    Gap is step-selective:
+    - Step 2: 3 days (cold open needs time to land before follow-up)
+    - Step 3+: 2 days (sequence is warm; shorter gap maintains momentum)
     """
     if sequence_step < 2:
         return
@@ -330,7 +340,7 @@ def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
             except ValueError:
                 last_sent = datetime.fromisoformat(sent_str.replace("+00:00", "")).replace(tzinfo=timezone.utc)
             days_since = (datetime.now(timezone.utc) - last_sent).days
-            gap = _min_step_gap_days()
+            gap = _step_gap_days(sequence_step)
             if days_since < gap:
                 detail = (
                     f"only {days_since}d since step {prior_step} was sent — "
