@@ -22,14 +22,58 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+def _get_send_limits() -> dict:
+    """Load send limits from limits.yaml, with env var overrides."""
+    import os
+    try:
+        from backend.app.core.limits import _load
+        cfg = _load() or {}
+        return cfg.get("send_limits") or {}
+    except Exception:
+        return {}
+
+def _int_limit(key: str, env_var: str, default: int) -> int:
+    import os
+    v = os.environ.get(env_var)
+    if v:
+        try:
+            return int(v)
+        except ValueError:
+            pass
+    try:
+        return int(_get_send_limits().get(key, default))
+    except Exception:
+        return default
+
+def _float_limit(key: str, env_var: str, default: float) -> float:
+    import os
+    v = os.environ.get(env_var)
+    if v:
+        try:
+            return float(v)
+        except ValueError:
+            pass
+    try:
+        return float(_get_send_limits().get(key, default))
+    except Exception:
+        return default
+
 # Days since last outreach to the same company before a new send is allowed
-COMPANY_COOLDOWN_DAYS = 30
+def _company_cooldown_days() -> int:
+    return _int_limit("company_cooldown_days", "COMPANY_COOLDOWN_DAYS", 14)
 
 # Hard bounce rate threshold (7-day rolling). Exceeding this pauses all sends.
-MAX_BOUNCE_RATE = 0.02
+def _max_bounce_rate() -> float:
+    return _float_limit("max_bounce_rate", "MAX_BOUNCE_RATE", 0.02)
 
 # Minimum days between any two emails to the same contact (hard floor)
-MIN_STEP_GAP_DAYS = 5
+def _min_step_gap_days() -> int:
+    return _int_limit("min_step_gap_days", "MIN_STEP_GAP_DAYS", 3)
+
+# Keep module-level aliases for callers that reference these directly
+COMPANY_COOLDOWN_DAYS: int = 14
+MAX_BOUNCE_RATE: float = 0.02
+MIN_STEP_GAP_DAYS: int = 3
 
 # Email statuses that are safe to send to. NULL/unverified statuses block the send.
 # - "verified": ZeroBounce/Apollo confirmed deliverable
@@ -150,10 +194,12 @@ def assert_persona_target(db: Any, contact: dict, assertion_context: str = "draf
     _log_assertion(db, contact["id"], contact.get("company_id", ""), "persona_target", True, f"tier={tier}", assertion_context)
 
 
-def assert_no_recent_company_send(db: Any, contact: dict, company: dict, days: int = COMPANY_COOLDOWN_DAYS,
+def assert_no_recent_company_send(db: Any, contact: dict, company: dict, days: int | None = None,
                                    assertion_context: str = "draft_gen",
                                    current_draft_id: str | None = None) -> None:
     """No send to this company in the last N days (to same contact)."""
+    if days is None:
+        days = _company_cooldown_days()
     company_id = company.get("id") or contact.get("company_id")
     if not company_id:
         return
@@ -284,10 +330,11 @@ def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
             except ValueError:
                 last_sent = datetime.fromisoformat(sent_str.replace("+00:00", "")).replace(tzinfo=timezone.utc)
             days_since = (datetime.now(timezone.utc) - last_sent).days
-            if days_since < MIN_STEP_GAP_DAYS:
+            gap = _min_step_gap_days()
+            if days_since < gap:
                 detail = (
                     f"only {days_since}d since step {prior_step} was sent — "
-                    f"minimum gap is {MIN_STEP_GAP_DAYS}d (step {sequence_step} blocked)"
+                    f"minimum gap is {gap}d (step {sequence_step} blocked)"
                 )
                 _log_assertion(db, contact_id, contact.get("company_id", ""), "minimum_step_gap", False, detail, assertion_context)
                 _alert(f":warning: Pre-send gate: minimum_step_gap failed — {contact.get('full_name')} ({detail})")
@@ -340,15 +387,16 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
             return
 
         rate = bounce_count / send_count
+        threshold = _max_bounce_rate()
         detail = (
             f"7d rolling: {bounce_count} bounces / {send_count} sends = {rate:.2%} "
-            f"(threshold {MAX_BOUNCE_RATE:.0%})"
+            f"(threshold {threshold:.0%})"
         )
-        if rate > MAX_BOUNCE_RATE:
+        if rate > threshold:
             _log_assertion(db, None, None, "bounce_rate_ok", False, detail, assertion_context)
             _alert(
                 f":rotating_light: BOUNCE RATE GATE TRIGGERED — {detail}. "
-                f"All sends blocked until rate drops below {MAX_BOUNCE_RATE:.0%}."
+                f"All sends blocked until rate drops below {threshold:.0%}."
             )
             raise AssertionFailure("bounce_rate_ok", detail)
 

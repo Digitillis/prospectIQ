@@ -24,8 +24,24 @@ logger = logging.getLogger(__name__)
 
 LINKEDIN_TO_EMAIL_COOLDOWN_DAYS = 0  # Email allowed immediately alongside LinkedIn
 DM_COMPLETE_TO_EMAIL_COOLDOWN_DAYS = 14
-COMPANY_LOCK_BUSINESS_DAYS = 5
 ACTIVITY_COOLDOWN_HOURS = 48
+
+def _company_lock_business_days() -> int:
+    import os
+    v = os.environ.get("COMPANY_LOCK_BUSINESS_DAYS")
+    if v:
+        try:
+            return int(v)
+        except ValueError:
+            pass
+    try:
+        from backend.app.core.limits import _load
+        cfg = _load() or {}
+        return int((cfg.get("send_limits") or {}).get("company_lock_business_days", 5))
+    except Exception:
+        return 5
+
+COMPANY_LOCK_BUSINESS_DAYS: int = 5  # module-level alias; live value from _company_lock_business_days()
 
 
 def get_active_channel(db: Database, contact_id: str) -> tuple[str, str | None]:
@@ -246,7 +262,7 @@ def is_company_locked(
     the window.
     """
     now = datetime.now(timezone.utc)
-    cutoff = _business_days_ago(COMPANY_LOCK_BUSINESS_DAYS).isoformat()
+    cutoff = _business_days_ago(_company_lock_business_days()).isoformat()
 
     try:
         # Only count actual outreach touches — not status changes or system notes
@@ -276,7 +292,7 @@ def is_company_locked(
             days_ago = (now - created_at).days
         except (ValueError, AttributeError):
             days_ago = 0
-        return (True, f"another contact reached {days_ago}d ago — retry after {COMPANY_LOCK_BUSINESS_DAYS} business days")
+        return (True, f"another contact reached {days_ago}d ago — retry after {_company_lock_business_days()} business days")
 
     return (False, None)
 

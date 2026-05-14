@@ -80,8 +80,19 @@ sleep_seconds:
 outreach:
   daily_send_limit: 125             # Default per-workspace daily send cap
   # Per-reviewer 24-hour approval cap. The approve endpoint returns
-  # HTTP 429 once a reviewer hits this number (P1.4 — GTM rebuild 2026-05-08).
+  # HTTP 429 once a reviewer hits this number.
   max_approvals_per_reviewer_per_day: 500
+
+# ---------------------------------------------------------------------------
+# Pre-send assertion thresholds — all overridable via env var at runtime.
+# Env var names: COMPANY_COOLDOWN_DAYS, MIN_STEP_GAP_DAYS, MAX_BOUNCE_RATE,
+#                COMPANY_LOCK_BUSINESS_DAYS, MAX_APPROVALS_PER_DAY
+# ---------------------------------------------------------------------------
+send_limits:
+  company_cooldown_days: 14         # Days before a different contact at the same company can be reached
+  min_step_gap_days: 3              # Minimum days between sequence steps for the same contact
+  max_bounce_rate: 0.02             # 7-day rolling hard bounce rate ceiling — do not raise above 0.05
+  company_lock_business_days: 5     # Business days no other contact at company may be reached after a send
 
 # ---------------------------------------------------------------------------
 # outreach_send_config table — defaults for code fallbacks and onboarding

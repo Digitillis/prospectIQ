@@ -50,14 +50,21 @@ def get_db() -> Database:
 
 
 def _max_approvals_per_reviewer_per_day() -> int:
-    """Read the daily reviewer cap from config at request time (not boot time)."""
+    """Read the daily reviewer cap — env var takes precedence over YAML config."""
+    import os
+    env_val = os.environ.get("MAX_APPROVALS_PER_DAY")
+    if env_val:
+        try:
+            return int(env_val)
+        except ValueError:
+            pass
     try:
         from backend.app.core.limits import _load
         cfg = _load() or {}
         outreach = cfg.get("outreach") or {}
-        return int(outreach.get("max_approvals_per_reviewer_per_day", 30))
+        return int(outreach.get("max_approvals_per_reviewer_per_day", 500))
     except Exception:
-        return 30
+        return 500
 
 
 class AttestationModel(BaseModel):
