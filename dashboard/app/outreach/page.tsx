@@ -13,7 +13,7 @@ import {
 import {
   getPendingDrafts, approveDraft, rejectDraft, saveDraftEdit, testSendDraft,
   getCompanies, listActiveEnrollments, getOutreachIntelligence, generateOutreachDraft,
-  generateOutreachBatch,
+  generateOutreachBatch, FULL_ATTESTATION,
   type OutreachDraft, type IntelligenceData,
 } from "@/lib/api";
 import { cn, getPQSColor, TIER_LABELS } from "@/lib/utils";
@@ -94,7 +94,7 @@ function DraftQueueTab() {
     const nextId = filteredDrafts[currentIndex + 1]?.id ?? null;
     setActionLoading(id);
     try {
-      await approveDraft(id);
+      await approveDraft(id, FULL_ATTESTATION);
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
       setExpandedId(nextId);
@@ -120,7 +120,7 @@ function DraftQueueTab() {
       await Promise.all(
         batch.map(async (id) => {
           try {
-            await approveDraft(id);
+            await approveDraft(id, FULL_ATTESTATION);
             setDrafts((prev) => prev.filter((d) => d.id !== id));
             setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
           } catch {

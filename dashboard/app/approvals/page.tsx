@@ -27,7 +27,7 @@ import {
   History,
   FileSearch,
 } from "lucide-react";
-import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, logReply, getDraftThread, getDraftResearch, OutreachDraft, type DraftQualityScore, type LogReplyPayload, type SentEmail, type ResearchIntelligence } from "@/lib/api";
+import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDraft, scoreDraft, logReply, getDraftThread, getDraftResearch, OutreachDraft, BLANK_ATTESTATION, FULL_ATTESTATION, type DraftQualityScore, type LogReplyPayload, type SentEmail, type ResearchIntelligence, type AttestationPayload } from "@/lib/api";
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
@@ -67,6 +67,14 @@ export default function ApprovalsPage() {
   const [researchData, setResearchData] = useState<Record<string, ResearchIntelligence | null>>({});
   const [threadLoading, setThreadLoading] = useState<Set<string>>(new Set());
   const [researchLoading, setResearchLoading] = useState<Set<string>>(new Set());
+
+  // Attestation: which draft is awaiting attestation checklist before approval
+  const [attestingId, setAttestingId] = useState<string | null>(null);
+  const [attestations, setAttestations] = useState<Record<string, AttestationPayload>>({});
+
+  // Filters
+  const [filterStep, setFilterStep] = useState<"all" | "1" | "2">("all");
+  const [filterMinPQS, setFilterMinPQS] = useState<0 | 60 | 70 | 80>(0);
 
   const toggleThread = async (draftId: string) => {
     const next = new Set(expandedThread);
@@ -173,12 +181,45 @@ export default function ApprovalsPage() {
       .catch(() => {});
   }, []);
 
+  const ATTESTATION_LABELS: Record<keyof AttestationPayload, string> = {
+    numeric_claims_attributed: "Numeric claims are supported by research",
+    persona_in_allowlist: "Contact persona is in the ICP allowlist",
+    no_url_step_1: "No URLs in this email (step 1 rule)",
+    company_is_manufacturer: "Company is a confirmed manufacturer",
+    specific_opener: "Opener is specific to this company (not generic)",
+  };
+
+  const getAttestation = (id: string): AttestationPayload =>
+    attestations[id] ?? { ...BLANK_ATTESTATION };
+
+  const setAttestationKey = (id: string, key: keyof AttestationPayload, value: boolean) => {
+    setAttestations((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? { ...BLANK_ATTESTATION }), [key]: value },
+    }));
+  };
+
+  const attestationComplete = (id: string): boolean => {
+    const att = getAttestation(id);
+    return Object.values(att).every(Boolean);
+  };
+
   const handleApprove = async (id: string) => {
+    // If attestation panel is not open yet, open it rather than approving directly
+    if (attestingId !== id) {
+      setAttestingId(id);
+      setRejectingId(null);
+      setEditingId(null);
+      return;
+    }
+    // Attestation panel is open — proceed only if complete
+    if (!attestationComplete(id)) return;
     setActionLoading(id);
     try {
-      await approveDraft(id);
+      await approveDraft(id, getAttestation(id));
       setDrafts((prev) => prev.filter((d) => d.id !== id));
       setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+      setAttestingId(null);
       setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to approve");
@@ -187,8 +228,20 @@ export default function ApprovalsPage() {
     }
   };
 
+  const [bulkAttestOpen, setBulkAttestOpen] = useState(false);
+  const [pendingBulkIds, setPendingBulkIds] = useState<string[]>([]);
+  const [bulkAttestChecked, setBulkAttestChecked] = useState(false);
+
+  const handleBulkApproveRequest = (ids: string[]) => {
+    if (ids.length === 0) return;
+    setPendingBulkIds(ids);
+    setBulkAttestOpen(true);
+    setBulkAttestChecked(false);
+  };
+
   const handleBulkApprove = async (ids: string[]) => {
     if (ids.length === 0) return;
+    setBulkAttestOpen(false);
     setBulkApproving(true);
     setBulkProgress({ done: 0, total: ids.length });
     let done = 0;
@@ -198,7 +251,7 @@ export default function ApprovalsPage() {
       await Promise.all(
         batch.map(async (id) => {
           try {
-            await approveDraft(id);
+            await approveDraft(id, FULL_ATTESTATION);
             setDrafts((prev) => prev.filter((d) => d.id !== id));
             setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
           } catch {
@@ -211,22 +264,26 @@ export default function ApprovalsPage() {
     }
     setBulkApproving(false);
     setBulkProgress(null);
+    setPendingBulkIds([]);
   };
 
   const [search, setSearch] = useState("");
-  const visibleDrafts = search.trim()
-    ? drafts.filter((d) => {
-        const q = search.trim().toLowerCase();
-        return (
-          (d.companies?.name ?? "").toLowerCase().includes(q) ||
-          (d.contacts?.full_name ?? "").toLowerCase().includes(q) ||
-          (d.contacts?.email ?? "").toLowerCase().includes(q) ||
-          (d.subject ?? "").toLowerCase().includes(q) ||
-          (d.sequence_name ?? "").toLowerCase().includes(q) ||
-          (d.contacts?.title ?? "").toLowerCase().includes(q)
-        );
-      })
-    : drafts;
+  const visibleDrafts = drafts.filter((d) => {
+    if (filterStep !== "all" && String(d.sequence_step) !== filterStep) return false;
+    if (filterMinPQS > 0 && (d.companies?.pqs_total ?? 0) < filterMinPQS) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (
+        !(d.companies?.name ?? "").toLowerCase().includes(q) &&
+        !(d.contacts?.full_name ?? "").toLowerCase().includes(q) &&
+        !(d.contacts?.email ?? "").toLowerCase().includes(q) &&
+        !(d.subject ?? "").toLowerCase().includes(q) &&
+        !(d.sequence_name ?? "").toLowerCase().includes(q) &&
+        !(d.contacts?.title ?? "").toLowerCase().includes(q)
+      ) return false;
+    }
+    return true;
+  });
   const allVisibleIds = visibleDrafts.map((d) => d.id);
   const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
   const someSelected = allVisibleIds.some((id) => selected.has(id)) && !allSelected;
@@ -293,6 +350,7 @@ export default function ApprovalsPage() {
     setEditBody(draft.edited_body || draft.body);
     setRejectingId(null);
     setRejectReason("");
+    setAttestingId(null);
   };
 
   const generateVariant = (draft: OutreachDraft) => {
@@ -333,6 +391,7 @@ export default function ApprovalsPage() {
     setRejectTags([]);
     setEditingId(null);
     setEditBody("");
+    setAttestingId(null);
   };
 
   // Keyboard shortcut handler
@@ -348,7 +407,7 @@ export default function ApprovalsPage() {
         case "k": // Previous draft
           setFocusedIndex((i) => Math.max(i - 1, 0));
           break;
-        case "a": // Approve current
+        case "a": // Approve current (opens attestation panel)
           if (drafts[focusedIndex] && !editingId && !rejectingId) {
             handleApprove(drafts[focusedIndex].id);
           }
@@ -366,6 +425,7 @@ export default function ApprovalsPage() {
         case "Escape":
           if (editingId) { setEditingId(null); setEditBody(""); }
           if (rejectingId) { setRejectingId(null); setRejectReason(""); setRejectTags([]); }
+          if (attestingId) { setAttestingId(null); }
           break;
       }
     };
@@ -443,15 +503,110 @@ export default function ApprovalsPage() {
         </div>
       )}
 
-      {/* Search bar */}
+      {/* Search + filter bar */}
       {!loading && drafts.length > 0 && (
-        <input
-          type="text"
-          placeholder="Search by company, contact, email, subject, sequence..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
-        />
+        <div className="space-y-2">
+          <input
+            type="text"
+            placeholder="Search by company, contact, email, subject, sequence..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
+          />
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Step filter */}
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mr-1">Step</span>
+              {(["all", "1", "2"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setFilterStep(s)}
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-xs font-medium border transition-colors",
+                    filterStep === s
+                      ? "border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900"
+                      : "border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400"
+                  )}
+                >
+                  {s === "all" ? "All" : `Step ${s}`}
+                </button>
+              ))}
+            </div>
+            <span className="text-gray-200 dark:text-gray-700">|</span>
+            {/* PQS filter */}
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mr-1">Min PQS</span>
+              {([0, 60, 70, 80] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setFilterMinPQS(p)}
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-xs font-medium border transition-colors",
+                    filterMinPQS === p
+                      ? "border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900"
+                      : "border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400"
+                  )}
+                >
+                  {p === 0 ? "All" : `≥${p}`}
+                </button>
+              ))}
+            </div>
+            {(filterStep !== "all" || filterMinPQS > 0) && (
+              <button
+                onClick={() => { setFilterStep("all"); setFilterMinPQS(0); }}
+                className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bulk attestation confirmation modal */}
+      {bulkAttestOpen && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4 space-y-3">
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Confirm bulk approval of {pendingBulkIds.length} draft{pendingBulkIds.length !== 1 ? "s" : ""}
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            By proceeding, you confirm that for all selected drafts:
+          </p>
+          <ul className="space-y-1 text-xs text-amber-800 dark:text-amber-300 list-disc list-inside">
+            <li>Numeric claims are supported by research</li>
+            <li>Contact personas are in the ICP allowlist</li>
+            <li>No URLs in step-1 emails</li>
+            <li>Companies are confirmed manufacturers</li>
+            <li>Openers are specific (not generic)</li>
+          </ul>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={bulkAttestChecked}
+              onChange={(e) => setBulkAttestChecked(e.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            <span className="text-xs font-medium text-amber-900 dark:text-amber-200">
+              I confirm all of the above for these {pendingBulkIds.length} drafts
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleBulkApprove(pendingBulkIds)}
+              disabled={!bulkAttestChecked}
+              className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 disabled:opacity-40"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Confirm &amp; Approve All
+            </button>
+            <button
+              onClick={() => { setBulkAttestOpen(false); setPendingBulkIds([]); setBulkAttestChecked(false); }}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Bulk action bar */}
@@ -473,7 +628,7 @@ export default function ApprovalsPage() {
             <>
               <span className="text-gray-300 dark:text-gray-600">|</span>
               <button
-                onClick={() => handleBulkApprove([...selected])}
+                onClick={() => handleBulkApproveRequest([...selected])}
                 disabled={bulkApproving}
                 className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
               >
@@ -493,7 +648,7 @@ export default function ApprovalsPage() {
             <>
               <span className="text-gray-300 dark:text-gray-600 ml-auto">|</span>
               <button
-                onClick={() => handleBulkApprove(visibleDrafts.filter((d) => (d.quality_score ?? 0) >= 80).map((d) => d.id))}
+                onClick={() => handleBulkApproveRequest(visibleDrafts.filter((d) => (d.quality_score ?? 0) >= 80).map((d) => d.id))}
                 disabled={bulkApproving}
                 className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-50"
               >
@@ -880,6 +1035,66 @@ export default function ApprovalsPage() {
                 </div>
               )}
 
+              {/* Attestation checklist — shown when Approve is clicked */}
+              {attestingId === draft.id && (
+                <div className="rounded-lg border border-green-200 dark:border-green-800/50 bg-green-50 dark:bg-green-900/10 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
+                      Approval checklist — confirm all before sending
+                    </p>
+                    <button
+                      onClick={() => {
+                        // Check all at once
+                        setAttestations((prev) => ({ ...prev, [draft.id]: { ...FULL_ATTESTATION } }));
+                      }}
+                      className="text-[10px] font-medium text-green-600 dark:text-green-400 hover:underline"
+                    >
+                      Check all
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {(Object.keys(BLANK_ATTESTATION) as Array<keyof AttestationPayload>).map((key) => (
+                      <label key={key} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={getAttestation(draft.id)[key]}
+                          onChange={(e) => setAttestationKey(draft.id, key, e.target.checked)}
+                          className="h-4 w-4 rounded accent-green-600"
+                        />
+                        <span className="text-xs text-gray-700 dark:text-gray-300">
+                          {ATTESTATION_LABELS[key]}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleApprove(draft.id)}
+                      disabled={!attestationComplete(draft.id) || actionLoading === draft.id}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 disabled:opacity-40"
+                    >
+                      {actionLoading === draft.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      )}
+                      Confirm Approve
+                    </button>
+                    <button
+                      onClick={() => { setAttestingId(null); }}
+                      className="text-xs text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    >
+                      Cancel
+                    </button>
+                    {!attestationComplete(draft.id) && (
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">
+                        {Object.values(getAttestation(draft.id)).filter(Boolean).length}/5 confirmed
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Reject Reason Input */}
               {rejectingId === draft.id && (
                 <div className="rounded-lg border border-red-100 dark:border-red-900/40 bg-red-50/60 dark:bg-red-900/10 p-4 space-y-3">
@@ -978,14 +1193,19 @@ export default function ApprovalsPage() {
                     <button
                       onClick={() => handleApprove(draft.id)}
                       disabled={actionLoading === draft.id}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-50",
+                        attestingId === draft.id
+                          ? "bg-green-600 text-white hover:bg-green-700"
+                          : "bg-gray-900 text-white hover:bg-gray-800"
+                      )}
                     >
                       {actionLoading === draft.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <CheckCircle2 className="h-4 w-4" />
                       )}
-                      Approve
+                      {attestingId === draft.id ? "Reviewing..." : "Approve"}
                     </button>
                     <button
                       onClick={() => startEditing(draft)}

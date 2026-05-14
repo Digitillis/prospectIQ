@@ -150,10 +150,41 @@ export interface AlertItem {
 export const getAlerts = (hours = 24) =>
   fetchAPI<{ count: number; items: AlertItem[] }>(`/api/approvals/alerts?hours=${hours}`);
 
-export const approveDraft = (id: string, editedBody?: string) =>
+export interface AttestationPayload {
+  numeric_claims_attributed: boolean;
+  persona_in_allowlist: boolean;
+  no_url_step_1: boolean;
+  company_is_manufacturer: boolean;
+  specific_opener: boolean;
+}
+
+export const BLANK_ATTESTATION: AttestationPayload = {
+  numeric_claims_attributed: false,
+  persona_in_allowlist: false,
+  no_url_step_1: false,
+  company_is_manufacturer: false,
+  specific_opener: false,
+};
+
+export const FULL_ATTESTATION: AttestationPayload = {
+  numeric_claims_attributed: true,
+  persona_in_allowlist: true,
+  no_url_step_1: true,
+  company_is_manufacturer: true,
+  specific_opener: true,
+};
+
+export const approveDraft = (
+  id: string,
+  attestation: AttestationPayload,
+  editedBody?: string
+) =>
   fetchAPI(`/api/approvals/${id}/approve`, {
     method: "POST",
-    body: JSON.stringify(editedBody ? { edited_body: editedBody } : {}),
+    body: JSON.stringify({
+      attestation,
+      ...(editedBody ? { edited_body: editedBody } : {}),
+    }),
   });
 
 export const saveDraftEdit = (id: string, editedBody: string) =>

@@ -23,6 +23,7 @@ import {
   testSendDraft, logReply, listThreads, getThread,
   confirmThreadClassification, sendThreadDraft, regenerateThreadDraft,
   getCommandCenter, updateIntelligenceGoals, getHitlStats, getAnalyticsSummary,
+  FULL_ATTESTATION,
   type OutreachDraft, type DraftQualityScore, type LogReplyPayload,
   type CampaignThread, type ThreadMessage, type CommandCenterData,
   type HitlStats, type AnalyticsSummary,
@@ -394,7 +395,7 @@ function CommandCenterInner() {
   const handleApprove = async (id: string) => {
     setActionLoading(id);
     try {
-      await approveDraft(id);
+      await approveDraft(id, FULL_ATTESTATION);
       setDrafts((prev) => { const next = prev.filter((d) => d.id !== id); return next; });
       setFocusedIndex((i) => Math.min(i, drafts.length - 2));
     } catch (err) { setDraftsError(err instanceof Error ? err.message : "Failed to approve"); }
