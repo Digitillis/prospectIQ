@@ -65,3 +65,87 @@ jobs:
           # Ensure no outbound email path can execute during tests.
           SEND_ENABLED: "false"
         run: pytest backend/tests/ -x -q --tb=short
+
+  staging-smoke-test:
+    name: Staging Smoke Test
+    runs-on: ubuntu-latest
+    # Only runs after a successful merge to main — not on PRs or feature branches.
+    # Requires STAGING_URL and STAGING_DATABASE_URL to be set in GitHub secrets.
+    # If secrets are absent the job is skipped, not failed, so forks and early
+    # branches are not blocked.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [lint, test]
+    steps:
+      - name: Check required secrets
+        id: secrets-check
+        run: |
+          if [ -z "$STAGING_URL" ] || [ -z "$STAGING_DATABASE_URL" ]; then
+            echo "STAGING_URL or STAGING_DATABASE_URL not set — skipping smoke test."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+
+      - name: Wait for Railway staging deploy
+        if: steps.secrets-check.outputs.skip == 'false'
+        run: |
+          echo "Waiting 120s for Railway staging deploy to complete..."
+          sleep 120
+
+      - name: Install psql client
+        if: steps.secrets-check.outputs.skip == 'false'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Health check (5 retries, 30s apart)
+        if: steps.secrets-check.outputs.skip == 'false'
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          for i in $(seq 1 5); do
+            if curl -sf --max-time 10 "${STAGING_URL}/health" -o /dev/null; then
+              echo "Health check passed on attempt $i"
+              break
+            fi
+            if [ "$i" -eq 5 ]; then
+              echo "FATAL: Health check failed after 5 attempts against ${STAGING_URL}/health"
+              exit 1
+            fi
+            echo "Attempt $i failed — retrying in 30s..."
+            sleep 30
+          done
+
+      - name: Verify send_enabled=false
+        if: steps.secrets-check.outputs.skip == 'false'
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          send_val=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT send_enabled FROM outreach_send_config LIMIT 1;" \
+            | tr -d ' \n')
+          if [ "$send_val" != "f" ]; then
+            echo "FATAL: send_enabled is not false on staging (got: '${send_val}')"
+            echo "Sends must remain disabled until Phase 2 is complete and Avanish approves."
+            exit 1
+          fi
+          echo "OK: send_enabled=false confirmed on staging"
+
+      - name: Verify staging isolation (no production contacts)
+        if: steps.secrets-check.outputs.skip == 'false'
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          count=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM contacts;" \
+            | tr -d ' \n')
+          echo "Staging contact count: ${count}"
+          if [ "$count" -ge 1000 ]; then
+            echo "FATAL: Contact count (${count}) >= 1000."
+            echo "Staging may contain production data. Investigate before proceeding."
+            exit 1
+          fi
+          echo "OK: Isolation check passed (${count} contacts, expected < 1000)"

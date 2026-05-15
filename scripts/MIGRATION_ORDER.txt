@@ -1,0 +1,124 @@
+# ProspectIQ — Canonical Migration Application Order
+# Generated: 2026-05-14
+#
+# INSTRUCTIONS:
+#   Apply each file below in order via psql or the Supabase SQL editor.
+#   Lines beginning with # are comments and are not SQL files.
+#   Lines beginning with SKIP must NOT be applied — they exist on disk but
+#   are either duplicates or superseded.
+#
+#   Total: 55 .sql files on disk — 54 applied, 1 skipped.
+#
+# DUPLICATE NUMBER RESOLUTION:
+#   Three file-number groups have multiple files. Resolution and rationale:
+#
+#   002 group (two files with prefix 002_):
+#     Apply: 002_apollo_extended_fields.sql BEFORE 002_improvements.sql
+#     Rationale: Neither file depends on objects created by the other.
+#     002_apollo_extended_fields adds columns to companies + contacts (all IF NOT EXISTS).
+#     002_improvements creates enum, adds more columns, creates apollo_credit_events,
+#     seed_audit_events, outreach_pace_log, and a completeness trigger.
+#     Alphabetical order is safe. The backfill UPDATE in 002_improvements (section 9)
+#     touches 0 rows on a fresh staging DB — safe.
+#
+#   003 group (two files with prefix 003_):
+#     Apply: 003_contact_events.sql BEFORE 003_dnc_priority_queue.sql
+#     Rationale: Neither file depends on objects created by the other.
+#     003_contact_events creates the contact_events table (uses uuid_generate_v4
+#     from the uuid-ossp extension enabled in 001).
+#     003_dnc_priority_queue creates do_not_contact and adds priority_score to contacts.
+#     Alphabetical order is safe.
+#
+#   019/020 group (THREE files — one is a duplicate that must be skipped):
+#     Apply: 019_campaign_threads_hitl.sql BEFORE 019_sequence_builder_v2.sql
+#     SKIP:  020_sequence_builder_v2.sql
+#     Rationale: diff 019_sequence_builder_v2.sql 020_sequence_builder_v2.sql
+#     confirmed FILES IDENTICAL on 2026-05-14. The 020 file has "Migration 019"
+#     in its header comment — it was saved under the wrong number.
+#     019_campaign_threads_hitl creates campaign_threads, thread_messages, hitl_queue
+#     (FKs to companies/contacts/outreach_drafts from 001 — no dependency on sequence_builder).
+#     019_sequence_builder_v2 creates campaign_sequence_definitions_v2
+#     (FK to workspaces from 016 — no dependency on campaign_threads).
+#     Alphabetical order within the 019 group is safe.
+#     020 is safe to apply if accidentally included (all IF NOT EXISTS guards), but
+#     produces no schema change and pollutes the audit trail — skip it.
+#
+#   021: No file numbered 021 exists. The sequence intentionally jumps to 022.
+#
+# VERIFIED: 2026-05-14
+#   - diff output: "FILES ARE IDENTICAL" for 019_sequence_builder_v2 vs 020_sequence_builder_v2
+#   - All 7 conflicting files confirmed fully idempotent (IF NOT EXISTS guards on every DDL)
+#   - No cross-dependencies within any duplicate-number group
+#   - apollo_id confirmed in 001 base schema (contacts:line 118, companies:line 53)
+#   - uuid-ossp extension enabled in 001:line 5 (covers uuid_generate_v4 in 003, 004, 008, 016, 018)
+#   - 053 WHERE clause: approval_status <> 'rejected'::approval_status
+#     (direct enum comparison — IMMUTABLE-safe for index predicate)
+#
+# RISK NOTE — migration 053:
+#   The committed version of 053 on some branches uses:
+#     WHERE approval_status::text != 'rejected'
+#   This fails on a fresh database with:
+#     ERROR: functions in index predicate must be marked IMMUTABLE
+#   The corrected predicate is:
+#     WHERE approval_status <> 'rejected'::approval_status
+#   Confirm the file on disk matches the corrected predicate before applying to staging.
+#
+# ============================================================
+# APPLY IN THIS EXACT ORDER (54 files):
+# ============================================================
+
+001_initial_schema.sql
+002_apollo_extended_fields.sql
+002_improvements.sql
+003_contact_events.sql
+003_dnc_priority_queue.sql
+004_content_archive.sql
+005_linkedin_notes.sql
+006_custom_tags.sql
+007_row_level_security.sql
+008_action_queue.sql
+009_linkedin_status_timestamps.sql
+010_contact_state_machine.sql
+011_intent_signals.sql
+012_linkedin_multitouch.sql
+013_analytics.sql
+014_tranche_campaign_cluster.sql
+015_campaign_sequences.sql
+016_workspaces_multitenant.sql
+017_workspace_id_remaining_tables.sql
+018_admin_panel.sql
+019_campaign_threads_hitl.sql
+019_sequence_builder_v2.sql
+SKIP 020_sequence_builder_v2.sql
+022_lookalike_runs.sql
+023_auth_hardening.sql
+024_multi_thread.sql
+025_ghostwriting.sql
+026_voice_of_prospect.sql
+027_rls_workspace_scoped.sql
+028_meetings_and_deals.sql
+029_outreach_send_config.sql
+030_workspace_credentials.sql
+031_contact_outreach_eligibility.sql
+032_contact_email_status.sql
+033_outbound_eligible_contacts.sql
+034_send_assertions_and_outcomes.sql
+035_reply_classifications_signals_threading.sql
+036_title_classifier_raw_contacts_ccs.sql
+037_fb_icp_segment.sql
+038_contact_email_dedup.sql
+039_sender_tracking.sql
+040_qualification_reason.sql
+041_company_dedup_unique.sql
+042_enrichment_attempts.sql
+043_draft_model_tracking.sql
+044_edit_feedback.sql
+045_gtm_rebuild.sql
+046_signal_attribution.sql
+047_send_assertions_context.sql
+048_tiered_suppression.sql
+049_review_manifests.sql
+050_workflow_events.sql
+051_provider_events.sql
+052_policy_snapshots_and_context_packets.sql
+053_draft_hardening_trigger_unique.sql
