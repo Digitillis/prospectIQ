@@ -211,6 +211,64 @@ def _send_approved_workspace(ws: dict) -> None:
             logger.debug("post-send intent refresh scheduling failed: %s", exc)
 
 
+def _dispatch_workspace(ws: dict) -> None:
+    """Dispatch one batch from outbound_queue for a single workspace (PR G path)."""
+    from backend.app.core.config import get_settings
+    if not get_settings().send_enabled:
+        return
+    from backend.app.core.dispatch_scheduler import dispatch_workspace
+    from backend.app.core.database import get_supabase_client
+    db_client = get_supabase_client()
+    try:
+        send_cfg = (
+            db_client.table("outreach_send_config")
+            .select("batch_size, max_retries")
+            .eq("workspace_id", ws["id"])
+            .limit(1)
+            .execute()
+            .data or [{}]
+        )[0]
+    except Exception:
+        send_cfg = {}
+    batch_size = int(send_cfg.get("batch_size") or 10)
+    max_retries = int(send_cfg.get("max_retries") or 4)
+    result = dispatch_workspace(
+        db_client,
+        workspace_id=ws["id"],
+        batch_size=batch_size,
+        max_retries=max_retries,
+    )
+    logger.info(
+        "Dispatch [%s]: dispatched=%d delivered=%d transient=%d permanent=%d "
+        "assertion_skipped=%d errors=%d",
+        ws["name"],
+        result.dispatched,
+        result.delivered,
+        result.transient_failed,
+        result.permanently_failed,
+        result.assertion_skipped,
+        result.errors,
+    )
+    if result.delivered > 0:
+        _schedule_pipeline_advance(delay_seconds=60)
+        try:
+            _schedule_post_send_intent_refresh(ws["id"], db, lookback_minutes=15)
+        except Exception as exc:
+            logger.debug("post-send intent refresh scheduling failed: %s", exc)
+
+
+def _reclaim_stale_locks_workspace(ws: dict) -> None:
+    """Reclaim stale outbound_queue locks for a single workspace."""
+    from backend.app.core.dispatch_scheduler import reclaim_stale_locks
+    from backend.app.core.database import get_supabase_client
+    db_client = get_supabase_client()
+    count = reclaim_stale_locks(db_client, ws["id"])
+    if count:
+        logger.warning(
+            "Stale lock reclaim [%s]: %d rows released", ws["name"], count
+        )
+
+
 def _schedule_post_send_intent_refresh(
     workspace_id: str, db, lookback_minutes: int = 15,
 ) -> None:
@@ -265,6 +323,28 @@ def _run_send_approved() -> None:
         for_each_workspace(_send_approved_workspace, "send_approved")
     except Exception as e:
         logger.error(f"Scheduled send_approved failed: {e}")
+
+
+def _run_dispatch_loop() -> None:
+    """Cron job: consume outbound_queue and dispatch via Resend (PR G queue path).
+
+    Scheduled Mon-Fri at :00 and :30 past each hour from 8 AM–11 AM Chicago time.
+    Offset +120s from scheduler start to avoid simultaneous pool exhaustion.
+    """
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_dispatch_workspace, "dispatch_loop")
+    except Exception as exc:
+        logger.error("Scheduled dispatch_loop failed: %s", exc)
+
+
+def _run_reclaim_stale_locks() -> None:
+    """Runs every 2 minutes: clears outbound_queue locks older than 5 minutes."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_reclaim_stale_locks_workspace, "reclaim_stale_locks")
+    except Exception as exc:
+        logger.error("Scheduled reclaim_stale_locks failed: %s", exc)
 
 
 def _run_process_due_sequences() -> None:
@@ -2037,14 +2117,24 @@ async def lifespan(app: FastAPI):
     try:
         global _scheduler
         from apscheduler.schedulers.background import BackgroundScheduler
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
         scheduler = BackgroundScheduler(timezone="America/Chicago")
         _scheduler = scheduler
-        scheduler.add_job(_run_health_snapshot, "interval", minutes=15, id="health_snapshot")
-        scheduler.add_job(_run_pipeline_qc, "interval", minutes=15, id="pipeline_qc")
-        # send_approved: Tue/Wed/Thu only, 8am-11am Chicago at :00 and :30
-        # Ticks: 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00 (7 per day)
-        # With batch_size=20 and daily_limit=100, first 5 ticks fill the quota
-        # so effectively all 100 emails go out by 10am — front-loaded as intended.
+        _now = _dt.now(_tz.utc)
+        # 15-min interval jobs are staggered by start_date offset so they never
+        # fire simultaneously (which exhausts the PostgREST connection pool).
+        # Offsets: health_snapshot +0s, qualification +30s, pipeline_qc +45s,
+        #          gmail_intake +90s, dispatch_loop +120s.
+        scheduler.add_job(
+            _run_health_snapshot, "interval", minutes=15, id="health_snapshot",
+            start_date=_now,
+        )
+        scheduler.add_job(
+            _run_pipeline_qc, "interval", minutes=15, id="pipeline_qc",
+            start_date=_now + _td(seconds=45),
+        )
+        # send_approved (legacy direct-scan path) remains for manual/explicit-draft sends.
+        # _run_dispatch_loop (queue path) is the primary send path going forward.
         # send_approved: Mon-Fri, 8am-11am Chicago at :00 and :30 (7 ticks/day)
         # 7 ticks × batch_size=20 = 140 capacity; daily_limit=125 caps it at 125
         scheduler.add_job(
@@ -2053,6 +2143,16 @@ async def lifespan(app: FastAPI):
             timezone="America/Chicago",
             id="send_approved",
         )
+        # dispatch_loop: queue-consumer send path (PR G). Same cron window.
+        # Offset +120s from scheduler start to fire after the other 15-min jobs.
+        scheduler.add_job(
+            _run_dispatch_loop, "cron",
+            day_of_week="mon-fri", hour="8-11", minute="0,30",
+            timezone="America/Chicago",
+            id="dispatch_loop",
+        )
+        # Stale lock reclaim: every 2 minutes, all workspaces.
+        scheduler.add_job(_run_reclaim_stale_locks, "interval", minutes=2, id="reclaim_stale_locks")
         scheduler.add_job(_run_process_due_sequences, "interval", hours=1, id="process_due")
         scheduler.add_job(_run_poll_instantly, "interval", hours=6, id="poll_instantly")
         scheduler.add_job(_run_process_hitl_snoozed, "interval", minutes=15, id="hitl_snoozed")
@@ -2060,15 +2160,21 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         # Gmail intake: every 15 min so replies surface quickly for triage
-        scheduler.add_job(_run_gmail_intake, "interval", minutes=15, id="gmail_intake")
+        scheduler.add_job(
+            _run_gmail_intake, "interval", minutes=15, id="gmail_intake",
+            start_date=_now + _td(seconds=90),
+        )
         # Research: PAUSED 2026-05-07 — GTM assessment in progress.
         # Re-enable when ready to resume pipeline growth.
         # scheduler.add_job(
         #     _run_research, "interval", minutes=20, id="research",
         #     next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
         # )
-        # Qualification: every 15 min 24/7 — stays ahead of research output
-        scheduler.add_job(_run_qualification, "interval", minutes=15, id="qualification")
+        # Qualification: every 15 min 24/7 — +30s offset avoids health_snapshot collision
+        scheduler.add_job(
+            _run_qualification, "interval", minutes=15, id="qualification",
+            start_date=_now + _td(seconds=30),
+        )
         # Draft generation: every 5 min — drains qualified-but-undrafted companies fast.
         # Enrichment now runs every 3 min; draft gen follows at 5 min to close the gap
         # between a contact being found and a draft existing for it.

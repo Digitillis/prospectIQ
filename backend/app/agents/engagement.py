@@ -25,12 +25,51 @@ report queue and are NEVER auto-sent.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Literal, Optional
 
 from rich.console import Console
 
 from backend.app.agents.base import BaseAgent, AgentResult
+
+
+@dataclass
+class QueueDispatchOutcome:
+    """Result returned by dispatch_queued_draft(); consumed by dispatch_scheduler."""
+    status: Literal["DELIVERED", "TRANSIENT_FAILED", "PERMANENTLY_FAILED", "ASSERTION_FAILED"]
+    provider_message_id: Optional[str] = None
+    failure_code: Optional[str] = None
+    failure_reason: Optional[str] = None
+
+
+def _classify_resend_error(exc: Exception) -> tuple[str, str]:
+    """Classify a Resend exception into (status, failure_code).
+
+    Returns ("TRANSIENT_FAILED", ...) for 5xx / 429 / network errors.
+    Returns ("PERMANENTLY_FAILED", ...) for other 4xx.
+    """
+    exc_str = str(exc).lower()
+    exc_type = type(exc).__name__
+
+    if "429" in exc_str or "rate_limit" in exc_str or "ratelimit" in exc_type.lower():
+        return "TRANSIENT_FAILED", "429_rate_limit"
+
+    for code in ("500", "502", "503", "504"):
+        if code in exc_str:
+            return "TRANSIENT_FAILED", f"{code}_server_error"
+
+    if "internalserver" in exc_type.lower() or "server error" in exc_str:
+        return "TRANSIENT_FAILED", "5xx_server_error"
+
+    if any(kw in exc_str for kw in ("connection", "timeout", "network", "remoteprotocol", "disconnect")):
+        return "TRANSIENT_FAILED", "network_error"
+
+    for code in ("400", "401", "403", "404", "422"):
+        if code in exc_str:
+            return "PERMANENTLY_FAILED", f"{code}_client_error"
+
+    return "PERMANENTLY_FAILED", "unknown_client_error"
 from backend.app.core.config import get_settings, get_sequences_config
 from backend.app.integrations.instantly import InstantlyClient
 
@@ -891,16 +930,466 @@ class EngagementAgent(BaseAgent):
                 result.processed += 1
                 result.add_detail(company_name, "sent", f"To: {contact_email}")
 
-                if stagger_seconds > 0 and sent_this_batch < send_limit:
-                    import time as _time
-                    _time.sleep(stagger_seconds)
-
             except Exception as e:
                 logger.error(f"Error sending to {company_name}: {e}", exc_info=True)
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
 
         return result
+
+    # ------------------------------------------------------------------
+    # Queue-consumer dispatch (PR G)
+    # ------------------------------------------------------------------
+
+    def _get_sender_config(self) -> tuple[list[dict], str, str, str]:
+        """Load sender pool from DB → YAML → defaults.
+
+        Returns (sender_pool, reply_to, fallback_address, fallback_display).
+        """
+        _reply_to = "avi@digitillis.io"
+        _sender_pool: list[dict] = []
+        _fallback_address = "avi@digitillis.io"
+        _fallback_display = "Avanish Mehrotra <avi@digitillis.io>"
+
+        try:
+            db_row = (
+                self.db.client.table("outreach_send_config")
+                .select("sender_pool, reply_to")
+                .eq("workspace_id", self.db.workspace_id)
+                .limit(1)
+                .execute()
+            ).data
+            if db_row and db_row[0].get("sender_pool"):
+                _sender_pool = db_row[0]["sender_pool"] or []
+            if db_row and db_row[0].get("reply_to"):
+                _reply_to = db_row[0]["reply_to"]
+        except Exception:
+            pass
+
+        if not _sender_pool:
+            try:
+                from backend.app.core.config import get_outreach_guidelines
+                _guidelines = get_outreach_guidelines()
+                _pool_cfg = _guidelines.get("sender_pool", {})
+                _reply_to = _pool_cfg.get("reply_to", _reply_to)
+                _sender_pool = _pool_cfg.get("senders", [])
+                _s = _guidelines.get("sender", {})
+                _e = _s.get("email", "")
+                _n = _s.get("name", "")
+                if _e:
+                    _fallback_address = _e
+                    _fallback_display = f"{_n} <{_e}>" if _n else _e
+            except Exception:
+                pass
+
+        return _sender_pool, _reply_to, _fallback_address, _fallback_display
+
+    def _pick_sender_from_config(
+        self,
+        contact_email: str,
+        sender_pool: list[dict],
+        fallback_address: str,
+        fallback_display: str,
+    ) -> tuple[str, str]:
+        """Return (from_address, from_display) deterministically from sender pool."""
+        import hashlib
+        if not sender_pool:
+            return fallback_address, fallback_display
+        idx = int(hashlib.md5(contact_email.lower().encode()).hexdigest(), 16) % len(sender_pool)
+        s = sender_pool[idx]
+        addr = s.get("email", fallback_address)
+        name = s.get("name", "")
+        display = f"{name} <{addr}>" if name else addr
+        return addr, display
+
+    def dispatch_queued_draft(
+        self,
+        queue_row: dict,
+        attempt_number: int,
+        idempotency_key: str,
+    ) -> QueueDispatchOutcome:
+        """Dispatch a single outbound_queue row via Resend.
+
+        Called by dispatch_scheduler.dispatch_workspace() after it has already
+        inserted the send_attempts record with status=DISPATCHED.
+
+        Flow:
+          1. Fetch fresh draft + contact + company.
+          2. Run suppression + company-lock + pre-send assertions.
+          3. Call resend.Emails.send() with the provided idempotency_key.
+          4. On success: record post-send updates (interactions, company status,
+             campaign_thread, thread_messages, engagement_sequence, contact state)
+             and return DELIVERED.
+          5. On failure: classify error and return TRANSIENT_FAILED or
+             PERMANENTLY_FAILED without performing post-send updates.
+          6. On assertion failure: return ASSERTION_FAILED (lock released by caller).
+
+        Does NOT: set sent_at before the Resend call (no pre-claim), insert
+        send_attempts (done by caller), or touch outbound_queue state (done by caller).
+        """
+        import resend
+        from backend.app.core.config import get_settings
+        from backend.app.utils.email_html import plain_to_html
+
+        settings = get_settings()
+        draft_id = queue_row["draft_id"]
+
+        # Load Resend API key
+        from backend.app.core.credential_store import get_credential
+        resend_api_key = (
+            get_credential("resend", "api_key", self.db.workspace_id)
+            or settings.resend_api_key
+        )
+        if not resend_api_key:
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason="resend_api_key_not_configured",
+            )
+        resend.api_key = resend_api_key
+
+        # Fetch draft with contact + company joins
+        try:
+            draft_rows = (
+                self.db.client.table("outreach_drafts")
+                .select(
+                    "id, company_id, contact_id, channel, sequence_name, sequence_step, "
+                    "subject, body, edited_body, workspace_id, sent_at, "
+                    "companies(name, tier, campaign_cluster), "
+                    "contacts(full_name, email, first_name, last_name, company_id, persona_type)"
+                )
+                .eq("id", draft_id)
+                .limit(1)
+                .execute()
+                .data
+            )
+        except Exception as exc:
+            logger.error(
+                "dispatch_queued_draft draft_fetch_failed draft_id=%s error=%s",
+                draft_id, exc,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"draft_fetch_failed: {exc}",
+            )
+
+        if not draft_rows:
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason="draft_not_found",
+            )
+
+        draft = draft_rows[0]
+
+        # Defensive: if already sent (e.g. via old path), skip
+        if draft.get("sent_at"):
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason="draft_already_sent",
+            )
+
+        contact = draft.get("contacts") or {}
+        company = draft.get("companies") or {}
+        contact_email = contact.get("email")
+        company_id = draft["company_id"]
+        company_name = company.get("name", "Unknown")
+
+        if not contact_email:
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason="contact_has_no_email",
+            )
+
+        # Suppression check
+        from backend.app.core.suppression import is_suppressed
+        suppressed, reason = is_suppressed(
+            self.db, company_id,
+            contact_id=draft.get("contact_id"),
+            skip_duplicate_check=True,
+        )
+        if suppressed:
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"suppressed: {reason}",
+            )
+
+        # Company-level send lock
+        from backend.app.core.channel_coordinator import is_company_locked
+        locked, lock_reason = is_company_locked(
+            self.db, company_id, exclude_contact_id=draft.get("contact_id")
+        )
+        if locked:
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"company_locked: {lock_reason}",
+            )
+
+        # Load send config for daily cap
+        send_cfg = self._load_send_config()
+        daily_limit = send_cfg["daily_limit"]
+
+        # Fresh contact + company reads for assertions
+        _contact_id = draft.get("contact_id", "")
+        _company_id = draft.get("company_id", "")
+        _seq_step = int(draft.get("sequence_step") or 1)
+        try:
+            _fresh_contact = (
+                self.db.client.table("contacts")
+                .select("id, email, email_status, email_name_verified, "
+                        "is_outreach_eligible, contact_tier, company_id, full_name")
+                .eq("id", _contact_id)
+                .limit(1)
+                .execute()
+                .data or [{}]
+            )[0]
+            _fresh_company = (
+                self.db.client.table("companies")
+                .select("id")
+                .eq("id", _company_id)
+                .limit(1)
+                .execute()
+                .data or [{}]
+            )[0]
+        except Exception as fetch_exc:
+            logger.error(
+                "dispatch_queued_draft fresh_fetch_failed draft_id=%s error=%s",
+                draft_id, fetch_exc,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"contact_fetch_failed: {fetch_exc}",
+            )
+
+        sender_pool, reply_to, fallback_addr, fallback_display = self._get_sender_config()
+        from_address, _ = self._pick_sender_from_config(
+            contact_email, sender_pool, fallback_addr, fallback_display
+        )
+
+        _cooldown = (
+            0 if _seq_step >= 2
+            else __import__("backend.app.core.pre_send_assertions",
+                            fromlist=["COMPANY_COOLDOWN_DAYS"]).COMPANY_COOLDOWN_DAYS
+        )
+
+        from backend.app.core.pre_send_assertions import run_pre_send_assertions, AssertionFailure
+        try:
+            run_pre_send_assertions(
+                db=self.db,
+                contact=_fresh_contact,
+                company=_fresh_company,
+                sender_email=from_address,
+                daily_cap=daily_limit,
+                cooldown_days=_cooldown,
+                sequence_step=_seq_step,
+                assertion_context="send_path",
+                current_draft_id=draft_id,
+            )
+        except AssertionFailure as af:
+            logger.warning(
+                "dispatch_queued_draft assertion_fail draft_id=%s assertion=%s detail=%s",
+                draft_id, af.assertion, af.detail,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"{af.assertion}: {af.detail}",
+            )
+        except Exception as ae:
+            logger.error(
+                "dispatch_queued_draft assertion_exception draft_id=%s error=%s",
+                draft_id, ae,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"assertion_exception: {ae}",
+            )
+
+        _, from_display = self._pick_sender_from_config(
+            contact_email, sender_pool, fallback_addr, fallback_display
+        )
+        subject = draft.get("subject", "")
+        body = draft.get("edited_body") or draft.get("body", "")
+
+        try:
+            send_response = resend.Emails.send(
+                {
+                    "from": from_display,
+                    "to": [contact_email],
+                    "reply_to": [reply_to],
+                    "subject": subject,
+                    "html": plain_to_html(body),
+                    "text": body,
+                },
+                {"idempotency_key": idempotency_key},
+            )
+        except Exception as send_exc:
+            status, failure_code = _classify_resend_error(send_exc)
+            logger.warning(
+                "dispatch_queued_draft resend_%s draft_id=%s code=%s error=%s",
+                status.lower(), draft_id, failure_code, send_exc,
+            )
+            return QueueDispatchOutcome(
+                status=status,
+                failure_code=failure_code,
+                failure_reason=str(send_exc)[:500],
+            )
+
+        resend_id = getattr(send_response, "id", None) or (
+            send_response.get("id") if isinstance(send_response, dict) else None
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Post-send updates (all non-fatal — send is already recorded)
+        try:
+            self.db.update_outreach_draft(draft_id, {
+                "sent_at": now,
+                "resend_message_id": resend_id,
+            })
+        except Exception as _e:
+            logger.warning("dispatch_queued_draft update_sent_at failed (non-fatal): %s", _e)
+
+        try:
+            _ws_id = self.db.workspace_id or settings.default_workspace_id
+            self.db.client.table("interactions").insert({
+                "company_id": draft["company_id"],
+                "contact_id": draft["contact_id"],
+                "type": "email_sent",
+                "channel": "email",
+                "subject": subject,
+                "source": "resend",
+                "workspace_id": _ws_id,
+                "metadata": {
+                    "from": from_address,
+                    "reply_to": reply_to,
+                    "sequence_name": draft.get("sequence_name"),
+                    "sequence_step": draft.get("sequence_step"),
+                    "queue_path": True,
+                },
+            }).execute()
+        except Exception as _e:
+            logger.warning("dispatch_queued_draft interactions insert failed (non-fatal): %s", _e)
+
+        try:
+            self.db.update_company(draft["company_id"], {"status": "contacted"})
+        except Exception as _e:
+            logger.warning("dispatch_queued_draft update_company failed (non-fatal): %s", _e)
+
+        try:
+            self.db.set_company_outreach_active(draft["company_id"], draft["contact_id"])
+        except Exception as _e:
+            logger.warning("dispatch_queued_draft set_company_outreach_active failed (non-fatal): %s", _e)
+
+        try:
+            _ws_id = self.db.workspace_id or settings.default_workspace_id
+            _thread_row = (
+                self.db.client.table("campaign_threads")
+                .select("id, current_step")
+                .eq("contact_id", draft["contact_id"])
+                .eq("company_id", draft["company_id"])
+                .in_("status", ["active", "paused"])
+                .order("updated_at", desc=True)
+                .limit(1)
+                .execute()
+                .data or []
+            )
+            if _thread_row:
+                _thread_id = _thread_row[0]["id"]
+                self.db.client.table("campaign_threads").update({
+                    "current_step": _seq_step,
+                    "last_sent_at": now,
+                    "status": "active",
+                }).eq("id", _thread_id).execute()
+            else:
+                _insert = {
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "sequence_name": draft.get("sequence_name") or "email_value_first",
+                    "status": "active",
+                    "current_step": _seq_step,
+                    "last_sent_at": now,
+                }
+                if _ws_id:
+                    _insert["workspace_id"] = _ws_id
+                _tresult = self.db.client.table("campaign_threads").insert(_insert).execute()
+                _thread_id = (_tresult.data[0]["id"] if _tresult.data else None)
+            if _thread_id:
+                self.db.client.table("thread_messages").insert({
+                    "thread_id": _thread_id,
+                    "direction": "outbound",
+                    "subject": subject,
+                    "body": body,
+                    "sent_at": now,
+                    "outreach_draft_id": draft["id"],
+                    "source": "gmail_webhook",
+                }).execute()
+        except Exception as _te:
+            logger.warning("dispatch_queued_draft campaign_thread failed (non-fatal): %s", _te)
+
+        try:
+            seq_config = get_sequences_config()
+            sequence = seq_config["sequences"].get(
+                draft.get("sequence_name", "initial_outreach"), {}
+            )
+            total_steps = sequence.get("total_steps", 5)
+            current_step = draft.get("sequence_step", 1)
+            next_step = current_step + 1
+            next_action_at = None
+            next_action_type = None
+            if next_step <= total_steps:
+                for step in sequence.get("steps", []):
+                    if step["step"] == next_step:
+                        delay = step.get("delay_days", 3)
+                        next_action_at = (
+                            datetime.now(timezone.utc) + timedelta(days=delay)
+                        ).isoformat()
+                        next_action_type = f"send_{step.get('channel') or step.get('type', 'email')}"
+                        break
+            self.db.insert_engagement_sequence({
+                "company_id": draft["company_id"],
+                "contact_id": draft["contact_id"],
+                "sequence_name": draft.get("sequence_name", "initial_outreach"),
+                "current_step": current_step,
+                "total_steps": total_steps,
+                "status": "active" if next_step <= total_steps else "completed",
+                "next_action_at": next_action_at,
+                "next_action_type": next_action_type,
+                "started_at": now,
+            })
+        except Exception as _se:
+            logger.warning("dispatch_queued_draft engagement_sequence failed (non-fatal): %s", _se)
+
+        try:
+            _step_clamped = max(1, min(int(draft.get("sequence_step") or 1), 5))
+            self.db.update_contact_state(
+                contact_id=draft["contact_id"],
+                new_state=f"touch_{_step_clamped}_sent",
+                channel="email",
+                instantly_event="email_sent",
+                metadata={
+                    "sequence_step": _step_clamped,
+                    "resend_message_id": resend_id,
+                    "sequence_name": draft.get("sequence_name"),
+                    "queue_path": True,
+                },
+                extra_updates={
+                    "last_touch_channel": "email",
+                    "last_touch_at": now,
+                },
+            )
+        except Exception as _ce:
+            logger.warning("dispatch_queued_draft update_contact_state failed (non-fatal): %s", _ce)
+
+        logger.info(
+            "dispatch_queued_draft DELIVERED draft_id=%s contact=%s resend_id=%s",
+            draft_id, contact_email, resend_id,
+        )
+        console.print(
+            f"  [green]{company_name} → {contact_email}: Dispatched "
+            f"(queue path, attempt {attempt_number})[/green]"
+        )
+        return QueueDispatchOutcome(
+            status="DELIVERED",
+            provider_message_id=resend_id,
+        )
 
     # ------------------------------------------------------------------
     # Condition evaluation helpers (Phase 3 — runtime branching)

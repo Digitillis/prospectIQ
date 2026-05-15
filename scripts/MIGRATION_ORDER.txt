@@ -123,3 +123,4 @@ SKIP 020_sequence_builder_v2.sql
 052_policy_snapshots_and_context_packets.sql
 053_draft_hardening_trigger_unique.sql
 054_outbound_queue_send_attempts.sql
+055_dispatch_schema.sql
