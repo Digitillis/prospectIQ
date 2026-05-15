@@ -150,8 +150,7 @@ CREATE TABLE IF NOT EXISTS context_packets (
     -- ---- Meta ----
     assembled_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     ttl_seconds             INTEGER     NOT NULL DEFAULT 300,
-    expired_at              TIMESTAMPTZ GENERATED ALWAYS AS
-                                (assembled_at + make_interval(secs => ttl_seconds)) STORED,
+    expired_at              TIMESTAMPTZ,  -- assembled_at + ttl_seconds; set by application on insert
 
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
