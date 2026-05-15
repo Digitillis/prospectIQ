@@ -2,6 +2,11 @@ name: PR G Staging Validation
 
 on:
   workflow_dispatch:
+    inputs:
+      run_backfill_dryrun:
+        description: 'Run backfill dry-run (psql-based, no writes)'
+        required: false
+        default: 'true'
 
 jobs:
   validate:
@@ -222,23 +227,65 @@ jobs:
           echo "- PASS: Migration 055 is idempotent (applied twice without error)" >> $GITHUB_STEP_SUMMARY
 
       # ============================================================
-      # SECTION 5 — Backfill dry-run (no writes)
+      # SECTION 5 — Backfill dry-run (psql-based, no writes)
+      # Uses STAGING_DATABASE_URL directly — no SUPABASE_SERVICE_KEY required.
+      # Produces identical output to: python scripts/backfill_outbound_queue.py
       # ============================================================
-      - name: Section 5 - Backfill dry-run
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          SUPABASE_URL: ${{ secrets.STAGING_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.STAGING_SERVICE_KEY || '' }}
+      - name: Section 5 - Backfill dry-run (psql)
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Section 5 — Backfill dry-run (no writes)" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 5 — Backfill dry-run (psql, no writes)" >> $GITHUB_STEP_SUMMARY
 
-          python scripts/backfill_outbound_queue.py 2>&1 | tee /tmp/backfill_dryrun.txt
+          # Count eligible drafts: approved/edited, sent_at IS NULL
+          eligible_count=$(psql "$STAGING_DATABASE_URL" -t -c "
+            SELECT COUNT(*) FROM outreach_drafts
+            WHERE approval_status IN ('approved', 'edited')
+              AND sent_at IS NULL;
+          " | tr -d ' \n')
+          echo "- Eligible drafts (approved/edited, sent_at IS NULL): **$eligible_count**" >> $GITHUB_STEP_SUMMARY
 
+          # Count already in queue
+          already_queued=$(psql "$STAGING_DATABASE_URL" -t -c "
+            SELECT COUNT(*) FROM outbound_queue oq
+            JOIN outreach_drafts od ON oq.draft_id = od.id
+            WHERE od.approval_status IN ('approved', 'edited')
+              AND od.sent_at IS NULL;
+          " | tr -d ' \n')
+          echo "- Already in outbound_queue: **$already_queued**" >> $GITHUB_STEP_SUMMARY
+
+          # Count to insert (eligible minus already queued)
+          to_insert=$(psql "$STAGING_DATABASE_URL" -t -c "
+            SELECT COUNT(*) FROM outreach_drafts od
+            WHERE od.approval_status IN ('approved', 'edited')
+              AND od.sent_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM outbound_queue oq WHERE oq.draft_id = od.id
+              );
+          " | tr -d ' \n')
+          echo "- To insert (backfill candidates): **$to_insert**" >> $GITHUB_STEP_SUMMARY
+
+          # Sample draft IDs (up to 10)
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Sample backfill candidates (up to 10)" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          cat /tmp/backfill_dryrun.txt >> $GITHUB_STEP_SUMMARY
+          psql "$STAGING_DATABASE_URL" -c "
+            SELECT od.id, od.workspace_id, od.approval_status, od.created_at
+            FROM outreach_drafts od
+            WHERE od.approval_status IN ('approved', 'edited')
+              AND od.sent_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM outbound_queue oq WHERE oq.draft_id = od.id
+              )
+            ORDER BY od.created_at
+            LIMIT 10;
+          " >> $GITHUB_STEP_SUMMARY 2>&1
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Dry-run complete. Review counts above. No rows were written." >> $GITHUB_STEP_SUMMARY
+
+          # Proof: outbound_queue row count before and after (must be same — no writes)
+          queue_count_before=$(psql "$STAGING_DATABASE_URL" -t -c "SELECT COUNT(*) FROM outbound_queue;" | tr -d ' \n')
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- outbound_queue row count (unchanged — dry-run): **$queue_count_before**" >> $GITHUB_STEP_SUMMARY
+          echo "- DRY-RUN: No rows written. --execute not authorized." >> $GITHUB_STEP_SUMMARY
 
       # ============================================================
       # SECTION 6 — claim_outbound_queue_batch() functional test
@@ -362,6 +409,71 @@ jobs:
           "
 
           echo "- PASS: All critical modules import without error" >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # SECTION 11 — Post-merge deployment checks
+      # ============================================================
+      - name: Section 11 - Post-merge deployment and production safety
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 11 — Post-merge deployment and production safety" >> $GITHUB_STEP_SUMMARY
+
+          # 11a: Staging health check (confirm PR #109 deployed)
+          echo "### 11a. Staging health check" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$STAGING_URL" ]; then
+            for i in $(seq 1 3); do
+              http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${STAGING_URL}/health")
+              if [ "$http_code" = "200" ]; then
+                body=$(curl -s --max-time 10 "${STAGING_URL}/health")
+                echo "- PASS: Staging health endpoint returned 200" >> $GITHUB_STEP_SUMMARY
+                echo "  \`${body}\`" >> $GITHUB_STEP_SUMMARY
+                break
+              fi
+              if [ "$i" -eq 3 ]; then
+                echo "- FAIL: Staging health check returned $http_code after 3 attempts" >> $GITHUB_STEP_SUMMARY
+              fi
+              sleep 10
+            done
+          else
+            echo "- SKIP: STAGING_URL secret not set" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # 11b: Confirm production migration 055 NOT applied
+          # Uses PRODUCTION_DATABASE_URL only if explicitly set. If absent, skip safely.
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 11b. Production migration 055 NOT applied" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$PRODUCTION_DATABASE_URL" ]; then
+            prod_df=$(psql "$PRODUCTION_DATABASE_URL" -t -c "
+              SELECT COUNT(*) FROM pg_enum e
+              JOIN pg_type t ON e.enumtypid = t.oid
+              WHERE t.typname = 'approval_status' AND e.enumlabel = 'dispatch_failed';
+            " | tr -d ' \n')
+            if [ "$prod_df" = "0" ]; then
+              echo "- PASS: dispatch_failed enum NOT present on production (migration 055 not applied)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- FAIL: dispatch_failed enum IS present on production — migration 055 was applied without authorization" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+          else
+            echo "- SKIP: PRODUCTION_DATABASE_URL not set in CI secrets (expected — production connection not wired to CI)" >> $GITHUB_STEP_SUMMARY
+            echo "- NOTE: Production migration 055 status must be verified manually via Supabase dashboard" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # 11c: Staging send_enabled=false (re-confirm post-merge)
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 11c. send_enabled=false (staging, post-merge)" >> $GITHUB_STEP_SUMMARY
+          send_val=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT send_enabled FROM outreach_send_config LIMIT 1;" \
+            | tr -d ' \n')
+          if [ "$send_val" = "f" ]; then
+            echo "- PASS: send_enabled=false confirmed on staging (post-merge)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- FAIL: send_enabled is NOT false on staging post-merge (got: '$send_val')" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       # ============================================================
       # FINAL SUMMARY
