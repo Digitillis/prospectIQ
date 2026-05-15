@@ -80,4 +80,4 @@ CREATE TRIGGER trg_draft_immutability
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_outreach_drafts_active_unique
     ON outreach_drafts (workspace_id, contact_id, sequence_name, sequence_step)
-    WHERE approval_status::text != 'rejected';
+    WHERE approval_status <> 'rejected'::approval_status;
