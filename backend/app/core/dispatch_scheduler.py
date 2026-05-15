@@ -56,6 +56,31 @@ def _backoff_for(retry_count: int) -> int:
     return _BACKOFF_SECONDS[idx]
 
 
+def _resolve_provider_message_id(db_client, draft_id: str) -> Optional[str]:
+    """Return resend_message_id from outreach_drafts for ALREADY_DELIVERED reconciliation.
+
+    If non-None: Resend API call completed — email was dispatched (Scenario C).
+    If None: Resend was never called — draft was pre-claimed but process crashed
+             before the API call (Scenario E). Email was NOT delivered.
+    """
+    try:
+        rows = (
+            db_client.table("outreach_drafts")
+            .select("resend_message_id")
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if rows:
+            return rows[0].get("resend_message_id") or None
+    except Exception as exc:
+        logger.error(
+            "dispatch.resolve_provider_id FAILED draft_id=%s error=%s", draft_id, exc
+        )
+    return None
+
+
 def _insert_send_attempt(
     db_client,
     draft_id: str,
@@ -369,20 +394,45 @@ def dispatch_workspace(
             result.permanently_failed += 1
 
         elif outcome.status == "ALREADY_DELIVERED":
-            # Pre-send claim found sent_at already set: prior attempt crashed after the
-            # claim was persisted but before the queue row was deleted. The email was
-            # sent (or at minimum claimed). Mark the send_attempt DELIVERED and drain
-            # the stuck queue row. D6 adds webhook reconciliation to verify the provider.
-            logger.warning(
-                "dispatch.already_delivered_drain draft_id=%s queue_row=%s reason=%s",
-                draft_id, queue_row_id, outcome.failure_reason,
-            )
-            _update_send_attempt(
-                db_client, attempt_id,
-                status="DELIVERED",
-                failure_reason=f"already_delivered_drain: {outcome.failure_reason}",
-                resolved_at=_now_iso(),
-            )
+            # Pre-send claim found sent_at already set — prior attempt set the claim
+            # then crashed before deleting the queue row.
+            # Reconcile via resend_message_id on outreach_drafts:
+            #   - Non-None:  Resend was called and accepted (Scenario C). Email delivered.
+            #                Mark send_attempt DELIVERED with provider_message_id.
+            #   - None:      Resend was never called (Scenario E — crash between pre-send
+            #                claim and Resend call). Email NOT delivered.
+            #                Mark send_attempt FAILED with code "lost_send_pre_claim_crash".
+            _provider_id = _resolve_provider_message_id(db_client, draft_id)
+            if _provider_id:
+                logger.warning(
+                    "dispatch.already_delivered_drain draft_id=%s queue_row=%s "
+                    "provider_id=%s reason=%s — email was sent; draining stuck queue row",
+                    draft_id, queue_row_id, _provider_id, outcome.failure_reason,
+                )
+                _update_send_attempt(
+                    db_client, attempt_id,
+                    status="DELIVERED",
+                    provider_message_id=_provider_id,
+                    failure_reason=f"already_delivered_drain: {outcome.failure_reason}",
+                    reconciled_at=_now_iso(),
+                    resolved_at=_now_iso(),
+                )
+            else:
+                # Email was NOT sent — pre-claim survived the crash, Resend never called.
+                # Mark FAILED for manual review. Do not set dispatch_failed on the draft
+                # (the draft is not permanently failed — it could be re-queued if needed).
+                logger.error(
+                    "dispatch.lost_send draft_id=%s queue_row=%s reason=%s — "
+                    "sent_at set but resend_message_id is NULL; email was never dispatched",
+                    draft_id, queue_row_id, outcome.failure_reason,
+                )
+                _update_send_attempt(
+                    db_client, attempt_id,
+                    status="FAILED",
+                    failure_code="lost_send_pre_claim_crash",
+                    failure_reason="sent_at_set_but_resend_never_called",
+                    resolved_at=_now_iso(),
+                )
             _delete_queue_row(db_client, queue_row_id)
             result.already_delivered_drained += 1
 
