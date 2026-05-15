@@ -225,6 +225,96 @@ _RESEND_DEDUP_EVENT_TYPES: frozenset[str] = frozenset({
 })
 
 
+def _reconcile_send_attempt_delivered(
+    db_client,
+    draft_id: str,
+    provider_message_id: str,
+    now_iso: str,
+) -> None:
+    """Update send_attempts when email.delivered webhook fires.
+
+    Finds the most recent DISPATCHED or DELIVERED row for this draft.
+    - DISPATCHED: webhook fired before dispatch loop confirmed (rare). Promote to DELIVERED.
+    - DELIVERED: normal case. Set reconciled_at to mark provider-confirmed delivery.
+
+    Idempotent: second call finds DELIVERED with reconciled_at already set; update is harmless.
+    No-op if no matching row (draft dispatched via legacy path or not yet inserted).
+    """
+    try:
+        rows = (
+            db_client.table("send_attempts")
+            .select("id, status")
+            .eq("draft_id", draft_id)
+            .in_("status", ["DISPATCHED", "DELIVERED"])
+            .order("attempt_number", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not rows:
+            return
+        attempt = rows[0]
+        update: dict = {"reconciled_at": now_iso}
+        if attempt["status"] == "DISPATCHED":
+            update["status"] = "DELIVERED"
+            if provider_message_id:
+                update["provider_message_id"] = provider_message_id
+        db_client.table("send_attempts").update(update).eq("id", attempt["id"]).execute()
+        logger.info(
+            "webhook.send_attempt_reconciled draft_id=%s status=DELIVERED attempt_id=%s",
+            draft_id, attempt["id"],
+        )
+    except Exception as exc:
+        logger.debug(
+            "webhook._reconcile_send_attempt_delivered draft_id=%s error=%s", draft_id, exc
+        )
+
+
+def _reconcile_send_attempt_bounced(
+    db_client,
+    draft_id: str,
+    now_iso: str,
+) -> None:
+    """Update send_attempts when email.bounced webhook fires.
+
+    Finds the most recent DISPATCHED or DELIVERED row for this draft and
+    marks it PERMANENTLY_FAILED with failure_code='bounce'.
+
+    Idempotent: second call finds no DISPATCHED/DELIVERED rows — no-op.
+    The outbound_queue row is already deleted at this point (DELIVERED path deleted it).
+    Suppression recording is handled by the existing bounce handler; this only
+    updates the send_attempts lifecycle record.
+    """
+    try:
+        rows = (
+            db_client.table("send_attempts")
+            .select("id")
+            .eq("draft_id", draft_id)
+            .in_("status", ["DISPATCHED", "DELIVERED"])
+            .order("attempt_number", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not rows:
+            return
+        db_client.table("send_attempts").update({
+            "status": "PERMANENTLY_FAILED",
+            "failure_code": "bounce",
+            "failure_reason": "email_bounced_webhook",
+            "reconciled_at": now_iso,
+            "resolved_at": now_iso,
+        }).eq("id", rows[0]["id"]).execute()
+        logger.info(
+            "webhook.send_attempt_reconciled draft_id=%s status=PERMANENTLY_FAILED (bounce) attempt_id=%s",
+            draft_id, rows[0]["id"],
+        )
+    except Exception as exc:
+        logger.debug(
+            "webhook._reconcile_send_attempt_bounced draft_id=%s error=%s", draft_id, exc
+        )
+
+
 def _try_record_provider_event(
     db,
     *,
@@ -854,8 +944,15 @@ async def resend_webhook(
     """
     settings = get_settings()
 
-    # Simple shared-secret validation (same pattern as Instantly webhook)
-    if settings.resend_webhook_secret and secret != settings.resend_webhook_secret:
+    # Shared-secret validation via query parameter.
+    # RESEND_WEBHOOK_SECRET must be set in Railway production env before activation.
+    # Without it, any caller can post webhook events — unauthenticated in production.
+    if not settings.resend_webhook_secret:
+        logger.warning(
+            "resend_webhook: RESEND_WEBHOOK_SECRET not configured — "
+            "accepting unauthenticated webhook. Set this env var in Railway before enabling sends."
+        )
+    elif secret != settings.resend_webhook_secret:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
     payload: dict[str, Any] = await request.json()
@@ -951,6 +1048,11 @@ async def resend_webhook(
                 q.execute()
             except Exception as exc:
                 logger.debug("delivered status update failed: %s", exc)
+            # Reconcile send_attempts lifecycle record
+            if draft_row:
+                _reconcile_send_attempt_delivered(
+                    db.client, draft_row["id"], resend_message_id, now_iso
+                )
             return {"status": "processed", "action": "delivered", "contact_id": contact_id}
 
         elif event_type in ("email.opened", "email.clicked"):
@@ -1116,6 +1218,11 @@ async def resend_webhook(
                 thread = _find_thread(db, contact_id, company_id)
                 if thread:
                     db.client.table("campaign_threads").update({"status": action}).eq("id", thread["id"]).execute()
+
+                # Reconcile send_attempts lifecycle record for bounces only
+                # (not complaints — complaints don't affect send_attempts delivery status)
+                if is_bounce and draft_row:
+                    _reconcile_send_attempt_bounced(db.client, draft_row["id"], now_iso)
 
             except Exception as exc:
                 logger.error("Bounce/complaint handling failed: %s", exc)
