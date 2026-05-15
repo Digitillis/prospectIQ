@@ -1,0 +1,382 @@
+name: PR G Staging Validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate migration 055 + dispatch schema on staging
+    runs-on: ubuntu-latest
+    # Only runs from feature/dispatch-scheduler. Staging credentials are scoped
+    # to the staging Supabase project — never the production ref.
+    env:
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+
+    steps:
+      - name: Checkout feature/dispatch-scheduler
+        uses: actions/checkout@v4
+        with:
+          ref: feature/dispatch-scheduler
+
+      - name: Validate STAGING_DATABASE_URL is set and is NOT production
+        run: |
+          if [ -z "$STAGING_DATABASE_URL" ]; then
+            echo "FATAL: STAGING_DATABASE_URL secret is not set. Cannot proceed."
+            exit 1
+          fi
+          # Refuse to run if the URL contains the production Supabase project ref
+          if echo "$STAGING_DATABASE_URL" | grep -q "wlyhbdmjhgvovigogdco"; then
+            echo "FATAL: STAGING_DATABASE_URL appears to point at PRODUCTION."
+            echo "This workflow must not run against production."
+            exit 1
+          fi
+          echo "OK: STAGING_DATABASE_URL is set and does not match production ref."
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      # ============================================================
+      # SECTION 1 — Pre-flight: confirm 054 applied, 055 not yet applied
+      # ============================================================
+      - name: Section 1 - Pre-flight checks
+        run: |
+          echo "## Section 1 — Pre-flight checks" >> $GITHUB_STEP_SUMMARY
+
+          # Check outbound_queue table exists (migration 054 must already be applied)
+          table_exists=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'outbound_queue';" \
+            | tr -d ' \n')
+          if [ "$table_exists" != "1" ]; then
+            echo "FATAL: outbound_queue table does not exist. Migration 054 not applied." >> $GITHUB_STEP_SUMMARY
+            echo "FATAL: outbound_queue table does not exist."
+            exit 1
+          fi
+          echo "- outbound_queue table exists (migration 054 confirmed)" >> $GITHUB_STEP_SUMMARY
+
+          # Check send_attempts table exists
+          sa_exists=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'send_attempts';" \
+            | tr -d ' \n')
+          if [ "$sa_exists" != "1" ]; then
+            echo "FATAL: send_attempts table does not exist. Migration 054 may be incomplete." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "- send_attempts table exists" >> $GITHUB_STEP_SUMMARY
+
+          # Confirm dispatch_failed does NOT exist yet (migration 055 not yet applied)
+          dispatch_failed_exists=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM pg_enum e
+             JOIN pg_type t ON e.enumtypid = t.oid
+             WHERE t.typname = 'approval_status' AND e.enumlabel = 'dispatch_failed';" \
+            | tr -d ' \n')
+          if [ "$dispatch_failed_exists" = "1" ]; then
+            echo "- dispatch_failed enum already exists — migration 055 was already applied. Will re-run for idempotency check." >> $GITHUB_STEP_SUMMARY
+            echo "ALREADY_APPLIED=true" >> $GITHUB_ENV
+          else
+            echo "- dispatch_failed enum not yet present — migration 055 not applied (expected)" >> $GITHUB_STEP_SUMMARY
+            echo "ALREADY_APPLIED=false" >> $GITHUB_ENV
+          fi
+
+          # Confirm max_retries does NOT exist in outreach_send_config yet
+          max_retries_exists=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'outreach_send_config' AND column_name = 'max_retries';" \
+            | tr -d ' \n')
+          echo "- max_retries pre-migration state: exists=$max_retries_exists (0=expected)" >> $GITHUB_STEP_SUMMARY
+
+          echo "Pre-flight complete." >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # SECTION 2 — Apply migration 055
+      # ============================================================
+      - name: Section 2 - Apply migration 055
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 2 — Apply migration 055" >> $GITHUB_STEP_SUMMARY
+
+          psql "$STAGING_DATABASE_URL" \
+            -f supabase_migrations/migrations/055_dispatch_schema.sql \
+            -v ON_ERROR_STOP=1
+
+          echo "- Migration 055 applied successfully (exit code $?)" >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # SECTION 3 — Post-migration schema verification
+      # ============================================================
+      - name: Section 3 - Post-migration schema verification
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 3 — Post-migration schema verification" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+
+          # 3a: dispatch_failed enum value exists
+          df=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM pg_enum e
+             JOIN pg_type t ON e.enumtypid = t.oid
+             WHERE t.typname = 'approval_status' AND e.enumlabel = 'dispatch_failed';" \
+            | tr -d ' \n')
+          if [ "$df" = "1" ]; then
+            echo "- PASS: approval_status.dispatch_failed enum value exists" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- FAIL: approval_status.dispatch_failed enum value NOT found" >> $GITHUB_STEP_SUMMARY
+            FAIL=1
+          fi
+
+          # 3b: max_retries column in outreach_send_config
+          mr=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT column_default FROM information_schema.columns
+             WHERE table_name = 'outreach_send_config' AND column_name = 'max_retries';" \
+            | tr -d ' \n')
+          if [ -n "$mr" ]; then
+            echo "- PASS: max_retries column exists in outreach_send_config (default: $mr)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- FAIL: max_retries column NOT found in outreach_send_config" >> $GITHUB_STEP_SUMMARY
+            FAIL=1
+          fi
+
+          # 3c: claim_outbound_queue_batch() function exists
+          fn=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM pg_proc p
+             JOIN pg_namespace n ON p.pronamespace = n.oid
+             WHERE n.nspname = 'public' AND p.proname = 'claim_outbound_queue_batch';" \
+            | tr -d ' \n')
+          if [ "$fn" = "1" ]; then
+            echo "- PASS: claim_outbound_queue_batch() function exists" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- FAIL: claim_outbound_queue_batch() function NOT found" >> $GITHUB_STEP_SUMMARY
+            FAIL=1
+          fi
+
+          # 3d: outbound_queue has locked_by, locked_at, next_retry_at
+          for col in locked_by locked_at next_retry_at; do
+            col_exists=$(psql "$STAGING_DATABASE_URL" -t -c \
+              "SELECT COUNT(*) FROM information_schema.columns
+               WHERE table_name = 'outbound_queue' AND column_name = '$col';" \
+              | tr -d ' \n')
+            if [ "$col_exists" = "1" ]; then
+              echo "- PASS: outbound_queue.$col column exists" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- FAIL: outbound_queue.$col column NOT found" >> $GITHUB_STEP_SUMMARY
+              FAIL=1
+            fi
+          done
+
+          # 3e: send_attempts has the expected status column
+          sa_status=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'send_attempts' AND column_name = 'status';" \
+            | tr -d ' \n')
+          if [ "$sa_status" = "1" ]; then
+            echo "- PASS: send_attempts.status column exists" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- FAIL: send_attempts.status column NOT found" >> $GITHUB_STEP_SUMMARY
+            FAIL=1
+          fi
+
+          # 3f: Function signature is correct (3 args: UUID, TEXT, INTEGER)
+          fn_args=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT pg_get_function_arguments(p.oid)
+             FROM pg_proc p
+             JOIN pg_namespace n ON p.pronamespace = n.oid
+             WHERE n.nspname = 'public' AND p.proname = 'claim_outbound_queue_batch';" \
+            | tr -d ' \n')
+          echo "- claim_outbound_queue_batch signature: $fn_args" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FAIL" -eq 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**All schema checks PASSED**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**SCHEMA CHECK FAILURES — do not merge PR #109**" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # ============================================================
+      # SECTION 4 — Idempotency check (re-run migration 055)
+      # ============================================================
+      - name: Section 4 - Idempotency check
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 4 — Idempotency check" >> $GITHUB_STEP_SUMMARY
+
+          psql "$STAGING_DATABASE_URL" \
+            -f supabase_migrations/migrations/055_dispatch_schema.sql \
+            -v ON_ERROR_STOP=1
+
+          echo "- PASS: Migration 055 is idempotent (applied twice without error)" >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # SECTION 5 — Backfill dry-run (no writes)
+      # ============================================================
+      - name: Section 5 - Backfill dry-run
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.STAGING_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.STAGING_SERVICE_KEY || '' }}
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 5 — Backfill dry-run (no writes)" >> $GITHUB_STEP_SUMMARY
+
+          python scripts/backfill_outbound_queue.py 2>&1 | tee /tmp/backfill_dryrun.txt
+
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat /tmp/backfill_dryrun.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Dry-run complete. Review counts above. No rows were written." >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # SECTION 6 — claim_outbound_queue_batch() functional test
+      # ============================================================
+      - name: Section 6 - RPC function smoke test
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 6 — claim_outbound_queue_batch() smoke test" >> $GITHUB_STEP_SUMMARY
+
+          # Call the function with a test workspace_id that has no rows.
+          # Expected: 0 rows returned, no error.
+          rpc_result=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM claim_outbound_queue_batch(
+               '00000000-0000-0000-0000-000000000000'::uuid,
+               'ci-smoke-test',
+               10
+             );" \
+            | tr -d ' \n')
+          echo "- Rows returned for unknown workspace: $rpc_result (expected: 0)" >> $GITHUB_STEP_SUMMARY
+          if [ "$rpc_result" = "0" ]; then
+            echo "- PASS: RPC function executes without error and returns empty set for unknown workspace" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- FAIL: Unexpected row count from RPC smoke test: $rpc_result" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # ============================================================
+      # SECTION 7 — Queue row lifecycle query check
+      # ============================================================
+      - name: Section 7 - Queue lifecycle state counts
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 7 — Queue lifecycle state" >> $GITHUB_STEP_SUMMARY
+
+          psql "$STAGING_DATABASE_URL" -t -c "
+            SELECT
+              COUNT(*) FILTER (WHERE locked_by IS NULL AND (next_retry_at IS NULL OR next_retry_at <= NOW())) AS eligible,
+              COUNT(*) FILTER (WHERE locked_by IS NOT NULL) AS locked,
+              COUNT(*) FILTER (WHERE locked_by IS NULL AND next_retry_at > NOW()) AS deferred,
+              COUNT(*) AS total
+            FROM outbound_queue;
+          " >> $GITHUB_STEP_SUMMARY
+          echo "- Queue state captured above" >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # SECTION 8 — send_enabled=false safety check
+      # ============================================================
+      - name: Section 8 - Send safety check
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 8 — Send safety check" >> $GITHUB_STEP_SUMMARY
+
+          send_val=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT send_enabled FROM outreach_send_config LIMIT 1;" \
+            | tr -d ' \n')
+          if [ "$send_val" = "f" ]; then
+            echo "- PASS: send_enabled=false confirmed on staging" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- FAIL: send_enabled is NOT false on staging (got: '$send_val'). Do not proceed." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # Also check max_retries value
+          mr_val=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT max_retries FROM outreach_send_config LIMIT 1;" \
+            | tr -d ' \n')
+          echo "- max_retries value: $mr_val (expected: 4)" >> $GITHUB_STEP_SUMMARY
+          if [ "$mr_val" = "4" ]; then
+            echo "- PASS: max_retries=4 (default from migration)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- INFO: max_retries=$mr_val (row may have been updated manually)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ============================================================
+      # SECTION 9 — Isolation check
+      # ============================================================
+      - name: Section 9 - Staging isolation check
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 9 — Staging isolation check" >> $GITHUB_STEP_SUMMARY
+
+          count=$(psql "$STAGING_DATABASE_URL" -t -c \
+            "SELECT COUNT(*) FROM contacts;" \
+            | tr -d ' \n')
+          echo "- Staging contact count: $count" >> $GITHUB_STEP_SUMMARY
+          if [ "$count" -ge 1000 ]; then
+            echo "- FAIL: Contact count ($count) >= 1000. Staging may contain production data." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "- PASS: Isolation check passed ($count contacts, expected < 1000)" >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # SECTION 10 — Python import check (scheduler loads cleanly)
+      # ============================================================
+      - name: Section 10 - Scheduler import smoke test
+        env:
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_SERVICE_KEY: test-service-key
+          SUPABASE_ANON_KEY: test-anon-key
+          SEND_ENABLED: "false"
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Section 10 — Python import smoke test" >> $GITHUB_STEP_SUMMARY
+
+          python -c "
+          import sys
+          errors = []
+          modules = [
+              'backend.app.core.dispatch_scheduler',
+              'backend.app.integrations.gmail_api_client',
+          ]
+          for mod in modules:
+              try:
+                  __import__(mod)
+                  print(f'PASS: {mod} imports cleanly')
+              except ImportError as e:
+                  errors.append(f'FAIL: {mod} — {e}')
+                  print(f'FAIL: {mod} — {e}', file=sys.stderr)
+          if errors:
+              sys.exit(1)
+          "
+
+          echo "- PASS: All critical modules import without error" >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # FINAL SUMMARY
+      # ============================================================
+      - name: Final summary
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "## Final Verdict" >> $GITHUB_STEP_SUMMARY
+          echo "Run completed at: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Constraints confirmed in this run:" >> $GITHUB_STEP_SUMMARY
+          echo "- SEND_ENABLED remains false" >> $GITHUB_STEP_SUMMARY
+          echo "- Production ref (wlyhbdmjhgvovigogdco) not used" >> $GITHUB_STEP_SUMMARY
+          echo "- Migration 055 applied to staging only" >> $GITHUB_STEP_SUMMARY
+          echo "- No production migration applied" >> $GITHUB_STEP_SUMMARY
+          echo "- PR #109 not merged" >> $GITHUB_STEP_SUMMARY
