@@ -2133,18 +2133,21 @@ async def lifespan(app: FastAPI):
             _run_pipeline_qc, "interval", minutes=15, id="pipeline_qc",
             start_date=_now + _td(seconds=45),
         )
-        # send_approved (legacy direct-scan path) remains for manual/explicit-draft sends.
-        # _run_dispatch_loop (queue path) is the primary send path going forward.
-        # send_approved: Mon-Fri, 8am-11am Chicago at :00 and :30 (7 ticks/day)
-        # 7 ticks × batch_size=20 = 140 capacity; daily_limit=125 caps it at 125
-        scheduler.add_job(
-            _run_send_approved, "cron",
-            day_of_week="mon-fri", hour="8-11", minute="0,30",
-            timezone="America/Chicago",
-            id="send_approved",
-        )
-        # dispatch_loop: queue-consumer send path (PR G). Same cron window.
-        # Offset +120s from scheduler start to fire after the other 15-min jobs.
+        # RETIRED 2026-05-15 (D7): send_approved scheduler registration removed.
+        # Running both send_approved and dispatch_loop with SEND_ENABLED=true creates an
+        # unresolvable dual-dispatch race: send_approved can claim a draft via atomic
+        # sent_at UPDATE before dispatch_queued_draft's pre-send claim, producing duplicate
+        # Resend calls with different idempotency keys that bypass dedup.
+        # _run_send_approved and _send_approved_workspace are retained for manual invocation
+        # but are NOT registered in the scheduler. dispatch_loop is the sole cron send path.
+        # To re-enable (should not be needed): uncomment the block below and deploy.
+        # scheduler.add_job(
+        #     _run_send_approved, "cron",
+        #     day_of_week="mon-fri", hour="8-11", minute="0,30",
+        #     timezone="America/Chicago",
+        #     id="send_approved",
+        # )
+        # dispatch_loop: queue-consumer send path (PR G). Sole scheduler-registered send path.
         scheduler.add_job(
             _run_dispatch_loop, "cron",
             day_of_week="mon-fri", hour="8-11", minute="0,30",
@@ -2311,7 +2314,7 @@ async def lifespan(app: FastAPI):
         logger.info(
             "APScheduler started — "
             "pipeline_advance every 4h (event-driven: capacity-aware discovery + learning trigger), "
-            "send_approved cron Mon-Fri 8:00-11:00 Chicago (reactive advance after each batch), "
+            "dispatch_loop cron Mon-Fri 8:00-11:00 Chicago (sole scheduler send path; send_approved RETIRED 2026-05-15), "
             "gmail_intake every 15m across all sender_pool mailboxes (reply draft + HITL on interested/question/objection), "
             "fb_discovery Mon 7am, mfg_discovery Wed 7am, "
             "research 9/12/3/6pm → qualification +30m → enrichment 9:45am+2:45pm Mon-Fri (Apollo credit-gated), "
@@ -2624,10 +2627,15 @@ async def send_trace():
 
 @app.post("/api/admin/trigger-send")
 async def trigger_send():
-    """Manually trigger send_approved — useful when cron tick hasn't fired yet."""
+    """Manually trigger send_approved (legacy path) for operator use only.
+
+    NOTE: send_approved is NOT registered in the scheduler (retired 2026-05-15 D7).
+    This endpoint invokes the legacy path directly. It bypasses the outbound_queue.
+    Do not use this endpoint after SEND_ENABLED is set to true — use trigger-dispatch instead.
+    """
     import threading
     threading.Thread(target=_run_send_approved, daemon=True).start()
-    return {"status": "triggered", "message": "send_approved job started in background"}
+    return {"status": "triggered", "message": "send_approved (legacy path) started in background — see retirement note in D7"}
 
 
 @app.get("/api/prospectiq/admin/cadence-velocity")
