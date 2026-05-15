@@ -51,7 +51,7 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           echo "Deploying SHA ${{ github.sha }} to Railway production environment..."
-          railway up --environment production --detach
+          railway up --environment production --service prospectIQ --detach
           echo "Deploy triggered. Monitor Railway dashboard for completion."
           echo "SHA: ${{ github.sha }}"
           echo "Triggered by: ${{ github.actor }}"
