@@ -242,6 +242,7 @@ jobs:
             WHERE approval_status IN ('approved', 'edited')
               AND sent_at IS NULL;
           " | tr -d ' \n')
+          echo "BACKFILL_ELIGIBLE=$eligible_count"
           echo "- Eligible drafts (approved/edited, sent_at IS NULL): **$eligible_count**" >> $GITHUB_STEP_SUMMARY
 
           # Count already in queue
@@ -251,6 +252,7 @@ jobs:
             WHERE od.approval_status IN ('approved', 'edited')
               AND od.sent_at IS NULL;
           " | tr -d ' \n')
+          echo "BACKFILL_ALREADY_QUEUED=$already_queued"
           echo "- Already in outbound_queue: **$already_queued**" >> $GITHUB_STEP_SUMMARY
 
           # Count to insert (eligible minus already queued)
@@ -262,13 +264,14 @@ jobs:
                 SELECT 1 FROM outbound_queue oq WHERE oq.draft_id = od.id
               );
           " | tr -d ' \n')
+          echo "BACKFILL_TO_INSERT=$to_insert"
           echo "- To insert (backfill candidates): **$to_insert**" >> $GITHUB_STEP_SUMMARY
 
-          # Sample draft IDs (up to 10)
+          # Sample draft IDs (up to 10) — print to stdout AND step summary
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Sample backfill candidates (up to 10)" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          psql "$STAGING_DATABASE_URL" -c "
+          sample=$(psql "$STAGING_DATABASE_URL" -c "
             SELECT od.id, od.workspace_id, od.approval_status, od.created_at
             FROM outreach_drafts od
             WHERE od.approval_status IN ('approved', 'edited')
@@ -278,13 +281,16 @@ jobs:
               )
             ORDER BY od.created_at
             LIMIT 10;
-          " >> $GITHUB_STEP_SUMMARY 2>&1
+          " 2>&1)
+          echo "$sample"
+          echo "$sample" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-          # Proof: outbound_queue row count before and after (must be same — no writes)
-          queue_count_before=$(psql "$STAGING_DATABASE_URL" -t -c "SELECT COUNT(*) FROM outbound_queue;" | tr -d ' \n')
+          # Proof: outbound_queue row count (must be unchanged — dry-run writes nothing)
+          queue_count=$(psql "$STAGING_DATABASE_URL" -t -c "SELECT COUNT(*) FROM outbound_queue;" | tr -d ' \n')
+          echo "BACKFILL_QUEUE_ROW_COUNT_AFTER_DRYRUN=$queue_count"
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- outbound_queue row count (unchanged — dry-run): **$queue_count_before**" >> $GITHUB_STEP_SUMMARY
+          echo "- outbound_queue row count (unchanged — dry-run): **$queue_count**" >> $GITHUB_STEP_SUMMARY
           echo "- DRY-RUN: No rows written. --execute not authorized." >> $GITHUB_STEP_SUMMARY
 
       # ============================================================
@@ -428,6 +434,7 @@ jobs:
               http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${STAGING_URL}/health")
               if [ "$http_code" = "200" ]; then
                 body=$(curl -s --max-time 10 "${STAGING_URL}/health")
+                echo "STAGING_HEALTH=200 | $body"
                 echo "- PASS: Staging health endpoint returned 200" >> $GITHUB_STEP_SUMMARY
                 echo "  \`${body}\`" >> $GITHUB_STEP_SUMMARY
                 break
@@ -452,6 +459,7 @@ jobs:
               WHERE t.typname = 'approval_status' AND e.enumlabel = 'dispatch_failed';
             " | tr -d ' \n')
             if [ "$prod_df" = "0" ]; then
+              echo "PRODUCTION_MIGRATION_055=NOT_APPLIED"
               echo "- PASS: dispatch_failed enum NOT present on production (migration 055 not applied)" >> $GITHUB_STEP_SUMMARY
             else
               echo "- FAIL: dispatch_failed enum IS present on production — migration 055 was applied without authorization" >> $GITHUB_STEP_SUMMARY
@@ -469,8 +477,10 @@ jobs:
             "SELECT send_enabled FROM outreach_send_config LIMIT 1;" \
             | tr -d ' \n')
           if [ "$send_val" = "f" ]; then
+            echo "STAGING_SEND_ENABLED=false"
             echo "- PASS: send_enabled=false confirmed on staging (post-merge)" >> $GITHUB_STEP_SUMMARY
           else
+            echo "STAGING_SEND_ENABLED=$send_val  <-- UNEXPECTED"
             echo "- FAIL: send_enabled is NOT false on staging post-merge (got: '$send_val')" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
