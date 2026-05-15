@@ -145,15 +145,13 @@ def build_sql() -> str:
 
     # Contacts (30)
     lines.append("-- Contacts (30 — all @staging-test.invalid)")
-    for (cid, company_idx, first, last, title, email, approval_status, seq_name, step) in CONTACTS:
+    for (cid, company_idx, first, last, title, email, _approval_status, _seq_name, _step) in CONTACTS:
         company_id = COMPANY_IDS[company_idx]
         lines.append(
             f"INSERT INTO contacts "
-            f"(id, workspace_id, company_id, first_name, last_name, title, email, "
-            f"approval_status, sequence_name, sequence_step) "
+            f"(id, workspace_id, company_id, first_name, last_name, title, email) "
             f"VALUES ('{cid}', '{WORKSPACE_ID}', '{company_id}', "
-            f"{_q(first)}, {_q(last)}, {_q(title)}, {_q(email)}, "
-            f"'{approval_status}'::approval_status, {_q(seq_name)}, {step}) "
+            f"{_q(first)}, {_q(last)}, {_q(title)}, {_q(email)}) "
             f"ON CONFLICT (id) DO NOTHING;"
         )
     lines.append("")
