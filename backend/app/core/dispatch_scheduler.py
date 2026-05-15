@@ -38,6 +38,7 @@ class BatchResult:
     transient_failed: int = 0
     permanently_failed: int = 0
     assertion_skipped: int = 0
+    already_delivered_drained: int = 0
     errors: int = 0
 
 
@@ -367,15 +368,35 @@ def dispatch_workspace(
             _delete_queue_row(db_client, queue_row_id)
             result.permanently_failed += 1
 
+        elif outcome.status == "ALREADY_DELIVERED":
+            # Pre-send claim found sent_at already set: prior attempt crashed after the
+            # claim was persisted but before the queue row was deleted. The email was
+            # sent (or at minimum claimed). Mark the send_attempt DELIVERED and drain
+            # the stuck queue row. D6 adds webhook reconciliation to verify the provider.
+            logger.warning(
+                "dispatch.already_delivered_drain draft_id=%s queue_row=%s reason=%s",
+                draft_id, queue_row_id, outcome.failure_reason,
+            )
+            _update_send_attempt(
+                db_client, attempt_id,
+                status="DELIVERED",
+                failure_reason=f"already_delivered_drain: {outcome.failure_reason}",
+                resolved_at=_now_iso(),
+            )
+            _delete_queue_row(db_client, queue_row_id)
+            result.already_delivered_drained += 1
+
     logger.info(
         "dispatch.workspace_complete workspace_id=%s dispatched=%d delivered=%d "
-        "transient_failed=%d permanently_failed=%d assertion_skipped=%d errors=%d",
+        "transient_failed=%d permanently_failed=%d assertion_skipped=%d "
+        "already_delivered_drained=%d errors=%d",
         workspace_id,
         result.dispatched,
         result.delivered,
         result.transient_failed,
         result.permanently_failed,
         result.assertion_skipped,
+        result.already_delivered_drained,
         result.errors,
     )
     return result

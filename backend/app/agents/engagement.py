@@ -37,7 +37,7 @@ from backend.app.agents.base import BaseAgent, AgentResult
 @dataclass
 class QueueDispatchOutcome:
     """Result returned by dispatch_queued_draft(); consumed by dispatch_scheduler."""
-    status: Literal["DELIVERED", "TRANSIENT_FAILED", "PERMANENTLY_FAILED", "ASSERTION_FAILED"]
+    status: Literal["DELIVERED", "TRANSIENT_FAILED", "PERMANENTLY_FAILED", "ASSERTION_FAILED", "ALREADY_DELIVERED"]
     provider_message_id: Optional[str] = None
     failure_code: Optional[str] = None
     failure_reason: Optional[str] = None
@@ -1024,8 +1024,10 @@ class EngagementAgent(BaseAgent):
              PERMANENTLY_FAILED without performing post-send updates.
           6. On assertion failure: return ASSERTION_FAILED (lock released by caller).
 
-        Does NOT: set sent_at before the Resend call (no pre-claim), insert
-        send_attempts (done by caller), or touch outbound_queue state (done by caller).
+        Sets sent_at atomically BEFORE the Resend call (pre-send claim) to close the
+        crash window between Resend accepting the call and sent_at being recorded.
+        Rolls back sent_at on Resend failure to allow safe retry.
+        Does NOT: insert send_attempts (done by caller), or touch outbound_queue state (done by caller).
         """
         import resend
         from backend.app.core.config import get_settings
@@ -1080,11 +1082,17 @@ class EngagementAgent(BaseAgent):
 
         draft = draft_rows[0]
 
-        # Defensive: if already sent (e.g. via old path), skip
+        # Draft was previously dispatched — sent_at was set by a prior pre-send claim
+        # that survived a crash. Signal ALREADY_DELIVERED so dispatch_workspace drains
+        # the orphaned queue row instead of releasing the lock and looping forever.
         if draft.get("sent_at"):
+            logger.warning(
+                "dispatch_queued_draft already_delivered_at_fetch draft_id=%s sent_at=%s",
+                draft_id, draft.get("sent_at"),
+            )
             return QueueDispatchOutcome(
-                status="ASSERTION_FAILED",
-                failure_reason="draft_already_sent",
+                status="ALREADY_DELIVERED",
+                failure_reason="draft_sent_at_set_at_fetch",
             )
 
         contact = draft.get("contacts") or {}
@@ -1208,6 +1216,42 @@ class EngagementAgent(BaseAgent):
         subject = draft.get("subject", "")
         body = draft.get("edited_body") or draft.get("body", "")
 
+        # Atomic pre-send claim: set sent_at BEFORE the Resend API call.
+        # Closes the crash window where Resend accepts the email but the process dies
+        # before sent_at is persisted. Without this, stale-lock reclaim re-dispatches
+        # with a new idempotency_key, bypassing Resend's 24h dedup and sending twice.
+        # If the claim returns 0 rows, sent_at is already set from a prior attempt
+        # that crashed after the claim — return ALREADY_DELIVERED to drain the queue row.
+        _pre_send_now = datetime.now(timezone.utc).isoformat()
+        try:
+            _claim_result = (
+                self.db.client.table("outreach_drafts")
+                .update({"sent_at": _pre_send_now})
+                .eq("id", draft_id)
+                .is_("sent_at", "null")
+                .execute()
+            )
+        except Exception as _claim_exc:
+            logger.error(
+                "dispatch_queued_draft pre_send_claim_failed draft_id=%s error=%s",
+                draft_id, _claim_exc,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"pre_send_claim_failed: {_claim_exc}",
+            )
+
+        if not _claim_result.data:
+            logger.warning(
+                "dispatch_queued_draft already_delivered draft_id=%s — "
+                "sent_at set by prior attempt; draining stuck queue row",
+                draft_id,
+            )
+            return QueueDispatchOutcome(
+                status="ALREADY_DELIVERED",
+                failure_reason="draft_sent_at_already_set_pre_claim",
+            )
+
         try:
             send_response = resend.Emails.send(
                 {
@@ -1221,6 +1265,19 @@ class EngagementAgent(BaseAgent):
                 {"idempotency_key": idempotency_key},
             )
         except Exception as send_exc:
+            # Resend call failed — roll back sent_at to allow safe retry.
+            try:
+                self.db.client.table("outreach_drafts").update(
+                    {"sent_at": None}
+                ).eq("id", draft_id).execute()
+                logger.info(
+                    "dispatch_queued_draft sent_at_rollback_ok draft_id=%s", draft_id
+                )
+            except Exception as _rb_exc:
+                logger.error(
+                    "dispatch_queued_draft sent_at_rollback_failed draft_id=%s error=%s",
+                    draft_id, _rb_exc,
+                )
             status, failure_code = _classify_resend_error(send_exc)
             logger.warning(
                 "dispatch_queued_draft resend_%s draft_id=%s code=%s error=%s",
@@ -1236,16 +1293,15 @@ class EngagementAgent(BaseAgent):
             send_response.get("id") if isinstance(send_response, dict) else None
         )
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = _pre_send_now  # reuse the timestamp set in the pre-send claim
 
-        # Post-send updates (all non-fatal — send is already recorded)
+        # Post-send updates (non-fatal — sent_at already set by pre-send claim above)
         try:
             self.db.update_outreach_draft(draft_id, {
-                "sent_at": now,
                 "resend_message_id": resend_id,
             })
         except Exception as _e:
-            logger.warning("dispatch_queued_draft update_sent_at failed (non-fatal): %s", _e)
+            logger.warning("dispatch_queued_draft update_resend_id failed (non-fatal): %s", _e)
 
         try:
             _ws_id = self.db.workspace_id or settings.default_workspace_id
