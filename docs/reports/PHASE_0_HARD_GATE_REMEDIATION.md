@@ -573,9 +573,13 @@ Deferred items (not blocking PR G; log for Workstream 2):
   - company_status enum missing "high_priority" (breaks health snapshots)
   - backend.app.integrations.gmail_api_client module missing
 
-Overall: [ ] SAFE FOR PR G   [ ] NOT SAFE FOR PR G
+Overall: [x] SAFE FOR PR G — planning authorized; implementation blocked pending:
+  1. Supabase connection pool saturation addressed in PR G planning
+  2. gmail_api_client.py committed to git in separate remediation PR
+  3. SEND_ENABLED remains false until explicitly authorized
 
-Signed off by: _________________________ Date: _____________
+Signed off by: Avanish Mehrotra   Date: 2026-05-15
 ```
 
-PR G is not authorized until this section is signed off as SAFE by Avanish.
+PR G planning is authorized. PR G implementation is blocked until carry-forward risks
+1–3 above are resolved and SEND_ENABLED is explicitly authorized by Avanish.
