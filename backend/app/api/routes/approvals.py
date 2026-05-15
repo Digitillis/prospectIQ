@@ -525,22 +525,61 @@ async def approve_draft(
     if body and body.attestation is not None:
         update_data["attestation"] = body.attestation.model_dump()
 
-    try:
-        draft = db.update_outreach_draft(draft_id, update_data)
-    except Exception as exc:
-        # Likely an unknown-column error from a missing migration. Strip the
-        # new fields and retry with the legacy columns only so reviewer flow
-        # stays unblocked. Log a warning so the migration gap is visible.
-        logger.warning(
-            "Approval write hit unknown column (%s) — retrying without "
-            "reviewer/attestation fields. Run the reviewer-columns migration.",
-            exc,
-        )
-        legacy_only = {k: v for k, v in update_data.items()
-                       if k not in {"approved_by", "reviewed_at", "attestation"}}
-        draft = db.update_outreach_draft(draft_id, legacy_only)
+    # For terminal approval states (approved, edited): write approval_status and
+    # outbound_queue row atomically via a single DB function call. This guarantees
+    # that PgBouncer transaction mode cannot split the two writes — either both
+    # land or neither does.
+    #
+    # For pending_second_review: no queue row is created; use a direct update.
+    workspace_id = get_workspace_id() or ""
+    final_status = update_data["approval_status"]
+    if final_status in ("approved", "edited"):
+        try:
+            rpc_result = db.client.rpc(
+                "approve_draft_and_enqueue",
+                {
+                    "p_draft_id": draft_id,
+                    "p_workspace_id": workspace_id,
+                    "p_status": final_status,
+                    "p_approved_at": update_data["approved_at"],
+                    "p_edited_body": update_data.get("edited_body"),
+                    "p_priority": 5,
+                },
+            ).execute()
+            draft = rpc_result.data[0] if rpc_result.data else None
+        except Exception as exc:
+            logger.error("approve_draft_and_enqueue RPC failed: %s", exc)
+            raise HTTPException(status_code=500, detail="Approval transaction failed")
+    else:
+        # pending_second_review — no queue row
+        try:
+            draft = db.update_outreach_draft(draft_id, update_data)
+        except Exception as exc:
+            logger.warning(
+                "Approval write hit unknown column (%s) — retrying without "
+                "reviewer/attestation fields. Run the reviewer-columns migration.",
+                exc,
+            )
+            legacy_only = {k: v for k, v in update_data.items()
+                           if k not in {"approved_by", "reviewed_at", "attestation"}}
+            draft = db.update_outreach_draft(draft_id, legacy_only)
+
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
+
+    # Write reviewer fields + attestation separately (non-critical — columns may
+    # not exist yet if reviewer-columns migration has not run).
+    if final_status in ("approved", "edited") and (reviewer_id or update_data.get("attestation")):
+        reviewer_update: dict = {}
+        if reviewer_id:
+            reviewer_update["approved_by"] = reviewer_id
+        reviewer_update["reviewed_at"] = update_data.get("reviewed_at", datetime.now(timezone.utc).isoformat())
+        if update_data.get("attestation"):
+            reviewer_update["attestation"] = update_data["attestation"]
+        try:
+            db.update_outreach_draft(draft_id, reviewer_update)
+        except Exception:
+            pass  # reviewer columns not yet migrated — non-fatal
 
     # Capture edit feedback when reviewer modified the body — used as a
     # positive learning signal for future drafts to the same contact.
