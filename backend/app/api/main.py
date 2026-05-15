@@ -240,13 +240,14 @@ def _dispatch_workspace(ws: dict) -> None:
     )
     logger.info(
         "Dispatch [%s]: dispatched=%d delivered=%d transient=%d permanent=%d "
-        "assertion_skipped=%d errors=%d",
+        "assertion_skipped=%d already_delivered_drained=%d errors=%d",
         ws["name"],
         result.dispatched,
         result.delivered,
         result.transient_failed,
         result.permanently_failed,
         result.assertion_skipped,
+        result.already_delivered_drained,
         result.errors,
     )
     if result.delivered > 0:
