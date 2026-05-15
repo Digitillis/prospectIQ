@@ -126,8 +126,8 @@ def build_sql() -> str:
     # Workspace
     lines.append("-- Workspace")
     lines.append(
-        f"INSERT INTO workspaces (id, name, slug, plan) "
-        f"VALUES ('{WORKSPACE_ID}', 'Staging Workspace', 'staging', 'pro') "
+        f"INSERT INTO workspaces (id, name, slug, owner_email, tier) "
+        f"VALUES ('{WORKSPACE_ID}', 'Staging Workspace', 'staging', 'staging@staging-test.invalid', 'growth') "
         f"ON CONFLICT (id) DO NOTHING;"
     )
     lines.append("")
