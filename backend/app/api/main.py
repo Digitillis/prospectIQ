@@ -2130,10 +2130,12 @@ async def lifespan(app: FastAPI):
             _run_health_snapshot, "interval", minutes=15, id="health_snapshot",
             start_date=_now,
         )
-        scheduler.add_job(
-            _run_pipeline_qc, "interval", minutes=15, id="pipeline_qc",
-            start_date=_now + _td(seconds=45),
-        )
+        # SUSPENDED (Avanish 2026-05-15): pipeline_qc emails paused until further notice.
+        # Re-enable by restoring the add_job call below.
+        # scheduler.add_job(
+        #     _run_pipeline_qc, "interval", minutes=15, id="pipeline_qc",
+        #     start_date=_now + _td(seconds=45),
+        # )
         # RETIRED 2026-05-15 (D7): send_approved scheduler registration removed.
         # Running both send_approved and dispatch_loop with SEND_ENABLED=true creates an
         # unresolvable dual-dispatch race: send_approved can claim a draft via atomic
