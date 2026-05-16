@@ -46,6 +46,11 @@ def send_alert(subject: str, body: str):
         print(f"Alert send failed: {e}")
 
 def run_qc():
+    # SUSPENDED (Avanish 2026-05-15): pipeline_qc emails paused until further notice.
+    # Re-enable by removing the two lines below.
+    print("[pipeline_qc] suspended — returning without running")
+    return {"fixes": [], "issues": []}
+
     db = Database(workspace_id=WORKSPACE_ID)
     now = datetime.now(timezone.utc)
     issues = []
