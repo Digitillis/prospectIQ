@@ -49,6 +49,11 @@ Thumbs.db
 # Logs
 *.log
 
+# OAuth credentials (never commit)
+*_credentials.json
+*_token.json
+gmail_oauth_*.json
+
 # Tasks (local working files — root only, not dashboard/app/tasks)
 /tasks/
 .env
