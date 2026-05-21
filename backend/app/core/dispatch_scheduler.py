@@ -132,6 +132,29 @@ def _release_queue_lock(db_client, queue_row_id: str) -> None:
         logger.error("dispatch.release_queue_lock id=%s error=%s", queue_row_id, exc)
 
 
+def _release_queue_lock_bump_retry(
+    db_client, queue_row_id: str, current_retry_count: int
+) -> None:
+    """Release lock and increment retry_count after an assertion failure.
+
+    attempt_number is derived as retry_count + 1. Without bumping retry_count,
+    every re-attempt collides on the same attempt_number in send_attempts
+    (unique constraint on draft_id + attempt_number). Assertion failures are not
+    transient errors — no backoff, no max_retries — so next_retry_at stays NULL
+    and the row is picked up on the next scheduler tick.
+    """
+    try:
+        db_client.table("outbound_queue").update({
+            "locked_by": None,
+            "locked_at": None,
+            "retry_count": current_retry_count + 1,
+        }).eq("id", queue_row_id).execute()
+    except Exception as exc:
+        logger.error(
+            "dispatch.release_lock_bump_retry id=%s error=%s", queue_row_id, exc
+        )
+
+
 def _delete_queue_row(db_client, queue_row_id: str) -> None:
     try:
         db_client.table("outbound_queue").delete().eq("id", queue_row_id).execute()
@@ -350,7 +373,7 @@ def dispatch_workspace(
                 failure_reason=(outcome.failure_reason or "pre-send assertion blocked")[:500],
                 resolved_at=_now_iso(),
             )
-            _release_queue_lock(db_client, queue_row_id)
+            _release_queue_lock_bump_retry(db_client, queue_row_id, retry_count)
             result.assertion_skipped += 1
 
         elif outcome.status == "TRANSIENT_FAILED":
