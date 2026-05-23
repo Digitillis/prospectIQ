@@ -8,12 +8,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from backend.app.core.auth import require_workspace_member
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(
+    prefix="/api/analytics",
+    tags=["analytics"],
+    dependencies=[Depends(require_workspace_member)],
+)
 
 
 def get_db() -> Database:

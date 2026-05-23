@@ -8,15 +8,20 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
+from backend.app.core.auth import require_workspace_member
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/companies", tags=["companies"])
+router = APIRouter(
+    prefix="/api/companies",
+    tags=["companies"],
+    dependencies=[Depends(require_workspace_member)],
+)
 
 
 def get_db() -> Database:

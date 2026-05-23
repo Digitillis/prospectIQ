@@ -62,3 +62,12 @@ gmail_oauth_*.json
 .netlify/
 .venv/
 node_modules/
+
+# One-off / ephemeral root-level scripts (hardcoded paths or batch-specific data)
+/ingest_apollo_bulk_matches.py
+/fetch_batch5.py
+/fix_batch5.py
+
+# Generated JSON exports and data dumps
+docs/reports/approval_restoration_audit.json
+docs/reports/rejected_draft_reassessment.json
