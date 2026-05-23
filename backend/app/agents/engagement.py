@@ -611,6 +611,41 @@ class EngagementAgent(BaseAgent):
                 result.skipped += 1
                 continue
 
+            # Cluster routing gate — resolve the Instantly sequence ID for this
+            # company's campaign_cluster + contact persona. Contacts in the
+            # 'other' or 'watchlist' cluster must not be auto-sent; they require
+            # manual review. Missing env var also blocks the send so we never
+            # deliver to an unrouted cluster silently.
+            from backend.app.core.sequence_router import get_campaign_id_for_company
+            _cluster = company.get("campaign_cluster") or "other"
+            _persona = contact.get("persona_type")
+
+            if _cluster in ("other", "watchlist") or not _cluster:
+                logger.warning(
+                    "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
+                    "cluster requires manual review, not sending",
+                    draft.get("id"), company_name, _cluster, _persona,
+                )
+                console.print(
+                    f"  [yellow]{company_name}: cluster={_cluster!r} — manual review required. Skipping.[/yellow]"
+                )
+                result.skipped += 1
+                continue
+
+            _instantly_campaign_id = get_campaign_id_for_company(company, _persona)
+            if _instantly_campaign_id is None:
+                logger.warning(
+                    "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
+                    "no Instantly sequence configured for this cluster/persona combination",
+                    draft.get("id"), company_name, _cluster, _persona,
+                )
+                console.print(
+                    f"  [yellow]{company_name}: cluster={_cluster!r} persona={_persona!r} — "
+                    f"no Instantly sequence env var set. Skipping.[/yellow]"
+                )
+                result.skipped += 1
+                continue
+
             subject = draft.get("subject", "")
             body = draft.get("edited_body") or draft.get("body", "")
 
@@ -832,6 +867,8 @@ class EngagementAgent(BaseAgent):
                         "reply_to": _reply_to,
                         "sequence_name": draft.get("sequence_name"),
                         "sequence_step": draft.get("sequence_step"),
+                        "campaign_cluster": _cluster,
+                        "instantly_campaign_id": _instantly_campaign_id,
                     },
                 }).execute()
 
@@ -1156,6 +1193,37 @@ class EngagementAgent(BaseAgent):
                 failure_reason=f"company_locked: {lock_reason}",
             )
 
+        # Cluster routing gate — resolve the Instantly sequence ID for this
+        # company's campaign_cluster + contact persona. Contacts in the
+        # 'other' or 'watchlist' cluster must not be auto-sent; they require
+        # manual review. Missing env var also blocks the send.
+        from backend.app.core.sequence_router import get_campaign_id_for_company
+        _dq_cluster = company.get("campaign_cluster") or "other"
+        _dq_persona = contact.get("persona_type")
+
+        if _dq_cluster in ("other", "watchlist") or not _dq_cluster:
+            logger.warning(
+                "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
+                "cluster requires manual review, not dispatching",
+                draft_id, company_name, _dq_cluster, _dq_persona,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"cluster_routing_skip: cluster={_dq_cluster!r} requires manual review",
+            )
+
+        _dq_instantly_campaign_id = get_campaign_id_for_company(company, _dq_persona)
+        if _dq_instantly_campaign_id is None:
+            logger.warning(
+                "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
+                "no Instantly sequence env var configured for this cluster/persona",
+                draft_id, company_name, _dq_cluster, _dq_persona,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"cluster_routing_skip: no Instantly sequence for cluster={_dq_cluster!r} persona={_dq_persona!r}",
+            )
+
         # Load send config for daily cap
         send_cfg = self._load_send_config()
         daily_limit = send_cfg["daily_limit"]
@@ -1344,6 +1412,8 @@ class EngagementAgent(BaseAgent):
                     "sequence_name": draft.get("sequence_name"),
                     "sequence_step": draft.get("sequence_step"),
                     "queue_path": True,
+                    "campaign_cluster": _dq_cluster,
+                    "instantly_campaign_id": _dq_instantly_campaign_id,
                 },
             }).execute()
         except Exception as _e:
