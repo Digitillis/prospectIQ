@@ -289,12 +289,32 @@ class EngagementAgent(BaseAgent):
             return result
 
     def _load_send_config(self) -> dict:
-        """Load send limits from outreach_send_config table.
+        """Load send limits, using get_total_daily_capacity() as the canonical cap.
 
-        Falls back to safe defaults if table doesn't exist yet.
-        Returns: {daily_limit, batch_size, min_gap_minutes, send_enabled}
+        daily_limit resolution order:
+          1. get_total_daily_capacity(workspace_id) -- canonical source (sender_pool
+             sum or workspace.settings.daily_send_limit or 125 hard default).
+          2. outreach_send_config.daily_limit -- per-run override, used only when
+             the column is explicitly set (non-null) in the DB row. Lets operators
+             throttle a specific run below the physical pool capacity.
+
+        Other fields (batch_size, min_gap_minutes, send_enabled) are still read
+        from outreach_send_config and fall back to the values in defaults.
+
+        Falls back gracefully if the table doesn't exist yet.
+        Returns: {daily_limit, batch_size, min_gap_minutes, min_gap_seconds, send_enabled}
         """
-        defaults = {"daily_limit": 30, "batch_size": 10, "min_gap_minutes": 4, "min_gap_seconds": 0, "send_enabled": True}
+        from backend.app.core.workspace_scheduler import get_total_daily_capacity
+
+        # Base daily_limit comes from the canonical capacity function.
+        canonical_cap = get_total_daily_capacity(self.db.workspace_id)
+        defaults = {
+            "daily_limit": canonical_cap,
+            "batch_size": 10,
+            "min_gap_minutes": 4,
+            "min_gap_seconds": 0,
+            "send_enabled": True,
+        }
         try:
             row = (
                 self.db.client.table("outreach_send_config")
@@ -305,7 +325,12 @@ class EngagementAgent(BaseAgent):
                 .data
             )
             if row:
-                return {**defaults, **row[0]}
+                cfg = {**defaults, **row[0]}
+                # outreach_send_config.daily_limit is a per-run override only when
+                # explicitly set. If null/absent, keep the canonical capacity value.
+                if row[0].get("daily_limit") is None:
+                    cfg["daily_limit"] = canonical_cap
+                return cfg
         except Exception:
             pass
         return defaults
