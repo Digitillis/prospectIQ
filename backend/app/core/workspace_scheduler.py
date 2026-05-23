@@ -117,14 +117,13 @@ def get_workspace_monthly_spend(workspace_id: str) -> float:
 def workspace_daily_sends_ok(workspace: dict, job_name: str = "outreach") -> bool:
     """Return True if workspace is under its daily outreach send limit.
 
-    Limit is read from workspace.settings.daily_send_limit (default 125).
+    Limit is determined by get_total_daily_capacity() -- the canonical cap source.
     Counts drafts with sent_at set today UTC (not approval_status, which has
-    no 'sent' enum value — that caused a DB error on every check).
+    no 'sent' enum value -- that caused a DB error on every check).
     Fails open on DB error.
     """
     ws_id = workspace["id"]
-    settings = workspace.get("settings") or {}
-    daily_limit = int(settings.get("daily_send_limit", 125))
+    daily_limit = get_total_daily_capacity(ws_id)
     try:
         from backend.app.core.database import get_supabase_client
         from datetime import datetime, timezone
@@ -302,9 +301,13 @@ def research_budget_ok(workspace: dict) -> bool:
 def get_total_daily_capacity(workspace_id: str) -> int:
     """Return total daily send capacity for a workspace.
 
-    Sums per-account daily_limit from workspace.settings.sender_pool.
-    Falls back to workspace.settings.daily_send_limit if no sender_pool defined.
-    Falls back to 125 if neither is set.
+    CANONICAL SEND-CAP SOURCE OF TRUTH — all send-limit checks must call
+    this function. Do not read daily_send_limit or sender_pool sums directly.
+
+    Resolution order:
+      1. Sum of active sender_pool[].daily_limit entries (physical mailbox capacity)
+      2. workspace.settings.daily_send_limit if no sender_pool is defined
+      3. 125 (hard default) if neither is set
 
     sender_pool format (stored in workspace.settings):
         [{"email": "avi@...", "daily_limit": 30, "active": true}, ...]
