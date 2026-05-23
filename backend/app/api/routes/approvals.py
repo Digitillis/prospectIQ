@@ -26,7 +26,11 @@ from backend.app.core.workspace import get_workspace_id
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/approvals", tags=["approvals"])
+router = APIRouter(
+    prefix="/api/approvals",
+    tags=["approvals"],
+    dependencies=[Depends(require_workspace_member)],
+)
 
 # Tier-1 accounts require two distinct reviewers (P2.3).
 # Toggleable via config; here as a constant so behavior is auditable from code.
