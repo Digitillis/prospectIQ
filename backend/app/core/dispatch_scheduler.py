@@ -17,6 +17,7 @@ cron ticks 30 minutes apart during the send window, not within-batch sleep.
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,14 @@ logger = logging.getLogger(__name__)
 _BACKOFF_SECONDS: list[int] = [300, 900, 3600, 14400]
 
 STALE_LOCK_MINUTES: int = 5
+
+# Cap simultaneous Supabase operations across APScheduler BackgroundScheduler
+# threads. At 5+ concurrent jobs the connection pool saturates, producing
+# "Server disconnected" / RemoteProtocolError in production logs.
+# threading.Semaphore is used (not asyncio) because dispatch_workspace is sync
+# and called from BackgroundScheduler thread-pool workers.
+# Stagger between sends still comes from cron ticks — no time.sleep() here.
+_DISPATCH_CONCURRENCY: threading.Semaphore = threading.Semaphore(3)
 
 
 @dataclass
@@ -257,10 +266,43 @@ def dispatch_workspace(
 
     Returns BatchResult with per-outcome counts.
     """
-    from backend.app.agents.engagement import EngagementAgent
-
     result = BatchResult()
     instance_id = str(uuid.uuid4())
+
+    # Acquire the concurrency slot before making any Supabase calls.
+    # Logs at DEBUG when another thread is already holding slots so pool
+    # pressure is visible without being noisy in normal operation.
+    if not _DISPATCH_CONCURRENCY.acquire(blocking=False):
+        logger.debug(
+            "dispatch.concurrency_limit_hit workspace_id=%s instance=%s — "
+            "waiting for slot (max 3 simultaneous Supabase operations)",
+            workspace_id, instance_id,
+        )
+        _DISPATCH_CONCURRENCY.acquire(blocking=True)
+
+    try:
+        return _dispatch_workspace_inner(
+            db_client=db_client,
+            workspace_id=workspace_id,
+            batch_size=batch_size,
+            max_retries=max_retries,
+            result=result,
+            instance_id=instance_id,
+        )
+    finally:
+        _DISPATCH_CONCURRENCY.release()
+
+
+def _dispatch_workspace_inner(
+    db_client,
+    workspace_id: str,
+    batch_size: int,
+    max_retries: int,
+    result: BatchResult,
+    instance_id: str,
+) -> BatchResult:
+    """Inner dispatch logic — runs with _DISPATCH_CONCURRENCY slot held."""
+    from backend.app.agents.engagement import EngagementAgent
 
     try:
         claimed = db_client.rpc("claim_outbound_queue_batch", {
