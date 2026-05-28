@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from backend.app.core.audit import log_audit_event_from_ctx
 from backend.app.core.audit_events import emit_workflow_event
-from backend.app.core.auth import require_role, get_current_user
+from backend.app.core.auth import require_role, get_current_user, require_workspace_member
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 

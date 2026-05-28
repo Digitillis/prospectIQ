@@ -43,15 +43,16 @@ sender:
     [Digitillis](https://www.digitillis.com) | avi@digitillis.io | 224.355.4500
     [Preview](http://demo.digitillis.com)
 
-  # Step 1 signature — same as default per Avanish's direction (2026-05-02).
+  # Step 1 signature — no demo link. Step 1 is a cold open; the email body itself
+  # carries "zero links" (the brand spam-filter discipline). The signature follows
+  # the same rule. Demo link returns in Step 3+ via the default signature.
   step_1_signature: |
     Best regards,
     Avanish
 
     Avanish Mehrotra
     Founder & CEO
-    [Digitillis](https://www.digitillis.com) | avi@digitillis.io | 224.355.4500
-    [Preview](http://demo.digitillis.com)
+    Digitillis | avi@digitillis.io | 224.355.4500
 
 
 # Voice and tone instructions — injected into every outreach prompt

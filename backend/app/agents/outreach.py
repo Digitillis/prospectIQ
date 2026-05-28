@@ -176,11 +176,36 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
 ]
 
 
-def _check_draft_integrity(body: str, subject: str = "") -> list[str]:
+_URL_RE = _re.compile(r"https?://[^\s)\]>]+", _re.IGNORECASE)
+_GENERIC_HOOK_PATTERNS = [
+    _re.compile(r"\bmanufacturers?\s+like\s+(yours?|you)\b", _re.IGNORECASE),
+    _re.compile(r"\bplants?\s+in\s+your\s+(sector|industry|space)\b", _re.IGNORECASE),
+    _re.compile(r"\bcompanies\s+like\s+yours?\b", _re.IGNORECASE),
+    _re.compile(r"\bmost\s+(shops?|plants?|manufacturers?)\b", _re.IGNORECASE),
+]
+
+
+def _check_draft_integrity(
+    body: str,
+    subject: str = "",
+    *,
+    personalization_notes: str = "",
+    sequence_step: int = 1,
+) -> list[str]:
     """Return a list of violation tags found in the draft body/subject.
 
     An empty list means the draft passed all checks.
     Uses regex patterns so structural variants are caught regardless of exact wording.
+
+    Step-1 verifiable-hook contract (added 2026-05-25 per P2.3 of platform
+    evaluation): a Step-1 draft must carry at least one source URL in
+    personalization_notes. The URL is what the human reviewer clicks to confirm
+    the hook is real, not LLM-invented. Drafts without a source URL are rejected
+    even if the body itself is clean, because we cannot distinguish a researched
+    hook from a hallucinated one without it.
+
+    Generic-hook leakage is also flagged at Step 1 — phrases like "manufacturers
+    like yours" pass the existing regex but fail the specificity bar.
     """
     text = (body + " " + subject).lower()
     violations: list[str] = []
@@ -192,6 +217,21 @@ def _check_draft_integrity(body: str, subject: str = "") -> list[str]:
         if m:
             violations.append(f"{tag}:{m.group()!r}")
             seen_tags.add(tag)
+
+    # ── Verifiable-hook contract — Step 1 only ───────────────────────────────
+    if sequence_step == 1:
+        notes = personalization_notes or ""
+        if not _URL_RE.search(notes):
+            violations.append(
+                "missing_hook_source:no_url_in_personalization_notes"
+            )
+        for gp in _GENERIC_HOOK_PATTERNS:
+            if gp.search(body):
+                violations.append(
+                    f"generic_hook:{gp.pattern!r}"
+                )
+                break
+
     return violations
 
 
@@ -487,7 +527,7 @@ OUTPUT FORMAT (JSON):
 {{
     "subject": "Short, specific subject line referencing their company or situation (under 50 chars, no generic subjects)",
     "body": "The email body. MUST start with 'Hi [first_name],' (use actual first name). {max_words} words max. MUST end with the exact signature block from the system prompt.",
-    "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect",
+    "personalization_notes": "Which specific research facts you used and why you chose this angle for this prospect. STEP 1 REQUIREMENT: must contain at least one source URL (https://...) backing the hook in the opening line. Without a URL the draft is auto-rejected. The URL is what a human reviewer clicks to confirm the hook is real, not invented. Use URLs from the research data provided (LinkedIn, company site, news article, FDA/OSHA database, etc.).",
     "hormozi_check": {{
         "specific_outcome": true,
         "proof_point_present": true,
@@ -926,8 +966,16 @@ class OutreachAgent(BaseAgent):
 
                     parsed = json.loads(content)
 
-                    # Create outreach draft — strip em dashes from all text fields
-                    _clean = lambda s: (s or "").replace("—", " - ")
+                    # Create outreach draft — strip em dashes and en dashes from all text fields
+                    import re as _re
+                    def _clean(s: str) -> str:
+                        s = s or ""
+                        s = s.replace("—", ", ").replace("–", ", ")
+                        # Also catch space-dash-space used as em dash substitute
+                        s = _re.sub(r" {1,2}- {1,2}", ", ", s)
+                        # Clean up any ", ," or ",," artifacts
+                        s = _re.sub(r",\s*,", ",", s)
+                        return s
 
                     # Signature enforcement — LLM occasionally omits the block even
                     # when instructed. Always guarantee the correct signature is present.
@@ -962,8 +1010,14 @@ class OutreachAgent(BaseAgent):
                     }
 
                     # Post-generation integrity check — auto-reject before save if
-                    # the model produced fabricated customer claims or internal labels.
-                    _violations = _check_draft_integrity(_body, draft_data["subject"])
+                    # the model produced fabricated customer claims, internal labels,
+                    # or (Step 1) failed the verifiable-hook contract.
+                    _violations = _check_draft_integrity(
+                        _body,
+                        draft_data["subject"],
+                        personalization_notes=draft_data.get("personalization_notes", ""),
+                        sequence_step=sequence_step,
+                    )
                     if _violations:
                         _vstr = " | ".join(_violations[:4])
                         logger.warning(

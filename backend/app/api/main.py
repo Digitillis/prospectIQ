@@ -339,6 +339,108 @@ def _run_dispatch_loop() -> None:
         logger.error("Scheduled dispatch_loop failed: %s", exc)
 
 
+def _in_send_window(now_chicago=None) -> bool:
+    """True if it is Mon-Fri between 08:00 and 11:00 America/Chicago.
+
+    Matches the dispatch_loop cron window (day_of_week='mon-fri', hour='8-11').
+    The upper bound is 11:00 inclusive because the cron's last tick is 11:00.
+    """
+    from datetime import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Chicago")
+    except Exception:
+        return False
+    now = now_chicago or _dt.now(tz)
+    if now.weekday() > 4:  # 5=Sat, 6=Sun
+        return False
+    return 8 <= now.hour <= 11
+
+
+def _dispatch_catchup_if_in_window() -> None:
+    """One-shot startup catch-up: if the app boots inside the send window,
+    run a dispatch immediately instead of waiting for the next :00/:30 cron tick.
+
+    Why this exists: the in-memory jobstore loses all scheduled-job state on a
+    process restart, so a Railway dyno restart mid-window would otherwise drop
+    every tick until the next one fires (and could miss that one too on a second
+    restart). This makes a fresh process drain the queue right away if it is
+    supposed to be sending now. Idempotent: the atomic queue claim + sent_at
+    guard prevent any double-send if a normal tick also fires.
+    """
+    if not _in_send_window():
+        logger.info("dispatch_catchup: not in send window — skipping startup catch-up")
+        return
+    logger.warning(
+        "dispatch_catchup: app started inside send window — running immediate "
+        "dispatch to recover any tick missed during restart"
+    )
+    _run_dispatch_loop()
+
+
+def _run_dispatch_heartbeat_check() -> None:
+    """Window-close alarm (runs ~11:40am Chicago, Mon-Fri).
+
+    Detects a silently-dead dispatcher: if the outbound_queue holds items that
+    were eligible to send today but zero send_attempts were recorded during the
+    window, the scheduler did not run. Fire a Slack alert so the failure is
+    visible the same day rather than discovered days later.
+    """
+    try:
+        from backend.app.core.database import get_supabase_client
+        from backend.app.utils.notifications import notify_slack
+        from datetime import datetime as _dt, timezone as _tz
+        db_client = get_supabase_client()
+
+        # Eligible queue items: unlocked, due now or never-scheduled
+        now_iso = _dt.now(_tz.utc).isoformat()
+        queue = (
+            db_client.table("outbound_queue")
+            .select("id, next_retry_at, locked_by")
+            .is_("locked_by", "null")
+            .execute()
+            .data or []
+        )
+        eligible = [
+            q for q in queue
+            if not q.get("next_retry_at") or q["next_retry_at"] <= now_iso
+        ]
+        if not eligible:
+            logger.info("dispatch_heartbeat: no eligible queue items — nothing to verify")
+            return
+
+        # Any send_attempts today?
+        today_start = _dt.now(_tz.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        attempts = (
+            db_client.table("send_attempts")
+            .select("id", count="exact")
+            .gte("created_at", today_start)
+            .limit(1)
+            .execute()
+        )
+        attempt_count = attempts.count or 0
+
+        if attempt_count == 0:
+            msg = (
+                f"DISPATCH SCHEDULER DID NOT RUN TODAY. "
+                f"{len(eligible)} eligible outbound_queue item(s) waiting, but zero "
+                f"send_attempts recorded during the 8-11am window. The in-process "
+                f"scheduler likely died (dyno restart). Approved sends are stalled."
+            )
+            logger.critical("dispatch_heartbeat: %s", msg)
+            try:
+                notify_slack(msg, emoji=":rotating_light:")
+            except Exception as exc:
+                logger.error("dispatch_heartbeat: alert send failed: %s", exc)
+        else:
+            logger.info(
+                "dispatch_heartbeat: OK — %d send_attempts today with %d eligible queued",
+                attempt_count, len(eligible),
+            )
+    except Exception as exc:
+        logger.error("dispatch_heartbeat check failed: %s", exc)
+
+
 def _run_reclaim_stale_locks() -> None:
     """Runs every 2 minutes: clears outbound_queue locks older than 5 minutes."""
     try:
@@ -2119,7 +2221,19 @@ async def lifespan(app: FastAPI):
         global _scheduler
         from apscheduler.schedulers.background import BackgroundScheduler
         from datetime import datetime as _dt, timezone as _tz, timedelta as _td
-        scheduler = BackgroundScheduler(timezone="America/Chicago")
+        # job_defaults make cron ticks resilient to a briefly-blocked or
+        # late-starting scheduler thread:
+        #   misfire_grace_time=3600 — a tick missed by up to 1h still runs once
+        #     the scheduler is free (default is 1s, which silently drops any miss).
+        #   coalesce=True — if several runs were missed, run once, not N times.
+        # NOTE: the in-memory jobstore still loses all job state on a process
+        # restart, so these defaults alone do NOT recover ticks missed while the
+        # dyno was down. The startup catch-up below (_dispatch_catchup_if_in_window)
+        # covers that case for the send window specifically.
+        scheduler = BackgroundScheduler(
+            timezone="America/Chicago",
+            job_defaults={"misfire_grace_time": 3600, "coalesce": True},
+        )
         _scheduler = scheduler
         _now = _dt.now(_tz.utc)
         # 15-min interval jobs are staggered by start_date offset so they never
@@ -2156,6 +2270,16 @@ async def lifespan(app: FastAPI):
             day_of_week="mon-fri", hour="8-11", minute="0,30",
             timezone="America/Chicago",
             id="dispatch_loop",
+        )
+        # dispatch_heartbeat: window-close alarm. Runs Mon-Fri 11:40am Chicago
+        # (40 min after the last dispatch tick). Alerts if eligible queue items
+        # exist but the dispatcher recorded zero send_attempts today — i.e. the
+        # scheduler silently died. Makes a dead dispatcher visible same-day.
+        scheduler.add_job(
+            _run_dispatch_heartbeat_check, "cron",
+            day_of_week="mon-fri", hour=11, minute=40,
+            timezone="America/Chicago",
+            id="dispatch_heartbeat",
         )
         # Stale lock reclaim: every 2 minutes, all workspaces.
         scheduler.add_job(_run_reclaim_stale_locks, "interval", minutes=2, id="reclaim_stale_locks")
@@ -2313,6 +2437,15 @@ async def lifespan(app: FastAPI):
         #     timezone="America/Chicago",
         #     id="mfg_discovery",
         # )
+        # Startup catch-up: if this process booted inside the send window,
+        # run a dispatch ~45s after start (offset to clear pool contention with
+        # the other startup-offset jobs). Recovers ticks lost to a mid-window
+        # dyno restart, which the in-memory jobstore cannot otherwise replay.
+        scheduler.add_job(
+            _dispatch_catchup_if_in_window, "date",
+            run_date=_now + _td(seconds=45),
+            id="dispatch_catchup_startup",
+        )
         scheduler.start()
         logger.info(
             "APScheduler started — "

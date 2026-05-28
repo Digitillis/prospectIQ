@@ -31,6 +31,11 @@ import { getPendingDrafts, approveDraft, saveDraftEdit, rejectDraft, testSendDra
 import { cn, TIER_LABELS, getPQSColor } from "@/lib/utils";
 import DraftQualityBadge from "@/components/outreach/DraftQualityBadge";
 
+// Total steps per sequence — used to render "Email N of M" in the approval card
+const SEQUENCE_TOTAL_STEPS: Record<string, number> = {
+  email_value_first: 4,
+};
+
 export default function ApprovalsPage() {
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
   const [totalPending, setTotalPending] = useState<number>(0);
@@ -73,7 +78,7 @@ export default function ApprovalsPage() {
   const [attestations, setAttestations] = useState<Record<string, AttestationPayload>>({});
 
   // Filters
-  const [filterStep, setFilterStep] = useState<"all" | "1" | "2">("all");
+  const [filterStep, setFilterStep] = useState<"all" | "1" | "2" | "3" | "4">("all");
   const [filterMinPQS, setFilterMinPQS] = useState<0 | 60 | 70 | 80>(0);
 
   const toggleThread = async (draftId: string) => {
@@ -268,7 +273,7 @@ export default function ApprovalsPage() {
 
   const [search, setSearch] = useState("");
   const visibleDrafts = drafts.filter((d) => {
-    if (filterStep !== "all" && String(d.sequence_step) !== filterStep) return false;
+    if (filterStep !== "all" && String(d.sequence_step ?? "") !== filterStep) return false;
     if (filterMinPQS > 0 && (d.companies?.pqs_total ?? 0) < filterMinPQS) return false;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -516,7 +521,7 @@ export default function ApprovalsPage() {
             {/* Step filter */}
             <div className="flex items-center gap-1">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mr-1">Step</span>
-              {(["all", "1", "2"] as const).map((s) => (
+              {(["all", "1", "2", "3", "4"] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setFilterStep(s)}
@@ -527,7 +532,7 @@ export default function ApprovalsPage() {
                       : "border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400"
                   )}
                 >
-                  {s === "all" ? "All" : `Step ${s}`}
+                  {s === "all" ? "All" : `Email ${s}`}
                 </button>
               ))}
             </div>
@@ -757,7 +762,7 @@ export default function ApprovalsPage() {
                   )}
                   {draft.sequence_step && (
                     <span className="ml-1 rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-                      Step {draft.sequence_step}
+                      Email {draft.sequence_step} of {SEQUENCE_TOTAL_STEPS[draft.sequence_name ?? ""] ?? 4}
                     </span>
                   )}
                 </div>

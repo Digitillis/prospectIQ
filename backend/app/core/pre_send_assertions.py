@@ -359,47 +359,86 @@ def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
 def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None:
     """7-day rolling hard bounce rate must not exceed MAX_BOUNCE_RATE (2%).
 
-    Source of truth: outreach_drafts where resend_status = 'bounced' (Resend
-    confirmed hard bounce) within the last 7 days. Records with bounced_at set
-    but resend_status != 'bounced' are system classification artifacts from the
-    pre-ZeroBounce era and are excluded from this calculation.
+    True bounce rate definition (per docs/reports/remediation/crm_state_remediation.md):
+    contact-scoped — what fraction of contacts we tried to reach were undeliverable.
 
-    Denominator: outreach_drafts where sent_at is within the last 7 days.
+    Numerator   : COUNT(DISTINCT contact_id) from outreach_drafts where bounced_at
+                  is set and sent_at within last 7 days. Uses bounced_at, not
+                  resend_status, because bounced_at is the canonical signal that
+                  any bounce path (Resend webhook, suppression sweep, manual entry)
+                  has classified the contact as undeliverable.
+    Denominator : COUNT(DISTINCT contact_id) from outreach_drafts where sent_at
+                  is within last 7 days. Dedupes follow-up sends so a contact who
+                  received Steps 1, 2, and 3 contributes 1 to denominator, not 3.
 
-    This is a system-level (not per-contact) gate — it fires once per send batch,
-    not per individual contact. Wire it into the top of the send loop so a single
-    bounce spike pauses all subsequent sends in that scheduler tick.
+    Companion warning: an all-time contact-scoped deliverability snapshot is
+    logged at WARNING when it exceeds 5%. This surfaces chronic list-quality
+    debt without blocking forward sends (the 7d window is the enforcing gate).
 
-    Safe to call even if no sends exist: 0/0 => 0.0 => passes.
+    Safe to call even if no sends exist: empty window => passes.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     try:
-        sends_result = (
+        # 7d window — dedupe by contact_id
+        sends_rows = (
             db.client.table("outreach_drafts")
-            .select("id", count="exact")
+            .select("contact_id")
             .not_.is_("sent_at", "null")
             .gte("sent_at", cutoff)
             .execute()
+            .data
         )
-        bounces_result = (
+        bounces_rows = (
             db.client.table("outreach_drafts")
-            .select("id", count="exact")
-            .eq("resend_status", "bounced")
+            .select("contact_id")
+            .not_.is_("bounced_at", "null")
             .gte("sent_at", cutoff)
             .execute()
+            .data
         )
-        send_count = sends_result.count or 0
-        bounce_count = bounces_result.count or 0
+        send_contacts = {r["contact_id"] for r in sends_rows if r.get("contact_id")}
+        bounce_contacts = {r["contact_id"] for r in bounces_rows if r.get("contact_id")}
+
+        # All-time deliverability snapshot — informational, non-blocking
+        try:
+            all_bounced = (
+                db.client.table("contacts")
+                .select("id", count="exact")
+                .eq("outreach_state", "bounced")
+                .execute()
+                .count or 0
+            )
+            all_sent = (
+                db.client.table("contacts")
+                .select("id", count="exact")
+                .in_("outreach_state", ["touch_1_sent","touch_2_sent","touch_3_sent","bounced","replied","opted_out"])
+                .execute()
+                .count or 0
+            )
+            if all_sent:
+                all_time_rate = all_bounced / all_sent
+                if all_time_rate > 0.05:
+                    logger.warning(
+                        "DELIVERABILITY SNAPSHOT (all-time, contact-scoped): "
+                        "%d bounced / %d sent = %.2f%% — exceeds 5%% advisory threshold. "
+                        "List hygiene work indicated.",
+                        all_bounced, all_sent, all_time_rate * 100,
+                    )
+        except Exception as e:
+            logger.warning("All-time deliverability snapshot failed: %s", e)
+
+        send_count = len(send_contacts)
+        bounce_count = len(bounce_contacts)
 
         if send_count == 0:
             _log_assertion(db, None, None, "bounce_rate_ok", True,
-                           "no sends in 7d window — rate undefined, passing", assertion_context)
+                           "no contacts sent in 7d window — rate undefined, passing", assertion_context)
             return
 
         rate = bounce_count / send_count
         threshold = _max_bounce_rate()
         detail = (
-            f"7d rolling: {bounce_count} bounces / {send_count} sends = {rate:.2%} "
+            f"7d contact-scoped: {bounce_count} bounced / {send_count} sent = {rate:.2%} "
             f"(threshold {threshold:.0%})"
         )
         if rate > threshold:
