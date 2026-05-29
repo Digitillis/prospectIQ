@@ -31,6 +31,9 @@ from datetime import datetime, timezone
 from email.header import decode_header
 from typing import Optional
 
+# IMAP date format required by RFC 3501 SEARCH SINCE criterion.
+_IMAP_DATE_FMT = "%d-%b-%Y"
+
 logger = logging.getLogger(__name__)
 
 IMAP_HOST = "imap.gmail.com"
@@ -161,8 +164,13 @@ class GmailImapClient:
     def __exit__(self, *_):
         self.disconnect()
 
-    def fetch_unseen_replies(self) -> list[dict]:
-        """Fetch all UNSEEN messages in INBOX that look like replies (subject starts with Re:).
+    def fetch_since_replies(self, since_dt: datetime) -> list[dict]:
+        """Fetch all messages in INBOX received on or after *since_dt* that look like
+        replies (subject starts with Re:), regardless of SEEN/UNSEEN state.
+
+        Using SINCE instead of UNSEEN means replies that the founder reads before the
+        15-minute cron fires are still captured.  Deduplication is handled by the caller
+        (timestamp window or raw_message_id check against thread_messages / interactions).
 
         Returns list of dicts with keys:
           uid, from_email, from_name, subject, body, received_at, message_id, in_reply_to
@@ -171,10 +179,30 @@ class GmailImapClient:
             raise RuntimeError("Not connected")
 
         self._conn.select("INBOX")
-        # Search for unseen emails — we only mark as READ after successful processing
+        since_str = since_dt.strftime(_IMAP_DATE_FMT)
+        _, data = self._conn.search(None, f"SINCE {since_str}")
+        uids = data[0].split() if data[0] else []
+        return self._parse_uids(uids)
+
+    def fetch_unseen_replies(self) -> list[dict]:
+        """Fetch all UNSEEN messages in INBOX that look like replies (subject starts with Re:).
+
+        Retained for backwards compatibility.  New callers should prefer fetch_since_replies()
+        so replies read before the cron fires are not silently dropped.
+
+        Returns list of dicts with keys:
+          uid, from_email, from_name, subject, body, received_at, message_id, in_reply_to
+        """
+        if not self._conn:
+            raise RuntimeError("Not connected")
+
+        self._conn.select("INBOX")
         _, data = self._conn.search(None, "UNSEEN")
         uids = data[0].split() if data[0] else []
+        return self._parse_uids(uids)
 
+    def _parse_uids(self, uids: list) -> list[dict]:
+        """Fetch and parse a list of IMAP UIDs into reply dicts."""
         results = []
         for uid in uids:
             _, msg_data = self._conn.fetch(uid, "(RFC822)")
@@ -190,7 +218,6 @@ class GmailImapClient:
                 continue
 
             from_raw = _decode_str(msg.get("From", ""))
-            # Parse "Name <email>" format
             m = re.match(r"^(.*?)\s*<(.+?)>$", from_raw.strip())
             if m:
                 from_name = m.group(1).strip().strip('"')
@@ -210,7 +237,7 @@ class GmailImapClient:
             reply_text = _strip_quoted_text(body)
 
             results.append({
-                "uid": uid.decode(),
+                "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
                 "from_email": from_email,
                 "from_name": from_name,
                 "subject": subject,

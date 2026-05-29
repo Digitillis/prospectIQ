@@ -36,6 +36,16 @@ router = APIRouter(
 # Toggleable via config; here as a constant so behavior is auditable from code.
 TIER_1_REQUIRES_DUAL_REVIEW: bool = True
 
+# R10 — Sampled QA mode (autonomy split fix).
+# When True, drafts that pass all automated integrity checks auto-approve
+# immediately. A random SAMPLED_QA_RATE fraction are held for human review
+# so the founder can calibrate quality without reviewing every email.
+# Toggle via env var SAMPLED_QA_ENABLED=true.
+import os as _os
+SAMPLED_QA_ENABLED: bool = _os.environ.get("SAMPLED_QA_ENABLED", "false").lower() == "true"
+# Fraction of auto-approvable drafts held for human QA sample (default 20%).
+SAMPLED_QA_RATE: float = float(_os.environ.get("SAMPLED_QA_RATE", "0.20"))
+
 # Persisted columns added by future migrations (P1.3, P2.2, P2.3, P1.4).
 # When the migration hasn't run yet, the code below logs a single warning and
 # proceeds without writing those fields, so the API stays functional.

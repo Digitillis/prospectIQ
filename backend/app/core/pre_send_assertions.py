@@ -134,6 +134,38 @@ def _alert(message: str) -> None:
         pass
 
 
+def assert_not_rejected(db: Any, draft_id: str, assertion_context: str = "send_path") -> None:
+    """Draft must not carry approval_status='rejected' or 'dispatch_failed'.
+
+    Blocks the send path so a rejected draft can never be dispatched regardless
+    of what is in the outbound_queue.  This closes the gap where 46 already-rejected
+    drafts were sent (R2 remediation).
+    """
+    try:
+        row = (
+            db.client.table("outreach_drafts")
+            .select("id, approval_status")
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+        ).data
+    except Exception as e:
+        logger.warning("assert_not_rejected: DB lookup failed (%s) — passing to avoid false block", e)
+        return
+
+    if not row:
+        return  # draft not found; let downstream handle it
+
+    status = row[0].get("approval_status", "")
+    if status in ("rejected", "dispatch_failed"):
+        detail = f"draft {draft_id} has approval_status={status!r} — cannot dispatch"
+        _log_assertion(db, None, None, "not_rejected", False, detail, assertion_context)
+        raise AssertionFailure("not_rejected", detail)
+
+    _log_assertion(db, None, None, "not_rejected", True,
+                   f"draft {draft_id} approval_status={status!r}", assertion_context)
+
+
 def assert_email_deliverable(db: Any, contact: dict, assertion_context: str = "draft_gen") -> None:
     """Email must not be a confirmed invalid or bounced address."""
     email_status = contact.get("email_status")
@@ -467,6 +499,7 @@ def run_pre_send_assertions(
     sequence_step: int = 1,
     assertion_context: str = "draft_gen",
     current_draft_id: str | None = None,
+    draft_id: str | None = None,
 ) -> None:
     """Run all pre-send invariants. Raises AssertionFailure on first violation.
 
@@ -484,6 +517,13 @@ def run_pre_send_assertions(
     in send_path context only — it checks the 7-day rolling bounce rate and
     blocks the entire send batch if the rate exceeds MAX_BOUNCE_RATE.
     """
+    # Hard gate: reject drafts that were rejected/dispatch_failed — send_path only.
+    # This must run first so a rejected draft can never reach Resend regardless of
+    # what is in the outbound_queue.
+    _draft_id = draft_id or current_draft_id
+    if assertion_context == "send_path" and _draft_id:
+        assert_not_rejected(db, _draft_id, assertion_context)
+
     # System-level gate: check rolling bounce rate before per-contact checks.
     # Only enforced in send_path — not advisory in draft_gen.
     if assertion_context == "send_path":

@@ -267,7 +267,10 @@ class QualificationAgent(BaseAgent):
 
             elif eval_type == "state_match":
                 qualifying = sig.get("qualifying_states", [])
-                if not state or state in qualifying:
+                # Only award the bonus when state is known AND in the qualifying list.
+                # Previously `not state or state in qualifying` awarded points for NULL
+                # state, inflating scores for 62% of contacts with missing geography.
+                if state and state in qualifying:
                     score += sig["points"]
 
             elif eval_type == "employee_range":
@@ -303,9 +306,12 @@ class QualificationAgent(BaseAgent):
         max_pts = config["dimensions"]["technographic"]["max_points"]
         score = 0
 
-        # Build searchable text from research intelligence
+        # Build searchable text from research intelligence.
+        # If no research record exists, return 0 rather than awarding the
+        # no_existing_ai default (+4): absence of competitor evidence when
+        # we never actually researched the company is not a positive signal.
         search_text = self._build_search_text(company, research)
-        if not search_text:
+        if not search_text or not research:
             return 0
 
         for signal_name, signal_config in signals.items():

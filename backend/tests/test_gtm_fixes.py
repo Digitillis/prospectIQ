@@ -252,7 +252,13 @@ class TestUnsourcedCompanyEventPatterns:
             "downtime is usually a work order prediction problem. Worth a 20-minute call? "
             "Avanish"
         )
-        assert len(_check_draft_integrity(sourced)) == 0
+        # R4 (2026-05-28): all steps now require a sourced URL in personalization_notes.
+        # Pass a representative source URL so this test reflects the updated contract.
+        violations = _check_draft_integrity(
+            sourced,
+            personalization_notes="https://www.company.com/about",
+        )
+        assert len(violations) == 0, f"Unexpected violations: {violations}"
 
 
 class TestExistingIntegrityRulesRegression:

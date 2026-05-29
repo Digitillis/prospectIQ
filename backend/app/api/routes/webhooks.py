@@ -1086,9 +1086,50 @@ async def resend_webhook(
             except Exception as exc:
                 logger.debug("Signal counter update failed: %s", exc)
 
-            # Advance company status to 'engaged' (guarded — won't downgrade)
+            # Advance company status to 'engaged' only on non-bot events.
+            # Security gateways (Mimecast, Proofpoint, etc.) open and click every URL
+            # within 90 seconds of delivery; those scanner events must not promote a
+            # company to 'engaged'. We use latency-from-send as the primary signal
+            # (user_agent is not exposed by Resend's webhook payload).
             if company_id:
-                db.update_company(company_id, {"status": "engaged"})
+                _is_bot_event = False
+                try:
+                    from backend.app.core.click_classifier import ClickClassifier
+                    # Compute seconds between draft.sent_at and this event
+                    _latency: float | None = None
+                    if draft_row:
+                        _sent_rows = (
+                            db.client.table("outreach_drafts")
+                            .select("sent_at")
+                            .eq("id", draft_row["id"])
+                            .limit(1)
+                            .execute()
+                        ).data
+                        if _sent_rows and _sent_rows[0].get("sent_at"):
+                            from datetime import datetime, timezone as _tz
+                            _sent_dt = datetime.fromisoformat(
+                                _sent_rows[0]["sent_at"].replace("Z", "+00:00")
+                            )
+                            _event_dt = datetime.now(_tz.utc)
+                            _latency = (_event_dt - _sent_dt).total_seconds()
+
+                    _classification = ClickClassifier().classify({
+                        "latency_seconds": _latency,
+                        "user_agent": data.get("user_agent"),
+                        "click_timestamp": now_iso if action == "clicked" else None,
+                    })
+                    _is_bot_event = (_classification == "bot")
+                except Exception as _cls_exc:
+                    logger.debug("Bot classification failed, defaulting to non-bot: %s", _cls_exc)
+
+                if not _is_bot_event:
+                    db.update_company(company_id, {"status": "engaged"})
+                else:
+                    logger.info(
+                        "webhook: skipping 'engaged' promotion for company=%s — "
+                        "event classified as bot (latency=%.1fs)",
+                        company_id, _latency or -1,
+                    )
 
             # Update campaign_thread status
             try:

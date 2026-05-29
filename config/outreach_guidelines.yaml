@@ -9,20 +9,18 @@ version: "1.0"
 # Selection is deterministic per contact (hash of contact email), so every
 # email in a thread always comes from the same sender address.
 sender_pool:
+  # R9 consolidation (2026-05-28): trimmed from 5 domains to 2 to reduce brand fragmentation.
+  # A prospect who Googles any sending domain should land on a coherent page.
+  # Consolidation keeps digitillis.io (primary, established) and getdigitillis.com (warmest avanish@ alias).
+  # avanish@meetdigitillis/trydigitillis/usedigitillis.com are retired from cold-send but
+  # retain warmup benefit on the domain IPs — do not terminate those Instantly accounts.
+  # All 4 hello@ accounts deleted 2026-05-28.
   reply_to: "avi@digitillis.io"
   senders:
     - name: "Avanish Mehrotra"
       email: "avi@digitillis.io"
     - name: "Avanish Mehrotra"
       email: "avanish@getdigitillis.com"
-    - name: "Avanish Mehrotra"
-      email: "avanish@meetdigitillis.com"
-    - name: "Avanish Mehrotra"
-      email: "avanish@trydigitillis.com"
-    - name: "Avanish Mehrotra"
-      email: "avanish@usedigitillis.com"
-    # hello@ accounts excluded from cold outreach — generic address breaks personal credibility.
-    # Kept in Instantly for warmup only; domain reputation benefit carries over to avanish@ accounts.
 
 # Who is sending the emails
 sender:
