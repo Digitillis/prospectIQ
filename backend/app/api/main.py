@@ -1156,12 +1156,8 @@ def _run_qualification() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_qualify_workspace, "qualification")
-        # Flywheel fast-path: newly qualified companies should generate drafts
-        # immediately rather than waiting up to 30 min for the next draft cron.
-        try:
-            _run_draft_generation()
-        except Exception as exc:
-            logger.warning("qualification → draft fast-path failed: %s", exc)
+        # Draft fast-path disabled 2026-05-28 — generation moved to Claude Code workflow.
+        pass
     except Exception as e:
         logger.error(f"Scheduled qualification failed: {e}", exc_info=True)
 
@@ -1756,12 +1752,8 @@ def _run_enrichment() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_enrich_workspace, "enrichment")
-        # Fast-path: enrichment → draft generation
-        # Closes the 30-min gap between a contact being found and a draft being created.
-        try:
-            _run_draft_generation()
-        except Exception as exc:
-            logger.warning("enrichment → draft fast-path failed: %s", exc)
+        # Draft fast-path disabled 2026-05-28 — generation moved to Claude Code workflow.
+        pass
     except Exception as e:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
 
@@ -2493,10 +2485,12 @@ async def lifespan(app: FastAPI):
             _run_sampled_qa_approve, "interval", minutes=30, id="sampled_qa_approve",
             start_date=_now + _td(minutes=15),
         )
-        # Draft generation: every 5 min — drains qualified-but-undrafted companies fast.
-        # Enrichment now runs every 3 min; draft gen follows at 5 min to close the gap
-        # between a contact being found and a draft existing for it.
-        scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
+        # Draft generation: DISABLED 2026-05-28.
+        # All email generation now runs via the Claude Code 'generate-outreach-emails'
+        # workflow (Pro Max session, Opus model, coherence-first approach).
+        # The backend scheduler job produced Haiku-quality, template-heavy drafts
+        # with no thread continuity. Do not re-enable without explicit authorisation.
+        # scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
         # Enrichment: re-enabled 2026-05-28 (R5 remediation). Was paused 2026-05-07 during GTM assessment.
         # Apollo credit guard enforced in enrichment.py:93.
         scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
