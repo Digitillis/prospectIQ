@@ -1,0 +1,250 @@
+Contact,Title,Actual sent count,Sent steps,Next step to send,Gate,Wrong persona
+Meghan Johnson,Talent Manager,1,[1],2,clean,True
+Mark Cornelius,"Vice President, Information Technology",1,[1],2,clean,True
+Justin Vagnozzi,Senior Vice President of Global Sales,1,[1],2,clean,True
+Courtney Ihlefeld,Talent Operations Manager,2,"[1, 2]",3,clean,True
+Dave Barr,Communications Manager,2,"[1, 2]",3,clean,True
+Alejandro Caballero Martin,IT Workplace & Infrastructure Senior Manager,1,[1],2,clean,True
+Maggie Guenther,"Vice President and Associate General Counsel, Corporate",1,[1],2,clean,True
+Jim Rygalski,VP of Manufacturing Technologies and Quality,1,[1],2,no_url,False
+Myron Baker,General Manager,1,[1],2,clean,False
+Eric Larson,Director of Operations,1,[1],2,clean,False
+Brian McAlary,Chief Operating Officer,1,[1],2,clean,False
+Andrea Paolo Bovo,General Manager,2,"[1, 2]",3,clean,False
+Julie Skibniewski,"Vice President, Business Development",1,[1],2,clean,False
+Carl Brack,"Manager, Application Development",1,[1],2,clean,False
+John Skory,Director Quality Assurance,2,"[1, 2]",3,clean,False
+Zoraida Nivia,Vice President of Quality and Food Safety,1,[1],2,clean,False
+Michael Morris,Safety Program Manager,2,"[1, 2]",3,clean,False
+Tim Taylor,Director of Operations,1,[1],2,clean,False
+Joe Mastrangelo,Chief Executive Officer,2,"[1, 2]",3,clean,False
+Christophe Montavon,Plant Manager,2,"[1, 2]",3,clean,False
+Jatin Patel,"Director, Business Development & Sr Health Physicist",1,[1],2,clean,False
+Keith Grayeb,Process Engineering Manager,1,[1],2,clean,False
+Christopher Boschetti,Director of Quality Assurance,1,[1],2,clean,False
+Michael Adams,General Manager,2,"[1, 2]",3,clean,False
+Joseph Furlano,"Director of Quality Assurance, Supply Chain, and Operational Excellence",2,"[1, 2]",3,clean,False
+Karl Neuberger,Chief Executive Officer,1,[1],2,clean,False
+Anthony Rios,Director of Quality Assurance,1,[1],2,clean,False
+Colton Barnes,Project Engineering Manager - Structures & Mechanisms,2,"[1, 2]",3,clean,False
+Greg Weigel,Plant Manager,2,"[1, 2]",3,clean,False
+Atiq Quadri,Plant Manager,1,[1],2,clean,False
+Allyn Weber,Technical Product Manager,1,[1],2,clean,False
+Ken Sturtecky,Sr Vice President Energy Services,2,"[1, 2]",3,clean,False
+"Gregory Difrank, Pe",Vice President - General Manager,2,"[1, 2]",3,clean,False
+Robert Zitella,President and COO,1,[1],2,clean,False
+Dave Hunt,Director of Operations,1,[1],2,clean,False
+Chris David,Director Of Operations,1,[1],2,clean,False
+Shane Bonner,President - Charter Casting (Previously Charter Aarrowcast / Charter DuraBar).,1,[1],2,clean,False
+Brian Gabbett,President of Sub-Zero Group Mid-Atlantic,1,[1],2,clean,False
+Phillip Hagar,Manager of Component Engineering,1,[1],2,clean,False
+Michael Daniels,"General Manager, Engineering",1,[1],2,clean,False
+Matthew Lappen,Vice President of Distribution,1,[1],2,clean,False
+Tamara Jesswein,Senior Corporate Event Manager,2,"[1, 2]",3,clean,False
+Joseph Mooney,Plant Manager,1,[1],2,clean,False
+Aldo Hernandez,Production and Engineering Manager,2,"[1, 2]",3,clean,False
+Scott Jones,VP Operations ALT,1,[1],2,clean,False
+Kurt Posegay,Senior Supply Chain Manager,1,[1],2,clean,False
+Brad Miller,International Trading Manager,1,[1],2,clean,False
+Guillermo Ramirez,Quality Manager,2,"[1, 2]",3,clean,False
+Scott Hodges,Manufacturing Engineering Manager,1,[1],2,clean,False
+Toby Crews,General Manager,1,[1],2,clean,False
+Rodell Beltran,Regional Warehouse Manager,1,[1],2,clean,False
+Yvonne Robinson,Director of Quality Assurance,1,[1],2,clean,False
+Brian Fenn,Chief Operating Officer,2,"[1, 2]",3,clean,False
+Mark Sefcik,COO | President,1,[1],2,clean,False
+Alexander Slusarczyk,Canadian Distribution/Operations Manager at ASC Engineered Solutions,2,"[1, 2]",3,clean,False
+Gene Armstrong,VP of Engineering,1,[1],2,clean,False
+Will Ford,Chief Operating Officer,1,[1],2,clean,False
+Tim Bushaw,General Manager/CEO,1,[1],2,clean,False
+Randy Biddlecome,General Manager,1,[1],2,clean,False
+Kelly Obrien,Chief Operating Officer,2,"[1, 2]",3,clean,False
+Derek Musselmann,Maintenance Manager,1,[1],2,clean,False
+Carl Irvine,Technical Leader R&D – New Product Development - Scale Up & Ops Support,1,[1],2,clean,False
+Paul Butera,Senior Director of Operations - Lumirror Division,1,[1],2,clean,False
+Frank Perryman,President & CEO,1,[1],2,clean,False
+Keith Vaughn,International Manager,1,[1],2,clean,False
+Daniel Lovy,VP Manufacturing,1,[1],2,clean,False
+Bob Beeler,Operations Manager,2,"[1, 2]",3,clean,False
+Jim Fitzpatrick,Magnetics Design Manager,1,[1],2,clean,False
+William Polacek,President & CEO,1,[1],2,clean,False
+Eric Yarbrough,General Manager,2,"[1, 2]",3,clean,False
+Kyle Horvath,General Manager,1,[1],2,clean,False
+Joe Ower,Enterprise ISO Manager,1,[1],2,clean,False
+Andrew Rhyner,Plant Manager,1,[1],2,clean,False
+Olanrewaju Alawode,Electrical Engineering Manager,2,"[1, 2]",3,clean,False
+Andrew House,Sr. Manager | Development,2,"[1, 2]",3,clean,False
+Nick Ohannessian,Business Unit Manager,1,[1],2,clean,False
+Brian Wilkins,Director of Operations North America,1,[1],2,clean,False
+Laurie Weaver,"HR Director, Manufacturing Support",1,[1],2,clean,False
+Joseph Mullen,Chief Operating Officer and President USJ Division,1,[1],2,clean,False
+Rock Tarnick,Vice President Engineering,1,[1],2,clean,False
+Bill Kotcher,President,1,[1],2,clean,False
+Ryan Peck,Operations Manager,2,"[1, 2]",3,clean,False
+Ken Felder,Shipping Manager,1,[1],2,clean,False
+Robert Hicks,Plant Manager,1,[1],2,clean,False
+Dave Carlsen,"Director Of Operations, Phillips",2,"[1, 2]",3,clean,False
+Gareth Smith,"Director: Manufacturing, Technology, Engineering and Quality",1,[1],2,clean,False
+Tiffany Caldera,Customer Care Manager,1,[1],2,clean,False
+Kevin Lock,Territory Manager,2,"[1, 2]",3,clean,False
+Jeff Holsinger,Quality Supervisor,1,[1],2,clean,False
+Chad Tanquary,Area Operations Manager,1,[1],2,clean,False
+Kevin Donegan,Chief Operating Officer,1,[1],2,clean,False
+Matthew Scruggs,Plant Manager,1,[1],2,clean,False
+Audrey Cu,"VP, External Manufacturing - CPG/Licensing",1,[1],2,clean,False
+Zhiqiang Shen,Plant Production Manager,1,[1],2,clean,False
+Jenna Howard,Operations Supervisor,1,[1],2,clean,False
+Nick Zandonella,Director of Operations,1,[1],2,clean,False
+Kirk Bushman,Director of Product Engineering - Corp.,1,[1],2,clean,False
+Hugo Goes,Senior Vice President Commercial,2,"[1, 2]",3,clean,False
+Manex Ochoteco,General Manager in Danobat USA,1,[1],2,clean,False
+Jason Greggs,Vice President of Manufacturing,1,[1],2,clean,False
+Atika Sayed,General Manager France,1,[1],2,clean,False
+Haydn Whittam,Manager - Business Development - Civil/Infrastructure/Tunneling,1,[1],2,clean,False
+John Dodrill,Vice President Manufacturing Operations,1,[1],2,clean,False
+Kari Sweeney,Vice President Food Safety & Quality,1,[1],2,clean,False
+Howard Hunter,Sr. Site Manager,1,[1],2,clean,False
+Jeanette Stoltz,Project Specification Manager Nordic,1,[1],2,clean,False
+Hicham Abel,Chief Executive Officer,1,[1],2,clean,False
+Armando Aguero,Vice President of Manufacturing,2,"[1, 2]",3,clean,False
+Jean Pitzo,Chief Executive Officer,1,[1],2,clean,False
+Kelvin Hung,Digital Transformation Technical Program Manager,2,"[1, 2]",3,clean,False
+Nick Bailey,Shipping/Warehouse Manager,2,"[1, 2]",3,clean,False
+Matthew Colburn,Maintenance Manager,1,[1],2,clean,False
+Donna Levy,Bakery Science Manager,1,[1],2,clean,False
+Patrick Meehan,President,1,[1],2,clean,False
+Kevin Larson,Director of Operations,1,[1],2,clean,False
+Robert Martin,Plant Manager,2,"[1, 2]",3,clean,False
+Joel Barrett,Sr. Manufacturing Manager Unit Handling,2,"[1, 2]",3,clean,False
+Jonathan Silva,Operations Manager,1,[1],2,clean,False
+Dave Penzera,Vice President of Manufacturing,1,[1],2,clean,False
+Jessica Roberts,Director of Quality Assurance & Industrial Safety,1,[1],2,clean,False
+Onaje Lewis,Maintenance Manager,1,[1],2,clean,False
+Ryan Alsop,Manufacturing Engineering Manager,2,"[1, 2]",3,clean,False
+Matthew Fetter,President/CEO,1,[1],2,clean,False
+Keith Mayer,Site Manager,1,[1],2,clean,False
+Noah Kison,Rapid Response Lead Estimator,2,"[1, 2]",3,clean,False
+Todd Cornell,Plant Manager,2,"[1, 2]",3,clean,False
+Ron Hahn,President & Chief Operating Officer,1,[1],2,clean,False
+Jason Smith,General Manager,1,[1],2,clean,False
+Bill Norris,Tooling Group General Manager,1,[1],2,clean,False
+Don Cummings,Director of Quality Assurance,1,[1],2,clean,False
+Michael Krebill,Principal Engineer/Product Manager (Pressure Relief),1,[1],2,clean,False
+Itzamara Budlong,Director of Quality Assurance,1,[1],2,clean,False
+Michael Hosch,"General Manager, Dorner Americas, Vice President Engineering",1,[1],2,clean,False
+Hans Juergen Scholko,General Manager Brighton Operation,1,[1],2,clean,False
+Caitlin Best,Administrative Assistant to VP Operations,1,[1],2,clean,False
+Andre Gjelset,Operation Performance Manager,1,[1],2,clean,False
+Mark Smith,Vice President & General Manager,1,[1],2,clean,False
+Lee Brooks,Chief Operating Officer,1,[1],2,clean,False
+Cameron Williams,Regional Operations Manager,1,[1],2,clean,False
+John Mahaz,Chief Operating Officer,1,[1],2,clean,False
+Pranesh Rao,Senior VP of Storage Systems Engineering,1,[1],2,clean,False
+Dale Pressley,Plant Manager,1,[1],2,clean,False
+Stephen Green,Vice President of Manufacturing,1,[1],2,clean,False
+Frank Soukup,Operations Manager,1,[1],2,clean,False
+Alissa Nichols,Director Of Operations (Director of Manufacturing),1,[1],2,clean,False
+Thomas Plank,General Manager,1,[1],2,clean,False
+Mark Goralski,Plant Manager,1,[1],2,clean,False
+Fabien Thomas,Plant Manager,2,"[1, 2]",3,clean,False
+Roy Bartz,"Director, Quality Assurance",1,[1],2,clean,False
+Jason Roscoe,Plant Manager,1,[1],2,clean,False
+Philip Jones,Director of Manufacturing,1,[1],2,clean,False
+Jeremy Thiessen,Operations Manager,1,[1],2,clean,False
+Francis Richey,Chief Technology Officer,1,[1],2,clean,False
+Richard Rogoski,Vice President Operations,1,[1],2,clean,False
+Melissa Carpenter,Director of Engineering Operations,1,[1],2,clean,False
+Kevin Hoppensteadt,VP Manufacturing,1,[1],2,clean,False
+Krzysztof Burek,Vice President of Manufacturing and Technical Development,1,[1],2,clean,False
+John Hekl,Director of Quality Assurance,1,[1],2,clean,False
+Chase Fell,VP Engineering,1,[1],2,clean,False
+Eric Drengler,General Manager,1,[1],2,clean,False
+Ryan Hansen,Product Manager - Lifestyle & HSP,1,[1],2,clean,False
+Dan Panetti,Vice President of Manufacturing,1,[1],2,clean,False
+Eric Devalk,Director of Quality,1,[1],2,clean,False
+Michael Marvin,Director of Quality Assurance,1,[1],2,clean,False
+Bruce Mallory,Vice President Manufacturing,1,[1],2,clean,False
+Moran Pete,VP Manufacturing,1,[1],2,clean,False
+Will Sullivan,Director of Process Engineering,1,[1],2,clean,False
+Justin Prince,Inventory Control Manager,1,[1],2,clean,False
+Scott Pulver,Chief Executive Officer,1,[1],2,clean,False
+Corey Vines,Strategic Operations Manager,1,[1],2,clean,False
+Daryl Robarge,Night Plant Supervisor,1,[1],2,clean,False
+Raghuram Tupuri,VP of Engineering,1,[1],2,clean,False
+Curt Hinson,Director of Operations,2,"[1, 2]",3,clean,False
+Kurt Bauder,Project Manager,1,[1],2,clean,False
+Cliff Ogle,"Regional Manager, Southwest Mining",1,[1],2,clean,False
+Eric Meshot,Director of Process Engineering,1,[1],2,clean,False
+Fernando Salinas,General Manager,1,[1],2,clean,False
+Francisco Ruelas,Branch General Manager,1,[2],3,clean,False
+Tyler Burmaster,General Manager-South,2,"[1, 2]",3,clean,False
+Enrique Vega,General Manager,1,[1],2,clean,False
+Amanda Comunale,VP Construction Technology & End-user Engagement,2,"[1, 2]",3,clean,False
+Jim Darling,Machining Supervisor,2,"[1, 2]",3,clean,False
+Martin Angel Hernandez,Group Leader Machining Engineer,1,[1],2,clean,False
+Tog Valizada,General Manager,1,[1],2,clean,False
+John Renaud,Site Manager,1,[2],3,clean,False
+Marco Lopez,Plant Manager,1,[1],2,clean,False
+Katie Bland,Group Product Manager,1,[1],2,clean,False
+John Lesh,Senior Quality Assurance Manager,1,[1],2,clean,False
+Mark Lackey,Vice President of Global Operations,1,[2],3,clean,False
+Jeff McNeil,Member Board of Directors,1,[1],2,clean,False
+Annmarrie Blount,Superintendent,1,[1],2,clean,False
+Jeremy Lucas,Operations Lead & Senior Field Operations Specialist,1,[1],2,clean,False
+Johnny Isenberg,Director of Maintenance and Reliability,1,[1],2,clean,False
+Renita Hare,Director of Quality Assurance & Food Safety,1,[1],2,clean,False
+John Pawlowski,President | COO,1,[1],2,clean,False
+Fareed Tinorgah,"Manager, Project Management",1,[1],2,clean,False
+Michael Van Houweling,Chief Operating Officer,1,[1],2,clean,False
+Nick Ariens,"President & COO,",1,[1],2,clean,False
+Michael Creekmore,Manufacturing Manager,1,[1],2,clean,False
+Paul Comer,Senior Plant Manager,1,[1],2,clean,False
+Scott Echtermeyer,Engineering Supervisor,1,[1],2,clean,False
+Marty Petrovay,Project Manager,1,[1],2,clean,False
+Jacob Houston,Plant Manager- Interim,1,[1],2,clean,False
+Ing Sitavancova,HR/IT Manager,1,[1],2,clean,False
+Odd-Ketil Jorgensen,"Director, QA",1,[1],2,clean,False
+Alexis Morgan,Director of Quality Assurance & Regulatory Affairs,2,"[1, 2]",3,clean,False
+Donna Plum,Director Human Resource,1,[1],2,clean,False
+Terrence Carter,Supervisor,1,[1],2,clean,False
+Joseph Aguilar,Sr. Manager Module Product Development Engineering,1,[1],2,clean,False
+Eric Bruls,General Manager Philippines,1,[1],2,clean,False
+Witt Chris,Assistant Manager,1,[1],2,clean,False
+Frank Salvo,Regional Project and Equipment Manager,1,[1],2,clean,False
+Emily Alvarez,Corporate Director of Food Safety & Quality,2,"[1, 2]",3,clean,False
+Chris Lawless,Chief Operating Officer,1,[1],2,clean,False
+Nicole Sievert,Business Solutions Manager,2,"[1, 2]",3,clean,False
+Bill Lo,Chief Executive Officer,2,"[1, 2]",3,clean,False
+Edward Selser,Director of FSQA & Regulatory Compliance,1,[1],2,clean,False
+Stella Malsy,Director People & Culture International Business,1,[1],2,clean,False
+Paul Sniegocki,Executive Vice President Engineering & CTO,1,[1],2,clean,False
+Kyle Bingham,General Manager,1,[1],2,clean,False
+Tom Novick,Senior Vice President,1,[1],2,clean,False
+Joseph Sanford,Director of Quality Assurance and Food Safety,1,[1],2,clean,False
+August Finet,Vice President of Operations,2,"[1, 2]",3,clean,False
+Dorian Shillingford,Chief Executive Officer,1,[1],2,clean,False
+Lucas Pereira,Project Manager,1,[1],2,clean,False
+Jay McCoy,Vice President of Manufacturing,1,[1],2,clean,False
+Manas Mudbari,"Global Product Lead, RVI",1,[1],2,clean,False
+Carter Bova,Commercial Manager,1,[1],2,clean,False
+Jamison Rediehs,President,1,[1],2,clean,False
+Rick Turek,Chief Operations Officer,1,[1],2,clean,False
+Ron Jones,Supply Chain Manager Une/ussm,1,[1],2,clean,False
+Frank Halliwell,"Vice President, Manufacturing & Facilities Engineering",1,[1],2,clean,False
+Robert Foster,Manufacturing Engineering Supervisor,1,[1],2,clean,False
+Eric Rhodes,Vice President of Manufacturing,1,[1],2,clean,False
+Kip Craddick,Vice President,1,[1],2,clean,False
+Lawrence Chum,Vice President Supply Chain Operations,1,[1],2,clean,False
+Travis Hammons,Manager of Construction,1,[1],2,clean,False
+Jocelyn Belden,Revenue & Trade Operations Manager,1,[1],2,clean,False
+Alireza Khosravi,Director of Food Safety /Quality Assurance,1,[1],2,clean,False
+David Jackson,Chief Executive Officer & President,1,[1],2,clean,False
+Terri Hall,Director of Food Safety and Quality,1,[1],2,clean,False
+Todd Treagesser,HPS Manufacturing Manager,1,[1],2,clean,False
+Brian Brauninger,Chief Operating Officer,1,[1],2,clean,False
+Michael Sullivan,President and Chief Executive Officer,1,[1],2,clean,False
+Andy Brinkmeier,Chief Operating Officer,1,[1],2,clean,False
+Konstantin Loguinov,Sr. Manager - FP&A & Analytics,2,"[1, 2]",3,clean,False
+Curt Parker,Vice President Manufacturing & Operations,1,[1],2,clean,False
+Bryan Beck,Vice President of Manufacturing,1,[1],2,clean,False
+Ashley Lendroth,Production Planner/Warehouse Supervisor,1,[1],2,clean,False
