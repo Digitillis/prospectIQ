@@ -565,6 +565,23 @@ async def approve_draft(
     workspace_id = get_workspace_id() or ""
     final_status = update_data["approval_status"]
     if final_status in ("approved", "edited"):
+        # Send priority: later sequence steps drain first, new Step-1 starts last.
+        # priority = 6 - sequence_step  (Step 5 -> 1 ... Step 1 -> 5). The dispatcher
+        # claims ORDER BY priority ASC, so under a choked daily cap the lowest-priority
+        # work (new Step-1 outreach) defers while in-flight follow-ups always send.
+        # This enforces "existing before new, later step before earlier."
+        try:
+            _step_row = (
+                db.client.table("outreach_drafts")
+                .select("sequence_step")
+                .eq("id", draft_id)
+                .limit(1)
+                .execute()
+            ).data
+            _seq_step = int((_step_row[0] or {}).get("sequence_step") or 1) if _step_row else 1
+        except Exception:
+            _seq_step = 1
+        _send_priority = max(1, 6 - _seq_step)
         try:
             rpc_result = db.client.rpc(
                 "approve_draft_and_enqueue",
@@ -574,7 +591,7 @@ async def approve_draft(
                     "p_status": final_status,
                     "p_approved_at": update_data["approved_at"],
                     "p_edited_body": update_data.get("edited_body"),
-                    "p_priority": 5,
+                    "p_priority": _send_priority,
                 },
             ).execute()
             draft = rpc_result.data[0] if rpc_result.data else None

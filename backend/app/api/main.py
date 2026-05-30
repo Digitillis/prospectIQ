@@ -1337,12 +1337,14 @@ def _sampled_qa_approve_workspace(ws: dict) -> None:
             held_for_qa += 1
             continue
 
-        # Auto-approve: call the approve RPC directly.
+        # Auto-approve: call the approve RPC directly. Send priority = 6 - step so later
+        # sequence steps drain before new Step-1 starts under a choked daily cap.
         try:
             db.client.rpc("approve_draft_and_enqueue", {
                 "p_draft_id": draft["id"],
                 "p_status": "approved",
                 "p_workspace_id": str(ws_id),
+                "p_priority": max(1, 6 - int(step or 1)),
             }).execute()
             auto_approved += 1
         except Exception as exc:
