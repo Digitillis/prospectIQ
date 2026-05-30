@@ -237,6 +237,19 @@ async def list_pending_drafts(limit: int = 200):
                 .not_.is_("resend_message_id", "null")
                 .execute()
             ).data or []
+            # Which (contact_id, step) were ACTUALLY sent (sent_at set), regardless of
+            # resend_message_id. Used so the UI only shows an engagement pill for steps
+            # that were truly delivered — not for unsent sequence slots (display fix).
+            sent_step_rows = (
+                db.client.table("outreach_drafts")
+                .select("contact_id, sequence_step")
+                .in_("contact_id", multi_step_contact_ids)
+                .not_.is_("sent_at", "null")
+                .execute()
+            ).data or []
+            sent_steps: set[tuple[str, int]] = {
+                (r["contact_id"], int(r["sequence_step"] or 0)) for r in sent_step_rows
+            }
             # resend_message_id → (contact_id, sequence_step)
             msg_to_step: dict[str, tuple[str, int]] = {
                 r["resend_message_id"]: (r["contact_id"], int(r["sequence_step"] or 0))
@@ -273,7 +286,11 @@ async def list_pending_drafts(limit: int = 200):
                 if cid and cur_step > 1:
                     eng_map = {}
                     for step in range(1, cur_step):
-                        eng_map[str(step)] = contact_step_eng.get((cid, step), "none")
+                        # Only surface a pill for steps that were actually sent. An unsent
+                        # prior slot must not render as "No response S{n}" (that implied a
+                        # send + non-response that never happened).
+                        if (cid, step) in sent_steps:
+                            eng_map[str(step)] = contact_step_eng.get((cid, step), "none")
                     step_engagement_by_draft[d["id"]] = eng_map
         except Exception:
             pass
