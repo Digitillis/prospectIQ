@@ -2462,22 +2462,25 @@ async def lifespan(app: FastAPI):
             _run_gmail_intake, "interval", minutes=15, id="gmail_intake",
             start_date=_now + _td(seconds=90),
         )
-        # Research: re-enabled 2026-05-28 (R5 remediation). Was paused 2026-05-07 during GTM assessment.
-        scheduler.add_job(
-            _run_research, "interval", minutes=20, id="research",
-            next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
-        )
+        # Research: PAUSED again 2026-05-30 — research is run via the Claude Code outreach
+        # workflow (Opus, in-session), not the backend cron, and no new-company discovery is
+        # active. Re-enabling spends Apollo/Perplexity/Anthropic credits with no current need.
+        # Do not re-enable without explicit budget approval.
+        # scheduler.add_job(
+        #     _run_research, "interval", minutes=20, id="research",
+        #     next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
+        # )
         # Qualification: every 15 min 24/7 — +30s offset avoids health_snapshot collision
         scheduler.add_job(
             _run_qualification, "interval", minutes=15, id="qualification",
             start_date=_now + _td(seconds=30),
         )
-        # LLM 7-gate qualification: every 60 min — deeper semantic check on companies that
-        # passed the rule-based PQS scorer but haven't been LLM-evaluated yet (R7 remediation).
-        scheduler.add_job(
-            _run_llm_qualification, "interval", minutes=60, id="llm_qualification",
-            start_date=_now + _td(minutes=10),
-        )
+        # LLM 7-gate qualification: PAUSED 2026-05-30 — spends Anthropic credits per company.
+        # No active need (no new research/discovery running). Re-enable with budget approval.
+        # scheduler.add_job(
+        #     _run_llm_qualification, "interval", minutes=60, id="llm_qualification",
+        #     start_date=_now + _td(minutes=10),
+        # )
         # Sampled QA auto-approver: every 30 min — only active when SAMPLED_QA_ENABLED=true.
         # Auto-approves integrity-passing drafts; holds SAMPLED_QA_RATE fraction for human QA.
         # Set SAMPLED_QA_ENABLED=true in Railway to activate (R10 autonomy split fix).
@@ -2491,9 +2494,9 @@ async def lifespan(app: FastAPI):
         # The backend scheduler job produced Haiku-quality, template-heavy drafts
         # with no thread continuity. Do not re-enable without explicit authorisation.
         # scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
-        # Enrichment: re-enabled 2026-05-28 (R5 remediation). Was paused 2026-05-07 during GTM assessment.
-        # Apollo credit guard enforced in enrichment.py:93.
-        scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
+        # Enrichment: PAUSED again 2026-05-30 — spends Apollo credits; no active need (no new
+        # discovery, contacts already enriched). Re-enable with budget approval.
+        # scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
         # Pipeline monitor email disabled 2026-05-07 — replaced by daily_report.
         # scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
         # Auto-approve: DISABLED 2026-05-08 (P1.3 — GTM rebuild).
