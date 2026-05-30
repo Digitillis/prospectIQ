@@ -55,7 +55,7 @@ agents:
     # the ICP allowlist (icp.yaml -> company_filters.industries[*].naics_prefix).
     required_naics_match: true
   enrichment:
-    enabled: false
+    enabled: true
 
 # ---------------------------------------------------------------------------
 # Batch sizes (companies processed per step per cycle)

@@ -9,20 +9,18 @@ version: "1.0"
 # Selection is deterministic per contact (hash of contact email), so every
 # email in a thread always comes from the same sender address.
 sender_pool:
+  # R9 consolidation (2026-05-28): trimmed from 5 domains to 2 to reduce brand fragmentation.
+  # A prospect who Googles any sending domain should land on a coherent page.
+  # Consolidation keeps digitillis.io (primary, established) and getdigitillis.com (warmest avanish@ alias).
+  # avanish@meetdigitillis/trydigitillis/usedigitillis.com are retired from cold-send but
+  # retain warmup benefit on the domain IPs — do not terminate those Instantly accounts.
+  # All 4 hello@ accounts deleted 2026-05-28.
   reply_to: "avi@digitillis.io"
   senders:
     - name: "Avanish Mehrotra"
       email: "avi@digitillis.io"
     - name: "Avanish Mehrotra"
       email: "avanish@getdigitillis.com"
-    - name: "Avanish Mehrotra"
-      email: "avanish@meetdigitillis.com"
-    - name: "Avanish Mehrotra"
-      email: "avanish@trydigitillis.com"
-    - name: "Avanish Mehrotra"
-      email: "avanish@usedigitillis.com"
-    # hello@ accounts excluded from cold outreach — generic address breaks personal credibility.
-    # Kept in Instantly for warmup only; domain reputation benefit carries over to avanish@ accounts.
 
 # Who is sending the emails
 sender:
@@ -206,16 +204,16 @@ banned_characters:
   - "—"  # em dash
   - "–"  # en dash
 
-# Product capabilities — outreach agent selects from these (not all at once)
-# Configure these for your own product in offer_context.yaml (capabilities section).
+# Product capabilities — source of truth is offer_context.yaml. The inflated/stale
+# claims previously here ("18 days", "45 agents", "RUL with 18-day advance warning")
+# were removed 2026-05-29: they contradicted offer_context.yaml (7-14 day range) and
+# the capability-truth rule in config/voice_spec.md. Do not reintroduce specific
+# day-counts, agent counts, or RUL guarantees.
 product_facts:
-  - "AI platform that monitors equipment 24/7 and predicts failures up to 18 days before they happen"
-  - "45 specialized AI agents across predictive maintenance, quality, energy, compliance"
-  - "For F&B: continuous CCP monitoring, FSMA-compliant documentation, audit readiness"
-  - "For manufacturing: RUL prediction with 18-day advance warning, anomaly detection, OEE analytics"
-  - "ARIA: conversational AI that lets plant managers ask questions in plain English"
-  - "90-day pilot, no long-term commitment, prove ROI or walk away"
-  - "Models trained on public industrial research datasets (not customer data)"
+  - "Surfaces equipment failure and process drift early using existing historian, CMMS, SCADA, and ERP data — no new sensors, no rip-and-replace"
+  - "Anomaly and drift detection, top downtime-driver (OEE) identification with root cause, quality early warning"
+  - "For F&B: process-drift early warning on existing process data"
+  - "Pilot: no-cost data-readiness assessment on existing data, first result in ~2 weeks"
 
 # Max words per email (by sequence step)
 max_words:

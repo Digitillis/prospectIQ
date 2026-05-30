@@ -21,6 +21,13 @@ from backend.app.core.config import (
 
 logger = logging.getLogger(__name__)
 
+
+class _NoResearchError(Exception):
+    """Raised when a company has no research intelligence and should be skipped.
+    Caught at the per-contact loop level so the company is not retried this cycle.
+    """
+
+
 # Persona priority order — higher value = preferred primary contact
 PERSONA_PRIORITY = {
     "vp_quality_food_safety": 100,     # F&B primary buyer (FSMA compliance)
@@ -107,14 +114,13 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
     # Catches: "the/my/your first/previous/last email"
     (r"\b(the|my|your)\s+(first|previous|last)\s+email\b",
                                            "step_label_leak",      "prior email reference"),
-    # Catches: "i reached out", "i sent you", "i emailed you"
-    (r"\bi\s+(reached\s+out|sent\s+you|emailed\s+you)\b",
-                                           "step_label_leak",      "prior outreach reference"),
     # Catches: "you didn't/haven't responded to..."
+    # (keep this — guilt-tripping non-respondents is bad form)
     (r"\byou\s+(didn.t|haven.t)\s+responded\b",
                                            "step_label_leak",      "non-response reference"),
-    # Catches: "in my last/previous message/note/email"
-    (r"\bin\s+my\s+(last|previous)\b",     "step_label_leak",      "prior message reference"),
+    # NOTE: "I reached out", "I sent you", "in my last/previous note" are intentionally
+    # NOT flagged — they are valid natural-language hooks for Step 2+ follow-ups.
+    # The model should use them to signal continuity without labeling internal steps.
 
     # ── Past-customer fabrication claims ─────────────────────────────────────
     # Catches: "one/a [any word(s)] shop/plant/manufacturer/facility/operation/company/customer/client [verb]"
@@ -153,6 +159,24 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
     (r"\bprevented\s+\w+\s+(unplanned|outage|shutdown|stop)",
                                            "fabricated_anecdote",  "prevented N outages (anecdote)"),
 
+    # ── Recycled benchmark stat fingerprints (R6) ────────────────────────────
+    # These three stat ranges appeared verbatim across 28% of the corpus, sprayed
+    # across foundries, dairies, aerospace with no asset-specific grounding.
+    # Reject drafts that carry them unless they are accompanied by an asset-specific
+    # qualifier (which the model cannot add without real research data).
+    (r"\b1[5-9]\s*[-–]\s*2[0-5]\s*%\s+(of\s+)?(available\s+)?(machine|run|uptime|production)\s*time\b",
+                                           "recycled_stat",        "15-20% machine-time stat (generic benchmark)"),
+    (r"\b2[0-9]\s*[-–]\s*4[0-9]\s*%\s+reduction\s+in\s+unplanned\b",
+                                           "recycled_stat",        "23-41% unplanned-stop reduction (generic benchmark)"),
+    (r"\b4[0-9]\s*[-–]\s*6[0-9]\s*%\s+(cut|reduction|decrease)\s+in\s+reactive\b",
+                                           "recycled_stat",        "40-65% reactive-work-order cut (generic benchmark)"),
+    # "18 days out" verbatim — appeared in 127 emails across incompatible asset classes
+    (r"\b18\s+days?\s+out\b",              "recycled_stat",        "18 days out (verbatim claim — use asset-specific horizon)"),
+    # ── Template-language fingerprints (R6) ──────────────────────────────────
+    # "time-based maintenance" as a phrase (appeared in 35% of corpus — use "calendar-based PM"
+    # or asset-specific language; "time-based maintenance" is a textbook SDR template marker)
+    (r"\btime-based\s+maintenance\s+schedules?\b",
+                                           "template_fingerprint", "time-based maintenance schedules (template phrase)"),
     # ── Unverified precision metrics ─────────────────────────────────────────
     (r"\b87\s*%\s*confidence\b",           "unverified_metric",    "87% confidence"),
 
@@ -218,21 +242,63 @@ def _check_draft_integrity(
             violations.append(f"{tag}:{m.group()!r}")
             seen_tags.add(tag)
 
-    # ── Verifiable-hook contract — Step 1 only ───────────────────────────────
-    if sequence_step == 1:
-        notes = personalization_notes or ""
-        if not _URL_RE.search(notes):
+    # ── Verifiable-hook contract — all steps (R4) ────────────────────────────
+    # Extended from Step-1-only (2026-05-28): every step must carry a source URL
+    # in personalization_notes so the human reviewer can confirm the hook is real.
+    # Step 2+ also enforces generic-hook patterns because templated follow-ups
+    # are the single biggest reply-rate suppressor in the corpus.
+    notes = personalization_notes or ""
+    if not _URL_RE.search(notes):
+        violations.append(
+            "missing_hook_source:no_url_in_personalization_notes"
+        )
+    for gp in _GENERIC_HOOK_PATTERNS:
+        if gp.search(body):
             violations.append(
-                "missing_hook_source:no_url_in_personalization_notes"
+                f"generic_hook:{gp.pattern!r}"
             )
-        for gp in _GENERIC_HOOK_PATTERNS:
-            if gp.search(body):
-                violations.append(
-                    f"generic_hook:{gp.pattern!r}"
-                )
-                break
+            break
 
     return violations
+
+
+# Phrases whose repetition rate across a batch signals templated output.
+# Keys are human-readable labels; values are compiled regexes.
+_FINGERPRINT_CHECKS: dict[str, "_re.Pattern[str]"] = {
+    "time_based_maintenance": _re.compile(r"\btime.based\s+maintenance\b", _re.IGNORECASE),
+    "typically_benchmark":    _re.compile(r"\btypically\b", _re.IGNORECASE),
+    "curious_cta":            _re.compile(r"\bCurious\s*[—\-–]", _re.IGNORECASE),
+    "quick_question_cta":     _re.compile(r"\bQuick\s+question\b", _re.IGNORECASE),
+    "or_is_it_something_else": _re.compile(r"\bor\s+is\s+it\s+something\s+else\b", _re.IGNORECASE),
+    "18_days_out":            _re.compile(r"\b18\s+days?\s+out\b", _re.IGNORECASE),
+    "plants_running_similar": _re.compile(r"\bplants?\s+(running|using)\s+similar\b", _re.IGNORECASE),
+}
+# Maximum fraction of a batch that may carry any single fingerprint phrase.
+# >10% means the phrase is a template marker, not organic copy.
+_FINGERPRINT_MAX_RATE = 0.10
+
+
+def check_batch_fingerprints(bodies: list[str], threshold: float = _FINGERPRINT_MAX_RATE) -> dict[str, float]:
+    """Scan a list of email bodies for template-language fingerprints.
+
+    Returns a dict of {label: rate} for any phrase that exceeds `threshold`.
+    An empty dict means the batch passed.  Used in tests and optional CI checks.
+
+    Example:
+        violations = check_batch_fingerprints([d["body"] for d in drafts])
+        if violations:
+            raise ValueError(f"Fingerprint threshold exceeded: {violations}")
+    """
+    if not bodies:
+        return {}
+    n = len(bodies)
+    over_threshold: dict[str, float] = {}
+    for label, pattern in _FINGERPRINT_CHECKS.items():
+        hits = sum(1 for b in bodies if pattern.search(b))
+        rate = hits / n
+        if rate > threshold:
+            over_threshold[label] = round(rate, 3)
+    return over_threshold
 
 
 def _build_system_prompt(sequence_step: int = 1) -> str:
@@ -841,6 +907,19 @@ class OutreachAgent(BaseAgent):
                         except Exception:
                             pass
 
+                        # R8 guard: a follow-up email must have context from the prior step.
+                        # Generating Step N without Step N-1 in the thread produces a cold
+                        # re-introduction — exactly the failure the corpus showed (95% of
+                        # Step-2 drafts had no continuity). Skip rather than produce a generic.
+                        if not prior_messages:
+                            logger.info(
+                                "outreach: skipping %s step %d — no prior sent step found in thread",
+                                company_name, sequence_step,
+                            )
+                            result.skipped += 1
+                            result.add_detail(company_name, "no_prior_step", f"step {sequence_step} skipped")
+                            continue
+
                     # Fetch prior rejected drafts for this contact + step so the
                     # model knows what was tried, why it failed, and can take a
                     # meaningfully different approach.
@@ -909,23 +988,29 @@ class OutreachAgent(BaseAgent):
                         _sig_rows = []
                     _top_signal = _sig_rows[0] if _sig_rows else None
 
-                    # Build the prompt
-                    prompt = self._build_prompt(
-                        company=company,
-                        contact=contact,
-                        research=research,
-                        step_config=step_config,
-                        sequence_name=sequence_name,
-                        value_messaging=value_msg,
-                        global_principles=seq_config.get("global_principles", {}),
-                        channel=resolved_channel,
-                        reply_context=reply_context,
-                        time_gap_days=time_gap_days,
-                        prior_messages=prior_messages,
-                        prior_rejections=prior_rejections,
-                        edit_signals=edit_signals,
-                        sig_rows=_sig_rows,
-                    )
+                    # Build the prompt — raises _NoResearchError if no research available
+                    try:
+                        prompt = self._build_prompt(
+                            company=company,
+                            contact=contact,
+                            research=research,
+                            step_config=step_config,
+                            sequence_name=sequence_name,
+                            value_messaging=value_msg,
+                            global_principles=seq_config.get("global_principles", {}),
+                            channel=resolved_channel,
+                            reply_context=reply_context,
+                            time_gap_days=time_gap_days,
+                            prior_messages=prior_messages,
+                            prior_rejections=prior_rejections,
+                            edit_signals=edit_signals,
+                            sig_rows=_sig_rows,
+                        )
+                    except _NoResearchError as _nre:
+                        logger.info("outreach: skipping %s — %s", company_name, _nre)
+                        result.skipped += 1
+                        result.add_detail(company_name, "no_research", str(_nre))
+                        continue
 
                     # Call Claude
                     logger.info(f"{company_name} → {contact.get('full_name', 'Unknown')}...")
@@ -1351,7 +1436,11 @@ class OutreachAgent(BaseAgent):
                 mfg_profile["recent_news"] = recent_news[:3]
 
         if not research_summary:
-            research_summary = "No research available — use company industry and contact title to infer specific challenges"
+            # No research intelligence and no company-level summary: skip this contact.
+            # Generating a draft without grounding produces generic templated output that
+            # fails the verifiable-hook contract (R4) and is unlikely to reply.
+            # Return a sentinel that the caller treats as a skip signal.
+            raise _NoResearchError(f"company {company.get('id')} has no research intelligence — skip draft")
 
         # Format step instructions
         instructions = step_config.get("instructions", {})
@@ -1411,10 +1500,12 @@ class OutreachAgent(BaseAgent):
                 + "\n\n".join(thread_parts)
                 + "\n\n⚠️  THREAD CONTINUITY RULES — MANDATORY:\n"
                 "1. Read every prior email above before writing.\n"
-                "2. Do NOT repeat the same opening hook, angle, or personalization fact used in a prior email.\n"
-                "3. Do NOT repeat a CTA that was already made (e.g. if a prior email asked for a 15-min call, don't ask again — offer something different or escalate).\n"
-                "4. Your email must read as the next logical message in this conversation, not as a fresh cold email.\n"
-                "5. NEVER reference 'email 1', 'email 2', 'the first email', 'step 1', 'step 2', or any internal sequence label in the email body — the prospect has no context for these labels.\n"
+                "2. Your email MUST open with an implicit reference to the prior touch — e.g. 'Following up on my note about your induction furnace reliability' or 'Circling back after reaching out about your VAR furnace.' "
+                "Do NOT write a cold re-introduction as if no prior contact was made.\n"
+                "3. Do NOT repeat the same opening hook, angle, or personalization fact used in a prior email.\n"
+                "4. Do NOT repeat a CTA that was already made (e.g. if a prior email asked a diagnostic question, move to a next logical step — offer new data, a different question, or a specific ask).\n"
+                "5. Your email must read as the next logical message in this conversation, not as a fresh cold email.\n"
+                "6. NEVER reference 'email 1', 'email 2', 'the first email', 'step 1', 'step 2', or any internal sequence label in the email body — the prospect has no context for these labels.\n"
             )
         else:
             prior_thread_block = ""

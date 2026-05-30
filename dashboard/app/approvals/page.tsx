@@ -772,10 +772,16 @@ export default function ApprovalsPage() {
                     <span>{draft.contacts.email}</span>
                   </div>
                 )}
-                {/* Per-step engagement pills */}
-                {draft.sequence_step > 1 && (
+                {/* Per-step engagement pills — only for steps actually sent.
+                    step_engagement only contains entries for delivered steps, so an
+                    unsent sequence slot renders no pill (avoids the misleading
+                    "No response S{n}" for emails that never went out). */}
+                {draft.sequence_step > 1 && draft.step_engagement && Object.keys(draft.step_engagement).length > 0 && (
                   <div className="flex items-center gap-1">
-                    {Array.from({ length: draft.sequence_step - 1 }, (_, i) => i + 1).map((step) => {
+                    {Object.keys(draft.step_engagement)
+                      .map((s) => parseInt(s, 10))
+                      .sort((a, b) => a - b)
+                      .map((step) => {
                       const eng = draft.step_engagement?.[String(step)] ?? "none";
                       const pill =
                         eng === "replied"

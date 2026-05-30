@@ -578,8 +578,44 @@ def _gmail_intake_workspace(ws: dict) -> None:
                 from backend.app.integrations.gmail_api_client import fetch_recent_replies
                 replies = fetch_recent_replies(gmail_user)
             else:
+                # Use SINCE-based polling so replies already read by a human before
+                # the 15-min cron fires are still captured. Load the last-run cursor
+                # from scheduler_state; default to 48h ago on first run.
+                _FALLBACK_HOURS = 48
+                _since_dt: datetime = datetime.now(timezone.utc) - timedelta(hours=_FALLBACK_HOURS)
+                try:
+                    _state_row = (
+                        db.client.table("scheduler_state")
+                        .select("id, last_run_at")
+                        .eq("job_id", "gmail_intake")
+                        .eq("workspace_id", ws_id)
+                        .eq("account_email", gmail_user)
+                        .limit(1)
+                        .execute()
+                    ).data
+                    if _state_row:
+                        _since_dt = datetime.fromisoformat(
+                            _state_row[0]["last_run_at"].replace("Z", "+00:00")
+                        )
+                except Exception as _e:
+                    logger.warning("gmail_intake: could not read scheduler_state (%s), using 48h fallback", _e)
+
+                _run_start = datetime.now(timezone.utc)
                 with GmailImapClient(gmail_user, gmail_password) as gmail:
-                    replies = gmail.fetch_unseen_replies()
+                    replies = gmail.fetch_since_replies(_since_dt)
+
+                # Persist the cursor after a successful fetch so next run picks up from here.
+                try:
+                    db.client.table("scheduler_state").upsert({
+                        "job_id": "gmail_intake",
+                        "workspace_id": str(ws_id),
+                        "account_email": gmail_user,
+                        "last_run_at": _run_start.isoformat(),
+                        "updated_at": _run_start.isoformat(),
+                    }, on_conflict="job_id,workspace_id,account_email").execute()
+                except Exception as _e:
+                    logger.warning("gmail_intake: could not persist scheduler_state (%s)", _e)
+
             if not replies:
                 continue
 
@@ -1120,14 +1156,39 @@ def _run_qualification() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_qualify_workspace, "qualification")
-        # Flywheel fast-path: newly qualified companies should generate drafts
-        # immediately rather than waiting up to 30 min for the next draft cron.
-        try:
-            _run_draft_generation()
-        except Exception as exc:
-            logger.warning("qualification → draft fast-path failed: %s", exc)
+        # Draft fast-path disabled 2026-05-28 — generation moved to Claude Code workflow.
+        pass
     except Exception as e:
         logger.error(f"Scheduled qualification failed: {e}", exc_info=True)
+
+
+def _llm_qualify_workspace(ws: dict) -> None:
+    """Run LLM 7-gate qualification for companies that passed the rule-based
+    PQS scorer but haven't been LLM-qualified yet (llm_qualified_at IS NULL).
+    """
+    from backend.app.agents.llm_qualification import LLMQualificationAgent
+    from backend.app.core.database import Database
+
+    ws_id = ws["id"]
+    db = Database(workspace_id=ws_id)
+    agent = LLMQualificationAgent(workspace_id=ws_id, db=db)
+    try:
+        result = agent.run(batch_size=20)
+        logger.info("llm_qualification [%s]: %s", ws["name"], result)
+    except Exception as exc:
+        logger.error("llm_qualification [%s] failed: %s", ws["name"], exc, exc_info=True)
+
+
+def _run_llm_qualification() -> None:
+    """Every-60-min job: run LLM 7-gate on companies that passed rule-based PQS
+    but have not yet been evaluated by the deeper semantic gate.
+    Runs less frequently than the rule scorer to limit LLM spend.
+    """
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_llm_qualify_workspace, "llm_qualification")
+    except Exception as e:
+        logger.error("Scheduled llm_qualification failed: %s", e, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1217,6 +1278,94 @@ def _run_auto_approve() -> None:
     mistake does not error. The cron registration has been removed.
     """
     logger.info("Auto-approve cron is disabled (P1.3 — GTM rebuild).")
+
+
+def _sampled_qa_approve_workspace(ws: dict) -> None:
+    """R10 — Sampled QA auto-approver (integrity-gate edition).
+
+    When SAMPLED_QA_ENABLED=true, this job:
+      1. Fetches pending drafts that carry no integrity violations.
+      2. Auto-approves (1 - SAMPLED_QA_RATE) fraction immediately.
+      3. Leaves SAMPLED_QA_RATE fraction in 'pending' for human QA review.
+
+    This is NOT a PQS-threshold rubber stamp — it gates on the actual
+    integrity checker (fabrication, recycled stats, generic hooks, hook-URL
+    presence). Only clean drafts are auto-approved.
+    """
+    import random
+    from backend.app.core.database import Database
+    from backend.app.agents.outreach import _check_draft_integrity
+
+    sampled_qa_enabled = os.environ.get("SAMPLED_QA_ENABLED", "false").lower() == "true"
+    if not sampled_qa_enabled:
+        return
+
+    sample_rate = float(os.environ.get("SAMPLED_QA_RATE", "0.20"))
+    ws_id = ws["id"]
+    db = Database(workspace_id=ws_id)
+
+    pending = (
+        db.client.table("outreach_drafts")
+        .select("id, body, subject, personalization_notes, sequence_step, approval_status")
+        .eq("approval_status", "pending")
+        .eq("workspace_id", ws_id)
+        .limit(100)
+        .execute()
+    ).data or []
+
+    auto_approved = 0
+    held_for_qa = 0
+
+    for draft in pending:
+        body = draft.get("body") or ""
+        subject = draft.get("subject") or ""
+        notes = draft.get("personalization_notes") or ""
+        step = int(draft.get("sequence_step") or 1)
+
+        violations = _check_draft_integrity(
+            body, subject,
+            personalization_notes=notes,
+            sequence_step=step,
+        )
+        if violations:
+            # Has integrity issues — leave in pending for human review.
+            held_for_qa += 1
+            continue
+
+        # Clean draft — auto-approve or hold for QA sample.
+        if random.random() < sample_rate:
+            held_for_qa += 1
+            continue
+
+        # Auto-approve: call the approve RPC directly.
+        try:
+            db.client.rpc("approve_draft_and_enqueue", {
+                "p_draft_id": draft["id"],
+                "p_status": "approved",
+                "p_workspace_id": str(ws_id),
+            }).execute()
+            auto_approved += 1
+        except Exception as exc:
+            logger.warning("sampled_qa_approve: failed to approve %s: %s", draft["id"], exc)
+
+    if auto_approved or held_for_qa:
+        logger.info(
+            "sampled_qa_approve [%s]: auto_approved=%d held_for_qa=%d",
+            ws.get("name"), auto_approved, held_for_qa,
+        )
+
+
+def _run_sampled_qa_approve() -> None:
+    """Every-30-min job: auto-approve integrity-passing drafts (R10 autonomy split fix).
+    Only active when SAMPLED_QA_ENABLED=true.
+    """
+    if os.environ.get("SAMPLED_QA_ENABLED", "false").lower() != "true":
+        return
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_sampled_qa_approve_workspace, "sampled_qa_approve")
+    except Exception as e:
+        logger.error("sampled_qa_approve failed: %s", e, exc_info=True)
 
 
 def _run_limit_ramp() -> None:
@@ -1349,6 +1498,23 @@ def _run_pipeline_monitor_email() -> None:
         drafts_topup    = draft_count(TOPUP_TS)
         cost_per_draft  = (spend_topup / drafts_topup) if drafts_topup else None
 
+        # R11 — North-star metric: cost per qualified manufacturing conversation.
+        # "Qualified conversation" = a reply classified as interested, question, or referral
+        # (not ooo / not_interested / bounce) that has been actioned in HITL queue.
+        qualified_convs = 0
+        try:
+            _hitl_rows = (
+                client.table("hitl_queue")
+                .select("id", count="exact")
+                .eq("workspace_id", WS)
+                .in_("classification", ["interested", "question", "referral"])
+                .execute()
+            ).count or 0
+            qualified_convs = int(_hitl_rows)
+        except Exception:
+            pass
+        cost_per_qualified_conv = (mtd_all / qualified_convs) if qualified_convs > 0 else None
+
         # Draft queue depth
         pending_approval = draft_count(
             (now - timedelta(days=30)).isoformat(), "pending"
@@ -1433,7 +1599,7 @@ def _run_pipeline_monitor_email() -> None:
   </tr>
 </table>
 <p style="font-size:12px;color:#6b7280;background:#f9fafb;padding:8px 12px;border-radius:4px;margin-bottom:16px">
-  {burn_note}. Research is <strong>paused</strong> — spend is drafts only.
+  {burn_note}. Research and enrichment are <strong>active</strong> (re-enabled 2026-05-28).
 </p>
 
 <h3 style="font-size:14px;margin-bottom:6px">Value Generated</h3>
@@ -1452,6 +1618,12 @@ def _run_pipeline_monitor_email() -> None:
     <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Cost per draft</td>
     <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px" colspan="2">
       {'${:.4f}'.format(cost_per_draft) if cost_per_draft else '— (no drafts yet)'}
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px"><strong>Cost per qualified conversation ⭐</strong></td>
+    <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px" colspan="2">
+      {'${:.2f} (MTD {} replies)'.format(cost_per_qualified_conv, qualified_convs) if cost_per_qualified_conv else f'— ({qualified_convs} qualified replies so far)'}
     </td>
   </tr>
   <tr>
@@ -1580,12 +1752,8 @@ def _run_enrichment() -> None:
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
         for_each_workspace(_enrich_workspace, "enrichment")
-        # Fast-path: enrichment → draft generation
-        # Closes the 30-min gap between a contact being found and a draft being created.
-        try:
-            _run_draft_generation()
-        except Exception as exc:
-            logger.warning("enrichment → draft fast-path failed: %s", exc)
+        # Draft fast-path disabled 2026-05-28 — generation moved to Claude Code workflow.
+        pass
     except Exception as e:
         logger.error(f"Scheduled enrichment failed: {e}", exc_info=True)
 
@@ -2294,24 +2462,38 @@ async def lifespan(app: FastAPI):
             _run_gmail_intake, "interval", minutes=15, id="gmail_intake",
             start_date=_now + _td(seconds=90),
         )
-        # Research: PAUSED 2026-05-07 — GTM assessment in progress.
-        # Re-enable when ready to resume pipeline growth.
-        # scheduler.add_job(
-        #     _run_research, "interval", minutes=20, id="research",
-        #     next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
-        # )
+        # Research: re-enabled 2026-05-28 (R5 remediation). Was paused 2026-05-07 during GTM assessment.
+        scheduler.add_job(
+            _run_research, "interval", minutes=20, id="research",
+            next_run_time=datetime.now(timezone.utc) + _td(minutes=5),
+        )
         # Qualification: every 15 min 24/7 — +30s offset avoids health_snapshot collision
         scheduler.add_job(
             _run_qualification, "interval", minutes=15, id="qualification",
             start_date=_now + _td(seconds=30),
         )
-        # Draft generation: every 5 min — drains qualified-but-undrafted companies fast.
-        # Enrichment now runs every 3 min; draft gen follows at 5 min to close the gap
-        # between a contact being found and a draft existing for it.
-        scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
-        # Enrichment: PAUSED 2026-05-07 — Apollo spend $101 MTD, GTM assessment in progress.
-        # Re-enable when ready to resume pipeline growth.
-        # scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
+        # LLM 7-gate qualification: every 60 min — deeper semantic check on companies that
+        # passed the rule-based PQS scorer but haven't been LLM-evaluated yet (R7 remediation).
+        scheduler.add_job(
+            _run_llm_qualification, "interval", minutes=60, id="llm_qualification",
+            start_date=_now + _td(minutes=10),
+        )
+        # Sampled QA auto-approver: every 30 min — only active when SAMPLED_QA_ENABLED=true.
+        # Auto-approves integrity-passing drafts; holds SAMPLED_QA_RATE fraction for human QA.
+        # Set SAMPLED_QA_ENABLED=true in Railway to activate (R10 autonomy split fix).
+        scheduler.add_job(
+            _run_sampled_qa_approve, "interval", minutes=30, id="sampled_qa_approve",
+            start_date=_now + _td(minutes=15),
+        )
+        # Draft generation: DISABLED 2026-05-28.
+        # All email generation now runs via the Claude Code 'generate-outreach-emails'
+        # workflow (Pro Max session, Opus model, coherence-first approach).
+        # The backend scheduler job produced Haiku-quality, template-heavy drafts
+        # with no thread continuity. Do not re-enable without explicit authorisation.
+        # scheduler.add_job(_run_draft_generation, "interval", minutes=5, id="draft_generation")
+        # Enrichment: re-enabled 2026-05-28 (R5 remediation). Was paused 2026-05-07 during GTM assessment.
+        # Apollo credit guard enforced in enrichment.py:93.
+        scheduler.add_job(_run_enrichment, "interval", minutes=15, id="enrichment")
         # Pipeline monitor email disabled 2026-05-07 — replaced by daily_report.
         # scheduler.add_job(_run_pipeline_monitor_email, "interval", hours=1, id="pipeline_monitor")
         # Auto-approve: DISABLED 2026-05-08 (P1.3 — GTM rebuild).

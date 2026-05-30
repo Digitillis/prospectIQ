@@ -71,3 +71,4 @@ node_modules/
 # Generated JSON exports and data dumps
 docs/reports/approval_restoration_audit.json
 docs/reports/rejected_draft_reassessment.json
+.pipeline-queues/
