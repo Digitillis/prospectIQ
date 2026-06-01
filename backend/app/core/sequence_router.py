@@ -230,8 +230,19 @@ def get_campaign_id(
 
     campaign_id = os.environ.get(env_var, "").strip()
     if not campaign_id:
-        logger.warning("Sequence env var %s is not set — contact will be skipped", env_var)
-        return None
+        # Fall back to the mfg equivalent — all clusters currently share the same
+        # Instantly campaigns, so an unset cluster-specific var is not a skip.
+        mfg_key = ("mfg", persona_type)
+        mfg_var = CLUSTER_SEQUENCE_MAP.get(mfg_key) or CLUSTER_SEQUENCE_MAP.get(("mfg", None), "INSTANTLY_SEQ_MFG_GENERAL")
+        campaign_id = os.environ.get(mfg_var, "").strip()
+        if campaign_id:
+            logger.debug(
+                "Sequence env var %s not set — falling back to mfg equivalent %s",
+                env_var, mfg_var,
+            )
+        else:
+            logger.warning("Sequence env var %s is not set — contact will be skipped", env_var)
+            return None
 
     return campaign_id
 
