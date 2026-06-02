@@ -339,6 +339,55 @@ def _run_dispatch_loop() -> None:
         logger.error("Scheduled dispatch_loop failed: %s", exc)
 
 
+def _enqueue_schedule_workspace(ws: dict) -> None:
+    """Move today's forward-schedule slice into outbound_queue for one workspace."""
+    from backend.app.core.send_scheduler import enqueue_todays_schedule
+    from backend.app.core.database import Database
+    try:
+        res = enqueue_todays_schedule(Database(workspace_id=ws["id"]), ws["id"])
+        logger.info("Schedule enqueue [%s]: enqueued=%d due=%d (%s)",
+                    ws.get("name", ws["id"]), res["enqueued"], res["due"], res["date"])
+    except Exception as exc:
+        logger.error("enqueue_schedule [%s] failed: %s", ws["id"], exc)
+
+
+def _run_enqueue_schedule() -> None:
+    """Cron: Mon-Fri 7:55 AM Chicago, just before the 8 AM dispatch window opens.
+    Enqueues today's pre-computed schedule slice. No selection logic at send time."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_enqueue_schedule_workspace, "enqueue_schedule")
+    except Exception as exc:
+        logger.error("Scheduled enqueue_schedule failed: %s", exc)
+
+
+def _recompute_schedule_workspace(ws: dict) -> None:
+    """Rebuild the forward schedule from live state for one workspace."""
+    from backend.app.core.send_scheduler import recompute_and_persist
+    from backend.app.core.database import Database
+    try:
+        res = recompute_and_persist(Database(workspace_id=ws["id"]), ws["id"])
+        if res.get("persisted"):
+            logger.info("Schedule recompute [%s]: slots=%d contacts=%d warnings=%d",
+                        ws.get("name", ws["id"]), res["slots"], res["contacts"], res["warnings"])
+        else:
+            logger.error("Schedule recompute [%s] ABORTED: %d violations",
+                         ws.get("name", ws["id"]), len(res.get("violations", [])))
+    except Exception as exc:
+        logger.error("recompute_schedule [%s] failed: %s", ws["id"], exc)
+
+
+def _run_schedule_recompute() -> None:
+    """Cron: nightly 2:30 AM Chicago. Rebuilds the forward schedule from live state
+    so it absorbs the day's sends, replies (paused contacts), bounces, mailbox
+    changes, and newly generated drafts. Idempotent and self-validating."""
+    try:
+        from backend.app.core.workspace_scheduler import for_each_workspace
+        for_each_workspace(_recompute_schedule_workspace, "schedule_recompute")
+    except Exception as exc:
+        logger.error("Scheduled schedule_recompute failed: %s", exc)
+
+
 def _in_send_window(now_chicago=None) -> bool:
     """True if it is Mon-Fri between 08:00 and 11:00 America/Chicago.
 
@@ -782,6 +831,27 @@ def _gmail_intake_workspace(ws: dict) -> None:
                                 "contact_id", contact_id).eq("status", "active").execute()
                     except Exception as e:
                         logger.warning(f"Gmail intake [{ws['name']}]: sequence update failed: {e}")
+
+                    # Forward-schedule reply policy (2026-06-02): a genuine human reply
+                    # PAUSES the contact's remaining scheduled steps for human review;
+                    # an out-of-office keeps the sequence running. Bounce/unsubscribe
+                    # are handled by the suppression path. No-ops safely if the
+                    # send_schedule table is not yet present.
+                    try:
+                        from backend.app.core.send_scheduler import pause_contact_on_reply
+                        _intent_map = {
+                            "ooo": "out_of_office", "out_of_office": "out_of_office",
+                            "not_interested": "soft_no", "interested": "interested",
+                            "objection": "objection", "referral": "referral",
+                            "question": "other",
+                        }
+                        _policy_intent = _intent_map.get(intent, "other")
+                        _res = pause_contact_on_reply(db, ws_id, contact_id, _policy_intent)
+                        if _res.get("action") == "paused":
+                            logger.info("Gmail intake [%s]: paused %s remaining schedule (%d slots) on %s reply",
+                                        ws["name"], contact_id, _res.get("cancelled_slots", 0), intent)
+                    except Exception as e:
+                        logger.debug(f"Gmail intake [{ws['name']}]: schedule pause skipped: {e}")
 
                     # For reply-worthy intents, draft a response and queue for approval.
                     if intent in ("interested", "question", "objection", "referral"):
@@ -2434,6 +2504,21 @@ async def lifespan(app: FastAPI):
         #     timezone="America/Chicago",
         #     id="send_approved",
         # )
+        # schedule_recompute: nightly rebuild of the forward send schedule from live
+        # state (absorbs sends, reply-pauses, bounces, mailbox changes, new drafts).
+        scheduler.add_job(
+            _run_schedule_recompute, "cron",
+            hour=2, minute=30, timezone="America/Chicago",
+            id="schedule_recompute",
+        )
+        # enqueue_schedule: Mon-Fri 7:55 AM Chicago — moves today's pre-computed
+        # schedule slice into outbound_queue just before the dispatch window opens.
+        scheduler.add_job(
+            _run_enqueue_schedule, "cron",
+            day_of_week="mon-fri", hour=7, minute=55,
+            timezone="America/Chicago",
+            id="enqueue_schedule",
+        )
         # dispatch_loop: queue-consumer send path (PR G). Sole scheduler-registered send path.
         scheduler.add_job(
             _run_dispatch_loop, "cron",
