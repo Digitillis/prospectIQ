@@ -47,9 +47,19 @@ COMPANY_COOLDOWN_DAYS: int = 14   # different contact, same company
 PER_MAILBOX_DAILY_CAP: int = 30
 
 
+# Deliverability ramp by business-week: week 1 = 50/day, week 2 = 150/day,
+# week 3+ = full mailbox capacity (mailbox_count * 30). Updated 2026-06-02 to
+# reach 150/day by week 2 (was a +50/week climb).
+RAMP_SCHEDULE: list[int] = [50, 150]  # index = business-week (0-based)
+
+
 def ramp_cap(business_day_index: int, full_cap: int) -> int:
-    """Deliverability ramp: week 1 = 50/day, +50 each business-week, clamp to full_cap."""
-    return min(full_cap, 50 + 50 * (business_day_index // 5))
+    """Deliverability ramp keyed by business-week. After RAMP_SCHEDULE is
+    exhausted, run at full capacity. Always clamped to full_cap so it can never
+    exceed mailbox_count * 30."""
+    week = business_day_index // 5
+    target = RAMP_SCHEDULE[week] if week < len(RAMP_SCHEDULE) else full_cap
+    return min(full_cap, target)
 
 
 def _next_business_day(d: date) -> date:
