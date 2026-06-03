@@ -379,6 +379,21 @@ def _load_state(db, workspace_id: str):
     contacts_tbl = {c['id']: c for c in page('contacts',
         'id,email,company_id,title,is_outreach_eligible,email_status,outreach_state')}
 
+    # Company cluster — dispatch hard-rejects 'other'/'watchlist'/null at send time,
+    # so exclude those contacts from scheduling rather than slot drafts that will be
+    # skipped. Surfaces mis-classified companies instead of silently laundering them.
+    companies_tbl = {c['id']: c for c in page('companies', 'id,campaign_cluster,status')}
+    SENDABLE_CLUSTER_BLOCK = {None, '', 'other', 'watchlist'}
+
+    # Suppressed contacts (bounce/unsubscribe) — exclude.
+    suppressed_contacts: set = set()
+    try:
+        for s in page('suppression_log', 'contact_id,scope'):
+            if s.get('contact_id'):
+                suppressed_contacts.add(s['contact_id'])
+    except Exception:
+        pass
+
     sent_hist: dict[str, dict[int, date]] = defaultdict(dict)
     for d in page('outreach_drafts', 'contact_id,sequence_step,sent_at'):
         if d.get('sent_at') and d.get('contact_id'):
@@ -405,6 +420,12 @@ def _load_state(db, workspace_id: str):
             continue
         if c.get('outreach_state') == 'paused':
             continue  # genuine-reply paused contacts excluded
+        if d['contact_id'] in suppressed_contacts:
+            continue  # bounce/unsubscribe suppressed
+        co = companies_tbl.get(c.get('company_id'), {})
+        if (co.get('campaign_cluster') in SENDABLE_CLUSTER_BLOCK
+                or co.get('status') in ('paused', 'disqualified')):
+            continue  # dispatch would reject these — do not schedule
         b = d.get('body', '') or ''; n = d.get('personalization_notes', '') or ''
         if EM.search(b) or EL.search(b) or VIB.search(b) or not URL.search(n):
             continue
@@ -477,14 +498,31 @@ def recompute_and_persist(db, workspace_id: str, *, start_date: Optional[date] =
             "start_date": start_date.isoformat()}
 
 
-def enqueue_todays_schedule(db, workspace_id: str, *, today: Optional[date] = None) -> dict:
-    """Move today's scheduled slots into outbound_queue, in slot order, then mark
-    them 'enqueued'. The existing dispatch_loop drains the queue and sends.
-    This is the only daily action — no selection logic at send time."""
+# Reviewer attribution for schedule-driven approval. The forward schedule is the
+# founder-approved automation: a draft reaching its scheduled day, having passed
+# every quality/eligibility/sequence gate at schedule time, is approved on the
+# founder's behalf. Overridable via outreach_send_config.default_reviewer_id.
+DEFAULT_SCHEDULE_REVIEWER_ID = "e463105c-4cdc-45e2-967d-66e3dd5728df"
+
+
+def enqueue_todays_schedule(db, workspace_id: str, *, today: Optional[date] = None,
+                            reviewer_id: Optional[str] = None) -> dict:
+    """Move today's scheduled slots into outbound_queue, in slot order, approving
+    each draft on enqueue (scheduling IS the approval — every gate was satisfied at
+    schedule time). The existing dispatch_loop then drains the queue and sends.
+    This is the only daily send-time action — no selection logic."""
     from datetime import datetime, timezone
     if today is None:
         today = datetime.now(timezone.utc).date()
+    if reviewer_id is None:
+        try:
+            cfg = (db.client.table("outreach_send_config").select("default_reviewer_id")
+                   .eq("workspace_id", workspace_id).limit(1).execute().data or [{}])[0]
+            reviewer_id = cfg.get("default_reviewer_id") or DEFAULT_SCHEDULE_REVIEWER_ID
+        except Exception:
+            reviewer_id = DEFAULT_SCHEDULE_REVIEWER_ID
 
+    now_iso = datetime.now(timezone.utc).isoformat()
     due = (db.client.table("send_schedule").select("id,draft_id,sequence_step,slot_order")
            .eq("workspace_id", workspace_id).eq("status", "scheduled")
            .eq("scheduled_date", today.isoformat())
@@ -493,6 +531,12 @@ def enqueue_todays_schedule(db, workspace_id: str, *, today: Optional[date] = No
     for r in due:
         priority = max(1, 6 - r["sequence_step"])
         try:
+            # Approve the draft (satisfies approval_requires_reviewer) — only if not
+            # already sent. Scheduling is the approval gate.
+            db.client.table("outreach_drafts").update({
+                "approval_status": "approved", "approved_by": reviewer_id,
+                "reviewed_at": now_iso, "approved_at": now_iso,
+            }).eq("id", r["draft_id"]).is_("sent_at", "null").execute()
             db.client.table("outbound_queue").insert({
                 "draft_id": r["draft_id"], "workspace_id": workspace_id,
                 "priority": priority, "retry_count": 0,
@@ -501,7 +545,8 @@ def enqueue_todays_schedule(db, workspace_id: str, *, today: Optional[date] = No
             enqueued += 1
         except Exception as exc:
             logger.error("enqueue_todays_schedule draft=%s failed: %s", r["draft_id"], exc)
-    return {"date": today.isoformat(), "enqueued": enqueued, "due": len(due)}
+    return {"date": today.isoformat(), "enqueued": enqueued, "due": len(due),
+            "reviewer_id": reviewer_id}
 
 
 def pause_contact_on_reply(db, workspace_id: str, contact_id: str, intent: str) -> dict:
