@@ -135,21 +135,17 @@ class TestAlreadyDeliveredAtFetch:
     def test_returns_already_delivered_when_sent_at_set_at_fetch(self):
         """dispatch_queued_draft returns ALREADY_DELIVERED if draft.sent_at is set at fetch."""
         from backend.app.agents.engagement import EngagementAgent, QueueDispatchOutcome
-        from backend.app.core.config import Settings
 
         draft_with_sent_at = _make_draft(sent_at="2026-05-15T21:24:00+00:00")
         agent, db_client = _make_agent_with_db(draft_rows=[draft_with_sent_at])
 
-        # Provide a Resend key so the key gate (which runs before the fetch) passes
-        # and execution reaches the already-delivered-at-fetch check. Without this,
-        # CI (no credential store / env key) returns ASSERTION_FAILED first.
-        settings_mock = MagicMock(spec=Settings)
-        settings_mock.resend_api_key = "re_test_key"
-        settings_mock.default_workspace_id = WORKSPACE_ID
-
+        # Provide a Resend key (the key gate runs before the fetch) so execution
+        # reaches the already-delivered-at-fetch check. get_credential is patched
+        # at its source module so the function-local `from ... import get_credential`
+        # picks it up. Without this, CI (no credential store / env key) returns
+        # ASSERTION_FAILED first.
         queue_row = _make_queue_row()
-        with patch("backend.app.agents.engagement.get_settings", return_value=settings_mock), \
-             patch("backend.app.core.credential_store.get_credential", return_value=None):
+        with patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"):
             outcome = agent.dispatch_queued_draft(
                 queue_row=queue_row,
                 attempt_number=2,
