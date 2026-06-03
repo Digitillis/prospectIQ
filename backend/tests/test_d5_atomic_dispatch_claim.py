@@ -51,7 +51,7 @@ def _make_draft(sent_at: str | None = None) -> dict:
         "body": "Hi Jane, checking in...",
         "edited_body": None,
         "sent_at": sent_at,
-        "companies": {"name": "Acme Corp", "tier": "standard", "campaign_cluster": None},
+        "companies": {"name": "Acme Corp", "tier": "standard", "campaign_cluster": "mfg"},
         "contacts": {
             "full_name": "Jane Doe",
             "email": "jane@acme.com",
@@ -191,7 +191,8 @@ class TestPreSendClaimReturnsZeroRows:
         with patch("backend.app.agents.engagement.get_settings", return_value=settings_mock), \
              patch("backend.app.core.credential_store.get_credential", return_value=None), \
              patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
-             patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)):
+             patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
+             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"):
             agent._load_send_config = MagicMock(return_value={
                 "daily_limit": 125, "batch_size": 1,
                 "send_enabled": True, "min_gap_seconds": 0,
@@ -228,6 +229,7 @@ class TestPreSendClaimReturnsZeroRows:
              patch("backend.app.core.credential_store.get_credential", return_value=None), \
              patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
              patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
+             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"), \
              patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"), \
              patch("resend.Emails.send") as mock_send:
             outcome = agent.dispatch_queued_draft(
@@ -336,6 +338,7 @@ class TestRollbackOnResendFailure:
              patch("backend.app.core.credential_store.get_credential", return_value=None), \
              patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
              patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
+             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"), \
              patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"), \
              patch("resend.Emails.send", side_effect=Exception("503 Service Unavailable")):
             outcome = agent.dispatch_queued_draft(
@@ -359,6 +362,7 @@ class TestRollbackOnResendFailure:
              patch("backend.app.core.credential_store.get_credential", return_value=None), \
              patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
              patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
+             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"), \
              patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"), \
              patch("resend.Emails.send", side_effect=Exception("422 Unprocessable Entity")):
             outcome = agent.dispatch_queued_draft(

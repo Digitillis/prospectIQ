@@ -1098,19 +1098,6 @@ class EngagementAgent(BaseAgent):
         settings = get_settings()
         draft_id = queue_row["draft_id"]
 
-        # Load Resend API key
-        from backend.app.core.credential_store import get_credential
-        resend_api_key = (
-            get_credential("resend", "api_key", self.db.workspace_id)
-            or settings.resend_api_key
-        )
-        if not resend_api_key:
-            return QueueDispatchOutcome(
-                status="ASSERTION_FAILED",
-                failure_reason="resend_api_key_not_configured",
-            )
-        resend.api_key = resend_api_key
-
         # Fetch draft with contact + company joins
         try:
             draft_rows = (
@@ -1156,6 +1143,21 @@ class EngagementAgent(BaseAgent):
                 status="ALREADY_DELIVERED",
                 failure_reason="draft_sent_at_set_at_fetch",
             )
+
+        # Load Resend API key — after the already-delivered check, so an already-sent
+        # draft is recognized and the orphaned queue row drained without requiring
+        # send infrastructure to be reachable (e.g. in CI / offline).
+        from backend.app.core.credential_store import get_credential
+        resend_api_key = (
+            get_credential("resend", "api_key", self.db.workspace_id)
+            or settings.resend_api_key
+        )
+        if not resend_api_key:
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason="resend_api_key_not_configured",
+            )
+        resend.api_key = resend_api_key
 
         contact = draft.get("contacts") or {}
         company = draft.get("companies") or {}
