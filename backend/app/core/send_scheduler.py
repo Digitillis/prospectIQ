@@ -594,6 +594,28 @@ def _load_state(db, workspace_id: str):
                 sent=dict(sent_hist.get(cid, {})),
             )
         )
+
+    # Observability: record how many pending drafts entered vs. how many survived
+    # the model/eligibility/cluster/quality gates. filter_reason names the gates so
+    # an operator can see *why* the schedulable set shrank (best-effort, never raises).
+    _schedulable = sum(len(s) for s in remaining.values())
+    try:
+        import uuid as _uuid
+
+        db.client.table("pipeline_run_log").insert(
+            {
+                "run_id": str(_uuid.uuid4()),
+                "workspace_id": workspace_id,
+                "stage": "load_state_filter",
+                "input_count": len(all_pending_drafts),
+                "output_count": _schedulable,
+                "filtered_count": len(all_pending_drafts) - _schedulable,
+                "filter_reason": "model_tag + eligibility + email_status + cluster + quality gates",
+            }
+        ).execute()
+    except Exception:
+        pass
+
     return contacts, sent_hist, sender_pool, int(full_cap)
 
 
@@ -786,6 +808,28 @@ def enqueue_todays_schedule(
                 enqueued += 1
             except Exception as exc:
                 logger.error("enqueue_todays_schedule draft=%s failed: %s", r["draft_id"], exc)
+
+        # Observability: due vs enqueued, so an operator can see if any of today's
+        # slots failed to enqueue (best-effort, never raises).
+        try:
+            import uuid as _uuid
+
+            db.client.table("pipeline_run_log").insert(
+                {
+                    "run_id": str(_uuid.uuid4()),
+                    "workspace_id": workspace_id,
+                    "stage": "enqueue_todays_schedule",
+                    "input_count": len(due),
+                    "output_count": enqueued,
+                    "filtered_count": len(due) - enqueued,
+                    "filter_reason": "approve_draft_and_enqueue RPC failures"
+                    if enqueued < len(due)
+                    else None,
+                }
+            ).execute()
+        except Exception:
+            pass
+
         return {
             "date": today.isoformat(),
             "enqueued": enqueued,
