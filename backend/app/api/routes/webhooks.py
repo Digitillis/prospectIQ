@@ -14,7 +14,6 @@ event_type keys that EngagementAgent uses, for backwards compatibility.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import logging
 import re
 from datetime import datetime, timezone
@@ -23,6 +22,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from backend.app.core.config import get_settings
+from backend.app.core.webhook_auth import verify_webhook
 
 
 # ---------------------------------------------------------------------------
@@ -68,12 +68,15 @@ async def unipile_webhook(request: Request):
     """
     settings = get_settings()
 
-    # Validate webhook signature if secret is configured
-    webhook_secret = getattr(settings, "unipile_webhook_secret", "") or ""
-    if webhook_secret:
-        signature = request.headers.get("X-Unipile-Signature", "")
-        if signature != webhook_secret:
-            raise HTTPException(status_code=401, detail="Invalid Unipile webhook signature")
+    # Unipile webhook is optional: when no secret is configured we accept the
+    # event (fail_closed=False) so LinkedIn automation keeps working in dev.
+    signature = request.headers.get("X-Unipile-Signature", "")
+    verify_webhook(
+        signature,
+        getattr(settings, "unipile_webhook_secret", "") or "",
+        endpoint="Unipile",
+        fail_closed=False,
+    )
 
     payload: dict[Any, Any] = await request.json()
     event_type: str = (payload.get("event_type") or payload.get("type") or "").lower().strip()
@@ -907,8 +910,9 @@ async def instantly_webhook(
     """
     settings = get_settings()
 
-    if settings.webhook_secret and not hmac.compare_digest(secret or "", settings.webhook_secret):
-        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+    # Instantly webhook secret is optional (fail_closed=False) — legacy webhooks
+    # may arrive before INSTANTLY/webhook_secret is configured.
+    verify_webhook(secret, settings.webhook_secret, endpoint="Instantly", fail_closed=False)
 
     payload: dict[str, Any] = await request.json()
 
@@ -1021,13 +1025,7 @@ async def resend_webhook(
 
     # Fail-CLOSED: refuse all requests when the secret is not configured so that
     # a missing env var never silently opens the endpoint to unauthenticated callers.
-    if not settings.resend_webhook_secret:
-        raise HTTPException(
-            status_code=503,
-            detail="Webhook endpoint not configured. Set RESEND_WEBHOOK_SECRET in Railway.",
-        )
-    if not hmac.compare_digest(secret or "", settings.resend_webhook_secret):
-        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+    verify_webhook(secret, settings.resend_webhook_secret, endpoint="Resend")
 
     payload: dict[str, Any] = await request.json()
     event_type: str = (payload.get("type") or "").lower().strip()
@@ -1428,15 +1426,8 @@ async def trigify_webhook(request: Request):
     Requires TRIGIFY_WEBHOOK_SECRET env var. Fail-closed when unset.
     """
     settings = get_settings()
-    trigify_secret = settings.trigify_webhook_secret or ""
-    if not trigify_secret:
-        raise HTTPException(
-            status_code=503,
-            detail="Trigify webhook endpoint not configured. Set TRIGIFY_WEBHOOK_SECRET.",
-        )
     signature = request.headers.get("X-Trigify-Signature", "")
-    if not hmac.compare_digest(signature, trigify_secret):
-        raise HTTPException(status_code=401, detail="Invalid Trigify webhook signature")
+    verify_webhook(signature, settings.trigify_webhook_secret, endpoint="Trigify")
 
     payload: dict[Any, Any] = await request.json()
 
@@ -1597,15 +1588,10 @@ async def meeting_transcript_webhook(request: Request):
 
     # Use the dedicated meeting-transcript secret (never share with Instantly/Resend).
     # Fail-closed: refuse requests when the secret is not configured.
-    meeting_secret = settings.meeting_transcript_webhook_secret or ""
-    if not meeting_secret:
-        raise HTTPException(
-            status_code=503,
-            detail="Meeting transcript webhook not configured. Set MEETING_TRANSCRIPT_WEBHOOK_SECRET.",
-        )
     signature = request.headers.get("X-Webhook-Secret", "")
-    if not hmac.compare_digest(signature, meeting_secret):
-        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    verify_webhook(
+        signature, settings.meeting_transcript_webhook_secret, endpoint="MeetingTranscript"
+    )
 
     payload: dict[Any, Any] = await request.json()
 
