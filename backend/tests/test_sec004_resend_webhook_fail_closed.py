@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 def _clear_settings_cache():
     from backend.app.core.config import get_settings
+
     get_settings.cache_clear()
 
 
@@ -94,7 +95,9 @@ def test_resend_webhook_503_still_no_db_mutation():
         mini = FastAPI()
         mini.include_router(wh_mod.router)
         with TestClient(mini, raise_server_exceptions=False) as c:
-            r = c.post("/api/webhooks/resend?secret=x", json={"type": "email.delivered", "data": {}})
+            r = c.post(
+                "/api/webhooks/resend?secret=x", json={"type": "email.delivered", "data": {}}
+            )
             assert r.status_code == 503
             assert captured_db_calls == [], "DB must not be touched when 503 is returned"
     finally:

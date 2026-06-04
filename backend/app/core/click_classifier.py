@@ -59,6 +59,7 @@ _HUMAN_OPEN_CLICK_MIN_DWELL_SECONDS = 30
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _to_datetime(value) -> datetime | None:
     """Coerce a timestamp-shaped value to a tz-aware datetime."""
     if value is None:
@@ -96,6 +97,7 @@ def _user_agent_is_scanner(ua: str | None) -> bool:
 # ---------------------------------------------------------------------------
 # Classifier
 # ---------------------------------------------------------------------------
+
 
 class ClickClassifier:
     """Stateless click-event classifier."""
@@ -154,10 +156,12 @@ class ClickClassifier:
         cur_link = click_event.get("link") or click_event.get("url")
         items: list[dict] = []
         for r in recent:
-            items.append({
-                "click_timestamp": r.get("click_timestamp") or r.get("timestamp"),
-                "link": r.get("link") or r.get("url"),
-            })
+            items.append(
+                {
+                    "click_timestamp": r.get("click_timestamp") or r.get("timestamp"),
+                    "link": r.get("link") or r.get("url"),
+                }
+            )
         if cur_click_ts is not None or cur_link:
             items.append({"click_timestamp": cur_click_ts, "link": cur_link})
 

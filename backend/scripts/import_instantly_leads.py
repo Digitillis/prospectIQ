@@ -54,7 +54,14 @@ _STATE_RANK = {
     "closed_lost": 10,
 }
 
-_TERMINAL_STATES = {"replied", "bounced", "unsubscribed", "meeting_booked", "closed_won", "closed_lost"}
+_TERMINAL_STATES = {
+    "replied",
+    "bounced",
+    "unsubscribed",
+    "meeting_booked",
+    "closed_won",
+    "closed_lost",
+}
 
 
 def _classify_instantly_lead(lead: dict) -> str | None:
@@ -117,14 +124,18 @@ def import_leads(dry_run: bool = False) -> None:
             continue
 
         seen_contact_ids.add(contact_id)
-        contacts_to_check.append({
-            "contact_id": contact_id,
-            "email": email,
-            "outreach_state": contact.get("outreach_state") or "identified",
-            "company_id": contact.get("company_id"),
-        })
+        contacts_to_check.append(
+            {
+                "contact_id": contact_id,
+                "email": email,
+                "outreach_state": contact.get("outreach_state") or "identified",
+                "company_id": contact.get("company_id"),
+            }
+        )
 
-    console.print(f"[green]Found {len(contacts_to_check)} unique contacts with sent drafts.[/green]")
+    console.print(
+        f"[green]Found {len(contacts_to_check)} unique contacts with sent drafts.[/green]"
+    )
 
     if not contacts_to_check:
         console.print("[yellow]No sent drafts found — nothing to sync.[/yellow]")

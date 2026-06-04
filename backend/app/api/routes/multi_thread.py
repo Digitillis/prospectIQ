@@ -45,6 +45,7 @@ def get_coordinator() -> ThreadCoordinator:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class CreateCampaignRequest(BaseModel):
     company_id: str
     contact_ids: list[str]
@@ -55,6 +56,7 @@ class CreateCampaignRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # POST /api/multi-thread/campaigns
 # ---------------------------------------------------------------------------
+
 
 @router.post("/campaigns", status_code=201)
 async def create_campaign(body: CreateCampaignRequest):
@@ -126,6 +128,7 @@ async def create_campaign(body: CreateCampaignRequest):
 # GET /api/multi-thread/campaigns
 # ---------------------------------------------------------------------------
 
+
 @router.get("/campaigns")
 async def list_campaigns(
     status: Optional[str] = Query(None, description="Filter: active|paused|completed|all"),
@@ -161,9 +164,7 @@ async def list_campaigns(
     for c in campaigns:
         threads = c.get("account_campaign_threads") or []
         c["thread_count"] = len(threads)
-        touches = [
-            t.get("last_touch_at") for t in threads if t.get("last_touch_at")
-        ]
+        touches = [t.get("last_touch_at") for t in threads if t.get("last_touch_at")]
         c["last_activity_at"] = max(touches) if touches else c.get("created_at")
 
     return {"data": campaigns, "count": len(campaigns)}
@@ -172,6 +173,7 @@ async def list_campaigns(
 # ---------------------------------------------------------------------------
 # GET /api/multi-thread/campaigns/{id}
 # ---------------------------------------------------------------------------
+
 
 @router.get("/campaigns/{campaign_id}")
 async def get_campaign(campaign_id: str):
@@ -206,6 +208,7 @@ async def get_campaign(campaign_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/multi-thread/campaigns/{id}/drafts
 # ---------------------------------------------------------------------------
+
 
 @router.post("/campaigns/{campaign_id}/drafts")
 async def generate_drafts(campaign_id: str):
@@ -259,6 +262,7 @@ async def generate_drafts(campaign_id: str):
 # ---------------------------------------------------------------------------
 # PUT /api/multi-thread/campaigns/{id}/pause
 # ---------------------------------------------------------------------------
+
 
 @router.put("/campaigns/{campaign_id}/pause")
 async def pause_campaign(campaign_id: str):

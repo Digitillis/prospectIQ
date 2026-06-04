@@ -27,29 +27,17 @@ PROOF_POINTS: dict[str, dict] = {
         "stat_1": (
             "F&B manufacturers catch FDA violations 3× faster with real-time sensor monitoring"
         ),
-        "stat_2": (
-            "Average FSMA audit prep time reduced from 3 weeks to 4 days"
-        ),
-        "stat_3": (
-            "Prevented 2 Class II recalls worth an estimated $4.2M in a 12-month period"
-        ),
+        "stat_2": ("Average FSMA audit prep time reduced from 3 weeks to 4 days"),
+        "stat_3": ("Prevented 2 Class II recalls worth an estimated $4.2M in a 12-month period"),
         "stat_4": (
             "CCP deviation alerts reach supervisors in under 90 seconds — vs 8 minutes manually"
         ),
-        "stat_5": (
-            "Customers reduced food safety corrective actions (CAPAs) by 41% in year one"
-        ),
+        "stat_5": ("Customers reduced food safety corrective actions (CAPAs) by 41% in year one"),
     },
     "mfg": {
-        "stat_1": (
-            "Unplanned downtime reduced 67% in the first 90 days on average"
-        ),
-        "stat_2": (
-            "Maintenance costs down $180K/year per facility"
-        ),
-        "stat_3": (
-            "ROI payback period: 4.2 months across 12 deployments"
-        ),
+        "stat_1": ("Unplanned downtime reduced 67% in the first 90 days on average"),
+        "stat_2": ("Maintenance costs down $180K/year per facility"),
+        "stat_3": ("ROI payback period: 4.2 months across 12 deployments"),
         "stat_4": (
             "Bearing failure predicted 11–14 days in advance — avoiding $200K+ emergency repairs"
         ),

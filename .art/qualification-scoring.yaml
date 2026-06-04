@@ -1,0 +1,32 @@
+capability: qualification-scoring
+name: Qualification & Scoring Intelligence
+type: AI_model
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 3.85, red_block: true, red_block_dim: technical_integrity, findings_count: 17 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Two correctness classes need a focused remediation pass before this can be trusted: (1) the schema/code mismatch where gates 4-7 read research fields (web_research, job_postings, intent_signals, funding_events) that do not exist in research_intelligence, so the entire paid Sonnet layer is operating 
+verdict: A deterministic YAML scorer wrapped in an 'AI qualification' and 'Confidence Engine' narrative that the implementation does not support: the LLM layer silently passes on failure and evaluates empty re
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Gates 4-7 read research fields that do not exist in the schema — paid Sonnet layer runs on empty con"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Every LLM gate silently defaults to PASS on any exception"}
+  - {rank: 3, severity: Critical, status: not_attempted, tag: VERIFIED, title: "intelligence router /ask and /costs have no auth dependency; /costs leaks credit balance and burns t"}
+  - {rank: 4, severity: High, status: not_attempted, tag: VERIFIED, title: "PQS scores have no calibration or feedback loop to conversion outcomes"}
+  - {rank: 5, severity: High, status: not_attempted, tag: VERIFIED, title: "Half the PQS rests on Claude training-memory research with no freshness, source, or ground-truth val"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "Substring keyword matching with no word-boundary enforcement inflates scores"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Cross-workspace query scoping defects across lookalike, intent, goals, and confidence engines (laten"}
+  - {rank: 8, severity: High, status: not_attempted, tag: VERIFIED, title: "Confidence Engine credits ALL workspace outcomes on one A/B winner; promotes by row count not statis"}
+  - {rank: 9, severity: Medium, status: not_attempted, tag: VERIFIED, title: "LLM layer can only downgrade, never discover — runs solely on already-qualified, PQS>=40 companies"}
+  - {rank: 10, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Highest-weight intent signals (FDA/OSHA/FSMA) are manual-entry only; automated monitoring frozen"}
+  - {rank: 11, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Sequential, blocking LLM qualification with no concurrency, retry, or backoff"}
+  - {rank: 12, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Read-modify-write PQS boost loses concurrent updates; no audit when boosts table is absent"}
+  - {rank: 13, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Hardcoded +4 private / +3 independent firmographic bonuses outside the YAML, near-universally applie"}
+  - {rank: 14, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Engagement dimension collapses to 0 under pixel-blocking common in target enterprise mail"}
+  - {rank: 15, severity: Medium, status: not_attempted, tag: VERIFIED, title: "/ask injects raw user question into the Claude prompt and reraises error strings in 500 bodies"}
+  - {rank: 16, severity: Low, status: not_attempted, tag: VERIFIED, title: "Gate 7 result is ignored and final LLM score is anchored by fixed rule-gate constants"}
+  - {rank: 17, severity: Low, status: not_attempted, tag: VERIFIED, title: "Re-score guard keyed on pqs_total!=0 with no staleness/force-rescore path"}
+approval: null

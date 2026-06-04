@@ -170,7 +170,7 @@ class PipelineOrchestrator:
             # Batch in chunks of 50 to stay within Supabase in() limits
             drafted_ids: set[str] = set()
             for i in range(0, len(company_ids), 50):
-                chunk = company_ids[i:i + 50]
+                chunk = company_ids[i : i + 50]
                 drafted_rows = (
                     db.client.table("outreach_drafts")
                     .select("company_id")
@@ -216,7 +216,8 @@ class PipelineOrchestrator:
             if count >= LEARNING_MIN_REPLIES:
                 logger.info(
                     "Learning trigger: %d new replies since last run (threshold=%d)",
-                    count, LEARNING_MIN_REPLIES,
+                    count,
+                    LEARNING_MIN_REPLIES,
                 )
                 return True
             return False
@@ -265,11 +266,7 @@ class PipelineOrchestrator:
         from backend.app.core.workspace_scheduler import workspace_budget_ok
 
         ws_rows = (
-            db.client.table("workspaces")
-            .select("*")
-            .eq("id", self.workspace_id)
-            .limit(1)
-            .execute()
+            db.client.table("workspaces").select("*").eq("id", self.workspace_id).limit(1).execute()
         ).data
         if not ws_rows:
             return ["discovery: workspace not found"]
@@ -308,6 +305,7 @@ class PipelineOrchestrator:
 # ---------------------------------------------------------------------------
 # Graduated auto-apply rollout
 # ---------------------------------------------------------------------------
+
 
 def _resolve_auto_apply(db, workspace_id: str) -> bool:
     """Decide whether the LearningAgent may write changes back to YAML.
@@ -352,6 +350,7 @@ def _resolve_auto_apply(db, workspace_id: str) -> bool:
         settings = (ws_rows[0].get("settings") or {}) if ws_rows else {}
         if not settings.get("learning_auto_apply_activated_at"):
             from datetime import datetime, timezone
+
             settings["learning_auto_apply_activated_at"] = datetime.now(timezone.utc).isoformat()
             settings["learning_auto_apply_activated_outcomes"] = total_outcomes
             try:
@@ -362,7 +361,9 @@ def _resolve_auto_apply(db, workspace_id: str) -> bool:
                 pass
             logger.info(
                 "Learning auto-apply activated: %d outcomes accumulated (threshold=%d, ws=%s)",
-                total_outcomes, LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD, workspace_id,
+                total_outcomes,
+                LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD,
+                workspace_id,
             )
         return True
     except Exception as exc:

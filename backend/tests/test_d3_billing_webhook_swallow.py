@@ -36,7 +36,9 @@ def _make_handler(adapter=None):
 
     tier_plans = {
         "free": TierPlan(tier="free", label="Free", price_id="", monthly_usd=0, seats_limit=5),
-        "starter": TierPlan(tier="starter", label="Starter", price_id="", monthly_usd=99, seats_limit=10),
+        "starter": TierPlan(
+            tier="starter", label="Starter", price_id="", monthly_usd=99, seats_limit=10
+        ),
     }
     return BillingWebhookHandler(adapter, tier_plans, free_tier="free")
 
@@ -44,11 +46,13 @@ def _make_handler(adapter=None):
 def _checkout_event() -> dict:
     return {
         "type": "checkout.session.completed",
-        "data": {"object": {
-            "metadata": {"workspace_id": "ws-1", "tier": "starter"},
-            "subscription": "sub_123",
-            "customer": "cus_123",
-        }},
+        "data": {
+            "object": {
+                "metadata": {"workspace_id": "ws-1", "tier": "starter"},
+                "subscription": "sub_123",
+                "customer": "cus_123",
+            }
+        },
     }
 
 
@@ -103,11 +107,13 @@ def test_invoice_paid_db_error_propagates():
     handler = _make_handler(adapter)
     event = {
         "type": "invoice.paid",
-        "data": {"object": {
-            "subscription": "sub_1",
-            "customer": "cus_1",
-            "subscription_details": {"metadata": {"workspace_id": "ws-1", "tier": "starter"}},
-        }},
+        "data": {
+            "object": {
+                "subscription": "sub_1",
+                "customer": "cus_1",
+                "subscription_details": {"metadata": {"workspace_id": "ws-1", "tier": "starter"}},
+            }
+        },
     }
 
     with pytest.raises(ConnectionError, match="pool exhausted"):
@@ -122,10 +128,12 @@ def test_subscription_deleted_db_error_propagates():
     handler = _make_handler(adapter)
     event = {
         "type": "customer.subscription.deleted",
-        "data": {"object": {
-            "id": "sub_1",
-            "metadata": {"workspace_id": "ws-1"},
-        }},
+        "data": {
+            "object": {
+                "id": "sub_1",
+                "metadata": {"workspace_id": "ws-1"},
+            }
+        },
     }
 
     with pytest.raises(RuntimeError, match="tx failed"):

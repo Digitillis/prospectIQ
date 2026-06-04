@@ -1,0 +1,75 @@
+capability: send-dispatch-pipeline
+type: system
+tier: standard
+source_fingerprint: d46aac481365527c06fdf30aa12c7a9b4c543b3966ea8b65c41fd29a5918fd05
+target:
+  branch: fix/send-pipeline-step-gap-and-env-loading
+  base_sha: 07cc5ac775782cacd886ff0325aeeb62d9175736
+  repo: /Users/avanish/prospectIQ
+remediation_handoff: /tmp/art-prospectiq/REMEDIATION-HANDOFF.md
+stage1_brief: /tmp/art-prospectiq/stage1-brief.md
+acceptance_suite:
+  - backend/tests/test_sdp1_concurrent_recompute.py
+  - backend/tests/test_sdp2_ramp_cap.py
+  - backend/tests/test_pr_g_dispatch.py::TestSDP3DuplicateSendOnTimeoutRetry
+  - backend/tests/test_sdp4_unauthenticated_resend_bounce.py   # == SEC-004
+  - backend/tests/test_sdp5_enqueue_stuck_state.py
+  - backend/tests/test_sdp6_sender_cap_dead_code.py
+  - backend/tests/test_sdp7_dispatch_db_nameerror.py
+  - backend/tests/test_sdp8_missed_enqueue_silent_heartbeat.py
+  - backend/tests/test_sdp9_heartbeat_tz.py
+  - backend/tests/test_sdp10_dispatched_sweeper.py
+  - backend/tests/test_sdp13_hot_suppression_gap.py
+  - backend/tests/test_sdp14_dual_dispatch_race.py
+  - backend/tests/test_sdp16_resend_replay.py                  # == SEC-003
+  - backend/tests/test_sec001_admin_auth.py
+  - backend/tests/test_sec002_health_secret_leak.py
+  - backend/tests/test_sec005_unsigned_jwt_workspace.py
+  - backend/tests/test_contacts_search_injection.py            # SEC-006
+  - backend/tests/test_sec007_fernet_key_strict.py
+  - backend/tests/test_sec009_cors_wildcard.py
+# Findings = UNION of Stage 1 operational set (SDP#) + Stage 3 security set (SEC-). SDP#4==SEC-004, SDP#16==SEC-003.
+findings:
+  # --- Security cluster (Stage 3; SEC-001/002 are NEW criticals Stage 1 missed) ---
+  - {id: SEC-001, severity: critical, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Five unauthenticated admin endpoints incl POST /api/admin/trigger-send (anon bulk send) + config/key leaks"}
+  - {id: SEC-002, severity: critical, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "/health leaks 8-char Resend webhook secret prefix to anon callers"}
+  - {id: SEC-004, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, alias: SDP#4, title: "Resend webhook fails OPEN when secret unset; forged bounce/complaint suppresses real prospects (Stage 2 kill-switch)"}
+  - {id: SEC-005, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, title: "WorkspaceMiddleware trusts unsigned JWT sub when SUPABASE_JWT_SECRET unset"}
+  - {id: SEC-006, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, title: "PostgREST .or_() injection in contacts search → cross-tenant PII enumeration"}
+  - {id: SEC-007, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, title: "credential_store null-pads short Fernet key, collapsing entropy on stored creds"}
+  - {id: SEC-003, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, alias: SDP#16, title: "Non-constant-time webhook secret compares (timing oracle)"}
+  - {id: SEC-009, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, title: "CORS allow_origin_regex trusts all *.vercel.app/*.netlify.app with credentials"}
+  - {id: SEC-008, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Rate limiter ignores X-Forwarded-For; per-IP buckets collapse behind Railway proxy"}
+  - {id: SEC-010, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Trigify webhook has zero auth; mutates PQS/intent/Slack"}
+  - {id: SEC-011, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Meeting-transcript webhook reuses the Instantly secret instead of its own"}
+  - {id: SEC-012, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "raw_webhook_payload stores redundant PII (write-only, no readers)"}
+  - {id: SEC-013, severity: medium, status: deferred_with_trigger, tier: design_escalation, trigger: "enterprise customer / SOC2 auditor", adr: true, decision: "accepted-deferred 2026-06-04; interim app-guard builds now", title: "Send-attempt audit-record immutability (build Option C, not doc Option B); interim app-guard now"}
+  - {id: SEC-014, severity: medium, status: deferred_with_trigger, tier: design_escalation, trigger: "Lighthouse 2 / first paid contract", adr: true, decision: "accepted-deferred 2026-06-04; app-layer fail-closed builds now", title: "Tenant RLS (service-role BYPASSRLS makes naive RLS a no-op); harden app layer now"}
+  # --- Operational correctness cluster (Stage 1/2; Stage 3 dropped these — reinstated by controller) ---
+  - {id: SDP#1, severity: critical, status: planned, tier: specifiable_fix, tag: VERIFIED, decision: "pg advisory lock (founder-decided 2026-06-04)", adr: true, title: "Unguarded multi-instance scheduler corrupts the day's plan under 2nd replica / WEB_CONCURRENCY>1"}
+  - {id: SDP#3, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Per-attempt idempotency_key rotation → duplicate send on transient failure"}
+  - {id: SDP#2, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "ramp_cap fed loop index not business-days-since-CAMPAIGN_START → ~37% throttle after week 2"}
+  - {id: SDP#5, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, title: "enqueue_todays_schedule non-atomic (3 calls); use approve_draft_and_enqueue RPC"}
+  - {id: SDP#6, severity: high, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, title: "Per-sender daily cap dead (sender_email never written at send time)"}
+  - {id: SDP#7, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "NameError 'db' vs 'db_client' silences post-send intent refresh"}
+  - {id: SDP#8, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "No catch-up for 7:55am enqueue; redeploy across it = silent zero-send day"}
+  - {id: SDP#9, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "dispatch_heartbeat counts on UTC 'today' misaligned with Chicago window"}
+  - {id: SDP#10, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, substrate: true, title: "No reconciliation sweeper for orphaned DISPATCHED send_attempts"}
+  - {id: SDP#13, severity: medium, status: planned, tier: specifiable_fix, tag: INFERRED, title: "Engagement-tier HOT block advisory in dispatch, not enforced inline"}
+  - {id: SDP#14, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Retired _send_approved_drafts still live; races queue path with different gate/key"}
+  - {id: SDP#15, severity: medium, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Zero unit tests for the scheduling algorithm (satisfied by landing Stage 2 tests)"}
+  - {id: SDP#11, severity: medium, status: not_attempted, tier: specifiable_fix, tag: VERIFIED, title: "Per-persona send-time optimization dead at dispatch (fix or accept-and-document)"}
+  - {id: SDP#17, severity: low, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "resend_client.py docstring falsely says cold outreach goes via Instantly"}
+  - {id: SDP#18, severity: low, status: planned, tier: specifiable_fix, tag: VERIFIED, title: "Hardcoded reviewer id / sender fallback / CAMPAIGN_START — move to config or document"}
+iterations:
+  - {round: 1, stage: expose, verdict: Yellow, composite: 5.0, blockers_open: 6, critical_open: 1, red_block: false, by: wf_e42f5b85-c9c}
+  - {round: 1, stage: validate, by: wf_7ca6ba22-39e, note: "13 executable acceptance experiments; provisional RED contingent on SDP#4/16/14/3; kill-switch SDP#4"}
+  - {round: 1, stage: remediate, by: wf_7483e7f1-691, note: "Stage 3 re-scoped to security surface; found NEW criticals SEC-001/002; DROPPED operational SDP set — reinstated by controller. Corrected verdict: RED / red-block (Trust & Governance <3.0)"}
+corrected_verdict:
+  rag: Red
+  red_block: true
+  red_block_dimension: trust_governance
+  rationale: "Stage 1 scored Trust&Gov 3.5 WITHOUT knowledge of unauthenticated POST /api/admin/trigger-send (SEC-001) and the /health secret leak (SEC-002). With 2 new Criticals + fail-open webhooks + unsigned-JWT workspace + cross-tenant search injection, Trust&Governance falls below the 3.0 red-block floor."
+totals: {critical: 3, high: 7, medium: 13, low: 2, total: 25, design_escalations: 3}
+state: PLANNED   # handoff ready at remediation_handoff; design decisions made 2026-06-04; awaiting separate-window dispatch then /art verify
+approval: null

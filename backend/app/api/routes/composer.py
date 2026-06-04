@@ -30,7 +30,7 @@ class PlanRequest(BaseModel):
 
 
 class VariantsRequest(BaseModel):
-    plan: dict    # CampaignPlan returned by /plan endpoint
+    plan: dict  # CampaignPlan returned by /plan endpoint
 
 
 class ConfirmRequest(BaseModel):
@@ -52,11 +52,13 @@ async def compose_plan(payload: PlanRequest):
     workspace_id = get_workspace_id()
 
     from backend.app.core.config import get_settings
+
     if not get_settings().anthropic_api_key:
         raise HTTPException(503, "ANTHROPIC_API_KEY not configured.")
 
     try:
         from backend.app.core.campaign_planner import CampaignPlanner
+
         planner = CampaignPlanner(db, workspace_id)
         plan = planner.compose(payload.request)
 
@@ -88,6 +90,7 @@ async def compose_variants(payload: VariantsRequest):
 
     try:
         from backend.app.core.template_composer import TemplateComposer
+
         composer = TemplateComposer(db, workspace_id)
         variants = composer.generate(payload.plan)
 
@@ -132,7 +135,7 @@ async def confirm_campaign(payload: ConfirmRequest):
         raise HTTPException(
             422,
             f"Variants {[v['variant'] for v in invalid]} have validation errors. "
-            f"Fix templates before confirming."
+            f"Fix templates before confirming.",
         )
 
     # Build sequence steps from plan schedule
@@ -143,14 +146,14 @@ async def confirm_campaign(payload: ConfirmRequest):
 
     for i, wait_days in enumerate(step_wait_days):
         step: dict = {
-            "id": f"step_{i+1}",
+            "id": f"step_{i + 1}",
             "wait_days": wait_days,
         }
         if "email" in channels and variants:
             email = variants[0].get("email", {})
             step["type"] = "email"
-            step["subject"] = email.get("subject_a", f"Step {i+1}")
-            step["template"] = email.get(f"body_step{i+1}", "")
+            step["subject"] = email.get("subject_a", f"Step {i + 1}")
+            step["template"] = email.get(f"body_step{i + 1}", "")
         elif "linkedin" in channels and variants:
             linkedin = variants[0].get("linkedin", {})
             if i == 0:
@@ -164,13 +167,20 @@ async def confirm_campaign(payload: ConfirmRequest):
     # Create the sequence in DB
     try:
         from datetime import datetime, timezone
-        seq_result = db.client.table("sequences").insert({
-            "name": sequence_name,
-            "description": plan.get("hypothesis", ""),
-            "steps": steps,
-            "routing_rules": plan.get("target_segment", {}).get("filters", {}),
-            "workspace_id": workspace_id,
-        }).execute()
+
+        seq_result = (
+            db.client.table("sequences")
+            .insert(
+                {
+                    "name": sequence_name,
+                    "description": plan.get("hypothesis", ""),
+                    "steps": steps,
+                    "routing_rules": plan.get("target_segment", {}).get("filters", {}),
+                    "workspace_id": workspace_id,
+                }
+            )
+            .execute()
+        )
         sequence_id = seq_result.data[0]["id"] if seq_result.data else None
     except Exception as e:
         logger.error(f"composer.confirm: sequence insert failed: {e}")
@@ -181,9 +191,7 @@ async def confirm_campaign(payload: ConfirmRequest):
     try:
         filters = plan.get("target_segment", {}).get("filters", {})
         contacts_query = (
-            db.client.table("contacts")
-            .select("id, company_id")
-            .eq("workspace_id", workspace_id)
+            db.client.table("contacts").select("id, company_id").eq("workspace_id", workspace_id)
         )
         if filters.get("personas"):
             contacts_query = contacts_query.in_("persona", filters["personas"])
@@ -231,6 +239,7 @@ async def get_rate_limits():
 
     try:
         from backend.app.core.linkedin_rate_limiter import LinkedInRateLimiter
+
         limiter = LinkedInRateLimiter(db, workspace_id)
         return {"limits": limiter.usage()}
     except Exception as e:

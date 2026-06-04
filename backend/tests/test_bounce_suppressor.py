@@ -146,10 +146,7 @@ class _Table:
                         r = dict(r)
                         r["contacts"] = contacts.get(r["contact_id"])
                 # Mutate filtered with hydrated copies
-                filtered = [
-                    {**r, "contacts": contacts.get(r.get("contact_id"))}
-                    for r in filtered
-                ]
+                filtered = [{**r, "contacts": contacts.get(r.get("contact_id"))} for r in filtered]
             return _Result(filtered)
 
         if q.op == "insert":
@@ -171,7 +168,9 @@ class _Table:
                 if ok:
                     r.update(payload)
                     updated.append(r)
-            self.db._updates.setdefault(self.name, []).append({"payload": payload, "filters": q._filters})
+            self.db._updates.setdefault(self.name, []).append(
+                {"payload": payload, "filters": q._filters}
+            )
             return _Result(updated)
 
         if q.op == "upsert":
@@ -213,11 +212,13 @@ WS = "00000000-0000-0000-0000-000000000001"
 
 
 def _make_db(contacts: list[dict], drafts: list[dict], dnc: list[dict] | None = None):
-    client = _FakeClient({
-        "contacts": contacts,
-        "outreach_drafts": drafts,
-        "do_not_contact": dnc or [],
-    })
+    client = _FakeClient(
+        {
+            "contacts": contacts,
+            "outreach_drafts": drafts,
+            "do_not_contact": dnc or [],
+        }
+    )
     return _FakeDatabase(client, WS), client
 
 
@@ -235,18 +236,22 @@ def test_no_bounced_drafts_returns_empty_summary():
 def test_single_bounce_suppresses_contact_and_inserts_dnc():
     from backend.app.core.bounce_suppressor import run_bounce_suppression
 
-    contacts = [{
-        "id": "c1",
-        "email": "vp.ops@acme.com",
-        "status": "active",
-        "is_outreach_eligible": True,
-    }]
-    drafts = [{
-        "id": "d1",
-        "contact_id": "c1",
-        "workspace_id": WS,
-        "bounced_at": "2026-05-08T10:00:00+00:00",
-    }]
+    contacts = [
+        {
+            "id": "c1",
+            "email": "vp.ops@acme.com",
+            "status": "active",
+            "is_outreach_eligible": True,
+        }
+    ]
+    drafts = [
+        {
+            "id": "d1",
+            "contact_id": "c1",
+            "workspace_id": WS,
+            "bounced_at": "2026-05-08T10:00:00+00:00",
+        }
+    ]
 
     db, client = _make_db(contacts, drafts)
     summary = run_bounce_suppression(db)
@@ -266,18 +271,22 @@ def test_single_bounce_suppresses_contact_and_inserts_dnc():
 def test_already_suppressed_is_skipped():
     from backend.app.core.bounce_suppressor import run_bounce_suppression
 
-    contacts = [{
-        "id": "c1",
-        "email": "vp.ops@acme.com",
-        "status": "bounced",
-        "is_outreach_eligible": False,
-    }]
-    drafts = [{
-        "id": "d1",
-        "contact_id": "c1",
-        "workspace_id": WS,
-        "bounced_at": "2026-05-08T10:00:00+00:00",
-    }]
+    contacts = [
+        {
+            "id": "c1",
+            "email": "vp.ops@acme.com",
+            "status": "bounced",
+            "is_outreach_eligible": False,
+        }
+    ]
+    drafts = [
+        {
+            "id": "d1",
+            "contact_id": "c1",
+            "workspace_id": WS,
+            "bounced_at": "2026-05-08T10:00:00+00:00",
+        }
+    ]
     dnc = [{"email": "vp.ops@acme.com", "reason": "bounced"}]
 
     db, client = _make_db(contacts, drafts, dnc=dnc)
@@ -291,11 +300,21 @@ def test_three_bounces_in_same_domain_blocks_domain():
     from backend.app.core.bounce_suppressor import run_bounce_suppression
 
     contacts = [
-        {"id": f"c{i}", "email": f"u{i}@badmx.com", "status": "active", "is_outreach_eligible": True}
+        {
+            "id": f"c{i}",
+            "email": f"u{i}@badmx.com",
+            "status": "active",
+            "is_outreach_eligible": True,
+        }
         for i in range(3)
     ]
     drafts = [
-        {"id": f"d{i}", "contact_id": f"c{i}", "workspace_id": WS, "bounced_at": "2026-05-08T10:00:00+00:00"}
+        {
+            "id": f"d{i}",
+            "contact_id": f"c{i}",
+            "workspace_id": WS,
+            "bounced_at": "2026-05-08T10:00:00+00:00",
+        }
         for i in range(3)
     ]
 
@@ -316,11 +335,21 @@ def test_two_bounces_in_same_domain_does_not_block_domain():
     from backend.app.core.bounce_suppressor import run_bounce_suppression
 
     contacts = [
-        {"id": f"c{i}", "email": f"u{i}@borderline.com", "status": "active", "is_outreach_eligible": True}
+        {
+            "id": f"c{i}",
+            "email": f"u{i}@borderline.com",
+            "status": "active",
+            "is_outreach_eligible": True,
+        }
         for i in range(2)
     ]
     drafts = [
-        {"id": f"d{i}", "contact_id": f"c{i}", "workspace_id": WS, "bounced_at": "2026-05-08T10:00:00+00:00"}
+        {
+            "id": f"d{i}",
+            "contact_id": f"c{i}",
+            "workspace_id": WS,
+            "bounced_at": "2026-05-08T10:00:00+00:00",
+        }
         for i in range(2)
     ]
 
@@ -343,7 +372,14 @@ def test_drafts_without_contact_email_are_skipped():
     from backend.app.core.bounce_suppressor import run_bounce_suppression
 
     contacts = [{"id": "c1", "email": None, "status": "active", "is_outreach_eligible": True}]
-    drafts = [{"id": "d1", "contact_id": "c1", "workspace_id": WS, "bounced_at": "2026-05-08T10:00:00+00:00"}]
+    drafts = [
+        {
+            "id": "d1",
+            "contact_id": "c1",
+            "workspace_id": WS,
+            "bounced_at": "2026-05-08T10:00:00+00:00",
+        }
+    ]
 
     db, client = _make_db(contacts, drafts)
     summary = run_bounce_suppression(db)

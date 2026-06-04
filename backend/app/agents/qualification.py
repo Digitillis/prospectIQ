@@ -58,7 +58,9 @@ class QualificationAgent(BaseAgent):
             # redundant Apollo API calls and wasted credits on re-runs.
             researched = [c for c in researched if not c.get("pqs_total")]
             remaining = limit - len(researched)
-            discovered = self.db.get_companies(status="discovered", limit=remaining) if remaining > 0 else []
+            discovered = (
+                self.db.get_companies(status="discovered", limit=remaining) if remaining > 0 else []
+            )
             # Skip discovered companies already scored — prevents repeated processing
             # of the same pool on back-to-back runs (which burned 4,109 Apollo credits).
             discovered = [c for c in discovered if not c.get("pqs_total")]
@@ -142,8 +144,10 @@ class QualificationAgent(BaseAgent):
                     "pqs_total": pqs.total,
                     "qualification_notes": pqs.notes,
                     "qualification_decision": (
-                        "disqualified" if new_status == "disqualified"
-                        else "qualified" if new_status in ("qualified", "outreach_pending")
+                        "disqualified"
+                        if new_status == "disqualified"
+                        else "qualified"
+                        if new_status in ("qualified", "outreach_pending")
                         else None
                     ),
                 }
@@ -161,6 +165,7 @@ class QualificationAgent(BaseAgent):
                 if pqs.classification == "hot_prospect" and self.db.workspace_id:
                     try:
                         from backend.app.core.notifications import notify_hot_prospect
+
                         ws_row = (
                             self.db.client.table("workspaces")
                             .select("owner_email")
@@ -170,12 +175,14 @@ class QualificationAgent(BaseAgent):
                         )
                         if ws_row and ws_row[0].get("owner_email"):
                             hooks = (research or {}).get("personalization_hooks") or []
-                            asyncio.run(notify_hot_prospect(
-                                company_name=company_name,
-                                pqs_score=pqs.total,
-                                personalization_hooks=hooks[:5],
-                                workspace_email=ws_row[0]["owner_email"],
-                            ))
+                            asyncio.run(
+                                notify_hot_prospect(
+                                    company_name=company_name,
+                                    pqs_score=pqs.total,
+                                    personalization_hooks=hooks[:5],
+                                    workspace_email=ws_row[0]["owner_email"],
+                                )
+                            )
                     except RuntimeError:
                         # asyncio.run() fails if an event loop is already running
                         pass
@@ -209,20 +216,21 @@ class QualificationAgent(BaseAgent):
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
                 if self._monitor:
-                    self._monitor.log_error(str(e), company_id=company_id, error_type="qualification_error", exc=e)
+                    self._monitor.log_error(
+                        str(e), company_id=company_id, error_type="qualification_error", exc=e
+                    )
 
         # Count classification outcomes for the Slack summary
         qualified_count = sum(
-            1 for d in result.details
+            1
+            for d in result.details
             if d.get("status") in ("qualified", "high_priority", "hot_prospect")
         )
-        disqualified_count = sum(
-            1 for d in result.details
-            if d.get("status") == "unqualified"
-        )
+        disqualified_count = sum(1 for d in result.details if d.get("status") == "unqualified")
 
         try:
             from backend.app.utils.notifications import notify_slack
+
             notify_slack(
                 f"*Qualification complete:* {result.processed} companies scored — "
                 f"{qualified_count} qualified, {disqualified_count} disqualified, "

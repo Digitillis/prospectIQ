@@ -22,18 +22,23 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 def _get_send_limits() -> dict:
     """Load send limits from limits.yaml, with env var overrides."""
     import os
+
     try:
         from backend.app.core.limits import _load
+
         cfg = _load() or {}
         return cfg.get("send_limits") or {}
     except Exception:
         return {}
 
+
 def _int_limit(key: str, env_var: str, default: int) -> int:
     import os
+
     v = os.environ.get(env_var)
     if v:
         try:
@@ -45,8 +50,10 @@ def _int_limit(key: str, env_var: str, default: int) -> int:
     except Exception:
         return default
 
+
 def _float_limit(key: str, env_var: str, default: float) -> float:
     import os
+
     v = os.environ.get(env_var)
     if v:
         try:
@@ -58,13 +65,16 @@ def _float_limit(key: str, env_var: str, default: float) -> float:
     except Exception:
         return default
 
+
 # Days since last outreach to the same company before a new send is allowed
 def _company_cooldown_days() -> int:
     return _int_limit("company_cooldown_days", "COMPANY_COOLDOWN_DAYS", 14)
 
+
 # Hard bounce rate threshold (7-day rolling). Exceeding this pauses all sends.
 def _max_bounce_rate() -> float:
     return _float_limit("max_bounce_rate", "MAX_BOUNCE_RATE", 0.02)
+
 
 # Minimum days between any two emails to the same contact (hard floor).
 # Step 2 (first follow-up) requires 3 days since step 1.
@@ -79,6 +89,7 @@ def _step_gap_days(sequence_step: int) -> int:
         return _int_limit("step_gap_days_step_2", "STEP_GAP_DAYS_STEP_2", 3)
     return _int_limit("step_gap_days_step_3_plus", "STEP_GAP_DAYS_STEP_3_PLUS", 2)
 
+
 # Keep module-level aliases for callers that reference these directly
 COMPANY_COOLDOWN_DAYS: int = 14
 MAX_BOUNCE_RATE: float = 0.02
@@ -92,15 +103,22 @@ SENDABLE_EMAIL_STATUSES = frozenset({"verified", "catch_all"})
 
 class AssertionFailure(Exception):
     """Raised when a pre-send invariant fails. Blocks the send."""
+
     def __init__(self, assertion: str, detail: str):
         self.assertion = assertion
         self.detail = detail
         super().__init__(f"{assertion}: {detail}")
 
 
-def _log_assertion(db: Any, contact_id: str, company_id: str, assertion: str,
-                   passed: bool, detail: str,
-                   assertion_context: str = "draft_gen") -> None:
+def _log_assertion(
+    db: Any,
+    contact_id: str,
+    company_id: str,
+    assertion: str,
+    passed: bool,
+    detail: str,
+    assertion_context: str = "draft_gen",
+) -> None:
     """Write assertion result to send_assertions table.
 
     assertion_context distinguishes where in the pipeline the check ran:
@@ -111,15 +129,17 @@ def _log_assertion(db: Any, contact_id: str, company_id: str, assertion: str,
     gracefully via the except handler below.
     """
     try:
-        db.client.table("send_assertions").insert({
-            "contact_id": contact_id,
-            "company_id": company_id or None,
-            "assertion": assertion,
-            "passed": passed,
-            "detail": detail,
-            "assertion_context": assertion_context,
-            "evaluated_at": datetime.now(timezone.utc).isoformat(),
-        }).execute()
+        db.client.table("send_assertions").insert(
+            {
+                "contact_id": contact_id,
+                "company_id": company_id or None,
+                "assertion": assertion,
+                "passed": passed,
+                "detail": detail,
+                "assertion_context": assertion_context,
+                "evaluated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).execute()
     except Exception as e:
         logger.warning("Could not log assertion to DB: %s", e)
 
@@ -129,6 +149,7 @@ def _alert(message: str) -> None:
     # and surfaced on the dashboard via /api/approvals/alerts.
     try:
         from backend.app.utils.notifications import notify_slack
+
         notify_slack(message, emoji=":rotating_light:")
     except Exception:
         pass
@@ -150,7 +171,9 @@ def assert_not_rejected(db: Any, draft_id: str, assertion_context: str = "send_p
             .execute()
         ).data
     except Exception as e:
-        logger.warning("assert_not_rejected: DB lookup failed (%s) — passing to avoid false block", e)
+        logger.warning(
+            "assert_not_rejected: DB lookup failed (%s) — passing to avoid false block", e
+        )
         return
 
     if not row:
@@ -162,8 +185,15 @@ def assert_not_rejected(db: Any, draft_id: str, assertion_context: str = "send_p
         _log_assertion(db, None, None, "not_rejected", False, detail, assertion_context)
         raise AssertionFailure("not_rejected", detail)
 
-    _log_assertion(db, None, None, "not_rejected", True,
-                   f"draft {draft_id} approval_status={status!r}", assertion_context)
+    _log_assertion(
+        db,
+        None,
+        None,
+        "not_rejected",
+        True,
+        f"draft {draft_id} approval_status={status!r}",
+        assertion_context,
+    )
 
 
 def assert_email_deliverable(db: Any, contact: dict, assertion_context: str = "draft_gen") -> None:
@@ -171,13 +201,33 @@ def assert_email_deliverable(db: Any, contact: dict, assertion_context: str = "d
     email_status = contact.get("email_status")
     if email_status in ("invalid", "bounce"):
         detail = f"email_status={email_status} for {contact.get('email')}"
-        _log_assertion(db, contact["id"], contact.get("company_id", ""), "email_deliverable", False, detail, assertion_context)
-        _alert(f":red_circle: Pre-send assertion failed: email_deliverable — {contact.get('full_name')} ({detail})")
+        _log_assertion(
+            db,
+            contact["id"],
+            contact.get("company_id", ""),
+            "email_deliverable",
+            False,
+            detail,
+            assertion_context,
+        )
+        _alert(
+            f":red_circle: Pre-send assertion failed: email_deliverable — {contact.get('full_name')} ({detail})"
+        )
         raise AssertionFailure("email_deliverable", detail)
-    _log_assertion(db, contact["id"], contact.get("company_id", ""), "email_deliverable", True, f"status={email_status or 'unknown'}", assertion_context)
+    _log_assertion(
+        db,
+        contact["id"],
+        contact.get("company_id", ""),
+        "email_deliverable",
+        True,
+        f"status={email_status or 'unknown'}",
+        assertion_context,
+    )
 
 
-def assert_email_status_verified(db: Any, contact: dict, assertion_context: str = "draft_gen") -> None:
+def assert_email_status_verified(
+    db: Any, contact: dict, assertion_context: str = "draft_gen"
+) -> None:
     """Email must have a known-safe verification status before entering the send queue.
 
     Blocks: NULL (never verified), 'unverified' (verification attempted but unresolved).
@@ -192,36 +242,87 @@ def assert_email_status_verified(db: Any, contact: dict, assertion_context: str 
             f"email_status={email_status!r} for {contact.get('email')} — "
             f"must be one of {sorted(SENDABLE_EMAIL_STATUSES)}"
         )
-        _log_assertion(db, contact["id"], contact.get("company_id", ""), "email_status_verified", False, detail, assertion_context)
+        _log_assertion(
+            db,
+            contact["id"],
+            contact.get("company_id", ""),
+            "email_status_verified",
+            False,
+            detail,
+            assertion_context,
+        )
         _alert(
             f":red_circle: Pre-send assertion failed: email_status_verified — "
             f"{contact.get('full_name')} ({detail})"
         )
         raise AssertionFailure("email_status_verified", detail)
     _log_assertion(
-        db, contact["id"], contact.get("company_id", ""),
-        "email_status_verified", True, f"status={email_status}", assertion_context,
+        db,
+        contact["id"],
+        contact.get("company_id", ""),
+        "email_status_verified",
+        True,
+        f"status={email_status}",
+        assertion_context,
     )
 
 
-def assert_email_name_consistent(db: Any, contact: dict, assertion_context: str = "draft_gen") -> None:
+def assert_email_name_consistent(
+    db: Any, contact: dict, assertion_context: str = "draft_gen"
+) -> None:
     """Email must not be flagged as belonging to a different person."""
     if contact.get("email_name_verified") is False:
         detail = f"email_name_verified=False for {contact.get('email')}"
-        _log_assertion(db, contact["id"], contact.get("company_id", ""), "email_name_consistent", False, detail, assertion_context)
-        _alert(f":red_circle: Pre-send assertion failed: email_name_consistent — {contact.get('full_name')} ({detail})")
+        _log_assertion(
+            db,
+            contact["id"],
+            contact.get("company_id", ""),
+            "email_name_consistent",
+            False,
+            detail,
+            assertion_context,
+        )
+        _alert(
+            f":red_circle: Pre-send assertion failed: email_name_consistent — {contact.get('full_name')} ({detail})"
+        )
         raise AssertionFailure("email_name_consistent", detail)
-    _log_assertion(db, contact["id"], contact.get("company_id", ""), "email_name_consistent", True, "ok", assertion_context)
+    _log_assertion(
+        db,
+        contact["id"],
+        contact.get("company_id", ""),
+        "email_name_consistent",
+        True,
+        "ok",
+        assertion_context,
+    )
 
 
 def assert_outreach_eligible(db: Any, contact: dict, assertion_context: str = "draft_gen") -> None:
     """Contact must have is_outreach_eligible=True."""
     if contact.get("is_outreach_eligible") is False:
         detail = f"tier={contact.get('contact_tier')} for {contact.get('full_name')}"
-        _log_assertion(db, contact["id"], contact.get("company_id", ""), "outreach_eligible", False, detail, assertion_context)
-        _alert(f":red_circle: Pre-send assertion failed: outreach_eligible — {contact.get('full_name')} ({detail})")
+        _log_assertion(
+            db,
+            contact["id"],
+            contact.get("company_id", ""),
+            "outreach_eligible",
+            False,
+            detail,
+            assertion_context,
+        )
+        _alert(
+            f":red_circle: Pre-send assertion failed: outreach_eligible — {contact.get('full_name')} ({detail})"
+        )
         raise AssertionFailure("outreach_eligible", detail)
-    _log_assertion(db, contact["id"], contact.get("company_id", ""), "outreach_eligible", True, "ok", assertion_context)
+    _log_assertion(
+        db,
+        contact["id"],
+        contact.get("company_id", ""),
+        "outreach_eligible",
+        True,
+        "ok",
+        assertion_context,
+    )
 
 
 def assert_persona_target(db: Any, contact: dict, assertion_context: str = "draft_gen") -> None:
@@ -229,15 +330,38 @@ def assert_persona_target(db: Any, contact: dict, assertion_context: str = "draf
     tier = contact.get("contact_tier")
     if tier == "excluded":
         detail = f"contact_tier=excluded, title={contact.get('title')}"
-        _log_assertion(db, contact["id"], contact.get("company_id", ""), "persona_target", False, detail, assertion_context)
-        _alert(f":red_circle: Pre-send assertion failed: persona_target — {contact.get('full_name')} ({detail})")
+        _log_assertion(
+            db,
+            contact["id"],
+            contact.get("company_id", ""),
+            "persona_target",
+            False,
+            detail,
+            assertion_context,
+        )
+        _alert(
+            f":red_circle: Pre-send assertion failed: persona_target — {contact.get('full_name')} ({detail})"
+        )
         raise AssertionFailure("persona_target", detail)
-    _log_assertion(db, contact["id"], contact.get("company_id", ""), "persona_target", True, f"tier={tier}", assertion_context)
+    _log_assertion(
+        db,
+        contact["id"],
+        contact.get("company_id", ""),
+        "persona_target",
+        True,
+        f"tier={tier}",
+        assertion_context,
+    )
 
 
-def assert_no_recent_company_send(db: Any, contact: dict, company: dict, days: int | None = None,
-                                   assertion_context: str = "draft_gen",
-                                   current_draft_id: str | None = None) -> None:
+def assert_no_recent_company_send(
+    db: Any,
+    contact: dict,
+    company: dict,
+    days: int | None = None,
+    assertion_context: str = "draft_gen",
+    current_draft_id: str | None = None,
+) -> None:
     """No send to this company in the last N days (to same contact)."""
     if days is None:
         days = _company_cooldown_days()
@@ -262,20 +386,39 @@ def assert_no_recent_company_send(db: Any, contact: dict, company: dict, days: i
         if result.data:
             sent_at = result.data[0].get("sent_at", "")[:10]
             detail = f"Last send to {contact.get('full_name')} was {sent_at} (cooldown={days}d)"
-            _log_assertion(db, contact["id"], company_id, "no_recent_company_send", False, detail, assertion_context)
+            _log_assertion(
+                db,
+                contact["id"],
+                company_id,
+                "no_recent_company_send",
+                False,
+                detail,
+                assertion_context,
+            )
             raise AssertionFailure("no_recent_company_send", detail)
     except AssertionFailure:
         raise
     except Exception as e:
         logger.warning("Could not check recent send for contact %s: %s", contact["id"], e)
 
-    _log_assertion(db, contact["id"], company_id, "no_recent_company_send", True, f"no send in past {days}d", assertion_context)
+    _log_assertion(
+        db,
+        contact["id"],
+        company_id,
+        "no_recent_company_send",
+        True,
+        f"no send in past {days}d",
+        assertion_context,
+    )
 
 
-def assert_sender_under_daily_cap(db: Any, sender_email: str, daily_cap: int,
-                                   assertion_context: str = "draft_gen") -> None:
+def assert_sender_under_daily_cap(
+    db: Any, sender_email: str, daily_cap: int, assertion_context: str = "draft_gen"
+) -> None:
     """Sender must not have exceeded their daily send quota."""
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    today_start = (
+        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    )
     try:
         result = (
             db.client.table("outreach_drafts")
@@ -295,11 +438,14 @@ def assert_sender_under_daily_cap(db: Any, sender_email: str, daily_cap: int,
     except Exception as e:
         logger.warning("Could not check daily cap for %s: %s", sender_email, e)
 
-    _log_assertion(db, None, None, "sender_daily_cap", True, f"{sender_email}: under cap", assertion_context)
+    _log_assertion(
+        db, None, None, "sender_daily_cap", True, f"{sender_email}: under cap", assertion_context
+    )
 
 
-def assert_prior_step_sent(db: Any, contact: dict, sequence_step: int,
-                           assertion_context: str = "draft_gen") -> None:
+def assert_prior_step_sent(
+    db: Any, contact: dict, sequence_step: int, assertion_context: str = "draft_gen"
+) -> None:
     """For step N ≥ 2, step N-1 must have been sent (sent_at IS NOT NULL).
 
     Prevents step-3 from being drafted/sent when step-2 is still pending review,
@@ -326,18 +472,37 @@ def assert_prior_step_sent(db: Any, contact: dict, sequence_step: int,
                 f"step {prior_step} has not been sent for contact {contact_id} — "
                 f"cannot send step {sequence_step}"
             )
-            _log_assertion(db, contact_id, contact.get("company_id", ""), "prior_step_sent", False, detail, assertion_context)
-            _alert(f":warning: Pre-send gate: prior_step_sent failed — {contact.get('full_name')} ({detail})")
+            _log_assertion(
+                db,
+                contact_id,
+                contact.get("company_id", ""),
+                "prior_step_sent",
+                False,
+                detail,
+                assertion_context,
+            )
+            _alert(
+                f":warning: Pre-send gate: prior_step_sent failed — {contact.get('full_name')} ({detail})"
+            )
             raise AssertionFailure("prior_step_sent", detail)
     except AssertionFailure:
         raise
     except Exception as e:
         logger.warning("Could not check prior step for contact %s: %s", contact_id, e)
-    _log_assertion(db, contact_id, contact.get("company_id", ""), "prior_step_sent", True, f"step {prior_step} confirmed sent", assertion_context)
+    _log_assertion(
+        db,
+        contact_id,
+        contact.get("company_id", ""),
+        "prior_step_sent",
+        True,
+        f"step {prior_step} confirmed sent",
+        assertion_context,
+    )
 
 
-def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
-                            assertion_context: str = "draft_gen") -> None:
+def assert_minimum_step_gap(
+    db: Any, contact: dict, sequence_step: int, assertion_context: str = "draft_gen"
+) -> None:
     """For step N >= 2, the required gap since the prior step must have passed.
 
     Gap is step-selective:
@@ -366,11 +531,16 @@ def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
             # Normalize fractional seconds to 6 digits — Supabase occasionally
             # returns truncated microseconds (e.g. .11174 instead of .111740).
             import re as _re
-            sent_str = _re.sub(r'(\.\d{1,5})(?=[+-]|$)', lambda m: m.group(1).ljust(7, '0'), sent_str)
+
+            sent_str = _re.sub(
+                r"(\.\d{1,5})(?=[+-]|$)", lambda m: m.group(1).ljust(7, "0"), sent_str
+            )
             try:
                 last_sent = datetime.fromisoformat(sent_str)
             except ValueError:
-                last_sent = datetime.fromisoformat(sent_str.replace("+00:00", "")).replace(tzinfo=timezone.utc)
+                last_sent = datetime.fromisoformat(sent_str.replace("+00:00", "")).replace(
+                    tzinfo=timezone.utc
+                )
             days_since = (datetime.now(timezone.utc) - last_sent).days
             gap = _step_gap_days(sequence_step)
             if days_since < gap:
@@ -378,14 +548,32 @@ def assert_minimum_step_gap(db: Any, contact: dict, sequence_step: int,
                     f"only {days_since}d since step {prior_step} was sent — "
                     f"minimum gap is {gap}d (step {sequence_step} blocked)"
                 )
-                _log_assertion(db, contact_id, contact.get("company_id", ""), "minimum_step_gap", False, detail, assertion_context)
-                _alert(f":warning: Pre-send gate: minimum_step_gap failed — {contact.get('full_name')} ({detail})")
+                _log_assertion(
+                    db,
+                    contact_id,
+                    contact.get("company_id", ""),
+                    "minimum_step_gap",
+                    False,
+                    detail,
+                    assertion_context,
+                )
+                _alert(
+                    f":warning: Pre-send gate: minimum_step_gap failed — {contact.get('full_name')} ({detail})"
+                )
                 raise AssertionFailure("minimum_step_gap", detail)
     except AssertionFailure:
         raise
     except Exception as e:
         logger.warning("Could not check step gap for contact %s: %s", contact_id, e)
-    _log_assertion(db, contact_id, contact.get("company_id", ""), "minimum_step_gap", True, f"gap ok for step {sequence_step}", assertion_context)
+    _log_assertion(
+        db,
+        contact_id,
+        contact.get("company_id", ""),
+        "minimum_step_gap",
+        True,
+        f"gap ok for step {sequence_step}",
+        assertion_context,
+    )
 
 
 def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None:
@@ -438,14 +626,26 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
                 .select("id", count="exact")
                 .eq("outreach_state", "bounced")
                 .execute()
-                .count or 0
+                .count
+                or 0
             )
             all_sent = (
                 db.client.table("contacts")
                 .select("id", count="exact")
-                .in_("outreach_state", ["touch_1_sent","touch_2_sent","touch_3_sent","bounced","replied","opted_out"])
+                .in_(
+                    "outreach_state",
+                    [
+                        "touch_1_sent",
+                        "touch_2_sent",
+                        "touch_3_sent",
+                        "bounced",
+                        "replied",
+                        "opted_out",
+                    ],
+                )
                 .execute()
-                .count or 0
+                .count
+                or 0
             )
             if all_sent:
                 all_time_rate = all_bounced / all_sent
@@ -454,7 +654,9 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
                         "DELIVERABILITY SNAPSHOT (all-time, contact-scoped): "
                         "%d bounced / %d sent = %.2f%% — exceeds 5%% advisory threshold. "
                         "List hygiene work indicated.",
-                        all_bounced, all_sent, all_time_rate * 100,
+                        all_bounced,
+                        all_sent,
+                        all_time_rate * 100,
                     )
         except Exception as e:
             logger.warning("All-time deliverability snapshot failed: %s", e)
@@ -463,8 +665,15 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
         bounce_count = len(bounce_contacts)
 
         if send_count == 0:
-            _log_assertion(db, None, None, "bounce_rate_ok", True,
-                           "no contacts sent in 7d window — rate undefined, passing", assertion_context)
+            _log_assertion(
+                db,
+                None,
+                None,
+                "bounce_rate_ok",
+                True,
+                "no contacts sent in 7d window — rate undefined, passing",
+                assertion_context,
+            )
             return
 
         rate = bounce_count / send_count
@@ -486,7 +695,9 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
     except AssertionFailure:
         raise
     except Exception as e:
-        logger.warning("assert_bounce_rate_ok could not compute rate: %s — passing to avoid false block", e)
+        logger.warning(
+            "assert_bounce_rate_ok could not compute rate: %s — passing to avoid false block", e
+        )
 
 
 def run_pre_send_assertions(
@@ -534,8 +745,14 @@ def run_pre_send_assertions(
     assert_email_name_consistent(db, contact, assertion_context)
     assert_outreach_eligible(db, contact, assertion_context)
     assert_persona_target(db, contact, assertion_context)
-    assert_no_recent_company_send(db, contact, company, days=cooldown_days, assertion_context=assertion_context,
-                                   current_draft_id=current_draft_id)
+    assert_no_recent_company_send(
+        db,
+        contact,
+        company,
+        days=cooldown_days,
+        assertion_context=assertion_context,
+        current_draft_id=current_draft_id,
+    )
     assert_sender_under_daily_cap(db, sender_email, daily_cap, assertion_context)
     # Follow-up sequence guards
     assert_prior_step_sent(db, contact, sequence_step, assertion_context)

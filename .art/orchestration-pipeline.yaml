@@ -1,0 +1,37 @@
+capability: orchestration-pipeline
+name: Orchestration & Pipeline
+type: system
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 3, red_block: true, red_block_dim: claim_validity, findings_count: 21 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Two independently Critical defects (silent draft exclusion + paused heartbeat) mean the system can show clean health while sending zero real outreach — this needs a focused fix-and-verify pass, not just triage. The multi-tenant isolation cluster (ContextVar threads, bare Database() in HITL/webhook/b
+verdict: A mechanically functional dispatch layer wrapped in marketing claims that are false against the deployed code — autonomous refill is paused, every live draft is silently excluded from scheduling by a 
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Scheduler silently excludes every live draft via stale model-tag filter"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Autonomous self-refill claim is false — pipeline advance heartbeat is commented out"}
+  - {rank: 3, severity: High, status: not_attempted, tag: VERIFIED, title: "State machine defined but never enforced at the DB write layer"}
+  - {rank: 4, severity: High, status: not_attempted, tag: VERIFIED, title: "ContextVar tenant isolation breaks under APScheduler thread pool"}
+  - {rank: 5, severity: High, status: not_attempted, tag: VERIFIED, title: "Bare Database() in live HITL snooze and auto-archive jobs crosses all workspaces"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "Budget guards have asymmetric fail-open/fail-closed posture across same guard class"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Learning auto-apply writes LLM-suggested config to ephemeral Railway disk"}
+  - {rank: 8, severity: High, status: not_attempted, tag: VERIFIED, title: "NameError silently kills post-send intent refresh on send_approved path"}
+  - {rank: 9, severity: High, status: not_attempted, tag: VERIFIED, title: "Qualification scores sit entirely downstream of LLM hallucination with no evidence check"}
+  - {rank: 10, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Fabricated 0.85 classification_confidence with no classifier behind it"}
+  - {rank: 11, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Non-atomic schedule replace can wipe the schedule on mid-operation failure"}
+  - {rank: 12, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Headcount growth scoring awards identical points for growth and contraction"}
+  - {rank: 13, severity: Medium, status: not_attempted, tag: VERIFIED, title: "'Scheduling is the approval' rests on a paused LLM qualification gate"}
+  - {rank: 14, severity: Medium, status: not_attempted, tag: VERIFIED, title: "DISCOVERY_YIELD_RATE = 0.35 is an unmeasured constant driving discovery volume"}
+  - {rank: 15, severity: Medium, status: not_attempted, tag: VERIFIED, title: "In-memory scheduler loses all one-shot jobs on Railway restart"}
+  - {rank: 16, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Intent classifier ordering misroutes mixed replies and has no objection branch"}
+  - {rank: 17, severity: Medium, status: not_attempted, tag: VERIFIED, title: "ICP size gate passes null revenue and headcount instead of excluding"}
+  - {rank: 18, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Webhook secrets passed as URL query parameters (log exposure)"}
+  - {rank: 19, severity: Low, status: not_attempted, tag: VERIFIED, title: "Rate limiter is bypassable and not crash/cluster-safe"}
+  - {rank: 20, severity: Low, status: not_attempted, tag: VERIFIED, title: "Learning trigger threshold mismatch wastes Claude invocations"}
+  - {rank: 21, severity: Low, status: not_attempted, tag: VERIFIED, title: "CAMPAIGN_START stale-anchor risk (partially mitigated by env override)"}
+approval: null
+track1_bleeding: D2  # in remediation handoff Part D (scheduler-model-tag-filter + heartbeat-commented-out)

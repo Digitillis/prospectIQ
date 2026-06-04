@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 # Data collection
 # ---------------------------------------------------------------------------
 
-_PLAN_CLAUDE_MONTHLY = 21.0   # from docs/FINANCIAL_PROJECTIONS.md
-_PLAN_CLAUDE_DAILY   = _PLAN_CLAUDE_MONTHLY / 30
-_BUDGET_CAP          = 200.0  # monthly hard cap (Claude only)
+_PLAN_CLAUDE_MONTHLY = 21.0  # from docs/FINANCIAL_PROJECTIONS.md
+_PLAN_CLAUDE_DAILY = _PLAN_CLAUDE_MONTHLY / 30
+_BUDGET_CAP = 200.0  # monthly hard cap (Claude only)
 
 
 def _iso_days_ago(n: int) -> str:
@@ -43,13 +43,16 @@ def _collect_engagement_spotlight(client) -> list[dict]:
     # Get all sent drafts with message IDs (for interaction join)
     sent_drafts = (
         client.table("outreach_drafts")
-        .select("id, company_id, contact_id, sequence_step, resend_message_id, sent_at, companies(name), contacts(first_name, last_name, title)")
+        .select(
+            "id, company_id, contact_id, sequence_step, resend_message_id, sent_at, companies(name), contacts(first_name, last_name, title)"
+        )
         .eq("approval_status", "approved")
         .not_.is_("sent_at", "null")
         .not_.is_("resend_message_id", "null")
         .gte("sent_at", _iso_days_ago(30))
         .execute()
-        .data or []
+        .data
+        or []
     )
     if not sent_drafts:
         return []
@@ -64,7 +67,8 @@ def _collect_engagement_spotlight(client) -> list[dict]:
         .in_("type", ["email_opened", "email_clicked", "email_replied"])
         .gte("created_at", week_ago)
         .execute()
-        .data or []
+        .data
+        or []
     )
 
     # Build resend_message_id → interaction list from metadata
@@ -100,7 +104,9 @@ def _collect_engagement_spotlight(client) -> list[dict]:
                 "contact_name": contact_name,
                 "contact_title": contact_title,
                 "sequence_step": draft.get("sequence_step", 1),
-                "opens": 0, "clicks": 0, "replies": 0,
+                "opens": 0,
+                "clicks": 0,
+                "replies": 0,
                 "last_interaction": None,
             }
         agg = company_agg[cname]
@@ -119,7 +125,7 @@ def _collect_engagement_spotlight(client) -> list[dict]:
     # Sort by signal strength: replies first, then clicks, then opens
     result = sorted(
         company_agg.values(),
-        key=lambda x: (x["replies"] * 100 + x["clicks"] * 10 + x["opens"]),
+        key=lambda x: x["replies"] * 100 + x["clicks"] * 10 + x["opens"],
         reverse=True,
     )
     return result[:5]
@@ -128,8 +134,8 @@ def _collect_engagement_spotlight(client) -> list[dict]:
 def _collect_financial_metrics(client) -> dict:
     """Collect Claude API spend + pipeline activity for the financial section."""
     now = datetime.now(timezone.utc)
-    today_start  = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    month_start  = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
     def fetch_costs(since: str) -> list[dict]:
         """Paginate through all api_costs rows — PostgREST caps at 1000/request."""
@@ -143,7 +149,8 @@ def _collect_financial_metrics(client) -> dict:
                 .gte("created_at", since)
                 .range(page * batch, (page + 1) * batch - 1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             all_rows.extend(rows)
             if len(rows) < batch:
@@ -155,15 +162,19 @@ def _collect_financial_metrics(client) -> dict:
     month_rows = fetch_costs(month_start)
 
     def sum_claude(rows: list[dict]) -> float:
-        return sum(float(r.get("estimated_cost_usd") or 0) for r in rows if r.get("provider") == "anthropic")
+        return sum(
+            float(r.get("estimated_cost_usd") or 0)
+            for r in rows
+            if r.get("provider") == "anthropic"
+        )
 
     today_claude = sum_claude(today_rows)
-    mtd_claude   = sum_claude(month_rows)
+    mtd_claude = sum_claude(month_rows)
 
     # Top models today
     by_model: dict[str, float] = {}
     for r in today_rows:
-        key = f"{r.get('provider','?')}/{r.get('model','?')}"
+        key = f"{r.get('provider', '?')}/{r.get('model', '?')}"
         by_model[key] = by_model.get(key, 0) + float(r.get("estimated_cost_usd") or 0)
     top_models = dict(sorted(by_model.items(), key=lambda x: -x[1])[:4])
 
@@ -172,18 +183,33 @@ def _collect_financial_metrics(client) -> dict:
 
     # Sends today and MTD
     sends_today = (
-        client.table("outreach_drafts").select("id", count="exact")
-        .not_.is_("sent_at", "null").gte("sent_at", today_start).execute().count or 0
+        client.table("outreach_drafts")
+        .select("id", count="exact")
+        .not_.is_("sent_at", "null")
+        .gte("sent_at", today_start)
+        .execute()
+        .count
+        or 0
     )
     sends_mtd = (
-        client.table("outreach_drafts").select("id", count="exact")
-        .not_.is_("sent_at", "null").gte("sent_at", month_start).execute().count or 0
+        client.table("outreach_drafts")
+        .select("id", count="exact")
+        .not_.is_("sent_at", "null")
+        .gte("sent_at", month_start)
+        .execute()
+        .count
+        or 0
     )
 
     # Apollo calls today (proxy for credit usage)
     apollo_today = (
-        client.table("api_costs").select("id", count="exact")
-        .eq("provider", "apollo").gte("created_at", today_start).execute().count or 0
+        client.table("api_costs")
+        .select("id", count="exact")
+        .eq("provider", "apollo")
+        .gte("created_at", today_start)
+        .execute()
+        .count
+        or 0
     )
 
     return {
@@ -212,9 +238,16 @@ def _collect_metrics(client) -> dict:
 
     # --- Pipeline stage counts (one query per status, avoids 1000-row page limit) ---
     known_statuses = [
-        "discovered", "researched", "qualified", "outreach_pending",
-        "contacted", "engaged", "not_interested", "disqualified",
-        "bounced", "paused",
+        "discovered",
+        "researched",
+        "qualified",
+        "outreach_pending",
+        "contacted",
+        "engaged",
+        "not_interested",
+        "disqualified",
+        "bounced",
+        "paused",
     ]
     stage_counts: dict[str, int] = {}
     for status in known_statuses:
@@ -234,11 +267,14 @@ def _collect_metrics(client) -> dict:
     email_events = (
         client.table("interactions")
         .select("type, metadata, created_at")
-        .in_("type", ["email_sent", "email_opened", "email_clicked",
-                       "email_replied", "email_bounced"])
+        .in_(
+            "type",
+            ["email_sent", "email_opened", "email_clicked", "email_replied", "email_bounced"],
+        )
         .gte("created_at", week_ago)
         .execute()
-        .data or []
+        .data
+        or []
     )
 
     def _is_auto_reply(ev: dict) -> bool:
@@ -252,8 +288,7 @@ def _collect_metrics(client) -> dict:
 
     # Exclude auto-replies (OOO, retirement notices) from reply count
     legit_events = [
-        e for e in email_events
-        if not (e["type"] == "email_replied" and _is_auto_reply(e))
+        e for e in email_events if not (e["type"] == "email_replied" and _is_auto_reply(e))
     ]
     event_counts = Counter(e["type"] for e in legit_events)
     sent = event_counts.get("email_sent", 0)
@@ -264,7 +299,9 @@ def _collect_metrics(client) -> dict:
         "replied": event_counts.get("email_replied", 0),
         "bounced": event_counts.get("email_bounced", 0),
         "open_rate_pct": round(event_counts.get("email_opened", 0) / sent * 100, 1) if sent else 0,
-        "reply_rate_pct": round(event_counts.get("email_replied", 0) / sent * 100, 1) if sent else 0,
+        "reply_rate_pct": round(event_counts.get("email_replied", 0) / sent * 100, 1)
+        if sent
+        else 0,
     }
 
     # --- Reply classifications last 7 days (legit replies only) ---
@@ -291,15 +328,16 @@ def _collect_metrics(client) -> dict:
         .eq("status", "researched")
         .gte("updated_at", yesterday)
         .execute()
-        .data or []
+        .data
+        or []
     )
     pqs_scores = [r.get("pqs_total") or 0 for r in researched_24h]
     m["research_24h"] = {
         "companies_researched": len(researched_24h),
         "avg_pqs": round(sum(pqs_scores) / len(pqs_scores), 1) if pqs_scores else 0,
-        "qualified_pct": round(
-            sum(1 for p in pqs_scores if p >= 20) / len(pqs_scores) * 100, 1
-        ) if pqs_scores else 0,
+        "qualified_pct": round(sum(1 for p in pqs_scores if p >= 20) / len(pqs_scores) * 100, 1)
+        if pqs_scores
+        else 0,
     }
 
     # --- Approval queue with rejection category breakdown ---
@@ -308,7 +346,8 @@ def _collect_metrics(client) -> dict:
         .select("approval_status, sequence_name, rejection_category")
         .in_("approval_status", ["pending", "rejected"])
         .execute()
-        .data or []
+        .data
+        or []
     )
     pending = [d for d in approval_queue if d.get("approval_status") == "pending"]
     rejected = [d for d in approval_queue if d.get("approval_status") == "rejected"]
@@ -325,35 +364,42 @@ def _collect_metrics(client) -> dict:
 
     # --- Top-of-funnel metrics ---
     # Total discovered vs qualified (qualification funnel health)
-    discovered_total = (
-        client.table("companies").select("id", count="exact").execute().count or 0
-    )
+    discovered_total = client.table("companies").select("id", count="exact").execute().count or 0
     qualified_total = sum(
-        stage_counts.get(s, 0)
-        for s in ["qualified", "outreach_pending", "contacted", "engaged"]
+        stage_counts.get(s, 0) for s in ["qualified", "outreach_pending", "contacted", "engaged"]
     )
     outreach_total = sum(
-        stage_counts.get(s, 0)
-        for s in ["outreach_pending", "contacted", "engaged"]
+        stage_counts.get(s, 0) for s in ["outreach_pending", "contacted", "engaged"]
     )
     m["funnel"] = {
         "discovered": discovered_total,
         "qualified": qualified_total,
         "in_outreach": outreach_total,
-        "qualification_rate_pct": round(qualified_total / discovered_total * 100, 1) if discovered_total else 0,
-        "outreach_conversion_pct": round(outreach_total / qualified_total * 100, 1) if qualified_total else 0,
+        "qualification_rate_pct": round(qualified_total / discovered_total * 100, 1)
+        if discovered_total
+        else 0,
+        "outreach_conversion_pct": round(outreach_total / qualified_total * 100, 1)
+        if qualified_total
+        else 0,
     }
 
     # --- Draft quality metrics (all-time, genuine GTM quality only) ---
     approved_count = (
-        client.table("outreach_drafts").select("id", count="exact")
-        .eq("approval_status", "approved").execute().count or 0
+        client.table("outreach_drafts")
+        .select("id", count="exact")
+        .eq("approval_status", "approved")
+        .execute()
+        .count
+        or 0
     )
     genuine_rejected_count = (
-        client.table("outreach_drafts").select("id", count="exact")
+        client.table("outreach_drafts")
+        .select("id", count="exact")
         .eq("approval_status", "rejected")
         .eq("rejection_category", "quality_manual")
-        .execute().count or 0
+        .execute()
+        .count
+        or 0
     )
     total_decided = approved_count + genuine_rejected_count
     m["draft_quality"] = {
@@ -370,7 +416,8 @@ def _collect_metrics(client) -> dict:
         .order("updated_at", desc=True)
         .limit(10)
         .execute()
-        .data or []
+        .data
+        or []
     )
     m["engaged_companies"] = [c["name"] for c in engaged_companies]
 
@@ -386,7 +433,8 @@ def _collect_metrics(client) -> dict:
                 .gte("created_at", since)
                 .range(page * batch, (page + 1) * batch - 1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             all_rows.extend(rows)
             if len(rows) < batch:
@@ -398,7 +446,7 @@ def _collect_metrics(client) -> dict:
     month_costs = _paginate_costs(month_start, "estimated_cost_usd")
     by_model: dict[str, float] = {}
     for r in week_costs:
-        key = f"{r.get('provider','?')}/{r.get('model','?')}"
+        key = f"{r.get('provider', '?')}/{r.get('model', '?')}"
         by_model[key] = by_model.get(key, 0) + float(r.get("estimated_cost_usd") or 0)
     m["api_spend"] = {
         "week_usd": round(sum(float(r.get("estimated_cost_usd") or 0) for r in week_costs), 2),
@@ -413,7 +461,8 @@ def _collect_metrics(client) -> dict:
         .select("status")
         .gte("created_at", week_ago)
         .execute()
-        .data or []
+        .data
+        or []
     )
     seq_status = Counter(s.get("status") for s in sequences_7d)
     m["sequences_7d"] = dict(seq_status)
@@ -515,8 +564,7 @@ For ACTIONS FOR AVI: no more than 5 items. Mark each as [TODAY] or [THIS WEEK]."
 def _build_report_prompt(m: dict) -> str:
     pipeline = m.get("pipeline", {})
     pipeline_table = "\n".join(
-        f"  {s:20s} {cnt:4d}"
-        for s, cnt in sorted(pipeline.items(), key=lambda x: -x[1])
+        f"  {s:20s} {cnt:4d}" for s, cnt in sorted(pipeline.items(), key=lambda x: -x[1])
     )
 
     email = m.get("email_7d", {})
@@ -587,35 +635,43 @@ def _call_claude(prompt: str, api_key: str) -> str:
 # HTML formatter
 # ---------------------------------------------------------------------------
 
+
 def _render_financial_section(fin: dict) -> str:
     today_claude = fin.get("today_claude", 0.0)
-    mtd_claude   = fin.get("mtd_claude", 0.0)
-    cap          = fin.get("budget_cap", 200.0)
-    plan_daily   = fin.get("plan_daily", 0.70)
+    mtd_claude = fin.get("mtd_claude", 0.0)
+    cap = fin.get("budget_cap", 200.0)
+    plan_daily = fin.get("plan_daily", 0.70)
     plan_monthly = fin.get("plan_monthly", 21.0)
-    sends_today  = fin.get("sends_today", 0)
-    sends_mtd    = fin.get("sends_mtd", 0)
+    sends_today = fin.get("sends_today", 0)
+    sends_mtd = fin.get("sends_mtd", 0)
     apollo_today = fin.get("apollo_calls_today", 0)
     cost_per_email = fin.get("cost_per_email_mtd")
-    top_models   = fin.get("top_models", {})
-    web_alert    = fin.get("web_search_alert", False)
+    top_models = fin.get("top_models", {})
+    web_alert = fin.get("web_search_alert", False)
 
-    budget_pct   = (mtd_claude / cap * 100) if cap else 0
-    cap_color    = "#16a34a" if budget_pct < 60 else "#d97706" if budget_pct < 85 else "#dc2626"
-    day_over     = today_claude > plan_daily
-    mtd_over     = mtd_claude > plan_monthly
+    budget_pct = (mtd_claude / cap * 100) if cap else 0
+    cap_color = "#16a34a" if budget_pct < 60 else "#d97706" if budget_pct < 85 else "#dc2626"
+    day_over = today_claude > plan_daily
+    mtd_over = mtd_claude > plan_monthly
 
-    model_rows = "".join(
-        f"<tr><td style='padding:5px 12px;border-top:1px solid #e5e7eb;font-size:12px'>{k}</td>"
-        f"<td style='text-align:right;padding:5px 12px;border-top:1px solid #e5e7eb;font-size:12px'>${v:.4f}</td></tr>"
-        for k, v in top_models.items()
-    ) or "<tr><td colspan='2' style='padding:5px 12px;font-size:12px;color:#9ca3af'>No API calls today</td></tr>"
+    model_rows = (
+        "".join(
+            f"<tr><td style='padding:5px 12px;border-top:1px solid #e5e7eb;font-size:12px'>{k}</td>"
+            f"<td style='text-align:right;padding:5px 12px;border-top:1px solid #e5e7eb;font-size:12px'>${v:.4f}</td></tr>"
+            for k, v in top_models.items()
+        )
+        or "<tr><td colspan='2' style='padding:5px 12px;font-size:12px;color:#9ca3af'>No API calls today</td></tr>"
+    )
 
     web_banner = (
-        "<div style='background:#fee2e2;border-left:4px solid #dc2626;padding:8px 12px;"
-        "border-radius:4px;margin-bottom:12px;font-size:12px'>"
-        "<strong>ALERT: web_search model triggered today.</strong> Disabled on 2026-05-02 — investigate.</div>"
-    ) if web_alert else ""
+        (
+            "<div style='background:#fee2e2;border-left:4px solid #dc2626;padding:8px 12px;"
+            "border-radius:4px;margin-bottom:12px;font-size:12px'>"
+            "<strong>ALERT: web_search model triggered today.</strong> Disabled on 2026-05-02 — investigate.</div>"
+        )
+        if web_alert
+        else ""
+    )
 
     return f"""
   <div style="margin-top:24px;border-top:2px solid #eee;padding-top:20px">
@@ -625,12 +681,12 @@ def _render_financial_section(fin: dict) -> str:
       <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
         <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Today (Claude)</div>
         <div style="font-size:22px;font-weight:700;margin-top:2px">${today_claude:.4f}</div>
-        <div style="font-size:11px;color:{'#dc2626' if day_over else '#16a34a'}">${plan_daily:.2f} plan {'OVER' if day_over else 'under'}</div>
+        <div style="font-size:11px;color:{"#dc2626" if day_over else "#16a34a"}">${plan_daily:.2f} plan {"OVER" if day_over else "under"}</div>
       </div>
       <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
         <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">MTD (Claude)</div>
         <div style="font-size:22px;font-weight:700;margin-top:2px">${mtd_claude:.2f}</div>
-        <div style="font-size:11px;color:{'#dc2626' if mtd_over else '#16a34a'}">${plan_monthly:.0f} plan {'OVER' if mtd_over else 'under'}</div>
+        <div style="font-size:11px;color:{"#dc2626" if mtd_over else "#16a34a"}">${plan_monthly:.0f} plan {"OVER" if mtd_over else "under"}</div>
       </div>
       <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
         <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Budget cap</div>
@@ -639,7 +695,7 @@ def _render_financial_section(fin: dict) -> str:
       </div>
       <div style="flex:1;min-width:110px;background:#f5f5f5;border-radius:6px;padding:12px 14px">
         <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Cost / email</div>
-        <div style="font-size:22px;font-weight:700;margin-top:2px">${f'{cost_per_email:.4f}' if cost_per_email else '—'}</div>
+        <div style="font-size:22px;font-weight:700;margin-top:2px">${f"{cost_per_email:.4f}" if cost_per_email else "—"}</div>
         <div style="font-size:11px;color:#888">{sends_today} sent today · {sends_mtd} MTD</div>
       </div>
     </div>
@@ -692,18 +748,18 @@ def _render_engagement_spotlight(companies: list[dict]) -> str:
       <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;flex:1;min-width:160px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
           <div>
-            <div style="font-weight:700;font-size:13px;color:#111">{c['company_name']}</div>
-            <div style="font-size:11px;color:#666;margin-top:2px">{c.get('contact_name','')} · {c.get('contact_title','')[:28]}</div>
+            <div style="font-weight:700;font-size:13px;color:#111">{c["company_name"]}</div>
+            <div style="font-size:11px;color:#666;margin-top:2px">{c.get("contact_name", "")} · {c.get("contact_title", "")[:28]}</div>
           </div>
           {signal_badge(c)}
         </div>
-        <div style="margin-bottom:8px">{signal_bar(c['opens'], c['clicks'], c['replies'])}</div>
+        <div style="margin-bottom:8px">{signal_bar(c["opens"], c["clicks"], c["replies"])}</div>
         <div style="font-size:11px;color:#888;display:flex;gap:12px">
-          <span><strong style="color:#16a34a">{c['clicks']}</strong> clicks</span>
-          <span><strong style="color:#93c5fd">{c['opens']}</strong> opens</span>
-          <span>Step {c.get('sequence_step',1)}</span>
+          <span><strong style="color:#16a34a">{c["clicks"]}</strong> clicks</span>
+          <span><strong style="color:#93c5fd">{c["opens"]}</strong> opens</span>
+          <span>Step {c.get("sequence_step", 1)}</span>
         </div>
-        {'<div style="font-size:10px;color:#aaa;margin-top:6px">Last: ' + last_ts + '</div>' if last_ts else ''}
+        {'<div style="font-size:10px;color:#aaa;margin-top:6px">Last: ' + last_ts + "</div>" if last_ts else ""}
       </div>"""
 
     return f"""
@@ -789,7 +845,7 @@ def _parse_narrative(narrative: str) -> str:
         for sub in _SUB_LABELS:
             if line.startswith(sub):
                 close_list()
-                rest = line[len(sub):].strip()
+                rest = line[len(sub) :].strip()
                 color = "#dc2626" if sub == "Cause:" else "#16a34a" if sub == "Fix:" else "#1a1a2e"
                 html += (
                     f"<div style='margin:6px 0;font-size:13px'>"
@@ -817,8 +873,14 @@ def _parse_narrative(narrative: str) -> str:
                 continue
 
             # [TODAY] / [THIS WEEK] action tags
-            line = line.replace("[TODAY]", "<span style='background:#fee2e2;color:#9f1239;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700'>TODAY</span>")
-            line = line.replace("[THIS WEEK]", "<span style='background:#e0f2fe;color:#0369a1;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700'>THIS WEEK</span>")
+            line = line.replace(
+                "[TODAY]",
+                "<span style='background:#fee2e2;color:#9f1239;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700'>TODAY</span>",
+            )
+            line = line.replace(
+                "[THIS WEEK]",
+                "<span style='background:#e0f2fe;color:#0369a1;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700'>THIS WEEK</span>",
+            )
 
             close_list()
             html += f"<p style='margin:7px 0;line-height:1.65;font-size:14px'>{line}</p>"
@@ -827,7 +889,9 @@ def _parse_narrative(narrative: str) -> str:
     return html
 
 
-def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None, spotlight: list | None = None) -> str:
+def _render_html(
+    narrative: str, m: dict, date_str: str, fin: dict | None = None, spotlight: list | None = None
+) -> str:
     email_7d = m.get("email_7d", {})
     pipeline = m.get("pipeline", {})
     spend = m.get("api_spend", {})
@@ -875,6 +939,7 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
 
     # Score tiles from narrative — extract Score: X/10 per section
     import re
+
     scores = re.findall(r"(?i)score:\s*(\d+)/10", narrative)
     score_labels = ["Funnel", "Outreach", "Engagement", "Velocity"]
     score_tiles = ""
@@ -903,9 +968,9 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
     <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;opacity:.6;margin-bottom:6px">Daily GTM Brief</div>
     <div style="font-size:24px;font-weight:700">ProspectIQ &mdash; {date_str}</div>
     <div style="font-size:12px;opacity:.55;margin-top:6px">
-      {funnel.get('discovered',0):,} discovered &nbsp;&middot;&nbsp;
-      {funnel.get('qualified',0):,} qualified ({funnel.get('qualification_rate_pct',0)}%) &nbsp;&middot;&nbsp;
-      {funnel.get('in_outreach',0):,} in outreach
+      {funnel.get("discovered", 0):,} discovered &nbsp;&middot;&nbsp;
+      {funnel.get("qualified", 0):,} qualified ({funnel.get("qualification_rate_pct", 0)}%) &nbsp;&middot;&nbsp;
+      {funnel.get("in_outreach", 0):,} in outreach
     </div>
   </div>
 
@@ -918,32 +983,32 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
   <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
     <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
       <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Sent (7d)</div>
-      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">{email_7d.get('sent',0):,}</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">{email_7d.get("sent", 0):,}</div>
     </div>
     <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
       <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Clicks (7d)</div>
-      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">{email_7d.get('clicked',0):,}</div>
-      <div style="font-size:11px;color:#9ca3af;text-align:right">{round(email_7d.get('clicked',0)/email_7d.get('sent',1)*100,1)}% CTR</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">{email_7d.get("clicked", 0):,}</div>
+      <div style="font-size:11px;color:#9ca3af;text-align:right">{round(email_7d.get("clicked", 0) / email_7d.get("sent", 1) * 100, 1)}% CTR</div>
     </div>
     <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
       <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Replies (7d)</div>
-      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right;color:{'#16a34a' if email_7d.get('replied',0)>0 else '#374151'}">{email_7d.get('replied',0)}</div>
-      <div style="font-size:11px;color:#9ca3af;text-align:right">{email_7d.get('reply_rate_pct',0)}% rate</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right;color:{"#16a34a" if email_7d.get("replied", 0) > 0 else "#374151"}">{email_7d.get("replied", 0)}</div>
+      <div style="font-size:11px;color:#9ca3af;text-align:right">{email_7d.get("reply_rate_pct", 0)}% rate</div>
     </div>
     <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
       <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Bounces (7d)</div>
-      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right;color:{'#dc2626' if email_7d.get('bounced',0)>20 else '#374151'}">{email_7d.get('bounced',0)}</div>
-      <div style="font-size:11px;color:#9ca3af;text-align:right">{round(email_7d.get('bounced',0)/email_7d.get('sent',1)*100,1)}% rate</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right;color:{"#dc2626" if email_7d.get("bounced", 0) > 20 else "#374151"}">{email_7d.get("bounced", 0)}</div>
+      <div style="font-size:11px;color:#9ca3af;text-align:right">{round(email_7d.get("bounced", 0) / email_7d.get("sent", 1) * 100, 1)}% rate</div>
     </div>
     <div style="flex:1;min-width:100px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px">
       <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Spend MTD</div>
-      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">${spend.get('month_usd',0):.0f}</div>
+      <div style="font-size:28px;font-weight:700;margin-top:4px;text-align:right">${spend.get("month_usd", 0):.0f}</div>
       <div style="font-size:11px;color:#9ca3af;text-align:right">of $100 budget</div>
     </div>
   </div>
 
   <!-- Process score tiles -->
-  {'<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">' + score_tiles + '</div>' if score_tiles else ''}
+  {'<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">' + score_tiles + "</div>" if score_tiles else ""}
 
   <!-- Rejection breakdown -->
   <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px 18px;margin-bottom:20px">
@@ -951,10 +1016,10 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
       Draft Rejection Breakdown &mdash; {systemic + hallucination + targeting + genuine} total (all-time)
     </div>
     <table style="width:100%;border-collapse:collapse">
-      {pct_bar(systemic,    total_rej, '#d1d5db', 'Code bugs (fixed)')}
-      {pct_bar(hallucination, total_rej, '#a78bfa', 'Model hallucination (filtered)')}
-      {pct_bar(targeting,   total_rej, '#fbbf24', 'Wrong persona / targeting')}
-      {pct_bar(genuine,     total_rej, '#f87171', 'Genuine GTM quality')}
+      {pct_bar(systemic, total_rej, "#d1d5db", "Code bugs (fixed)")}
+      {pct_bar(hallucination, total_rej, "#a78bfa", "Model hallucination (filtered)")}
+      {pct_bar(targeting, total_rej, "#fbbf24", "Wrong persona / targeting")}
+      {pct_bar(genuine, total_rej, "#f87171", "Genuine GTM quality")}
     </table>
   </div>
 
@@ -981,10 +1046,10 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
   </div>
 
   <!-- Financial summary -->
-  {_render_financial_section(fin) if fin else ''}
+  {_render_financial_section(fin) if fin else ""}
 
   <div style="font-size:11px;color:#9ca3af;border-top:1px solid #f0f0f0;padding-top:14px;margin-top:20px;text-align:center">
-    ProspectIQ GTM Engine &nbsp;&middot;&nbsp; {m.get('as_of','')}
+    ProspectIQ GTM Engine &nbsp;&middot;&nbsp; {m.get("as_of", "")}
   </div>
 
 </body>
@@ -994,6 +1059,7 @@ def _render_html(narrative: str, m: dict, date_str: str, fin: dict | None = None
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run_daily_report() -> bool:
     """Generate and email the daily GTM brief. Returns True on success."""
@@ -1018,6 +1084,7 @@ def run_daily_report() -> bool:
         logger.info(f"Daily report: sending to {recipient}...")
 
         from backend.app.core.notifications import send_email
+
         success = asyncio.run(send_email(to=recipient, subject=subject, html_body=html))
 
         if success:

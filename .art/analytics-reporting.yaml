@@ -1,0 +1,30 @@
+capability: analytics-reporting
+name: Analytics & Reporting
+type: feature
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 2.95, red_block: true, red_block_dim: economic_defensibility, findings_count: 14 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Multiple Critical/High defects are independently confirmed in source (dead date filter, fully hardcoded revenue model, cross-tenant daily report, fabricated p<0.05 into the confidence engine). A deep dive should produce the remediation PR plan: apply the .gte filter across the date-filter family, ro
+verdict: A real-data analytics surface whose headline time-windowed, revenue, and benchmark outputs are systematically wrong or fabricated, presented with authoritative tone and no disclosure — not decision-tr
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Silent dead date-filter: all funnel counts are all-time totals regardless of days"}
+  - {rank: 2, severity: High, status: not_attempted, tag: VERIFIED, title: "Revenue projection is fully hardcoded arithmetic dressed as a calibrated forecast"}
+  - {rank: 3, severity: High, status: not_attempted, tag: VERIFIED, title: "Daily report bypasses tenant scoping — cross-tenant aggregate under BYPASSRLS key"}
+  - {rank: 4, severity: High, status: not_attempted, tag: VERIFIED, title: "Fabricated 'p<0.05' written to confidence engine on scipy heuristic fallback"}
+  - {rank: 5, severity: High, status: not_attempted, tag: VERIFIED, title: "Benchmark targets calibrated for warm outbound make every real cold campaign fail"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "Last-touch reply attribution inverts the per-touch optimization signal"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Analytics queries are unbounded and silently truncate at the PostgREST 1000-row cap"}
+  - {rank: 8, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Velocity stage-key collision: enriched and sequenced show identical avg_days"}
+  - {rank: 9, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Unescaped DB values flow into HTML email and the Haiku prompt"}
+  - {rank: 10, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Intent-signal lift presented as measurable effect with no significance test"}
+  - {rank: 11, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Touch_6 off-by-one creates inconsistent totals across the analytics surface"}
+  - {rank: 12, severity: Low, status: not_attempted, tag: VERIFIED, title: "Timezone-naive utcnow() windows in benchmarks and cost-per-meeting endpoints"}
+  - {rank: 13, severity: Low, status: not_attempted, tag: VERIFIED, title: "Conflicting pipeline-velocity endpoints; one reports record age not stage duration"}
+  - {rank: 14, severity: Low, status: not_attempted, tag: VERIFIED, title: "Hardcoded budget ($100/mo) and fallback recipient in source, no config decoupling"}
+approval: null
+track1_bleeding: D5  # in remediation handoff Part D (dead-date-filter)

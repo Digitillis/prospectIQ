@@ -25,9 +25,9 @@ class PersonalizationHook(BaseModel):
     """A single personalized outreach opening sentence."""
 
     hook_text: str
-    persona_target: str   # e.g. vp_ops, plant_manager, executive
+    persona_target: str  # e.g. vp_ops, plant_manager, executive
     trigger_reference: str
-    tone: str             # specific | empathetic | provocative
+    tone: str  # specific | empathetic | provocative
     confidence: float = 0.0
 
 
@@ -35,13 +35,13 @@ class PersonalizationResult(BaseModel):
     """Full output from PersonalizationEngine.run_full_pipeline()."""
 
     company_id: str
-    readiness_score: int = 0          # 0-100
+    readiness_score: int = 0  # 0-100
     readiness_breakdown: dict = Field(default_factory=dict)
     triggers: list[TriggerEvent] = Field(default_factory=list)
     hooks: list[PersonalizationHook] = Field(default_factory=list)
     personas_found: list[str] = Field(default_factory=list)
     contacts_updated: int = 0
-    generated_at: str = ""            # ISO 8601
+    generated_at: str = ""  # ISO 8601
     cost_usd: float = 0.0
 
 

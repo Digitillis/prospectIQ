@@ -26,8 +26,10 @@ LINKEDIN_TO_EMAIL_COOLDOWN_DAYS = 0  # Email allowed immediately alongside Linke
 DM_COMPLETE_TO_EMAIL_COOLDOWN_DAYS = 14
 ACTIVITY_COOLDOWN_HOURS = 48
 
+
 def _company_lock_business_days() -> int:
     import os
+
     v = os.environ.get("COMPANY_LOCK_BUSINESS_DAYS")
     if v:
         try:
@@ -36,12 +38,16 @@ def _company_lock_business_days() -> int:
             pass
     try:
         from backend.app.core.limits import _load
+
         cfg = _load() or {}
         return int((cfg.get("send_limits") or {}).get("company_lock_business_days", 5))
     except Exception:
         return 5
 
-COMPANY_LOCK_BUSINESS_DAYS: int = 5  # module-level alias; live value from _company_lock_business_days()
+
+COMPANY_LOCK_BUSINESS_DAYS: int = (
+    5  # module-level alias; live value from _company_lock_business_days()
+)
 
 
 def get_active_channel(db: Database, contact_id: str) -> tuple[str, str | None]:
@@ -53,9 +59,7 @@ def get_active_channel(db: Database, contact_id: str) -> tuple[str, str | None]:
         reason: Human-readable explanation
     """
     # Get contact data
-    contact_result = (
-        db.client.table("contacts").select("*").eq("id", contact_id).execute()
-    )
+    contact_result = db.client.table("contacts").select("*").eq("id", contact_id).execute()
     if not contact_result.data:
         return ("none", "contact_not_found")
 
@@ -143,9 +147,7 @@ def get_active_channel(db: Database, contact_id: str) -> tuple[str, str | None]:
     return ("linkedin", "both_available_linkedin_fallback")
 
 
-def can_use_channel(
-    db: Database, contact_id: str, channel: str
-) -> tuple[bool, str | None]:
+def can_use_channel(db: Database, contact_id: str, channel: str) -> tuple[bool, str | None]:
     """Check if a specific channel can be used for a contact.
 
     Args:
@@ -160,10 +162,7 @@ def can_use_channel(
     # with an active warm intro in progress.
     try:
         contact_result = (
-            db.client.table("contacts")
-            .select("linkedin_status")
-            .eq("id", contact_id)
-            .execute()
+            db.client.table("contacts").select("linkedin_status").eq("id", contact_id).execute()
         )
         if contact_result.data:
             linkedin_status = contact_result.data[0].get("linkedin_status", "") or ""
@@ -226,7 +225,10 @@ def assign_channel(
     headcount_growth = (company.get("headcount_growth_6m") or 0.0) if company else 0.0
     seniority = (contact.get("seniority") or "").lower()
 
-    if seniority in ("vp", "c_suite", "c-suite", "owner", "founder", "partner") and employee_count > 200:
+    if (
+        seniority in ("vp", "c_suite", "c-suite", "owner", "founder", "partner")
+        and employee_count > 200
+    ):
         return ("linkedin", "vp_csuite_large_company")
     if seniority in ("director", "manager") and employee_count < 150:
         return ("email", "director_manager_small_company")
@@ -270,10 +272,15 @@ def is_company_locked(
             db.client.table("interactions")
             .select("contact_id, type, created_at")
             .eq("company_id", company_id)
-            .in_("type", [
-                "linkedin_connection", "linkedin_message",
-                "email_sent", "email_replied",
-            ])
+            .in_(
+                "type",
+                [
+                    "linkedin_connection",
+                    "linkedin_message",
+                    "email_sent",
+                    "email_replied",
+                ],
+            )
             .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(5)
@@ -292,7 +299,10 @@ def is_company_locked(
             days_ago = (now - created_at).days
         except (ValueError, AttributeError):
             days_ago = 0
-        return (True, f"another contact reached {days_ago}d ago — retry after {_company_lock_business_days()} business days")
+        return (
+            True,
+            f"another contact reached {days_ago}d ago — retry after {_company_lock_business_days()} business days",
+        )
 
     return (False, None)
 
@@ -348,7 +358,13 @@ def get_company_traction(
         if c["id"] == exclude_contact_id:
             continue
         sentiment = (c.get("reply_sentiment") or "").lower()
-        if sentiment and sentiment not in ("auto_reply_retired", "auto_reply", "bounced", "unsubscribed", ""):
+        if sentiment and sentiment not in (
+            "auto_reply_retired",
+            "auto_reply",
+            "bounced",
+            "unsubscribed",
+            "",
+        ):
             signals.append(f"{c.get('full_name', 'A contact')} replied ({sentiment})")
             traction_contact_id = c["id"]
             traction_contact_name = c.get("full_name", "")
@@ -370,6 +386,7 @@ def get_company_traction(
 
     # Aggregate: count opens/clicks per contact
     from collections import defaultdict
+
     opens_by_contact: dict[str, int] = defaultdict(int)
     clicks_by_contact: dict[str, int] = defaultdict(int)
     for row in eng_rows:
@@ -420,10 +437,15 @@ def has_recent_activity(
             db.client.table("interactions")
             .select("type, created_at")
             .eq("contact_id", contact_id)
-            .in_("type", [
-                "linkedin_connection", "linkedin_message",
-                "email_sent", "email_replied",
-            ])
+            .in_(
+                "type",
+                [
+                    "linkedin_connection",
+                    "linkedin_message",
+                    "email_sent",
+                    "email_replied",
+                ],
+            )
             .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(1)

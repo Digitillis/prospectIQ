@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # Pydantic data models
 # ---------------------------------------------------------------------------
 
+
 class MessagingTheme(BaseModel):
     theme: str
     frequency: int
@@ -77,6 +78,7 @@ class VoiceInsights(BaseModel):
 # ---------------------------------------------------------------------------
 # Demo data — shown when < 5 replies exist
 # ---------------------------------------------------------------------------
+
 
 def _build_demo_insights(workspace_id: str) -> VoiceInsights:
     """Return illustrative demo insights so the UI is never empty."""
@@ -157,17 +159,62 @@ def _build_demo_insights(workspace_id: str) -> VoiceInsights:
             "and offer a single 20-minute ROI walkthrough as the CTA instead of a generic demo request."
         ),
         persona_engagement=[
-            PersonaEngagement(persona_type="VP Operations", reply_count=34, reply_rate=0.34, avg_intent_score=3.8),
-            PersonaEngagement(persona_type="Plant Manager", reply_count=28, reply_rate=0.29, avg_intent_score=3.5),
-            PersonaEngagement(persona_type="Director of Manufacturing", reply_count=21, reply_rate=0.26, avg_intent_score=3.3),
-            PersonaEngagement(persona_type="Engineer", reply_count=15, reply_rate=0.18, avg_intent_score=2.7),
-            PersonaEngagement(persona_type="CTO / CIO", reply_count=9, reply_rate=0.14, avg_intent_score=3.1),
+            PersonaEngagement(
+                persona_type="VP Operations", reply_count=34, reply_rate=0.34, avg_intent_score=3.8
+            ),
+            PersonaEngagement(
+                persona_type="Plant Manager", reply_count=28, reply_rate=0.29, avg_intent_score=3.5
+            ),
+            PersonaEngagement(
+                persona_type="Director of Manufacturing",
+                reply_count=21,
+                reply_rate=0.26,
+                avg_intent_score=3.3,
+            ),
+            PersonaEngagement(
+                persona_type="Engineer", reply_count=15, reply_rate=0.18, avg_intent_score=2.7
+            ),
+            PersonaEngagement(
+                persona_type="CTO / CIO", reply_count=9, reply_rate=0.14, avg_intent_score=3.1
+            ),
         ],
         sequence_dropoff=[
-            SequenceStepMetrics(step_number=1, step_type="email", sends=200, replies=52, reply_rate=0.26, avg_days_to_reply=1.4, drop_off=False),
-            SequenceStepMetrics(step_number=2, step_type="linkedin", sends=148, replies=21, reply_rate=0.14, avg_days_to_reply=2.1, drop_off=False),
-            SequenceStepMetrics(step_number=3, step_type="email", sends=127, replies=8, reply_rate=0.06, avg_days_to_reply=3.9, drop_off=True),
-            SequenceStepMetrics(step_number=4, step_type="email", sends=119, replies=5, reply_rate=0.04, avg_days_to_reply=5.2, drop_off=False),
+            SequenceStepMetrics(
+                step_number=1,
+                step_type="email",
+                sends=200,
+                replies=52,
+                reply_rate=0.26,
+                avg_days_to_reply=1.4,
+                drop_off=False,
+            ),
+            SequenceStepMetrics(
+                step_number=2,
+                step_type="linkedin",
+                sends=148,
+                replies=21,
+                reply_rate=0.14,
+                avg_days_to_reply=2.1,
+                drop_off=False,
+            ),
+            SequenceStepMetrics(
+                step_number=3,
+                step_type="email",
+                sends=127,
+                replies=8,
+                reply_rate=0.06,
+                avg_days_to_reply=3.9,
+                drop_off=True,
+            ),
+            SequenceStepMetrics(
+                step_number=4,
+                step_type="email",
+                sends=119,
+                replies=5,
+                reply_rate=0.04,
+                avg_days_to_reply=5.2,
+                drop_off=False,
+            ),
         ],
     )
 
@@ -179,13 +226,17 @@ def _build_demo_insights(workspace_id: str) -> VoiceInsights:
 _PERSONA_KEYWORDS: list[tuple[str, list[str]]] = [
     ("VP Operations", ["vp operations", "vp of operations", "vice president operations"]),
     ("Plant Manager", ["plant manager", "plant director", "facility manager"]),
-    ("Director of Manufacturing", ["director of manufacturing", "manufacturing director", "director, manufacturing"]),
+    (
+        "Director of Manufacturing",
+        ["director of manufacturing", "manufacturing director", "director, manufacturing"],
+    ),
     ("CTO / CIO", ["cto", "cio", "chief technology", "chief information", "chief digital"]),
     ("Engineer", ["engineer", "engineering manager", "process engineer", "automation engineer"]),
     ("CEO / President", ["ceo", "president", "chief executive", "owner", "founder"]),
     ("Procurement", ["procurement", "purchasing", "supply chain manager", "sourcing"]),
     ("Operations Manager", ["operations manager", "operations director", "head of operations"]),
 ]
+
 
 def _normalise_persona(title: str | None) -> str:
     if not title:
@@ -200,6 +251,7 @@ def _normalise_persona(title: str | None) -> str:
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
+
 
 class VoiceOfProspectAgent:
     """Analyses reply corpus to surface Voice-of-Prospect intelligence."""
@@ -221,7 +273,9 @@ class VoiceOfProspectAgent:
         total = len(replies)
 
         if total < 5:
-            logger.info(f"VoP: workspace {workspace_id} has {total} replies — returning demo insights")
+            logger.info(
+                f"VoP: workspace {workspace_id} has {total} replies — returning demo insights"
+            )
             insights = _build_demo_insights(workspace_id)
             self._persist_snapshot(db, workspace_id, insights)
             return insights
@@ -307,7 +361,9 @@ class VoiceOfProspectAgent:
         try:
             result = (
                 db.client.table("campaign_threads")
-                .select("id, reply_body, subject, replied_at, classification, intent_score, contact_id, sequence_step")
+                .select(
+                    "id, reply_body, subject, replied_at, classification, intent_score, contact_id, sequence_step"
+                )
                 .eq("workspace_id", workspace_id)
                 .eq("replied", True)
                 .not_.is_("reply_body", "null")
@@ -319,7 +375,9 @@ class VoiceOfProspectAgent:
             logger.warning(f"VoP _fetch_replies failed: {e}")
             return []
 
-    def _compute_persona_engagement(self, db: Database, workspace_id: str) -> list[PersonaEngagement]:
+    def _compute_persona_engagement(
+        self, db: Database, workspace_id: str
+    ) -> list[PersonaEngagement]:
         """Reply rate by normalised persona derived from contact title."""
         try:
             # Fetch all outreach drafts (sends) with their contact's title
@@ -358,13 +416,8 @@ class VoiceOfProspectAgent:
             id_list = list(contact_ids)
             for i in range(0, len(id_list), 100):
                 batch = id_list[i : i + 100]
-                cr = (
-                    db.client.table("contacts")
-                    .select("id, title")
-                    .in_("id", batch)
-                    .execute()
-                )
-                for row in (cr.data or []):
+                cr = db.client.table("contacts").select("id, title").in_("id", batch).execute()
+                for row in cr.data or []:
                     contacts[row["id"]] = row.get("title") or ""
 
             # Aggregate sends per persona
@@ -388,12 +441,14 @@ class VoiceOfProspectAgent:
                 reply_count = len(scores)
                 reply_rate = round(reply_count / send_count, 3) if send_count > 0 else 0.0
                 avg_intent = round(sum(scores) / len(scores), 2) if scores else 0.0
-                results.append(PersonaEngagement(
-                    persona_type=persona,
-                    reply_count=reply_count,
-                    reply_rate=reply_rate,
-                    avg_intent_score=avg_intent,
-                ))
+                results.append(
+                    PersonaEngagement(
+                        persona_type=persona,
+                        reply_count=reply_count,
+                        reply_rate=reply_rate,
+                        avg_intent_score=avg_intent,
+                    )
+                )
 
             return sorted(results, key=lambda p: p.reply_rate, reverse=True)
 
@@ -401,7 +456,9 @@ class VoiceOfProspectAgent:
             logger.warning(f"VoP _compute_persona_engagement failed: {e}")
             return []
 
-    def _compute_sequence_dropoff(self, db: Database, workspace_id: str) -> list[SequenceStepMetrics]:
+    def _compute_sequence_dropoff(
+        self, db: Database, workspace_id: str
+    ) -> list[SequenceStepMetrics]:
         """Per-step reply rate across all campaigns."""
         try:
             result = (
@@ -430,7 +487,9 @@ class VoiceOfProspectAgent:
                     if row.get("sent_at") and row.get("replied_at"):
                         try:
                             sent = datetime.fromisoformat(row["sent_at"].replace("Z", "+00:00"))
-                            replied = datetime.fromisoformat(row["replied_at"].replace("Z", "+00:00"))
+                            replied = datetime.fromisoformat(
+                                row["replied_at"].replace("Z", "+00:00")
+                            )
                             days = max(0.0, (replied - sent).total_seconds() / 86400)
                             step_data[step_num]["days_to_reply"].append(days)
                         except Exception:
@@ -454,15 +513,17 @@ class VoiceOfProspectAgent:
                 # Drop-off: current rate < 50% of previous rate
                 drop_off = bool(prev_rate is not None and prev_rate > 0 and rate < prev_rate * 0.5)
 
-                metrics.append(SequenceStepMetrics(
-                    step_number=step_num,
-                    step_type=d["step_type"],
-                    sends=sends,
-                    replies=replies,
-                    reply_rate=rate,
-                    avg_days_to_reply=avg_days,
-                    drop_off=drop_off,
-                ))
+                metrics.append(
+                    SequenceStepMetrics(
+                        step_number=step_num,
+                        step_type=d["step_type"],
+                        sends=sends,
+                        replies=replies,
+                        reply_rate=rate,
+                        avg_days_to_reply=avg_days,
+                        drop_off=drop_off,
+                    )
+                )
                 prev_rate = rate
 
             return metrics
@@ -559,7 +620,9 @@ Replies:
                 sentiment=v.get("sentiment", "positive"),
                 example_quote=v.get("example_quote", ""),
             )
-            for v in sorted(all_resonance.values(), key=lambda x: x.get("frequency", 0), reverse=True)
+            for v in sorted(
+                all_resonance.values(), key=lambda x: x.get("frequency", 0), reverse=True
+            )
         ]
         objections = [
             MessagingTheme(
@@ -568,7 +631,9 @@ Replies:
                 sentiment=v.get("sentiment", "negative"),
                 example_quote=v.get("example_quote", ""),
             )
-            for v in sorted(all_objections.values(), key=lambda x: x.get("frequency", 0), reverse=True)
+            for v in sorted(
+                all_objections.values(), key=lambda x: x.get("frequency", 0), reverse=True
+            )
         ]
 
         return resonance[:5], objections[:5]
@@ -596,7 +661,7 @@ Replies:
 Top resonance theme: {top_resonance}
 Top objection theme: {top_objection}
 Best-responding persona: {best_persona} ({personas[0].reply_rate * 100:.0f}% reply rate if {personas} else 'n/a')
-Sequence drop-off detected at steps: {drop_steps if drop_steps else 'none'}
+Sequence drop-off detected at steps: {drop_steps if drop_steps else "none"}
 
 Write:
 1. top_performing_angle: One sentence (max 20 words) describing the single best-performing messaging approach.
@@ -638,24 +703,27 @@ Return ONLY valid JSON:
     def _persist_snapshot(self, db: Database, workspace_id: str, insights: VoiceInsights) -> None:
         """Upsert the latest snapshot to the DB (keeps history intact)."""
         try:
-            db.client.table("voice_of_prospect_snapshots").insert({
-                "workspace_id": workspace_id,
-                "total_replies_analysed": insights.total_replies_analysed,
-                "data_quality": insights.data_quality,
-                "resonance_themes": [t.model_dump() for t in insights.resonance_themes],
-                "objection_themes": [t.model_dump() for t in insights.objection_themes],
-                "persona_engagement": [p.model_dump() for p in insights.persona_engagement],
-                "sequence_dropoff": [s.model_dump() for s in insights.sequence_dropoff],
-                "top_performing_angle": insights.top_performing_angle,
-                "top_objection": insights.top_objection,
-                "recommended_adjustment": insights.recommended_adjustment,
-                "analysed_at": insights.analysed_at.isoformat(),
-            }).execute()
+            db.client.table("voice_of_prospect_snapshots").insert(
+                {
+                    "workspace_id": workspace_id,
+                    "total_replies_analysed": insights.total_replies_analysed,
+                    "data_quality": insights.data_quality,
+                    "resonance_themes": [t.model_dump() for t in insights.resonance_themes],
+                    "objection_themes": [t.model_dump() for t in insights.objection_themes],
+                    "persona_engagement": [p.model_dump() for p in insights.persona_engagement],
+                    "sequence_dropoff": [s.model_dump() for s in insights.sequence_dropoff],
+                    "top_performing_angle": insights.top_performing_angle,
+                    "top_objection": insights.top_objection,
+                    "recommended_adjustment": insights.recommended_adjustment,
+                    "analysed_at": insights.analysed_at.isoformat(),
+                }
+            ).execute()
         except Exception as e:
             logger.warning(f"VoP _persist_snapshot failed: {e}")
 
     def _row_to_insights(self, row: dict[str, Any]) -> VoiceInsights:
         """Deserialise a DB row into a VoiceInsights object."""
+
         def _themes(raw: Any) -> list[MessagingTheme]:
             if not raw:
                 return []

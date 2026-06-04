@@ -37,13 +37,30 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # Common passwords deny-list (hashed at import time — never store plain text)
 # ---------------------------------------------------------------------------
 
-_COMMON_PASSWORDS: frozenset[str] = frozenset({
-    "Password1!", "Password12!", "Welcome1!", "Welcome123!",
-    "Qwerty123!", "Letmein1!", "Admin1234!", "Summer2024!",
-    "Winter2024!", "Spring2024!", "Fall2024!", "Company123!",
-    "Secret123!", "Passw0rd!", "P@ssword1", "P@ssw0rd1",
-    "Hello1234!", "Dragon123!", "Master123!", "Superman1!",
-})
+_COMMON_PASSWORDS: frozenset[str] = frozenset(
+    {
+        "Password1!",
+        "Password12!",
+        "Welcome1!",
+        "Welcome123!",
+        "Qwerty123!",
+        "Letmein1!",
+        "Admin1234!",
+        "Summer2024!",
+        "Winter2024!",
+        "Spring2024!",
+        "Fall2024!",
+        "Company123!",
+        "Secret123!",
+        "Passw0rd!",
+        "P@ssword1",
+        "P@ssw0rd1",
+        "Hello1234!",
+        "Dragon123!",
+        "Master123!",
+        "Superman1!",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # In-memory rate limiter
@@ -91,6 +108,7 @@ def _rate_limit_remaining_seconds(key: str, window_seconds: int = 300) -> int:
 # Password validation
 # ---------------------------------------------------------------------------
 
+
 def _validate_password_strength(password: str) -> list[str]:
     """Return a list of validation failure messages (empty = valid)."""
     errors: list[str] = []
@@ -113,14 +131,16 @@ def _validate_password_strength(password: str) -> list[str]:
 # Audit logging
 # ---------------------------------------------------------------------------
 
-_VALID_EVENT_TYPES = frozenset({
-    "login_success",
-    "login_failure",
-    "logout",
-    "password_reset_requested",
-    "password_reset_completed",
-    "session_revoked",
-})
+_VALID_EVENT_TYPES = frozenset(
+    {
+        "login_success",
+        "login_failure",
+        "logout",
+        "password_reset_requested",
+        "password_reset_completed",
+        "session_revoked",
+    }
+)
 
 
 async def log_auth_event(
@@ -139,23 +159,23 @@ async def log_auth_event(
     # Hash the user_id if present to avoid storing raw UUIDs in plaintext
     # in case audit logs are ever exported.  We keep it reversible within
     # the system by using SHA-256 of the literal UUID string.
-    hashed_uid = (
-        hashlib.sha256(user_id.encode()).hexdigest() if user_id else None
-    )
+    hashed_uid = hashlib.sha256(user_id.encode()).hexdigest() if user_id else None
 
     try:
         client = get_supabase_client()
-        client.table("auth_audit_log").insert({
-            "user_id": user_id,          # raw UUID for JOIN purposes (RLS protects it)
-            "workspace_id": workspace_id,
-            "event_type": event_type,
-            "ip_address": ip_address,
-            "user_agent": user_agent,
-            "metadata": {
-                **metadata,
-                "user_id_hash": hashed_uid,
-            },
-        }).execute()
+        client.table("auth_audit_log").insert(
+            {
+                "user_id": user_id,  # raw UUID for JOIN purposes (RLS protects it)
+                "workspace_id": workspace_id,
+                "event_type": event_type,
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+                "metadata": {
+                    **metadata,
+                    "user_id_hash": hashed_uid,
+                },
+            }
+        ).execute()
     except Exception as exc:
         logger.error("auth_audit_log insert failed (event=%s): %s", event_type, exc)
 
@@ -171,6 +191,7 @@ def _get_client_ip(request: Request) -> str | None:
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
@@ -212,6 +233,7 @@ class ChangePasswordRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # POST /api/auth/forgot-password
 # ---------------------------------------------------------------------------
+
 
 @router.post("/forgot-password", status_code=200)
 async def forgot_password(
@@ -263,6 +285,7 @@ async def forgot_password(
 # ---------------------------------------------------------------------------
 # POST /api/auth/reset-password
 # ---------------------------------------------------------------------------
+
 
 @router.post("/reset-password", status_code=200)
 async def reset_password(
@@ -345,6 +368,7 @@ async def reset_password(
 # POST /api/auth/logout
 # ---------------------------------------------------------------------------
 
+
 @router.post("/logout", status_code=200)
 async def logout(
     request: Request,
@@ -378,6 +402,7 @@ async def logout(
 # ---------------------------------------------------------------------------
 # GET /api/auth/sessions
 # ---------------------------------------------------------------------------
+
 
 @router.get("/sessions", status_code=200)
 async def list_sessions(
@@ -413,6 +438,7 @@ async def list_sessions(
 # ---------------------------------------------------------------------------
 # DELETE /api/auth/sessions/{session_id}
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/sessions/{session_id}", status_code=200)
 async def revoke_session(
@@ -473,6 +499,7 @@ async def revoke_session(
 # ---------------------------------------------------------------------------
 # GET /api/auth/audit-log
 # ---------------------------------------------------------------------------
+
 
 @router.get("/audit-log", status_code=200)
 async def get_audit_log(

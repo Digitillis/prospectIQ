@@ -19,9 +19,13 @@ app = typer.Typer(help="Run the ProspectIQ Enrichment Agent.")
 
 @app.command()
 def main(
-    company_ids: Optional[list[str]] = typer.Option(None, "--company-ids", help="Specific company IDs to enrich (repeatable)."),
+    company_ids: Optional[list[str]] = typer.Option(
+        None, "--company-ids", help="Specific company IDs to enrich (repeatable)."
+    ),
     limit: int = typer.Option(25, "--limit", help="Max companies to enrich in this batch."),
-    include_phone: bool = typer.Option(False, "--include-phone", help="Request phone numbers (uses async webhook)."),
+    include_phone: bool = typer.Option(
+        False, "--include-phone", help="Request phone numbers (uses async webhook)."
+    ),
 ) -> None:
     """Enrich contacts at qualified companies via Apollo People Match."""
     from backend.app.agents.enrichment import EnrichmentAgent

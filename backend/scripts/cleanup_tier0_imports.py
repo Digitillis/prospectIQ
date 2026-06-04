@@ -36,8 +36,17 @@ def run_cleanup(dry_run: bool) -> None:
     # 1. Find and delete partial-ID contacts
     # ------------------------------------------------------------------
     print("Finding contacts with truncated Apollo IDs...")
-    all_contacts = client.table("contacts").select("id, apollo_id, first_name, title, company_id").execute().data
-    partial_contacts = [c for c in all_contacts if c.get("apollo_id") and len(c["apollo_id"]) < REAL_APOLLO_ID_MIN_LEN]
+    all_contacts = (
+        client.table("contacts")
+        .select("id, apollo_id, first_name, title, company_id")
+        .execute()
+        .data
+    )
+    partial_contacts = [
+        c
+        for c in all_contacts
+        if c.get("apollo_id") and len(c["apollo_id"]) < REAL_APOLLO_ID_MIN_LEN
+    ]
 
     print(f"  Found {len(partial_contacts)} contacts with partial IDs to remove")
     for c in partial_contacts:
@@ -63,8 +72,7 @@ def run_cleanup(dry_run: bool) -> None:
     # Only delete the ones that have no real apollo_id AND no domain
     # (the 8 pre-existing companies had real apollo_ids from prior DiscoveryAgent runs)
     bad_companies = [
-        co for co in import_companies
-        if not co.get("apollo_id") and not co.get("domain")
+        co for co in import_companies if not co.get("apollo_id") and not co.get("domain")
     ]
 
     print(f"  Found {len(bad_companies)} import-only companies to remove")
@@ -81,7 +89,7 @@ def run_cleanup(dry_run: bool) -> None:
     # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     prefix = "[DRY-RUN] " if dry_run else ""
     print(f"  {prefix}Cleanup done")
     print(f"  Contacts removed: {len(partial_contacts)}")

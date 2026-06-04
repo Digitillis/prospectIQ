@@ -28,6 +28,7 @@ RESEND_MSG_ID = "re_abc123xyz"
 # Helpers (mirror test_pr_g_dispatch.py)
 # ---------------------------------------------------------------------------
 
+
 def _make_queue_row(draft_id: str = DRAFT_ID, retry_count: int = 0) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -44,8 +45,19 @@ def _make_queue_row(draft_id: str = DRAFT_ID, retry_count: int = 0) -> dict:
 
 def _make_chain():
     m = MagicMock()
-    for attr in ("select", "eq", "neq", "in_", "is_", "not_", "lt", "gte", "order",
-                  "limit", "not_.is_"):
+    for attr in (
+        "select",
+        "eq",
+        "neq",
+        "in_",
+        "is_",
+        "not_",
+        "lt",
+        "gte",
+        "order",
+        "limit",
+        "not_.is_",
+    ):
         try:
             parts = attr.split(".")
             obj = m
@@ -83,7 +95,11 @@ def _make_db_client(claimed_rows, send_attempt_id=ATTEMPT_ID, resend_message_id=
     # select chain for _resolve_provider_message_id
     select_chain = _make_chain()
     select_result = MagicMock()
-    select_result.data = [{"resend_message_id": resend_message_id}] if resend_message_id else [{"resend_message_id": None}]
+    select_result.data = (
+        [{"resend_message_id": resend_message_id}]
+        if resend_message_id
+        else [{"resend_message_id": None}]
+    )
     select_chain.execute.return_value = select_result
 
     table = MagicMock()
@@ -99,6 +115,7 @@ def _make_db_client(claimed_rows, send_attempt_id=ATTEMPT_ID, resend_message_id=
 # ---------------------------------------------------------------------------
 # TestScenarioC: ALREADY_DELIVERED + resend_message_id set → DELIVERED
 # ---------------------------------------------------------------------------
+
 
 class TestScenarioCDeliveredDrain:
     def test_already_delivered_with_provider_id_marks_send_attempt_delivered(self):
@@ -139,9 +156,11 @@ class TestScenarioCDeliveredDrain:
 
         update_calls = []
         original_update = client.table.return_value.update
+
         def track_update(payload):
             update_calls.append(payload)
             return original_update(payload)
+
         client.table.return_value.update = track_update
 
         with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
@@ -174,6 +193,7 @@ class TestScenarioCDeliveredDrain:
 # TestScenarioE: ALREADY_DELIVERED + no resend_message_id → FAILED (lost send)
 # ---------------------------------------------------------------------------
 
+
 class TestScenarioELostSend:
     def test_already_delivered_no_provider_id_marks_send_attempt_failed(self):
         """Scenario E: no resend_message_id → send_attempt FAILED (lost_send_pre_claim_crash)."""
@@ -191,9 +211,11 @@ class TestScenarioELostSend:
 
         update_calls = []
         original_update = client.table.return_value.update
+
         def track_update(payload):
             update_calls.append(payload)
             return original_update(payload)
+
         client.table.return_value.update = track_update
 
         with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
@@ -219,9 +241,11 @@ class TestScenarioELostSend:
 
         update_calls = []
         original_update = client.table.return_value.update
+
         def track_update(payload):
             update_calls.append(payload)
             return original_update(payload)
+
         client.table.return_value.update = track_update
 
         with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
@@ -251,6 +275,7 @@ class TestScenarioELostSend:
 # ---------------------------------------------------------------------------
 # TestNoInfiniteRetryLoop
 # ---------------------------------------------------------------------------
+
 
 class TestNoInfiniteRetryLoop:
     def test_already_delivered_not_classified_as_assertion_skipped(self):
@@ -294,6 +319,7 @@ class TestNoInfiniteRetryLoop:
 # TestDuplicateDispatchReplay
 # ---------------------------------------------------------------------------
 
+
 class TestDuplicateDispatchReplay:
     def test_second_already_delivered_on_same_draft_still_drains(self):
         """Two consecutive ALREADY_DELIVERED outcomes both drain correctly (idempotent)."""
@@ -322,6 +348,7 @@ class TestDuplicateDispatchReplay:
 # ---------------------------------------------------------------------------
 # TestProviderResolution
 # ---------------------------------------------------------------------------
+
 
 class TestProviderResolution:
     def test_resolve_provider_id_returns_resend_message_id(self):

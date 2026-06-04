@@ -29,9 +29,9 @@ from backend.app.core.models import ReadinessCheck
 
 console = Console()
 
-MIN_COMPLETENESS_SCORE = 60   # contact must score >= this to count as "enriched"
-MIN_ENRICHED_CONTACTS = 1     # hard blocker: at least 1 send-ready contact required
-WARN_ENRICHED_CONTACTS = 2    # soft warning: < 2 enriched contacts
+MIN_COMPLETENESS_SCORE = 60  # contact must score >= this to count as "enriched"
+MIN_ENRICHED_CONTACTS = 1  # hard blocker: at least 1 send-ready contact required
+WARN_ENRICHED_CONTACTS = 2  # soft warning: < 2 enriched contacts
 
 
 def check_campaign_readiness(
@@ -54,7 +54,9 @@ def check_campaign_readiness(
     db = Database(workspace_id=workspace_id)
 
     # Fetch companies
-    query = db.client.table("companies").select("id, name, domain, apollo_id, campaign_name, tier, status")
+    query = db.client.table("companies").select(
+        "id, name, domain, apollo_id, campaign_name, tier, status"
+    )
     query = query.eq("campaign_name", campaign_name)
     if tier:
         query = query.eq("tier", tier)
@@ -71,7 +73,8 @@ def check_campaign_readiness(
         contacts = db.get_contacts_for_company(company_id)
 
         enriched = [
-            c for c in contacts
+            c
+            for c in contacts
             if (c.get("completeness_score") or 0) >= MIN_COMPLETENESS_SCORE
             or c.get("enrichment_status") == "enriched"
         ]
@@ -95,7 +98,9 @@ def check_campaign_readiness(
             warnings.append(f"Only {len(enriched)} enriched contact — aim for 2+ per company")
 
         if failed:
-            warnings.append(f"{len(failed)} contact(s) have enrichment_status='failed' — needs manual review")
+            warnings.append(
+                f"{len(failed)} contact(s) have enrichment_status='failed' — needs manual review"
+            )
 
         if not company.get("apollo_id"):
             warnings.append("No company apollo_id — domain inference may be less accurate")

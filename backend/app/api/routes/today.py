@@ -74,6 +74,7 @@ async def get_today_data():
     # Get user name from config if available
     try:
         from backend.app.core.config import get_outreach_guidelines
+
         guidelines = get_outreach_guidelines()
         sender = guidelines.get("sender", {})
         user_name = sender.get("name", "User").split()[0]  # First name only
@@ -85,11 +86,12 @@ async def get_today_data():
     # --- Hot signals: engaged companies ---
     try:
         hot_rows = (
-            db._filter_ws(db.client.table("companies")
-            .select(
-                "id, name, domain, tier, pqs_total, status, "
-                "contacts(id, full_name, title, email, phone, linkedin_url)"
-            ))
+            db._filter_ws(
+                db.client.table("companies").select(
+                    "id, name, domain, tier, pqs_total, status, "
+                    "contacts(id, full_name, title, email, phone, linkedin_url)"
+                )
+            )
             .eq("status", "engaged")
             .order("pqs_total", desc=True)
             .limit(10)
@@ -104,8 +106,9 @@ async def get_today_data():
     for company in hot_rows:
         try:
             last_interaction = (
-                db._filter_ws(db.client.table("interactions")
-                .select("type, body, created_at, metadata"))
+                db._filter_ws(
+                    db.client.table("interactions").select("type, body, created_at, metadata")
+                )
                 .eq("company_id", company["id"])
                 .order("created_at", desc=True)
                 .limit(1)
@@ -119,13 +122,14 @@ async def get_today_data():
     # --- Pending approvals ---
     try:
         pending_drafts = (
-            db._filter_ws(db.client.table("outreach_drafts")
-            .select(
-                "id, company_id, contact_id, channel, sequence_name, sequence_step, "
-                "subject, body, personalization_notes, approval_status, "
-                "companies(name, tier, pqs_total), "
-                "contacts(full_name, title, email)"
-            ))
+            db._filter_ws(
+                db.client.table("outreach_drafts").select(
+                    "id, company_id, contact_id, channel, sequence_name, sequence_step, "
+                    "subject, body, personalization_notes, approval_status, "
+                    "companies(name, tier, pqs_total), "
+                    "contacts(full_name, title, email)"
+                )
+            )
             .eq("approval_status", "pending")
             .order("created_at", desc=True)
             .limit(10)
@@ -141,13 +145,14 @@ async def get_today_data():
     # --- LinkedIn queue: tasks due now ---
     try:
         linkedin_rows = (
-            db._filter_ws(db.client.table("engagement_sequences")
-            .select(
-                "id, company_id, contact_id, sequence_name, current_step, "
-                "total_steps, next_action_at, next_action_type, "
-                "companies(name, domain, tier, pqs_total, linkedin_url), "
-                "contacts(full_name, title, linkedin_url)"
-            ))
+            db._filter_ws(
+                db.client.table("engagement_sequences").select(
+                    "id, company_id, contact_id, sequence_name, current_step, "
+                    "total_steps, next_action_at, next_action_type, "
+                    "companies(name, domain, tier, pqs_total, linkedin_url), "
+                    "contacts(full_name, title, linkedin_url)"
+                )
+            )
             .eq("status", "active")
             .lte("next_action_at", now.isoformat())
             .like("next_action_type", "%linkedin%")
@@ -167,11 +172,12 @@ async def get_today_data():
     try:
         # Qualified contacts with LinkedIn URL that haven't been contacted yet
         connect_contacts = (
-            db._filter_ws(db.client.table("contacts")
-            .select(
-                "id, full_name, title, linkedin_url, linkedin_status, company_id, "
-                "companies!contacts_company_id_fkey(id, name, tier, pqs_total, status, domain)"
-            ))
+            db._filter_ws(
+                db.client.table("contacts").select(
+                    "id, full_name, title, linkedin_url, linkedin_status, company_id, "
+                    "companies!contacts_company_id_fkey(id, name, tier, pqs_total, status, domain)"
+                )
+            )
             .not_.is_("linkedin_url", "null")
             .in_("linkedin_status", ["not_sent", "null"])
             .limit(20)
@@ -183,22 +189,24 @@ async def get_today_data():
         for contact in connect_contacts:
             company = contact.get("companies") or {}
             if company.get("status") in ("qualified", "outreach_pending"):
-                linkedin_connect_items.append({
-                    "contact_id": contact["id"],
-                    "company_id": contact["company_id"],
-                    "full_name": contact.get("full_name"),
-                    "title": contact.get("title"),
-                    "linkedin_url": contact.get("linkedin_url"),
-                    "linkedin_status": contact.get("linkedin_status"),
-                    "company_name": company.get("name"),
-                    "company_tier": company.get("tier"),
-                    "company_domain": company.get("domain"),
-                    "pqs_total": company.get("pqs_total", 0),
-                    # No message text — blank connection requests have no note
-                    "draft_id": None,
-                    "message_text": None,
-                    "intel": None,
-                })
+                linkedin_connect_items.append(
+                    {
+                        "contact_id": contact["id"],
+                        "company_id": contact["company_id"],
+                        "full_name": contact.get("full_name"),
+                        "title": contact.get("title"),
+                        "linkedin_url": contact.get("linkedin_url"),
+                        "linkedin_status": contact.get("linkedin_status"),
+                        "company_name": company.get("name"),
+                        "company_tier": company.get("tier"),
+                        "company_domain": company.get("domain"),
+                        "pqs_total": company.get("pqs_total", 0),
+                        # No message text — blank connection requests have no note
+                        "draft_id": None,
+                        "message_text": None,
+                        "intel": None,
+                    }
+                )
         # Sort by PQS descending
         linkedin_connect_items.sort(key=lambda x: x.get("pqs_total", 0), reverse=True)
         linkedin_connect_items = linkedin_connect_items[:15]
@@ -214,13 +222,14 @@ async def get_today_data():
 
         # Fetch contacts with accepted connections
         accepted_contacts = (
-            db._filter_ws(db.client.table("contacts")
-            .select(
-                "id, full_name, title, linkedin_url, linkedin_status, company_id, seniority, city, state, "
-                "companies!contacts_company_id_fkey(id, name, tier, pqs_total, status, domain, industry, employee_count, "
-                "revenue_printed, headcount_growth_6m, is_public, parent_company_name, "
-                "pain_signals, personalization_hooks, research_summary)"
-            ))
+            db._filter_ws(
+                db.client.table("contacts").select(
+                    "id, full_name, title, linkedin_url, linkedin_status, company_id, seniority, city, state, "
+                    "companies!contacts_company_id_fkey(id, name, tier, pqs_total, status, domain, industry, employee_count, "
+                    "revenue_printed, headcount_growth_6m, is_public, parent_company_name, "
+                    "pain_signals, personalization_hooks, research_summary)"
+                )
+            )
             .eq("linkedin_status", "connection_accepted")
             .limit(50)
             .execute()
@@ -233,8 +242,7 @@ async def get_today_data():
         if accepted_contact_ids:
             try:
                 acceptance_interactions = (
-                    db._filter_ws(db.client.table("interactions")
-                    .select("contact_id, created_at"))
+                    db._filter_ws(db.client.table("interactions").select("contact_id, created_at"))
                     .in_("contact_id", accepted_contact_ids)
                     .eq("type", "connection_accepted")
                     .lte("created_at", accepted_cutoff)
@@ -256,8 +264,9 @@ async def get_today_data():
             draft_id = None
             try:
                 drafts = (
-                    db._filter_ws(db.client.table("outreach_drafts")
-                    .select("id, body, personalization_notes"))
+                    db._filter_ws(
+                        db.client.table("outreach_drafts").select("id, body, personalization_notes")
+                    )
                     .eq("contact_id", contact["id"])
                     .eq("channel", "linkedin")
                     .in_("sequence_name", ["linkedin_dm_opening", "linkedin_dm"])
@@ -298,8 +307,7 @@ async def get_today_data():
                 dm_intel_data["personalization_notes"] = drafts[0]["personalization_notes"]
             try:
                 dm_research_rows = (
-                    db._filter_ws(db.client.table("research_intelligence")
-                    .select("*"))
+                    db._filter_ws(db.client.table("research_intelligence").select("*"))
                     .eq("company_id", contact["company_id"])
                     .order("created_at", desc=True)
                     .limit(1)
@@ -311,28 +319,32 @@ async def get_today_data():
                     dm_intel_data["research"] = {
                         "products_services": dm_ri.get("products_services", []),
                         "recent_news": dm_ri.get("recent_news", []),
-                        "pain_points": dm_ri.get("pain_points", []) or dm_research_rows[0].get("pain_points", []),
-                        "known_systems": dm_ri.get("known_systems", []) or dm_research_rows[0].get("known_systems", []),
+                        "pain_points": dm_ri.get("pain_points", [])
+                        or dm_research_rows[0].get("pain_points", []),
+                        "known_systems": dm_ri.get("known_systems", [])
+                        or dm_research_rows[0].get("known_systems", []),
                         "confidence": dm_research_rows[0].get("confidence_level"),
                     }
             except Exception:
                 pass
 
-            linkedin_dm_items.append({
-                "contact_id": contact["id"],
-                "company_id": contact["company_id"],
-                "full_name": contact.get("full_name"),
-                "title": contact.get("title"),
-                "linkedin_url": contact.get("linkedin_url"),
-                "linkedin_status": contact.get("linkedin_status"),
-                "company_name": company.get("name"),
-                "company_tier": company.get("tier"),
-                "company_domain": company.get("domain"),
-                "pqs_total": company.get("pqs_total", 0),
-                "draft_id": draft_id,
-                "message_text": draft_body,
-                "intel": dm_intel_data,
-            })
+            linkedin_dm_items.append(
+                {
+                    "contact_id": contact["id"],
+                    "company_id": contact["company_id"],
+                    "full_name": contact.get("full_name"),
+                    "title": contact.get("title"),
+                    "linkedin_url": contact.get("linkedin_url"),
+                    "linkedin_status": contact.get("linkedin_status"),
+                    "company_name": company.get("name"),
+                    "company_tier": company.get("tier"),
+                    "company_domain": company.get("domain"),
+                    "pqs_total": company.get("pqs_total", 0),
+                    "draft_id": draft_id,
+                    "message_text": draft_body,
+                    "intel": dm_intel_data,
+                }
+            )
     except Exception as e:
         logger.warning(f"Failed to fetch linkedin dm items: {e}")
 
@@ -340,8 +352,11 @@ async def get_today_data():
     content_items: list[dict] = []
     try:
         content_drafts = (
-            db._filter_ws(db.client.table("outreach_drafts")
-            .select("id, subject, body, channel, sequence_name, approval_status, created_at"))
+            db._filter_ws(
+                db.client.table("outreach_drafts").select(
+                    "id, subject, body, channel, sequence_name, approval_status, created_at"
+                )
+            )
             .eq("channel", "other")
             .in_("sequence_name", ["thought_leadership", "content"])
             .in_("approval_status", ["pending", "approved"])
@@ -351,13 +366,15 @@ async def get_today_data():
             .data
         ) or []
         for d in content_drafts:
-            content_items.append({
-                "draft_id": d.get("id"),
-                "topic": d.get("subject", "LinkedIn Post"),
-                "post_text": d.get("body", ""),
-                "approval_status": d.get("approval_status"),
-                "created_at": d.get("created_at"),
-            })
+            content_items.append(
+                {
+                    "draft_id": d.get("id"),
+                    "topic": d.get("subject", "LinkedIn Post"),
+                    "post_text": d.get("body", ""),
+                    "approval_status": d.get("approval_status"),
+                    "created_at": d.get("created_at"),
+                }
+            )
     except Exception as e:
         logger.warning(f"Failed to fetch content drafts: {e}")
 
@@ -365,43 +382,50 @@ async def get_today_data():
     pending_acceptances: list[dict] = []
     try:
         pa_result = (
-            db._filter_ws(db.client.table("contacts")
-            .select(
-                "id, full_name, title, linkedin_url, company_id, "
-                "companies!contacts_company_id_fkey(name, tier, pqs_total)"
-            ))
+            db._filter_ws(
+                db.client.table("contacts").select(
+                    "id, full_name, title, linkedin_url, company_id, "
+                    "companies!contacts_company_id_fkey(name, tier, pqs_total)"
+                )
+            )
             .eq("linkedin_status", "connection_sent")
             .limit(30)
             .execute()
         )
-        for c in (pa_result.data or []):
+        for c in pa_result.data or []:
             company = c.get("companies") or {}
             if isinstance(company, list):
                 company = company[0] if company else {}
-            pending_acceptances.append({
-                "contact_id": c["id"],
-                "company_id": c.get("company_id"),
-                "full_name": c.get("full_name"),
-                "title": c.get("title"),
-                "linkedin_url": c.get("linkedin_url"),
-                "company_name": company.get("name"),
-                "company_tier": company.get("tier"),
-                "pqs_total": company.get("pqs_total", 0),
-            })
+            pending_acceptances.append(
+                {
+                    "contact_id": c["id"],
+                    "company_id": c.get("company_id"),
+                    "full_name": c.get("full_name"),
+                    "title": c.get("title"),
+                    "linkedin_url": c.get("linkedin_url"),
+                    "company_name": company.get("name"),
+                    "company_tier": company.get("tier"),
+                    "pqs_total": company.get("pqs_total", 0),
+                }
+            )
     except Exception as e:
         logger.warning(f"Failed to fetch pending acceptances: {e}")
 
     # --- Pipeline summary ---
     pipeline_summary: dict[str, int] = {}
     pipeline_statuses = [
-        "discovered", "researched", "qualified", "outreach_pending",
-        "contacted", "engaged", "meeting_scheduled",
+        "discovered",
+        "researched",
+        "qualified",
+        "outreach_pending",
+        "contacted",
+        "engaged",
+        "meeting_scheduled",
     ]
     for status in pipeline_statuses:
         try:
             result = (
-                db._filter_ws(db.client.table("companies")
-                .select("id", count="exact"))
+                db._filter_ws(db.client.table("companies").select("id", count="exact"))
                 .eq("status", status)
                 .execute()
             )
@@ -412,8 +436,7 @@ async def get_today_data():
     # --- Progress: actions completed today ---
     try:
         completed_today = (
-            db._filter_ws(db.client.table("interactions")
-            .select("id", count="exact"))
+            db._filter_ws(db.client.table("interactions").select("id", count="exact"))
             .gte("created_at", today_start)
             .in_("source", ["daily_cockpit", "manual"])
             .execute()
@@ -430,8 +453,7 @@ async def get_today_data():
 
     try:
         conn_result = (
-            db._filter_ws(db.client.table("interactions")
-            .select("id", count="exact"))
+            db._filter_ws(db.client.table("interactions").select("id", count="exact"))
             .gte("created_at", today_start)
             .eq("type", "note")
             .eq("source", "daily_cockpit")
@@ -447,8 +469,7 @@ async def get_today_data():
         # Count interactions with action_type=linkedin_connection in metadata
         # Supabase doesn't support metadata filtering easily, so we fetch recent ones
         recent_cockpit = (
-            db._filter_ws(db.client.table("interactions")
-            .select("metadata"))
+            db._filter_ws(db.client.table("interactions").select("metadata"))
             .gte("created_at", today_start)
             .eq("source", "daily_cockpit")
             .limit(100)
@@ -472,8 +493,7 @@ async def get_today_data():
     # Count learning_outcomes as logged outcomes today
     try:
         lo_result = (
-            db._filter_ws(db.client.table("learning_outcomes")
-            .select("id", count="exact"))
+            db._filter_ws(db.client.table("learning_outcomes").select("id", count="exact"))
             .gte("recorded_at", today_start)
             .execute()
         )
@@ -484,13 +504,14 @@ async def get_today_data():
     # --- Recent interactions needing outcome logging (last 24h) ---
     try:
         recent_interactions = (
-            db._filter_ws(db.client.table("interactions")
-            .select(
-                "id, type, channel, subject, body, created_at, metadata, "
-                "company_id, contact_id, "
-                "companies(id, name, tier, pqs_total), "
-                "contacts(id, full_name, title)"
-            ))
+            db._filter_ws(
+                db.client.table("interactions").select(
+                    "id, type, channel, subject, body, created_at, metadata, "
+                    "company_id, contact_id, "
+                    "companies(id, name, tier, pqs_total), "
+                    "contacts(id, full_name, title)"
+                )
+            )
             .gte("created_at", yesterday)
             .in_("type", ["email_replied", "email_opened", "linkedin_message"])
             .order("created_at", desc=True)
@@ -505,14 +526,22 @@ async def get_today_data():
     # --- Pending AI-recommended next actions ---
     try:
         today_date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        pending_actions_result = db._filter_ws(db.client.table("contact_events").select(
-            "id, contact_id, company_id, event_type, channel, body, sentiment, "
-            "next_action, next_action_date, suggested_message, action_reasoning, "
-            "contacts(full_name, title, linkedin_url), "
-            "companies(name, tier, industry)"
-        )).eq("next_action_status", "pending").not_.is_("next_action", "null").lte(
-            "next_action_date", today_date_str
-        ).order("next_action_date").limit(20).execute()
+        pending_actions_result = (
+            db._filter_ws(
+                db.client.table("contact_events").select(
+                    "id, contact_id, company_id, event_type, channel, body, sentiment, "
+                    "next_action, next_action_date, suggested_message, action_reasoning, "
+                    "contacts(full_name, title, linkedin_url), "
+                    "companies(name, tier, industry)"
+                )
+            )
+            .eq("next_action_status", "pending")
+            .not_.is_("next_action", "null")
+            .lte("next_action_date", today_date_str)
+            .order("next_action_date")
+            .limit(20)
+            .execute()
+        )
 
         pending_next_actions = pending_actions_result.data or []
     except Exception:
@@ -680,12 +709,16 @@ async def log_outcome(req: OutcomeRequest):
     new_status = _OUTCOME_STATUS_MAP.get(req.outcome)
     if new_status:
         try:
-            db._filter_ws(db.client.table("companies").update({
-                "status": new_status,
-                "status_changed_at": now,
-                "updated_at": now,
-                "priority_flag": req.outcome in ("interested", "meeting_booked"),
-            })).eq("id", req.company_id).execute()
+            db._filter_ws(
+                db.client.table("companies").update(
+                    {
+                        "status": new_status,
+                        "status_changed_at": now,
+                        "updated_at": now,
+                        "priority_flag": req.outcome in ("interested", "meeting_booked"),
+                    }
+                )
+            ).eq("id", req.company_id).execute()
         except Exception as e:
             logger.warning(f"Failed to update company status: {e}")
 
@@ -694,8 +727,7 @@ async def log_outcome(req: OutcomeRequest):
     if pqs_delta != 0:
         try:
             company = (
-                db._filter_ws(db.client.table("companies")
-                .select("pqs_engagement, pqs_total"))
+                db._filter_ws(db.client.table("companies").select("pqs_engagement, pqs_total"))
                 .eq("id", req.company_id)
                 .execute()
                 .data
@@ -705,11 +737,15 @@ async def log_outcome(req: OutcomeRequest):
                 current_total = company[0].get("pqs_total", 0) or 0
                 new_engagement = max(0, min(25, current_engagement + pqs_delta))
                 new_total = max(0, current_total + pqs_delta)
-                db._filter_ws(db.client.table("companies").update({
-                    "pqs_engagement": new_engagement,
-                    "pqs_total": new_total,
-                    "updated_at": now,
-                })).eq("id", req.company_id).execute()
+                db._filter_ws(
+                    db.client.table("companies").update(
+                        {
+                            "pqs_engagement": new_engagement,
+                            "pqs_total": new_total,
+                            "updated_at": now,
+                        }
+                    )
+                ).eq("id", req.company_id).execute()
         except Exception as e:
             logger.warning(f"Failed to update PQS score: {e}")
 
@@ -821,20 +857,28 @@ async def mark_done(req: MarkDoneRequest):
     # For LinkedIn connection — update contact linkedin_status
     if req.action_type == "linkedin_connection" and req.contact_id:
         try:
-            db._filter_ws(db.client.table("contacts").update({
-                "linkedin_status": "connection_sent",
-                "updated_at": now,
-            })).eq("id", req.contact_id).execute()
+            db._filter_ws(
+                db.client.table("contacts").update(
+                    {
+                        "linkedin_status": "connection_sent",
+                        "updated_at": now,
+                    }
+                )
+            ).eq("id", req.contact_id).execute()
         except Exception as e:
             logger.warning(f"Failed to update linkedin_status: {e}")
 
     # For LinkedIn DM — update contact linkedin_status
     if req.action_type == "linkedin_dm" and req.contact_id:
         try:
-            db._filter_ws(db.client.table("contacts").update({
-                "linkedin_status": "dm_sent",
-                "updated_at": now,
-            })).eq("id", req.contact_id).execute()
+            db._filter_ws(
+                db.client.table("contacts").update(
+                    {
+                        "linkedin_status": "dm_sent",
+                        "updated_at": now,
+                    }
+                )
+            ).eq("id", req.contact_id).execute()
         except Exception as e:
             logger.warning(f"Failed to update linkedin_status for DM: {e}")
 
@@ -843,11 +887,19 @@ async def mark_done(req: MarkDoneRequest):
         try:
             # Find the most recent draft that was sent
             draft_rows = (
-                db._filter_ws(db.client.table("outreach_drafts")
-                .select("body, sequence_name"))
+                db._filter_ws(db.client.table("outreach_drafts").select("body, sequence_name"))
                 .eq("contact_id", req.contact_id)
                 .eq("channel", "linkedin")
-                .in_("sequence_name", [req.action_type, "linkedin_connection", "linkedin_connect", "linkedin_dm_opening", "linkedin_dm"])
+                .in_(
+                    "sequence_name",
+                    [
+                        req.action_type,
+                        "linkedin_connection",
+                        "linkedin_connect",
+                        "linkedin_dm_opening",
+                        "linkedin_dm",
+                    ],
+                )
                 .order("created_at", desc=True)
                 .limit(1)
                 .execute()
@@ -874,8 +926,11 @@ async def mark_done(req: MarkDoneRequest):
     if req.action_type in ("linkedin_connection", "linkedin_dm") and req.contact_id:
         try:
             seqs = (
-                db._filter_ws(db.client.table("engagement_sequences")
-                .select("id, current_step, total_steps, sequence_name"))
+                db._filter_ws(
+                    db.client.table("engagement_sequences").select(
+                        "id, current_step, total_steps, sequence_name"
+                    )
+                )
                 .eq("contact_id", req.contact_id)
                 .eq("status", "active")
                 .like("next_action_type", "%linkedin%")
@@ -885,48 +940,61 @@ async def mark_done(req: MarkDoneRequest):
             )
             if seqs:
                 seq = seqs[0]
-                next_action_at = (
-                    datetime.now(timezone.utc) + timedelta(days=1)
-                ).isoformat()
+                next_action_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
                 new_step = seq["current_step"] + 1
 
                 if new_step > seq["total_steps"]:
-                    db._filter_ws(db.client.table("engagement_sequences").update({
-                        "status": "completed",
-                        "updated_at": now,
-                    })).eq("id", seq["id"]).execute()
+                    db._filter_ws(
+                        db.client.table("engagement_sequences").update(
+                            {
+                                "status": "completed",
+                                "updated_at": now,
+                            }
+                        )
+                    ).eq("id", seq["id"]).execute()
                 else:
-                    db._filter_ws(db.client.table("engagement_sequences").update({
-                        "current_step": new_step,
-                        "next_action_at": next_action_at,
-                        "updated_at": now,
-                    })).eq("id", seq["id"]).execute()
+                    db._filter_ws(
+                        db.client.table("engagement_sequences").update(
+                            {
+                                "current_step": new_step,
+                                "next_action_at": next_action_at,
+                                "updated_at": now,
+                            }
+                        )
+                    ).eq("id", seq["id"]).execute()
         except Exception as e:
             logger.warning(f"Failed to advance engagement sequence: {e}")
 
     # Handle connection_accepted — update status + auto-generate DM
     if req.action_type == "connection_accepted" and req.contact_id:
         try:
-            db._filter_ws(db.client.table("contacts").update({
-                "linkedin_status": "connection_accepted",
-                "updated_at": now,
-            })).eq("id", req.contact_id).execute()
+            db._filter_ws(
+                db.client.table("contacts").update(
+                    {
+                        "linkedin_status": "connection_accepted",
+                        "updated_at": now,
+                    }
+                )
+            ).eq("id", req.contact_id).execute()
 
             # Log the acceptance as an interaction
-            db.insert_interaction({
-                "company_id": req.company_id,
-                "contact_id": req.contact_id,
-                "type": "linkedin_connection",
-                "channel": "linkedin",
-                "subject": "Connection accepted",
-                "source": "user",
-                "metadata": {"status": "accepted"},
-            })
+            db.insert_interaction(
+                {
+                    "company_id": req.company_id,
+                    "contact_id": req.contact_id,
+                    "type": "linkedin_connection",
+                    "channel": "linkedin",
+                    "subject": "Connection accepted",
+                    "source": "user",
+                    "metadata": {"status": "accepted"},
+                }
+            )
 
             # Auto-generate DM for this contact (will appear in 2 days)
             try:
                 from backend.app.agents.linkedin import LinkedInAgent
-                agent = LinkedInAgent()
+
+                agent = LinkedInAgent(workspace_id=get_workspace_id())
                 agent.execute(
                     company_ids=[req.company_id] if req.company_id else None,
                     limit=1,
@@ -941,10 +1009,14 @@ async def mark_done(req: MarkDoneRequest):
     # Handle connection_ignored — mark and switch to email channel
     if req.action_type == "connection_ignored" and req.contact_id:
         try:
-            db._filter_ws(db.client.table("contacts").update({
-                "linkedin_status": "connection_ignored",
-                "updated_at": now,
-            })).eq("id", req.contact_id).execute()
+            db._filter_ws(
+                db.client.table("contacts").update(
+                    {
+                        "linkedin_status": "connection_ignored",
+                        "updated_at": now,
+                    }
+                )
+            ).eq("id", req.contact_id).execute()
         except Exception as e:
             logger.warning(f"Failed to process connection_ignored: {e}")
 

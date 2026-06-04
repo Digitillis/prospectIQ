@@ -32,7 +32,7 @@ from backend.app.analytics.reports import CampaignReporter
 console = Console()
 
 # Color thresholds
-_GREEN_REPLY_RATE = 5.0   # >=5% reply rate is healthy
+_GREEN_REPLY_RATE = 5.0  # >=5% reply rate is healthy
 _YELLOW_REPLY_RATE = 2.0  # 2–5% is ok
 # Red = below 2%
 
@@ -40,6 +40,7 @@ _YELLOW_REPLY_RATE = 2.0  # 2–5% is ok
 # ---------------------------------------------------------------------------
 # Rendering helpers
 # ---------------------------------------------------------------------------
+
 
 def _rate_color(rate: float) -> str:
     """Return a Rich color string based on a reply rate percentage."""
@@ -66,6 +67,7 @@ def _bar(value: float, total: float, width: int = 20) -> str:
 # ---------------------------------------------------------------------------
 # Section renderers
 # ---------------------------------------------------------------------------
+
 
 def render_header(campaign_name: str | None, weeks: int) -> None:
     today = date.today().strftime("%A, %B %d %Y")
@@ -94,10 +96,17 @@ def render_funnel(funnel: dict, funnel_30: dict) -> None:
     table.add_column("Conv. Rate", justify="right", min_width=10)
 
     stages_to_show = [
-        "discovered", "enriched", "sequenced",
-        "touch_1_sent", "touch_2_sent", "touch_3_sent",
-        "touch_4_sent", "touch_5_sent",
-        "replied", "demo_scheduled", "closed_won",
+        "discovered",
+        "enriched",
+        "sequenced",
+        "touch_1_sent",
+        "touch_2_sent",
+        "touch_3_sent",
+        "touch_4_sent",
+        "touch_5_sent",
+        "replied",
+        "demo_scheduled",
+        "closed_won",
     ]
 
     # Find max for bar scaling
@@ -165,11 +174,14 @@ def render_funnel(funnel: dict, funnel_30: dict) -> None:
     rate_table.add_row("Demo / Reply rate (30d)", _colored_rate(demo_rate))
     rate_table.add_row("Win rate (demo → won)", _colored_rate(win_rate))
 
-    console.print(Panel(rate_table, title="[bold]Conversion Rates[/bold]",
-                        border_style="cyan", expand=False))
+    console.print(
+        Panel(rate_table, title="[bold]Conversion Rates[/bold]", border_style="cyan", expand=False)
+    )
 
 
-def render_breakdowns(by_persona: list[dict], by_vertical: list[dict], by_touch: list[dict]) -> None:
+def render_breakdowns(
+    by_persona: list[dict], by_vertical: list[dict], by_touch: list[dict]
+) -> None:
     """Three side-by-side breakdown tables."""
 
     # -- Persona table --
@@ -395,12 +407,14 @@ def render_intent_impact(impact: dict) -> None:
     if not impact.get("has_meaningful_data"):
         footer += "  [dim](not enough data for statistical confidence)[/dim]"
 
-    console.print(Panel(
-        i_table,
-        title="[bold]Intent Signal Impact[/bold]",
-        subtitle=footer,
-        border_style="yellow",
-    ))
+    console.print(
+        Panel(
+            i_table,
+            title="[bold]Intent Signal Impact[/bold]",
+            subtitle=footer,
+            border_style="yellow",
+        )
+    )
 
 
 def render_action_queue(db: Database, campaign_name: str | None) -> None:
@@ -414,8 +428,7 @@ def render_action_queue(db: Database, campaign_name: str | None) -> None:
         )
         if campaign_name:
             items = [
-                i for i in items
-                if (i.get("companies") or {}).get("campaign_name") == campaign_name
+                i for i in items if (i.get("companies") or {}).get("campaign_name") == campaign_name
             ]
     except Exception as exc:
         console.print(f"[dim]Could not load action queue: {exc}[/dim]")
@@ -439,7 +452,11 @@ def render_action_queue(db: Database, campaign_name: str | None) -> None:
     if not items:
         table.add_row("[dim]Queue empty — nothing pending today[/dim]", "", "", "", "", "")
     else:
-        priority_icons = {1: "[bold red]!!!  [/bold red]", 2: "[yellow]!!   [/yellow]", 3: "[blue]!    [/blue]"}
+        priority_icons = {
+            1: "[bold red]!!!  [/bold red]",
+            2: "[yellow]!!   [/yellow]",
+            3: "[blue]!    [/blue]",
+        }
         for item in items:
             priority = item.get("priority", 3)
             company = item.get("companies") or {}
@@ -466,13 +483,15 @@ def render_recommendations(recs: list[str]) -> None:
         lines.append(f"  {i}. {rec}")
 
     content = "\n".join(lines) if lines else "  No recommendations yet."
-    console.print(Panel(content, title="[bold]Optimization Recommendations[/bold]",
-                        border_style="green"))
+    console.print(
+        Panel(content, title="[bold]Optimization Recommendations[/bold]", border_style="green")
+    )
 
 
 # ---------------------------------------------------------------------------
 # Main entrypoint
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

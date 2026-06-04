@@ -51,9 +51,7 @@ class ReengagementAgent(BaseAgent):
         """
         result = AgentResult()
 
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=cooldown_days)
-        ).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=cooldown_days)).isoformat()
 
         console.print(
             f"[cyan]Scanning for re-engagement candidates "
@@ -96,9 +94,14 @@ class ReengagementAgent(BaseAgent):
             # Skip if company already progressed past "contacted"
             company_status = company.get("status", "")
             if company_status in (
-                "engaged", "meeting_scheduled", "pilot_discussion",
-                "pilot_signed", "active_pilot", "converted",
-                "not_interested", "disqualified",
+                "engaged",
+                "meeting_scheduled",
+                "pilot_discussion",
+                "pilot_signed",
+                "active_pilot",
+                "converted",
+                "not_interested",
+                "disqualified",
             ):
                 continue
 
@@ -143,25 +146,27 @@ class ReengagementAgent(BaseAgent):
                 self.db.update_company(company_id, {"status": "qualified"})
 
                 # Log the re-engagement
-                self.db.insert_interaction({
-                    "company_id": company_id,
-                    "contact_id": contact_id,
-                    "type": "note",
-                    "channel": "other",
-                    "subject": "Re-engagement triggered",
-                    "body": (
-                        f"Prospect re-queued for warm_follow_up sequence after "
-                        f"{cooldown_days}-day cooldown. Original sequence: "
-                        f"{seq.get('sequence_name')}. PQS at re-engagement: "
-                        f"{company.get('pqs_total', 0)}."
-                    ),
-                    "source": "system",
-                    "metadata": {
-                        "original_sequence_id": seq["id"],
-                        "original_sequence_name": seq.get("sequence_name"),
-                        "cooldown_days": cooldown_days,
-                    },
-                })
+                self.db.insert_interaction(
+                    {
+                        "company_id": company_id,
+                        "contact_id": contact_id,
+                        "type": "note",
+                        "channel": "other",
+                        "subject": "Re-engagement triggered",
+                        "body": (
+                            f"Prospect re-queued for warm_follow_up sequence after "
+                            f"{cooldown_days}-day cooldown. Original sequence: "
+                            f"{seq.get('sequence_name')}. PQS at re-engagement: "
+                            f"{company.get('pqs_total', 0)}."
+                        ),
+                        "source": "system",
+                        "metadata": {
+                            "original_sequence_id": seq["id"],
+                            "original_sequence_name": seq.get("sequence_name"),
+                            "cooldown_days": cooldown_days,
+                        },
+                    }
+                )
 
                 console.print(
                     f"  [green]{company_name}: Re-queued for warm follow-up "
@@ -192,6 +197,7 @@ class ReengagementAgent(BaseAgent):
 
         try:
             from backend.app.utils.notifications import notify_slack
+
             if reengaged > 0:
                 notify_slack(
                     f"*Re-engagement:* {reengaged} stale prospects re-queued for warm follow-up "

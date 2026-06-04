@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # Output model
 # ---------------------------------------------------------------------------
 
+
 class ReplyClassification(BaseModel):
     intent: str  # one of the 8 categories
     confidence: float  # 0.0–1.0
@@ -103,12 +104,14 @@ _classification_cache: dict[str, ReplyClassification] = {}
 def _body_key(body: str) -> str:
     """Cheap deterministic cache key from body text."""
     import hashlib
+
     return hashlib.sha256(body.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
 # Classifier
 # ---------------------------------------------------------------------------
+
 
 class ReplyClassifier:
     """Classify inbound prospect replies using Claude Haiku."""
@@ -177,9 +180,9 @@ class ReplyClassifier:
         result = ReplyClassification(
             intent=intent,
             confidence=float(parsed.get("confidence", 0.5)),
-            extracted_entities=parsed.get("extracted_entities", {
-                "competitors": [], "pain_points": [], "timeline": ""
-            }),
+            extracted_entities=parsed.get(
+                "extracted_entities", {"competitors": [], "pain_points": [], "timeline": ""}
+            ),
             summary=parsed.get("summary", ""),
             next_action_suggestion=parsed.get("next_action_suggestion", ""),
             auto_actionable=intent in self.AUTO_ACTION_INTENTS,

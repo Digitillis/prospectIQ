@@ -35,7 +35,8 @@ class ICPManager:
                 .eq("is_active", True)
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             return rows[0]["id"] if rows else None
         except Exception as e:
@@ -51,7 +52,8 @@ class ICPManager:
                 .eq("is_active", True)
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             if rows:
                 return rows[0]
@@ -61,6 +63,7 @@ class ICPManager:
         # YAML fallback — always available
         try:
             from backend.app.core.config import get_icp_config
+
             payload = get_icp_config()
             return {"id": None, "version": 0, "label": "yaml_default", "payload": payload}
         except Exception:
@@ -83,7 +86,8 @@ class ICPManager:
                 .order("version", desc=True)
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             next_version = (existing[0]["version"] + 1) if existing else 1
 
@@ -102,7 +106,9 @@ class ICPManager:
             if activate:
                 self.activate(new_id)
 
-            logger.info("Created ICP version %s (id=%s, activate=%s)", next_version, new_id, activate)
+            logger.info(
+                "Created ICP version %s (id=%s, activate=%s)", next_version, new_id, activate
+            )
             return new_id
         except Exception as e:
             logger.error("Failed to create ICP version: %s", e)
@@ -119,10 +125,13 @@ class ICPManager:
             q.execute()
             # Activate target
             from datetime import datetime, timezone
-            self._db.client.table("icp_definitions").update({
-                "is_active": True,
-                "activated_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", version_id).execute()
+
+            self._db.client.table("icp_definitions").update(
+                {
+                    "is_active": True,
+                    "activated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("id", version_id).execute()
             logger.info("Activated ICP version %s", version_id)
         except Exception as e:
             logger.error("Failed to activate ICP version %s: %s", version_id, e)
@@ -152,8 +161,9 @@ class ICPManager:
             logger.warning("Could not check ICP exclusion for %s: %s", company_id, e)
             return False, None
 
-    def exclude_company(self, company_id: str, reason: str, detail: str = "",
-                        excluded_by: str = "system") -> None:
+    def exclude_company(
+        self, company_id: str, reason: str, detail: str = "", excluded_by: str = "system"
+    ) -> None:
         """Add a company to the ICP exclusions list."""
         try:
             workspace_id = getattr(self._db, "workspace_id", None)
@@ -165,7 +175,9 @@ class ICPManager:
             }
             if workspace_id:
                 row["workspace_id"] = workspace_id
-            self._db.client.table("icp_exclusions").upsert(row, on_conflict="workspace_id,company_id").execute()
+            self._db.client.table("icp_exclusions").upsert(
+                row, on_conflict="workspace_id,company_id"
+            ).execute()
             logger.info("Excluded company %s from ICP (reason=%s)", company_id, reason)
         except Exception as e:
             logger.error("Failed to exclude company %s: %s", company_id, e)

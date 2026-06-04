@@ -17,9 +17,7 @@ def test_sweeper_marks_old_dispatched_as_permanently_failed():
     db_client.table.return_value.update.return_value = update_chain
     update_chain.eq.return_value = update_chain
     update_chain.lt.return_value = update_chain
-    update_chain.execute.return_value = MagicMock(data=[
-        {"id": "attempt-1"}, {"id": "attempt-2"}
-    ])
+    update_chain.execute.return_value = MagicMock(data=[{"id": "attempt-1"}, {"id": "attempt-2"}])
 
     with patch("backend.app.core.database.get_supabase_client", return_value=db_client):
         _run_dispatched_sweeper()
@@ -59,9 +57,7 @@ def test_sweeper_queries_only_dispatched_status():
         _run_dispatched_sweeper()
 
     status_filters = [c[1] for c in eq_calls if c[0] == "status"]
-    assert "DISPATCHED" in status_filters, (
-        "Sweeper must filter on status='DISPATCHED'"
-    )
+    assert "DISPATCHED" in status_filters, "Sweeper must filter on status='DISPATCHED'"
 
 
 def test_sweeper_logs_warning_when_rows_found(caplog):
@@ -76,10 +72,12 @@ def test_sweeper_logs_warning_when_rows_found(caplog):
     update_chain.lt.return_value = update_chain
     update_chain.execute.return_value = MagicMock(data=[{"id": "a1"}, {"id": "a2"}])
 
-    with patch("backend.app.core.database.get_supabase_client", return_value=db_client), \
-         caplog.at_level(logging.WARNING, logger="backend.app.api.main"):
+    with (
+        patch("backend.app.core.database.get_supabase_client", return_value=db_client),
+        caplog.at_level(logging.WARNING, logger="backend.app.api.main"),
+    ):
         _run_dispatched_sweeper()
 
-    assert any("orphan" in r.message.lower() or "DISPATCHED" in r.message for r in caplog.records), (
-        "Expected a warning log when orphan DISPATCHED rows are found"
-    )
+    assert any(
+        "orphan" in r.message.lower() or "DISPATCHED" in r.message for r in caplog.records
+    ), "Expected a warning log when orphan DISPATCHED rows are found"

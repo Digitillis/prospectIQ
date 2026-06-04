@@ -32,6 +32,7 @@ def get_db() -> Database:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class KnowledgeItemCreate(BaseModel):
     title: str
     type: str  # icp | template | competitor | case_study | offer | general
@@ -48,6 +49,7 @@ class RetrieveRequest(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post("/items", status_code=201)
 async def upload_knowledge_item(payload: KnowledgeItemCreate):
     """Upload a knowledge item and ingest it into the RAG memory store."""
@@ -63,13 +65,19 @@ async def upload_knowledge_item(payload: KnowledgeItemCreate):
 
     # Insert knowledge item row
     try:
-        result = db.client.table("knowledge_items").insert({
-            "workspace_id": workspace_id,
-            "title": payload.title,
-            "type": payload.type,
-            "content": payload.content,
-            "metadata": payload.metadata,
-        }).execute()
+        result = (
+            db.client.table("knowledge_items")
+            .insert(
+                {
+                    "workspace_id": workspace_id,
+                    "title": payload.title,
+                    "type": payload.type,
+                    "content": payload.content,
+                    "metadata": payload.metadata,
+                }
+            )
+            .execute()
+        )
         item = result.data[0]
         item_id = item["id"]
     except Exception as e:
@@ -213,7 +221,8 @@ async def memory_status():
         return {
             "mode": store.mode,
             "mode_description": (
-                "Semantic vector search (Voyage AI)" if store.mode == "vector"
+                "Semantic vector search (Voyage AI)"
+                if store.mode == "vector"
                 else "PostgreSQL full-text search (no Voyage AI key set)"
             ),
             "knowledge_items": items_result.count or 0,

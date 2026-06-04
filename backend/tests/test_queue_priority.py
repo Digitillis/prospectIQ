@@ -42,6 +42,7 @@ def _company(**overrides) -> dict:
 # Persona ordering
 # ---------------------------------------------------------------------------
 
+
 def test_vp_ops_scores_higher_than_plant_manager() -> None:
     """vp_ops carries more persona points than plant_manager."""
     company = _company()
@@ -63,6 +64,7 @@ def test_known_persona_scores_higher_than_unknown_persona() -> None:
 # ---------------------------------------------------------------------------
 # Signal-driven intent boost
 # ---------------------------------------------------------------------------
+
 
 def test_company_with_no_signals_scores_lower_than_with_fda_signals() -> None:
     """Intent score from active signals is added (capped at 15)."""
@@ -98,6 +100,7 @@ def test_fb_company_with_fsma_signal_outscores_same_company_without() -> None:
 # ---------------------------------------------------------------------------
 # Score range
 # ---------------------------------------------------------------------------
+
 
 def test_score_clamped_to_zero_minimum() -> None:
     """Negative components (heavy recency penalty) cannot push score below 0."""

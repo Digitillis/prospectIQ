@@ -51,78 +51,71 @@ logger = logging.getLogger(__name__)
 
 CLUSTER_SEQUENCE_MAP: dict[tuple[str, str | None], str] = {
     # ── Machinery cluster ────────────────────────────────────────────────────
-    ("machinery", "vp_ops"):           "INSTANTLY_SEQ_MACHINERY_VP_OPS",
-    ("machinery", "coo"):              "INSTANTLY_SEQ_MACHINERY_VP_OPS",
-    ("machinery", "plant_manager"):    "INSTANTLY_SEQ_MACHINERY_PLANT_MANAGER",
-    ("machinery", "director_ops"):     "INSTANTLY_SEQ_MACHINERY_PLANT_MANAGER",
+    ("machinery", "vp_ops"): "INSTANTLY_SEQ_MACHINERY_VP_OPS",
+    ("machinery", "coo"): "INSTANTLY_SEQ_MACHINERY_VP_OPS",
+    ("machinery", "plant_manager"): "INSTANTLY_SEQ_MACHINERY_PLANT_MANAGER",
+    ("machinery", "director_ops"): "INSTANTLY_SEQ_MACHINERY_PLANT_MANAGER",
     ("machinery", "maintenance_leader"): "INSTANTLY_SEQ_MACHINERY_MAINTENANCE",
     ("machinery", "digital_transformation"): "INSTANTLY_SEQ_MACHINERY_VP_OPS",
-    ("machinery", None):               "INSTANTLY_SEQ_MACHINERY_GENERAL",
-
+    ("machinery", None): "INSTANTLY_SEQ_MACHINERY_GENERAL",
     # ── Auto cluster ─────────────────────────────────────────────────────────
-    ("auto", "vp_ops"):                "INSTANTLY_SEQ_AUTO_VP_OPS",
-    ("auto", "coo"):                   "INSTANTLY_SEQ_AUTO_VP_OPS",
-    ("auto", "plant_manager"):         "INSTANTLY_SEQ_AUTO_PLANT_MANAGER",
-    ("auto", "director_ops"):          "INSTANTLY_SEQ_AUTO_PLANT_MANAGER",
-    ("auto", "maintenance_leader"):    "INSTANTLY_SEQ_AUTO_MAINTENANCE",
-    ("auto", None):                    "INSTANTLY_SEQ_AUTO_GENERAL",
-
+    ("auto", "vp_ops"): "INSTANTLY_SEQ_AUTO_VP_OPS",
+    ("auto", "coo"): "INSTANTLY_SEQ_AUTO_VP_OPS",
+    ("auto", "plant_manager"): "INSTANTLY_SEQ_AUTO_PLANT_MANAGER",
+    ("auto", "director_ops"): "INSTANTLY_SEQ_AUTO_PLANT_MANAGER",
+    ("auto", "maintenance_leader"): "INSTANTLY_SEQ_AUTO_MAINTENANCE",
+    ("auto", None): "INSTANTLY_SEQ_AUTO_GENERAL",
     # ── Chemicals cluster ────────────────────────────────────────────────────
-    ("chemicals", "vp_ops"):           "INSTANTLY_SEQ_CHEMICALS_VP_OPS",
-    ("chemicals", "coo"):              "INSTANTLY_SEQ_CHEMICALS_VP_OPS",
-    ("chemicals", "plant_manager"):    "INSTANTLY_SEQ_CHEMICALS_PLANT_MANAGER",
-    ("chemicals", "director_ops"):     "INSTANTLY_SEQ_CHEMICALS_PLANT_MANAGER",
+    ("chemicals", "vp_ops"): "INSTANTLY_SEQ_CHEMICALS_VP_OPS",
+    ("chemicals", "coo"): "INSTANTLY_SEQ_CHEMICALS_VP_OPS",
+    ("chemicals", "plant_manager"): "INSTANTLY_SEQ_CHEMICALS_PLANT_MANAGER",
+    ("chemicals", "director_ops"): "INSTANTLY_SEQ_CHEMICALS_PLANT_MANAGER",
     ("chemicals", "maintenance_leader"): "INSTANTLY_SEQ_CHEMICALS_MAINTENANCE",
-    ("chemicals", None):               "INSTANTLY_SEQ_CHEMICALS_GENERAL",
-
+    ("chemicals", None): "INSTANTLY_SEQ_CHEMICALS_GENERAL",
     # ── Metals cluster ───────────────────────────────────────────────────────
-    ("metals", "vp_ops"):              "INSTANTLY_SEQ_METALS_VP_OPS",
-    ("metals", "coo"):                 "INSTANTLY_SEQ_METALS_VP_OPS",
-    ("metals", "plant_manager"):       "INSTANTLY_SEQ_METALS_PLANT_MANAGER",
-    ("metals", "director_ops"):        "INSTANTLY_SEQ_METALS_PLANT_MANAGER",
-    ("metals", "maintenance_leader"):  "INSTANTLY_SEQ_METALS_MAINTENANCE",
-    ("metals", None):                  "INSTANTLY_SEQ_METALS_GENERAL",
-
+    ("metals", "vp_ops"): "INSTANTLY_SEQ_METALS_VP_OPS",
+    ("metals", "coo"): "INSTANTLY_SEQ_METALS_VP_OPS",
+    ("metals", "plant_manager"): "INSTANTLY_SEQ_METALS_PLANT_MANAGER",
+    ("metals", "director_ops"): "INSTANTLY_SEQ_METALS_PLANT_MANAGER",
+    ("metals", "maintenance_leader"): "INSTANTLY_SEQ_METALS_MAINTENANCE",
+    ("metals", None): "INSTANTLY_SEQ_METALS_GENERAL",
     # ── Process cluster (refining, mining, paper, cement) ───────────────────
-    ("process", "vp_ops"):             "INSTANTLY_SEQ_PROCESS_VP_OPS",
-    ("process", "coo"):                "INSTANTLY_SEQ_PROCESS_VP_OPS",
-    ("process", "plant_manager"):      "INSTANTLY_SEQ_PROCESS_PLANT_MANAGER",
-    ("process", "director_ops"):       "INSTANTLY_SEQ_PROCESS_PLANT_MANAGER",
+    ("process", "vp_ops"): "INSTANTLY_SEQ_PROCESS_VP_OPS",
+    ("process", "coo"): "INSTANTLY_SEQ_PROCESS_VP_OPS",
+    ("process", "plant_manager"): "INSTANTLY_SEQ_PROCESS_PLANT_MANAGER",
+    ("process", "director_ops"): "INSTANTLY_SEQ_PROCESS_PLANT_MANAGER",
     ("process", "maintenance_leader"): "INSTANTLY_SEQ_PROCESS_MAINTENANCE",
-    ("process", None):                 "INSTANTLY_SEQ_PROCESS_GENERAL",
-
+    ("process", None): "INSTANTLY_SEQ_PROCESS_GENERAL",
     # ── Food & Beverage cluster ──────────────────────────────────────────────
-    ("fb", "vp_ops"):                       "INSTANTLY_SEQ_FB_VP_OPS",
-    ("fb", "coo"):                          "INSTANTLY_SEQ_FB_VP_OPS",
-    ("fb", "director_ops"):                 "INSTANTLY_SEQ_FB_VP_OPS",
-    ("fb", "vp_supply_chain"):              "INSTANTLY_SEQ_FB_VP_OPS",
-    ("fb", "plant_manager"):                "INSTANTLY_SEQ_FB_PLANT_MANAGER",
-    ("fb", "maintenance_leader"):           "INSTANTLY_SEQ_FB_PLANT_MANAGER",
+    ("fb", "vp_ops"): "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "coo"): "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "director_ops"): "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "vp_supply_chain"): "INSTANTLY_SEQ_FB_VP_OPS",
+    ("fb", "plant_manager"): "INSTANTLY_SEQ_FB_PLANT_MANAGER",
+    ("fb", "maintenance_leader"): "INSTANTLY_SEQ_FB_PLANT_MANAGER",
     # FSMA / food-safety angle — use the dedicated quality sequences
-    ("fb", "vp_food_safety"):               "INSTANTLY_SEQ_FB_VP_QUALITY",
-    ("fb", "vp_quality_food_safety"):       "INSTANTLY_SEQ_FB_VP_QUALITY",
-    ("fb", "regulatory_affairs_director"):  "INSTANTLY_SEQ_FB_DIR_QUALITY",
+    ("fb", "vp_food_safety"): "INSTANTLY_SEQ_FB_VP_QUALITY",
+    ("fb", "vp_quality_food_safety"): "INSTANTLY_SEQ_FB_VP_QUALITY",
+    ("fb", "regulatory_affairs_director"): "INSTANTLY_SEQ_FB_DIR_QUALITY",
     ("fb", "director_quality_food_safety"): "INSTANTLY_SEQ_FB_DIR_QUALITY",
-    ("fb", "compliance_manager_fb"):        "INSTANTLY_SEQ_FB_DIR_QUALITY",
-    ("fb", None):                           "INSTANTLY_SEQ_FB_GENERAL",
-
+    ("fb", "compliance_manager_fb"): "INSTANTLY_SEQ_FB_DIR_QUALITY",
+    ("fb", None): "INSTANTLY_SEQ_FB_GENERAL",
     # ── Other / unknown cluster ──────────────────────────────────────────────
-    ("other", "vp_ops"):               "INSTANTLY_SEQ_GENERAL_VP_OPS",
-    ("other", "coo"):                  "INSTANTLY_SEQ_GENERAL_VP_OPS",
-    ("other", "plant_manager"):        "INSTANTLY_SEQ_GENERAL_PLANT_MANAGER",
-    ("other", "director_ops"):         "INSTANTLY_SEQ_GENERAL_PLANT_MANAGER",
-    ("other", "maintenance_leader"):   "INSTANTLY_SEQ_GENERAL_MAINTENANCE",
-    ("other", None):                   "INSTANTLY_SEQ_GENERAL",
-
+    ("other", "vp_ops"): "INSTANTLY_SEQ_GENERAL_VP_OPS",
+    ("other", "coo"): "INSTANTLY_SEQ_GENERAL_VP_OPS",
+    ("other", "plant_manager"): "INSTANTLY_SEQ_GENERAL_PLANT_MANAGER",
+    ("other", "director_ops"): "INSTANTLY_SEQ_GENERAL_PLANT_MANAGER",
+    ("other", "maintenance_leader"): "INSTANTLY_SEQ_GENERAL_MAINTENANCE",
+    ("other", None): "INSTANTLY_SEQ_GENERAL",
     # ── Legacy "mfg" bucket (returned by get_vertical_bucket() for all non-FB)
     # Maps to the INSTANTLY_SEQ_MFG_* env vars already set in .env.
-    ("mfg", "vp_ops"):               "INSTANTLY_SEQ_MFG_VP_OPS",
-    ("mfg", "coo"):                  "INSTANTLY_SEQ_MFG_VP_OPS",
-    ("mfg", "plant_manager"):        "INSTANTLY_SEQ_MFG_PLANT_MANAGER",
-    ("mfg", "director_ops"):         "INSTANTLY_SEQ_MFG_DIRECTOR_OPS",
-    ("mfg", "maintenance_leader"):   "INSTANTLY_SEQ_MFG_MAINTENANCE",
+    ("mfg", "vp_ops"): "INSTANTLY_SEQ_MFG_VP_OPS",
+    ("mfg", "coo"): "INSTANTLY_SEQ_MFG_VP_OPS",
+    ("mfg", "plant_manager"): "INSTANTLY_SEQ_MFG_PLANT_MANAGER",
+    ("mfg", "director_ops"): "INSTANTLY_SEQ_MFG_DIRECTOR_OPS",
+    ("mfg", "maintenance_leader"): "INSTANTLY_SEQ_MFG_MAINTENANCE",
     ("mfg", "digital_transformation"): "INSTANTLY_SEQ_MFG_VP_OPS",
-    ("mfg", None):                   "INSTANTLY_SEQ_MFG_GENERAL",
+    ("mfg", None): "INSTANTLY_SEQ_MFG_GENERAL",
 }
 
 # ---------------------------------------------------------------------------
@@ -130,13 +123,23 @@ CLUSTER_SEQUENCE_MAP: dict[tuple[str, str | None], str] = {
 # ---------------------------------------------------------------------------
 _FB_NAICS_PREFIXES = ("311", "312", "3116", "3115")
 _LEGACY_CLUSTER_MAP: dict[str, str] = {
-    "mfg1": "machinery", "mfg2": "machinery", "mfg4": "machinery",
-    "mfg5": "machinery", "mfg8": "machinery",
+    "mfg1": "machinery",
+    "mfg2": "machinery",
+    "mfg4": "machinery",
+    "mfg5": "machinery",
+    "mfg8": "machinery",
     "mfg3": "auto",
     "mfg7": "metals",
     "pmfg1": "chemicals",
-    "pmfg3": "process", "pmfg4": "process", "pmfg7": "process", "pmfg8": "process",
-    "fb1": "fb", "fb2": "fb", "fb3": "fb", "fb4": "fb", "fb5": "fb",
+    "pmfg3": "process",
+    "pmfg4": "process",
+    "pmfg7": "process",
+    "pmfg8": "process",
+    "fb1": "fb",
+    "fb2": "fb",
+    "fb3": "fb",
+    "fb4": "fb",
+    "fb5": "fb",
 }
 
 
@@ -165,7 +168,9 @@ def should_skip_outreach(company: dict) -> tuple[bool, str]:
     if tranche == "T3":
         return True, "T3 tranche — manual motion only, not cold email"
 
-    campaign_cluster = company.get("campaign_cluster") or _get_custom_tag(company, "campaign_cluster")
+    campaign_cluster = company.get("campaign_cluster") or _get_custom_tag(
+        company, "campaign_cluster"
+    )
     if campaign_cluster == "watchlist":
         return True, "campaign_cluster=watchlist — excluded from auto outreach"
 
@@ -208,10 +213,17 @@ def get_campaign_id(
     # Normalize FSMA sub-clusters → "fb" (all share the same Instantly sequences).
     # DB stores campaign_cluster as "fsma_dairy", "fsma_beverage", etc., but the
     # CLUSTER_SEQUENCE_MAP only has ("fb", ...) keys.
-    _FSMA_CLUSTER_ALIASES = frozenset({
-        "fsma_dairy", "fsma_beverage", "fsma_meat", "fsma_seafood",
-        "fsma_produce", "fsma_bakery", "fsma_food",
-    })
+    _FSMA_CLUSTER_ALIASES = frozenset(
+        {
+            "fsma_dairy",
+            "fsma_beverage",
+            "fsma_meat",
+            "fsma_seafood",
+            "fsma_produce",
+            "fsma_bakery",
+            "fsma_food",
+        }
+    )
     cluster = campaign_cluster or "other"
     if cluster in _FSMA_CLUSTER_ALIASES:
         cluster = "fb"
@@ -225,7 +237,9 @@ def get_campaign_id(
         env_var = CLUSTER_SEQUENCE_MAP.get(fallback_key, "INSTANTLY_SEQ_GENERAL")
         logger.debug(
             "No exact sequence for (%r, %r) — falling back to %s",
-            cluster, persona_type, env_var,
+            cluster,
+            persona_type,
+            env_var,
         )
 
     campaign_id = os.environ.get(env_var, "").strip()
@@ -233,12 +247,15 @@ def get_campaign_id(
         # Fall back to the mfg equivalent — all clusters currently share the same
         # Instantly campaigns, so an unset cluster-specific var is not a skip.
         mfg_key = ("mfg", persona_type)
-        mfg_var = CLUSTER_SEQUENCE_MAP.get(mfg_key) or CLUSTER_SEQUENCE_MAP.get(("mfg", None), "INSTANTLY_SEQ_MFG_GENERAL")
+        mfg_var = CLUSTER_SEQUENCE_MAP.get(mfg_key) or CLUSTER_SEQUENCE_MAP.get(
+            ("mfg", None), "INSTANTLY_SEQ_MFG_GENERAL"
+        )
         campaign_id = os.environ.get(mfg_var, "").strip()
         if campaign_id:
             logger.debug(
                 "Sequence env var %s not set — falling back to mfg equivalent %s",
-                env_var, mfg_var,
+                env_var,
+                mfg_var,
             )
         else:
             logger.warning("Sequence env var %s is not set — contact will be skipped", env_var)
@@ -262,9 +279,13 @@ def get_campaign_id_for_company(company: dict, persona_type: str | None) -> str 
         logger.info("Skipping %s — %s", company.get("name", "?"), reason)
         return None
 
-    cluster = company.get("campaign_cluster") or _get_custom_tag(company, "campaign_cluster") or "other"
+    cluster = (
+        company.get("campaign_cluster") or _get_custom_tag(company, "campaign_cluster") or "other"
+    )
     tranche = company.get("tranche") or _get_custom_tag(company, "tranche")
-    outreach_mode = company.get("outreach_mode") or _get_custom_tag(company, "outreach_mode", "auto")
+    outreach_mode = company.get("outreach_mode") or _get_custom_tag(
+        company, "outreach_mode", "auto"
+    )
 
     return get_campaign_id(
         campaign_cluster=cluster,
@@ -277,6 +298,7 @@ def get_campaign_id_for_company(company: dict, persona_type: str | None) -> str 
 # ---------------------------------------------------------------------------
 # Legacy helpers — keep for backward compatibility
 # ---------------------------------------------------------------------------
+
 
 def get_vertical_bucket(
     naics_prefix: str | None,
@@ -340,6 +362,7 @@ def get_campaign_id_legacy(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_custom_tag(company: dict, key: str, default: str | None = None) -> str | None:
     """Safely read a value from the company's custom_tags JSONB field."""

@@ -40,12 +40,15 @@ console = Console()
 def main(user: str | None = None, password: str | None = None) -> None:
     if not user or not password:
         from backend.app.core.config import get_settings
+
         settings = get_settings()
         user = user or settings.gmail_user
         password = password or settings.gmail_app_password
 
     if not user or not password:
-        console.print("[red]GMAIL_USER and GMAIL_APP_PASSWORD must be set in .env or passed as args[/red]")
+        console.print(
+            "[red]GMAIL_USER and GMAIL_APP_PASSWORD must be set in .env or passed as args[/red]"
+        )
         console.print("\n[bold]Setup instructions:[/bold]")
         console.print("  1. Gmail Settings → Forwarding and POP/IMAP → [bold]Enable IMAP[/bold]")
         console.print("  2. myaccount.google.com/apppasswords → Create 'ProspectIQ' app password")
@@ -63,7 +66,9 @@ def main(user: str | None = None, password: str | None = None) -> None:
 
         if not replies:
             console.print("[yellow]No unseen reply emails found in INBOX.[/yellow]")
-            console.print("(This is fine if you have no unread replies — try sending a test reply to yourself.)")
+            console.print(
+                "(This is fine if you have no unread replies — try sending a test reply to yourself.)"
+            )
             return
 
         console.print(f"\n[bold]{len(replies)} unseen reply email(s) found:[/bold]")
@@ -90,7 +95,9 @@ def main(user: str | None = None, password: str | None = None) -> None:
     except Exception as e:
         console.print(f"[red]Connection failed: {e}[/red]")
         if "Invalid credentials" in str(e) or "authentication failed" in str(e).lower():
-            console.print("\n[yellow]Tip: Make sure you're using an App Password, not your regular Gmail password.[/yellow]")
+            console.print(
+                "\n[yellow]Tip: Make sure you're using an App Password, not your regular Gmail password.[/yellow]"
+            )
             console.print("App passwords require 2-Step Verification to be enabled on the account.")
 
 

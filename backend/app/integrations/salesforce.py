@@ -128,9 +128,7 @@ class SalesforceSync:
             try:
                 record = {
                     "Name": c.get("name", "")[:255],
-                    "Website": (
-                        f"https://{c['domain']}" if c.get("domain") else ""
-                    ),
+                    "Website": (f"https://{c['domain']}" if c.get("domain") else ""),
                     "Industry": c.get("industry") or "",
                     "BillingState": c.get("state") or "",
                     "NumberOfEmployees": c.get("employee_count") or None,
@@ -208,15 +206,18 @@ class SalesforceSync:
         sf = self._get_client()
 
         result = (
-            db._filter_ws(
-                db.client.table("companies").select(
-                    "id, name, tier, status, pqs_total"
-                )
+            db._filter_ws(db.client.table("companies").select("id, name, tier, status, pqs_total"))
+            .in_(
+                "status",
+                [
+                    "engaged",
+                    "meeting_scheduled",
+                    "pilot_discussion",
+                    "pilot_signed",
+                    "active_pilot",
+                    "converted",
+                ],
             )
-            .in_("status", [
-                "engaged", "meeting_scheduled", "pilot_discussion",
-                "pilot_signed", "active_pilot", "converted",
-            ])
             .limit(limit)
             .execute()
         )
@@ -226,9 +227,15 @@ class SalesforceSync:
         for c in companies:
             try:
                 from datetime import datetime, timedelta
-                close_days = {"engaged": 90, "meeting_scheduled": 75,
-                              "pilot_discussion": 60, "pilot_signed": 45,
-                              "active_pilot": 30, "converted": 0}.get(c.get("status", ""), 90)
+
+                close_days = {
+                    "engaged": 90,
+                    "meeting_scheduled": 75,
+                    "pilot_discussion": 60,
+                    "pilot_signed": 45,
+                    "active_pilot": 30,
+                    "converted": 0,
+                }.get(c.get("status", ""), 90)
                 close_date = (datetime.utcnow() + timedelta(days=close_days)).strftime("%Y-%m-%d")
                 opp_name = f"{c.get('name', '')} — Pilot Opportunity"
 
@@ -237,10 +244,7 @@ class SalesforceSync:
                     "StageName": _STAGE_MAP.get(c.get("status", ""), "Qualification"),
                     "CloseDate": close_date,
                     "Amount": float(_tier_to_deal_amount(c.get("tier", ""))),
-                    "Description": (
-                        f"Tier: {c.get('tier', 'N/A')} | "
-                        f"PQS: {c.get('pqs_total', 0)}"
-                    ),
+                    "Description": (f"Tier: {c.get('tier', 'N/A')} | PQS: {c.get('pqs_total', 0)}"),
                 }
                 existing = sf.query(
                     f"SELECT Id FROM Opportunity WHERE Name = '{_sf_escape(opp_name)}' LIMIT 1"
@@ -261,11 +265,13 @@ class SalesforceSync:
 # Helpers
 # ------------------------------------------------------------------
 
+
 def _revenue_to_float(revenue_range: str | None) -> float | None:
     """Parse '100M-400M' style strings to a float."""
     if not revenue_range:
         return None
     import re
+
     match = re.search(r"(\d+)", revenue_range)
     if not match:
         return None
@@ -279,10 +285,15 @@ def _revenue_to_float(revenue_range: str | None) -> float | None:
 
 def _tier_to_deal_amount(tier: str) -> int:
     return {
-        "1": 50_000, "mfg1": 50_000, "mfg2": 50_000,
-        "2": 80_000, "mfg3": 80_000,
-        "3": 150_000, "mfg4": 150_000,
-        "fnb1": 50_000, "fnb2": 80_000,
+        "1": 50_000,
+        "mfg1": 50_000,
+        "mfg2": 50_000,
+        "2": 80_000,
+        "mfg3": 80_000,
+        "3": 150_000,
+        "mfg4": 150_000,
+        "fnb1": 50_000,
+        "fnb2": 80_000,
     }.get(str(tier).lower(), 60_000)
 
 

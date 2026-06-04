@@ -31,15 +31,15 @@ _TIER_TO_CLUSTER: dict[str, str] = {
     "mfg5": "machinery",  # Electronics / Semiconductor
     "mfg8": "machinery",  # Plastics & Rubber
     # Discrete manufacturing — specific clusters
-    "mfg3": "auto",       # Automotive Parts
-    "mfg7": "metals",     # Primary Metals (steel, aluminum)
+    "mfg3": "auto",  # Automotive Parts
+    "mfg7": "metals",  # Primary Metals (steel, aluminum)
     "mfg6": "watchlist",  # Aerospace — vendor qual wall
     # Process manufacturing
     "pmfg1": "chemicals",  # Chemical Manufacturing
-    "pmfg3": "process",    # Petroleum Refining
-    "pmfg4": "process",    # Mining
-    "pmfg7": "process",    # Paper & Pulp
-    "pmfg8": "process",    # Cement, Glass, Ceramics
+    "pmfg3": "process",  # Petroleum Refining
+    "pmfg4": "process",  # Mining
+    "pmfg7": "process",  # Paper & Pulp
+    "pmfg8": "process",  # Cement, Glass, Ceramics
     "pmfg2": "watchlist",  # Oil & Gas — enterprise procurement
     "pmfg5": "watchlist",  # Utilities — regulated monopoly
     "pmfg6": "watchlist",  # Pharma — vendor qual wall
@@ -58,6 +58,7 @@ _TIER_TO_CLUSTER: dict[str, str] = {
     "fb_food_general": "fsma_food",
     "fb_bakery": "fsma_bakery",
 }
+
 
 # Employee count → tranche proxy (used when revenue data is unavailable)
 # T1: $100M–$400M ≈ 300–1,000 employees
@@ -111,96 +112,246 @@ def classify_persona(title: str | None) -> tuple[str | None, bool]:
     # Order matters: more specific rules first (F&B food safety before generic ops)
     persona_rules = [
         # F&B — Food Safety & Quality personas (primary FSMA buyer)
-        (["vp food safety", "vice president food safety", "vp of food safety",
-          "vp quality and food safety", "vp food safety & quality",
-          "vp food safety and quality", "vice president quality and food safety",
-          "vp quality assurance and food safety",
-          "vice president of quality and food safety",
-          "vice president, food safety", "vp, food safety",
-          "senior vice president - food safety", "svp food safety",
-          "vice president, food safety, quality"], "vp_quality_food_safety", True),
-        (["director food safety", "director of food safety",
-          "director food safety & quality", "director food safety and quality",
-          "director of food safety and quality", "director of food safety & quality",
-          "sr director of food safety", "senior director of food safety",
-          "corporate director of food safety",
-          "director quality and food safety", "director of quality and food safety",
-          "director, food safety", "director | food safety"],
-         "director_quality_food_safety", True),
+        (
+            [
+                "vp food safety",
+                "vice president food safety",
+                "vp of food safety",
+                "vp quality and food safety",
+                "vp food safety & quality",
+                "vp food safety and quality",
+                "vice president quality and food safety",
+                "vp quality assurance and food safety",
+                "vice president of quality and food safety",
+                "vice president, food safety",
+                "vp, food safety",
+                "senior vice president - food safety",
+                "svp food safety",
+                "vice president, food safety, quality",
+            ],
+            "vp_quality_food_safety",
+            True,
+        ),
+        (
+            [
+                "director food safety",
+                "director of food safety",
+                "director food safety & quality",
+                "director food safety and quality",
+                "director of food safety and quality",
+                "director of food safety & quality",
+                "sr director of food safety",
+                "senior director of food safety",
+                "corporate director of food safety",
+                "director quality and food safety",
+                "director of quality and food safety",
+                "director, food safety",
+                "director | food safety",
+            ],
+            "director_quality_food_safety",
+            True,
+        ),
         # F&B — Quality-only personas (secondary FSMA buyer)
-        (["vp quality", "vice president quality", "vp of quality",
-          "vp quality assurance", "vice president quality assurance",
-          "vice president of quality", "vp, quality"],
-         "vp_quality_food_safety", True),
-        (["director of quality", "director quality", "director quality assurance",
-          "director of quality assurance", "quality and food safety director",
-          "food safety and quality assurance director",
-          "director, quality assurance", "director, quality",
-          "director | quality", "director of qa", "director qa",
-          "director, qa", "director- quality", "director-quality",
-          "food safety and quality director", "food safety and qa director",
-          "director of production, quality", "director of production quality"],
-         "director_quality_food_safety", True),
+        (
+            [
+                "vp quality",
+                "vice president quality",
+                "vp of quality",
+                "vp quality assurance",
+                "vice president quality assurance",
+                "vice president of quality",
+                "vp, quality",
+            ],
+            "vp_quality_food_safety",
+            True,
+        ),
+        (
+            [
+                "director of quality",
+                "director quality",
+                "director quality assurance",
+                "director of quality assurance",
+                "quality and food safety director",
+                "food safety and quality assurance director",
+                "director, quality assurance",
+                "director, quality",
+                "director | quality",
+                "director of qa",
+                "director qa",
+                "director, qa",
+                "director- quality",
+                "director-quality",
+                "food safety and quality director",
+                "food safety and qa director",
+                "director of production, quality",
+                "director of production quality",
+            ],
+            "director_quality_food_safety",
+            True,
+        ),
         # F&B — Food Safety VP (Contact 2 for simultaneous F&B dual-touch)
-        (["vp food safety", "vice president food safety", "vp of food safety",
-          "head of food safety", "chief food safety officer",
-          "vp quality and food safety", "vp food safety and quality",
-          "vp food safety & quality"],
-         "vp_food_safety", True),
+        (
+            [
+                "vp food safety",
+                "vice president food safety",
+                "vp of food safety",
+                "head of food safety",
+                "chief food safety officer",
+                "vp quality and food safety",
+                "vp food safety and quality",
+                "vp food safety & quality",
+            ],
+            "vp_food_safety",
+            True,
+        ),
         # F&B — Regulatory Affairs (owns FDA relationship — key FSMA buyer)
-        (["vp regulatory affairs", "vice president regulatory affairs",
-          "director regulatory affairs", "director of regulatory affairs",
-          "regulatory affairs director", "regulatory affairs manager",
-          "director of regulatory", "vp regulatory"],
-         "regulatory_affairs_director", True),
+        (
+            [
+                "vp regulatory affairs",
+                "vice president regulatory affairs",
+                "director regulatory affairs",
+                "director of regulatory affairs",
+                "regulatory affairs director",
+                "regulatory affairs manager",
+                "director of regulatory",
+                "vp regulatory",
+            ],
+            "regulatory_affairs_director",
+            True,
+        ),
         # F&B — Compliance (food-safety context = borderline→target)
-        (["fsma compliance manager", "food safety compliance manager",
-          "food safety compliance director", "director of compliance",
-          "compliance director food", "food safety manager",
-          "quality assurance director"],
-         "compliance_manager_fb", False),
+        (
+            [
+                "fsma compliance manager",
+                "food safety compliance manager",
+                "food safety compliance director",
+                "director of compliance",
+                "compliance director food",
+                "food safety manager",
+                "quality assurance director",
+            ],
+            "compliance_manager_fb",
+            False,
+        ),
         # Maintenance / Reliability (discrete mfg buyer)
-        (["director of maintenance", "vp maintenance", "director maintenance",
-          "maintenance manager", "reliability manager", "director of reliability",
-          "director reliability"], "maintenance_leader", True),
+        (
+            [
+                "director of maintenance",
+                "vp maintenance",
+                "director maintenance",
+                "maintenance manager",
+                "reliability manager",
+                "director of reliability",
+                "director reliability",
+            ],
+            "maintenance_leader",
+            True,
+        ),
         # C-suite
         (["chief operating", "chief operations", "coo"], "coo", True),
-        (["chief executive", "president and ceo", "president & ceo",
-          "president/ceo"], "coo", True),
+        (["chief executive", "president and ceo", "president & ceo", "president/ceo"], "coo", True),
         (["chief manufacturing", "chief production"], "coo", True),
         (["chief information", "cio"], "cio", True),
         (["chief technology", "cto"], "cio", True),
         # VP Operations / Manufacturing
-        (["vp operations", "vice president operations", "vp of operations",
-          "vice president of operations", "vp, operations", "vp - operations",
-          "vice president, operations"], "vp_ops", True),
-        (["vp manufacturing", "vice president manufacturing", "vp of manufacturing",
-          "vice president of manufacturing", "vice president, manufacturing",
-          "vp, manufacturing", "vp - manufacturing", "vp manufacturing operations",
-          "vp, manufacturing operations", "vice president manufacturing operations"], "vp_ops", True),
-        (["vp engineering", "vice president engineering", "vp of engineering",
-          "vice president of engineering", "vp, engineering", "vp - engineering",
-          "vice president, engineering"], "vp_ops", True),
-        (["vp supply chain", "vice president supply chain",
-          "vice president of supply chain", "vp, supply chain"], "vp_supply_chain", True),
+        (
+            [
+                "vp operations",
+                "vice president operations",
+                "vp of operations",
+                "vice president of operations",
+                "vp, operations",
+                "vp - operations",
+                "vice president, operations",
+            ],
+            "vp_ops",
+            True,
+        ),
+        (
+            [
+                "vp manufacturing",
+                "vice president manufacturing",
+                "vp of manufacturing",
+                "vice president of manufacturing",
+                "vice president, manufacturing",
+                "vp, manufacturing",
+                "vp - manufacturing",
+                "vp manufacturing operations",
+                "vp, manufacturing operations",
+                "vice president manufacturing operations",
+            ],
+            "vp_ops",
+            True,
+        ),
+        (
+            [
+                "vp engineering",
+                "vice president engineering",
+                "vp of engineering",
+                "vice president of engineering",
+                "vp, engineering",
+                "vp - engineering",
+                "vice president, engineering",
+            ],
+            "vp_ops",
+            True,
+        ),
+        (
+            [
+                "vp supply chain",
+                "vice president supply chain",
+                "vice president of supply chain",
+                "vp, supply chain",
+            ],
+            "vp_supply_chain",
+            True,
+        ),
         # Plant / General Manager
-        (["plant manager", "factory manager", "general manager",
-          "site manager", "operations manager", "machine shop operations manager",
-          "manufacturing manager"], "plant_manager", True),
+        (
+            [
+                "plant manager",
+                "factory manager",
+                "general manager",
+                "site manager",
+                "operations manager",
+                "machine shop operations manager",
+                "manufacturing manager",
+            ],
+            "plant_manager",
+            True,
+        ),
         # President (standalone — owner/operator of mid-market plant)
         (["president"], "plant_manager", True),
         # Digital / Industry 4.0
-        (["digital transformation", "industry 4.0", "smart factory",
-          "innovation manager"], "digital_transformation", True),
+        (
+            ["digital transformation", "industry 4.0", "smart factory", "innovation manager"],
+            "digital_transformation",
+            True,
+        ),
         # Director Operations / Manufacturing
-        (["director of operations", "director operations", "director of operation"], "director_ops", True),
-        (["director of manufacturing", "director manufacturing",
-          "director, manufacturing", "director of production"], "director_ops", True),
+        (
+            ["director of operations", "director operations", "director of operation"],
+            "director_ops",
+            True,
+        ),
+        (
+            [
+                "director of manufacturing",
+                "director manufacturing",
+                "director, manufacturing",
+                "director of production",
+            ],
+            "director_ops",
+            True,
+        ),
         (["director of engineering", "director engineering"], "director_ops", True),
         (["director supply chain"], "vp_supply_chain", False),
         # EHS / Safety (adjacent buyer — often controls compliance spend)
-        (["director, ehs", "director of ehs", "director ehs",
-          "ehs director", "ehs manager"], "director_quality_food_safety", False),
+        (
+            ["director, ehs", "director of ehs", "director ehs", "ehs director", "ehs manager"],
+            "director_quality_food_safety",
+            False,
+        ),
     ]
 
     import re
@@ -210,7 +361,7 @@ def classify_persona(title: str | None) -> tuple[str | None, bool]:
             # For short keywords (<=3 chars like "coo"), use word-boundary matching
             # to avoid false positives (e.g., "cto" inside "director")
             if len(kw) <= 4:
-                if re.search(r'\b' + re.escape(kw) + r'\b', title_lower):
+                if re.search(r"\b" + re.escape(kw) + r"\b", title_lower):
                     return persona, is_dm
             else:
                 if kw in title_lower:
@@ -248,10 +399,9 @@ class DiscoveryAgent(BaseAgent):
         # API calls or DB writes. Logs a structured event so the freeze is
         # visible in monitoring.
         from backend.app.core.limits import L
+
         if not L.discovery_enabled:
-            logger.info(
-                {"event": "agent_disabled_via_config", "agent": "discovery"}
-            )
+            logger.info({"event": "agent_disabled_via_config", "agent": "discovery"})
             console.print("[yellow]discovery: disabled via config — exiting cleanly[/yellow]")
             result.success = True
             return result
@@ -280,7 +430,9 @@ class DiscoveryAgent(BaseAgent):
         if dry_run:
             console.print("[yellow][DRY-RUN] No database writes will occur.[/yellow]")
 
-        campaign = campaign_name or icp.get("discovery", {}).get("default_campaign_name", "prospectiq")
+        campaign = campaign_name or icp.get("discovery", {}).get(
+            "default_campaign_name", "prospectiq"
+        )
         pages = max_pages or icp.get("discovery", {}).get("pages_per_tier", 5)
         target_tiers = tiers or [ind["tier"] for ind in icp["company_filters"]["industries"]]
 
@@ -330,7 +482,9 @@ class DiscoveryAgent(BaseAgent):
                     organization_locations=org_locations,
                     organization_num_employees_ranges=(
                         company_filters["employee_count"].get("apollo_ranges")
-                        or [f"{company_filters['employee_count']['min']},{company_filters['employee_count']['max']}"]
+                        or [
+                            f"{company_filters['employee_count']['min']},{company_filters['employee_count']['max']}"
+                        ]
                     ),
                     revenue_range=revenue_filter,
                     q_organization_keyword_tags=[industry_config.get("apollo_industry", label)],
@@ -376,7 +530,9 @@ class DiscoveryAgent(BaseAgent):
                         if parent_name:
                             existing_parent = self.db.get_company_by_name(parent_name)
                             if existing_parent:
-                                console.print(f"  [dim]Skipping {company_data['name']} — subsidiary of {parent_name} (already in pipeline)[/dim]")
+                                console.print(
+                                    f"  [dim]Skipping {company_data['name']} — subsidiary of {parent_name} (already in pipeline)[/dim]"
+                                )
                                 result.skipped += 1
                                 continue
 
@@ -424,10 +580,9 @@ class DiscoveryAgent(BaseAgent):
 
                                 effective_tier = classification.get("tier") or tier
                                 # campaign_cluster: prefer explicit YAML value; fall back to dict
-                                cluster = (
-                                    industry_config.get("campaign_cluster")
-                                    or _TIER_TO_CLUSTER.get(effective_tier, "other")
-                                )
+                                cluster = industry_config.get(
+                                    "campaign_cluster"
+                                ) or _TIER_TO_CLUSTER.get(effective_tier, "other")
                                 tranche_map = industry_config.get("tranche_map")
                                 tranche = _assign_tranche(
                                     company_data.get("employee_count"),
@@ -481,18 +636,23 @@ class DiscoveryAgent(BaseAgent):
                         # --- Contact deduplication and insertion ---
                         if company_id and contact_data.get("apollo_id"):
                             existing_contact = (
-                                None if dry_run
+                                None
+                                if dry_run
                                 else self.db.get_contact_by_apollo_id(contact_data["apollo_id"])
                             )
                             if not existing_contact:
                                 from backend.app.core.contact_filter import screen_contact_at_import
+
                                 persona_type, is_dm = classify_persona(contact_data.get("title"))
-                                contact_insert = screen_contact_at_import({
-                                    **contact_data,
-                                    "company_id": company_id,
-                                    "persona_type": persona_type,
-                                    "is_decision_maker": is_dm,
-                                }, db=self.db)
+                                contact_insert = screen_contact_at_import(
+                                    {
+                                        **contact_data,
+                                        "company_id": company_id,
+                                        "persona_type": persona_type,
+                                        "is_decision_maker": is_dm,
+                                    },
+                                    db=self.db,
+                                )
                                 if dry_run:
                                     tier = contact_insert.get("contact_tier", "?")
                                     console.print(
@@ -503,13 +663,19 @@ class DiscoveryAgent(BaseAgent):
                                 else:
                                     _inserted_contact = self.db.insert_contact(contact_insert)
                                     try:
-                                        self.db.client.table("raw_contacts").insert({
-                                            "source": "apollo",
-                                            "source_record_id": contact_data.get("apollo_id"),
-                                            "payload": contact_data,
-                                            "resolved_contact_id": (_inserted_contact or {}).get("id"),
-                                            "workspace_id": getattr(self.db, "workspace_id", None),
-                                        }).execute()
+                                        self.db.client.table("raw_contacts").insert(
+                                            {
+                                                "source": "apollo",
+                                                "source_record_id": contact_data.get("apollo_id"),
+                                                "payload": contact_data,
+                                                "resolved_contact_id": (
+                                                    _inserted_contact or {}
+                                                ).get("id"),
+                                                "workspace_id": getattr(
+                                                    self.db, "workspace_id", None
+                                                ),
+                                            }
+                                        ).execute()
                                     except Exception:
                                         pass
 
@@ -542,9 +708,7 @@ class DiscoveryAgent(BaseAgent):
                 return True
         return False
 
-    def _calc_firmographic_score(
-        self, company_data: dict, classification: dict, icp: dict
-    ) -> int:
+    def _calc_firmographic_score(self, company_data: dict, classification: dict, icp: dict) -> int:
         """Calculate initial firmographic PQS score from Apollo data.
 
         This is a quick score using only data available at discovery time.
@@ -555,7 +719,7 @@ class DiscoveryAgent(BaseAgent):
         # Tier bonus — primary mfg and F&B FSMA tiers score equally high
         tier = classification.get("tier") or ""
         if tier.startswith("mfg") or tier.startswith("pmfg"):
-            score += 7   # Primary vertical — discrete/process manufacturing
+            score += 7  # Primary vertical — discrete/process manufacturing
         elif tier.startswith("fb"):
             # F&B: co-primary since FSMA 204 enforcement is live.
             # High FTL exposure (dairy, seafood, produce) scores same as mfg.
@@ -580,8 +744,17 @@ class DiscoveryAgent(BaseAgent):
         state = company_data.get("state")
         if state and is_midwest(state):
             score += 5
-        elif state in {"Pennsylvania", "Kentucky", "Tennessee", "North Carolina",
-                       "Alabama", "Texas", "Georgia", "South Carolina", "Virginia"}:
+        elif state in {
+            "Pennsylvania",
+            "Kentucky",
+            "Tennessee",
+            "North Carolina",
+            "Alabama",
+            "Texas",
+            "Georgia",
+            "South Carolina",
+            "Virginia",
+        }:
             score += 2  # Secondary manufacturing states still valuable
 
         # Employee count in sweet spot
@@ -615,10 +788,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--max-pages", type=int, help="Max pages per tier")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--workspace-id", help="Workspace ID (defaults to WORKSPACE_ID env var)")
     args = parser.parse_args()
 
     tiers = args.tiers.split(",") if args.tiers else None
-    agent = DiscoveryAgent()
+    agent = DiscoveryAgent(workspace_id=args.workspace_id)
     result = agent.execute(
         campaign_name=args.campaign,
         tiers=tiers,
@@ -627,4 +801,5 @@ if __name__ == "__main__":
     )
 
     from rich.console import Console as _Console
+
     _Console().print(result.summary())

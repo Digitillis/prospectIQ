@@ -37,9 +37,14 @@ def test_sender_email_written_after_successful_send():
         "sent_at": None,
         "sequence_name": "mfg-awareness",
         "companies": {"name": "Acme", "tier": "tier2", "campaign_cluster": "mfg_ops"},
-        "contacts": {"full_name": "Test User", "email": "user@acme.com",
-                     "first_name": "Test", "last_name": "User",
-                     "company_id": "co-1", "persona_type": "ops_manager"},
+        "contacts": {
+            "full_name": "Test User",
+            "email": "user@acme.com",
+            "first_name": "Test",
+            "last_name": "User",
+            "company_id": "co-1",
+            "persona_type": "ops_manager",
+        },
     }
 
     db = MagicMock()
@@ -59,22 +64,34 @@ def test_sender_email_written_after_successful_send():
     agent.workspace_id = workspace_id
 
     # Mock internal methods to isolate the post-send path
-    with patch.object(agent, "_load_send_config", return_value={"daily_limit": 270, "batch_size": 10}), \
-         patch.object(agent, "_get_sender_config", return_value=([from_address], "reply@digitillis.io", from_address, "Digitillis")), \
-         patch.object(agent, "_pick_sender_from_config", return_value=(from_address, "Digitillis")):
-
+    with (
+        patch.object(
+            agent, "_load_send_config", return_value={"daily_limit": 270, "batch_size": 10}
+        ),
+        patch.object(
+            agent,
+            "_get_sender_config",
+            return_value=([from_address], "reply@digitillis.io", from_address, "Digitillis"),
+        ),
+        patch.object(agent, "_pick_sender_from_config", return_value=(from_address, "Digitillis")),
+    ):
         # Simulate the successful Resend call path
         fake_response = MagicMock()
         fake_response.id = "resend-msg-id-abc"
 
         # Set up DB mocks for the dispatch path
-        db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[draft_row])
+        db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=[draft_row]
+        )
 
         # Call the specific post-send update
-        agent.db.update_outreach_draft(draft_id, {
-            "resend_message_id": "resend-msg-id-abc",
-            "sender_email": from_address,
-        })
+        agent.db.update_outreach_draft(
+            draft_id,
+            {
+                "resend_message_id": "resend-msg-id-abc",
+                "sender_email": from_address,
+            },
+        )
 
     # Verify sender_email was included
     assert len(update_kwargs) >= 1, "update_outreach_draft was never called"
@@ -99,5 +116,6 @@ def test_sender_cap_assertion_uses_sender_email_column():
     db.client.table.return_value.select.return_value.eq.return_value.not_.is_.return_value.gte.return_value.execute.return_value = count_result
 
     from backend.app.core.pre_send_assertions import AssertionFailure
+
     with pytest.raises(AssertionFailure, match="sender_daily_cap"):
         assert_sender_under_daily_cap(db, sender_email, daily_cap=30, assertion_context="send_path")

@@ -37,8 +37,12 @@ logger = logging.getLogger(__name__)
 
 # Statuses where we should monitor for new signals
 _MONITOR_STATUSES = [
-    "qualified", "outreach_pending", "contacted", "engaged",
-    "meeting_scheduled", "not_interested",
+    "qualified",
+    "outreach_pending",
+    "contacted",
+    "engaged",
+    "meeting_scheduled",
+    "not_interested",
 ]
 
 # How many days back to search for new signals
@@ -139,8 +143,7 @@ class SignalMonitorAgent(BaseAgent):
 
         mfg_signals = signal_config.get("manufacturing_signals", {})
         signal_type_descriptions = [
-            f"{key}: {cfg.get('description', '')}"
-            for key, cfg in mfg_signals.items()
+            f"{key}: {cfg.get('description', '')}" for key, cfg in mfg_signals.items()
         ]
 
         # Add generic trigger events to monitoring list
@@ -179,6 +182,7 @@ class SignalMonitorAgent(BaseAgent):
 
         if use_perplexity:
             import requests
+
             api_key = settings.perplexity_api_key
         else:
             client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -278,6 +282,7 @@ class SignalMonitorAgent(BaseAgent):
                     if pqs_delta >= 10:
                         try:
                             from backend.app.utils.notifications import notify_slack
+
                             notify_slack(
                                 f"*Signal detected for {company_name}* (+{pqs_delta} PQS). "
                                 f"{new_signals} signal(s) found. Check `/signals` page.",
@@ -311,6 +316,7 @@ class SignalMonitorAgent(BaseAgent):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _upsert_intent_signal(db, company_id: str, signal_type: str, signal_data: dict) -> None:
     """Insert or update a company_intent_signals record."""
@@ -356,10 +362,13 @@ def _recalculate_pqs_timing(db, company: dict, delta: int) -> None:
     new_total = current_total + actual_delta
 
     if actual_delta > 0:
-        db.update_company(company_id, {
-            "pqs_timing": new_timing,
-            "pqs_total": new_total,
-        })
+        db.update_company(
+            company_id,
+            {
+                "pqs_timing": new_timing,
+                "pqs_total": new_total,
+            },
+        )
         logger.info(
             f"PQS recalculated for {company.get('name')}: "
             f"timing {current_timing}→{new_timing}, total {current_total}→{new_total}"

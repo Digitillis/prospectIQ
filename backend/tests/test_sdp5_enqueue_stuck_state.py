@@ -63,9 +63,13 @@ def test_enqueue_uses_rpc_not_3_step():
 
     # Build a chain that returns schedule_rows for the send_schedule query
     mock_table_chain = MagicMock()
-    mock_table_chain.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(data=schedule_rows)
+    mock_table_chain.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(
+        data=schedule_rows
+    )
     # For the outreach_send_config query
-    mock_table_chain.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[{}])
+    mock_table_chain.select.return_value.eq.return_value.limit.return_value.execute.return_value = (
+        MagicMock(data=[{}])
+    )
     # For send_schedule status update
     mock_table_chain.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
 
@@ -106,17 +110,24 @@ def test_enqueue_does_not_use_3_step_inserts():
             def track_update(*a, **kw):
                 update_calls.append("outreach_drafts.update")
                 return MagicMock()
+
             mock.update.side_effect = track_update
         elif name == "outbound_queue":
+
             def track_insert(*a, **kw):
                 insert_calls.append("outbound_queue.insert")
                 return MagicMock()
+
             mock.insert.side_effect = track_insert
         elif name == "send_schedule":
-            mock.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(data=schedule_rows)
+            mock.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(
+                data=schedule_rows
+            )
             mock.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
         elif name == "outreach_send_config":
-            mock.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[{}])
+            mock.select.return_value.eq.return_value.limit.return_value.execute.return_value = (
+                MagicMock(data=[{}])
+            )
         return mock
 
     db.client.table.side_effect = mock_table

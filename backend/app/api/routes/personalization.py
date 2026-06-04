@@ -45,6 +45,7 @@ def get_db() -> Database:
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class RunBatchRequest(BaseModel):
     filters: Optional[dict[str, Any]] = None
     max_companies: int = 50
@@ -53,6 +54,7 @@ class RunBatchRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.post("/run/{company_id}", response_model=PersonalizationResult)
 async def run_personalization(company_id: str) -> PersonalizationResult:
@@ -154,10 +156,7 @@ async def get_personalization_leaderboard(
 
     query = (
         db.client.table("companies")
-        .select(
-            "id, name, campaign_cluster, tier, pqs_total, custom_tags, "
-            "personalization_hooks"
-        )
+        .select("id, name, campaign_cluster, tier, pqs_total, custom_tags, personalization_hooks")
         .not_.is_("research_summary", "null")
     )
 
@@ -190,19 +189,21 @@ async def get_personalization_leaderboard(
         personas_found = tags.get("personas_found") or []
         last_run_at = tags.get("personalization_last_run")
 
-        items.append(PersonalizationLeaderboardItem(
-            company_id=row["id"],
-            company_name=row.get("name", ""),
-            cluster=row.get("campaign_cluster"),
-            tranche=row.get("tier"),
-            readiness_score=readiness_score,
-            trigger_count=len(raw_triggers),
-            hook_count=len(hooks),
-            contact_count=contact_count,
-            personas_found=personas_found if isinstance(personas_found, list) else [],
-            last_run_at=last_run_at,
-            pqs_total=row.get("pqs_total") or 0,
-        ))
+        items.append(
+            PersonalizationLeaderboardItem(
+                company_id=row["id"],
+                company_name=row.get("name", ""),
+                cluster=row.get("campaign_cluster"),
+                tranche=row.get("tier"),
+                readiness_score=readiness_score,
+                trigger_count=len(raw_triggers),
+                hook_count=len(hooks),
+                contact_count=contact_count,
+                personas_found=personas_found if isinstance(personas_found, list) else [],
+                last_run_at=last_run_at,
+                pqs_total=row.get("pqs_total") or 0,
+            )
+        )
 
     # Sort by readiness_score desc, then pqs_total desc
     items.sort(key=lambda x: (-x.readiness_score, -x.pqs_total))

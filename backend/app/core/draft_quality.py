@@ -56,15 +56,33 @@ def is_step_1_url_violation(draft: dict) -> bool:
     body = draft.get("edited_body") or draft.get("body") or ""
     return contains_url(body)
 
+
 # Spam trigger words that activate email filters
 SPAM_TRIGGER_WORDS = [
-    "act now", "limited time", "click here",
-    "special offer", "exclusive deal", "risk-free",
-    "no obligation", "winner", "congratulations", "urgent",
-    "best price", "buy now", "order now", "subscribe",
-    "unsubscribe", "opt-in", "double your", "earn money",
-    "incredible deal", "once in a lifetime", "don't miss",
-    "money-back guarantee", "guaranteed results", "we guarantee",
+    "act now",
+    "limited time",
+    "click here",
+    "special offer",
+    "exclusive deal",
+    "risk-free",
+    "no obligation",
+    "winner",
+    "congratulations",
+    "urgent",
+    "best price",
+    "buy now",
+    "order now",
+    "subscribe",
+    "unsubscribe",
+    "opt-in",
+    "double your",
+    "earn money",
+    "incredible deal",
+    "once in a lifetime",
+    "don't miss",
+    "money-back guarantee",
+    "guaranteed results",
+    "we guarantee",
 ]
 
 # Banned phrases that signal generic/low-quality outreach
@@ -117,17 +135,19 @@ _CTA_PATTERNS = [
 @dataclass
 class QualityIssue:
     """A single quality issue found in a draft."""
-    severity: str       # "error" (blocks send) or "warning" (flag but allow)
-    check_name: str     # Which check caught it
-    message: str        # Human-readable description
+
+    severity: str  # "error" (blocks send) or "warning" (flag but allow)
+    check_name: str  # Which check caught it
+    message: str  # Human-readable description
 
 
 @dataclass
 class QualityReport:
     """Quality assessment of an outreach draft."""
+
     draft_id: str
     passed: bool = True
-    score: int = 100        # 0-100, deduct per issue
+    score: int = 100  # 0-100, deduct per issue
     issues: list[QualityIssue] = field(default_factory=list)
 
     def add_issue(self, severity: str, check_name: str, message: str) -> None:
@@ -166,24 +186,33 @@ def validate_draft(
     if not subject:
         report.add_issue("error", "no_subject", "Missing subject line")
     elif len(subject) > 60:
-        report.add_issue("warning", "long_subject", f"Subject is {len(subject)} chars (target: <60)")
+        report.add_issue(
+            "warning", "long_subject", f"Subject is {len(subject)} chars (target: <60)"
+        )
     elif len(subject) < 10:
         report.add_issue("warning", "short_subject", "Subject too short — may look like spam")
 
     # 2. Body length check
     word_count = len(body.split())
     if word_count < 30:
-        report.add_issue("error", "too_short", f"Body is only {word_count} words — too short to be credible")
+        report.add_issue(
+            "error", "too_short", f"Body is only {word_count} words — too short to be credible"
+        )
     elif word_count > 250:
-        report.add_issue("warning", "too_long", f"Body is {word_count} words — manufacturing VPs won't read walls of text")
+        report.add_issue(
+            "warning",
+            "too_long",
+            f"Body is {word_count} words — manufacturing VPs won't read walls of text",
+        )
 
     # 3. Company name reference
     if company:
         company_name = company.get("name", "")
         if company_name and company_name.lower() not in body_lower:
             report.add_issue(
-                "warning", "no_company_name",
-                f"Body doesn't mention '{company_name}' — feels generic"
+                "warning",
+                "no_company_name",
+                f"Body doesn't mention '{company_name}' — feels generic",
             )
 
     # 4. Personalization check — does it reference specific research?
@@ -202,15 +231,17 @@ def validate_draft(
 
             if not hook_found:
                 report.add_issue(
-                    "warning", "low_personalization",
+                    "warning",
+                    "low_personalization",
                     "Body doesn't reference any research-derived personalization hooks — "
-                    "may feel generic to the prospect"
+                    "may feel generic to the prospect",
                 )
 
     # 4b. URL hard-block at sequence step 1 (cold opens must never carry links)
     if is_step_1_url_violation(draft):
         report.add_issue(
-            "error", "url_in_step_1",
+            "error",
+            "url_in_step_1",
             "Step 1 cold opens may not contain a URL — links in cold opens "
             "burn deliverability and look like vendor pitch.",
         )
@@ -218,18 +249,18 @@ def validate_draft(
     # 5. Banned phrases check
     for phrase in _BANNED_PHRASES:
         if phrase in body_lower:
-            report.add_issue(
-                "error", "banned_phrase",
-                f"Contains banned phrase: '{phrase}'"
-            )
+            report.add_issue("error", "banned_phrase", f"Contains banned phrase: '{phrase}'")
             break  # One is enough to flag
 
     # 5b. Spam trigger words check — word-boundary match prevents false positives
     # on company names (e.g. "Freepoint") or legitimate references ("DOE guarantee")
-    spam_found = [w for w in SPAM_TRIGGER_WORDS if re.search(r'\b' + re.escape(w) + r'\b', body_lower)]
+    spam_found = [
+        w for w in SPAM_TRIGGER_WORDS if re.search(r"\b" + re.escape(w) + r"\b", body_lower)
+    ]
     if spam_found:
         report.add_issue(
-            "error", "spam_words",
+            "error",
+            "spam_words",
             f"Contains spam trigger words: {', '.join(spam_found)}. These trigger email filters.",
         )
 
@@ -241,13 +272,13 @@ def validate_draft(
 
     if cta_count == 0:
         report.add_issue(
-            "warning", "no_cta",
-            "No clear call-to-action detected — email needs a specific ask"
+            "warning", "no_cta", "No clear call-to-action detected — email needs a specific ask"
         )
     elif cta_count > 2:
         report.add_issue(
-            "warning", "multiple_ctas",
-            f"Found {cta_count} CTAs — emails with a single clear CTA convert better"
+            "warning",
+            "multiple_ctas",
+            f"Found {cta_count} CTAs — emails with a single clear CTA convert better",
         )
 
     # 7. AI-sounding language check
@@ -271,6 +302,7 @@ def validate_draft(
     # Try to load expected sender info from config
     try:
         from backend.app.core.config import get_outreach_guidelines
+
         guidelines = get_outreach_guidelines()
         sender = guidelines.get("sender", {})
         sender_name = sender.get("name", "").lower() if sender.get("name") else ""
@@ -281,15 +313,15 @@ def validate_draft(
     if sender_name:
         if sender_name not in body_lower:
             report.add_issue(
-                "warning", "no_signoff",
-                f"Missing full signature (should include '{sender_name}')"
+                "warning", "no_signoff", f"Missing full signature (should include '{sender_name}')"
             )
     else:
         # Fallback: just check for any reasonable signature marker
         if "—" not in body and "//" not in body:
             report.add_issue(
-                "warning", "no_signoff",
-                "Missing signature block (should end with sender name and details)"
+                "warning",
+                "no_signoff",
+                "Missing signature block (should end with sender name and details)",
             )
 
     return report

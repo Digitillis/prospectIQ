@@ -13,13 +13,14 @@ from pydantic import BaseModel
 # Funnel models
 # ---------------------------------------------------------------------------
 
+
 class FunnelStage(BaseModel):
     stage_name: str
     stage_key: str
     count: int
-    conversion_rate: float       # % from previous stage
+    conversion_rate: float  # % from previous stage
     avg_days_in_stage: float
-    drop_off: int                # absolute count lost vs prior stage
+    drop_off: int  # absolute count lost vs prior stage
     is_bottleneck: bool = False
 
 
@@ -27,14 +28,15 @@ class FunnelData(BaseModel):
     stages: List[FunnelStage]
     period_days: int
     total_entered: int
-    total_converted: int         # reached "replied" or beyond
+    total_converted: int  # reached "replied" or beyond
     overall_conversion_rate: float
-    bottleneck_stage: str        # stage with highest drop-off %
+    bottleneck_stage: str  # stage with highest drop-off %
 
 
 # ---------------------------------------------------------------------------
 # Cohort models
 # ---------------------------------------------------------------------------
+
 
 class CohortRow(BaseModel):
     cohort_name: str
@@ -42,7 +44,7 @@ class CohortRow(BaseModel):
     contacted_pct: float
     reply_rate: float
     interested_pct: float
-    conversion_rate: float       # % reached replied or demo_scheduled
+    conversion_rate: float  # % reached replied or demo_scheduled
     avg_pqs: float
 
 
@@ -56,11 +58,12 @@ class CohortAnalysis(BaseModel):
 # Velocity models
 # ---------------------------------------------------------------------------
 
+
 class VelocityStage(BaseModel):
     stage_name: str
     avg_days: float
-    trend: str                   # "faster" | "slower" | "stable" | "no_data"
-    trend_delta_days: float      # positive = slower, negative = faster
+    trend: str  # "faster" | "slower" | "stable" | "no_data"
+    trend_delta_days: float  # positive = slower, negative = faster
 
 
 class VelocityMetrics(BaseModel):
@@ -71,6 +74,7 @@ class VelocityMetrics(BaseModel):
 # ---------------------------------------------------------------------------
 # Revenue models
 # ---------------------------------------------------------------------------
+
 
 class DealStage(BaseModel):
     stage: str
@@ -93,6 +97,7 @@ class RevenueAttribution(BaseModel):
 # Activity ROI models
 # ---------------------------------------------------------------------------
 
+
 class ChannelROI(BaseModel):
     channel: str
     total_sent: int
@@ -110,13 +115,14 @@ class SequenceROI(BaseModel):
 class ActivityROI(BaseModel):
     by_channel: List[ChannelROI]
     by_sequence: List[SequenceROI]
-    by_persona: List[dict]       # reuse existing persona breakdown shape
+    by_persona: List[dict]  # reuse existing persona breakdown shape
     by_cluster: List[dict]
 
 
 # ---------------------------------------------------------------------------
 # Summary model (for command center)
 # ---------------------------------------------------------------------------
+
 
 class AnalyticsSummary(BaseModel):
     total_pipeline: int
@@ -125,7 +131,7 @@ class AnalyticsSummary(BaseModel):
     total_interested: int
     projected_arr_90d: float
     overall_conversion_rate: float
-    pipeline_health: str         # "green" | "amber" | "red"
+    pipeline_health: str  # "green" | "amber" | "red"
     bottleneck_stage: str
     stuck_in_research_14d: int
     best_cluster: str

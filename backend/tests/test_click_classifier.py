@@ -32,9 +32,9 @@ def test_three_rapid_clicks_is_bot() -> None:
     event = {
         "latency_seconds": 600,
         "recent_clicks": [
-            {"click_timestamp": _ts(0),   "link": "https://a.com/1"},
-            {"click_timestamp": _ts(20),  "link": "https://b.com/2"},
-            {"click_timestamp": _ts(40),  "link": "https://c.com/3"},
+            {"click_timestamp": _ts(0), "link": "https://a.com/1"},
+            {"click_timestamp": _ts(20), "link": "https://b.com/2"},
+            {"click_timestamp": _ts(40), "link": "https://c.com/3"},
         ],
     }
     assert ClickClassifier().classify(event) == "bot"
@@ -44,7 +44,7 @@ def test_open_then_click_45s_later_is_human() -> None:
     """Open + click with 45s dwell (well above 30s floor) → human."""
     event = {
         "latency_seconds": 600,
-        "open_timestamp":  _ts(0),
+        "open_timestamp": _ts(0),
         "click_timestamp": _ts(45),
     }
     assert ClickClassifier().classify(event) == "human"
@@ -70,7 +70,7 @@ def test_tsubaki_pattern_open_then_click_with_dwell() -> None:
     event = {
         "latency_seconds": 360,
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edge/124",
-        "open_timestamp":  _ts(0),
+        "open_timestamp": _ts(0),
         "click_timestamp": _ts(125),  # 125s dwell, well above 30s floor
     }
     assert ClickClassifier().classify(event) == "human"
@@ -94,7 +94,7 @@ def test_open_to_click_dwell_too_short_is_unclear() -> None:
     """Open then click 5s later → not enough dwell for human, falls to unclear."""
     event = {
         "latency_seconds": 600,
-        "open_timestamp":  _ts(0),
+        "open_timestamp": _ts(0),
         "click_timestamp": _ts(5),
     }
     assert ClickClassifier().classify(event) == "unclear"

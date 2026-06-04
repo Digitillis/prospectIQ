@@ -22,6 +22,7 @@ from backend.app.core.contact_filter import (
 # Allowed: 8 canonical personas
 # -----------------------------
 
+
 @pytest.mark.parametrize(
     "classification",
     sorted(_ALLOWED_PERSONAS),
@@ -54,6 +55,7 @@ def test_all_eight_allowlist_members_present() -> None:
 # Blocked: HR, Sales, Marketing, Finance
 # ------------------------------------
 
+
 @pytest.mark.parametrize(
     "classification",
     [
@@ -75,6 +77,7 @@ def test_blocked_wrong_function_personas(classification: str) -> None:
 # ----------------------------
 # Confidence floor enforcement
 # ----------------------------
+
 
 def test_below_confidence_floor_rejected() -> None:
     contact = {
@@ -115,6 +118,7 @@ def test_keyword_source_missing_confidence_accepted() -> None:
 # persona_type → classification map
 # ---------------------------------
 
+
 def test_persona_type_to_classification_mapping() -> None:
     # Allowlisted source roles map correctly
     assert normalize_persona_classification("vp_ops") == "vp_operations"
@@ -133,9 +137,9 @@ def test_persona_type_to_classification_mapping() -> None:
 
 def test_eligible_via_legacy_persona_type_only() -> None:
     """A contact with only the legacy `persona_type` field must still gate correctly."""
-    allowed_ops = {"persona_type": "vp_ops"}            # → vp_operations (allow)
+    allowed_ops = {"persona_type": "vp_ops"}  # → vp_operations (allow)
     allowed_maint = {"persona_type": "maintenance_leader"}  # → director_manufacturing (allow)
-    blocked = {"persona_type": "cio"}                   # → None (block)
+    blocked = {"persona_type": "cio"}  # → None (block)
 
     assert is_eligible(allowed_ops) is True
     assert is_eligible(allowed_maint) is True

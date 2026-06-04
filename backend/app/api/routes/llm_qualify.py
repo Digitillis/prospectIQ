@@ -55,21 +55,26 @@ async def run_llm_qualification(company_id: str, background_tasks: BackgroundTas
         raise HTTPException(422, "No contacts found for this company. Enrich contacts first.")
 
     from backend.app.core.config import get_settings
+
     settings = get_settings()
     if not settings.anthropic_api_key:
         raise HTTPException(503, "ANTHROPIC_API_KEY not configured.")
 
     try:
         from backend.app.agents.llm_qualification import LLMQualificationAgent
+
         agent = LLMQualificationAgent(workspace_id=workspace_id)
         result = agent.qualify_contact(company=company, contact=contacts[0])
 
         # Persist
         from datetime import datetime, timezone
-        db.client.table("companies").update({
-            "llm_qualification_result": result,
-            "llm_qualified_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", company_id).execute()
+
+        db.client.table("companies").update(
+            {
+                "llm_qualification_result": result,
+                "llm_qualified_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", company_id).execute()
 
         return {
             "company_id": company_id,
@@ -118,6 +123,7 @@ async def override_llm_qualification(company_id: str, payload: OverridePayload):
     existing = company.get("llm_qualification_result") or {}
 
     from datetime import datetime, timezone
+
     override_record = {
         **existing,
         "passed": payload.passed,
@@ -126,13 +132,16 @@ async def override_llm_qualification(company_id: str, payload: OverridePayload):
         "override_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    db.client.table("companies").update({
-        "llm_qualification_result": override_record,
-    }).eq("id", company_id).execute()
+    db.client.table("companies").update(
+        {
+            "llm_qualification_result": override_record,
+        }
+    ).eq("id", company_id).execute()
 
     # Log to audit
     try:
         from backend.app.core.audit import log_audit_event
+
         log_audit_event(
             db=db,
             workspace_id=workspace_id,
@@ -159,6 +168,7 @@ async def batch_llm_qualification(payload: BatchQualifyPayload, background_tasks
     def _run_batch():
         try:
             from backend.app.agents.llm_qualification import LLMQualificationAgent
+
             agent = LLMQualificationAgent(workspace_id=workspace_id)
             agent.run(company_ids=payload.company_ids)
         except Exception as e:

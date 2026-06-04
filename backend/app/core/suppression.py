@@ -44,6 +44,7 @@ _COMPANY_BLOCK_STATUSES = {"not_interested", "disqualified", "converted"}
 # Public: record a suppression event
 # ---------------------------------------------------------------------------
 
+
 def record_suppression(
     db: Database,
     scope: str,
@@ -91,7 +92,7 @@ def record_suppression(
             row["escalated_from"] = escalated_from
 
         result = db.client.table("suppression_log").insert(row).execute()
-        return (result.data[0]["id"] if result.data else None)
+        return result.data[0]["id"] if result.data else None
     except Exception as exc:
         logger.warning("record_suppression failed (non-fatal): %s", exc)
         return None
@@ -147,7 +148,8 @@ def maybe_escalate_to_company(
         if entry_id:
             logger.warning(
                 "suppression: company %s escalated to company scope after %d distinct bounces",
-                company_id, len(distinct_contacts),
+                company_id,
+                len(distinct_contacts),
             )
         return bool(entry_id)
     except Exception as exc:
@@ -158,6 +160,7 @@ def maybe_escalate_to_company(
 # ---------------------------------------------------------------------------
 # Public: check suppression
 # ---------------------------------------------------------------------------
+
 
 def is_suppressed(
     db: Database,
@@ -206,10 +209,7 @@ def is_suppressed(
     if contact_id:
         try:
             contact_result = (
-                db.client.table("contacts")
-                .select("status, email")
-                .eq("id", contact_id)
-                .execute()
+                db.client.table("contacts").select("status, email").eq("id", contact_id).execute()
             )
             if contact_result.data:
                 contact = contact_result.data[0]
@@ -224,8 +224,14 @@ def is_suppressed(
         existing = research.get("existing_solutions") or []
         if existing and isinstance(existing, list):
             direct_competitors = {
-                "uptake", "sparkcognition", "c3.ai", "c3 ai",
-                "sight machine", "machinemetrics", "augury", "senseye",
+                "uptake",
+                "sparkcognition",
+                "c3.ai",
+                "c3 ai",
+                "sight machine",
+                "machinemetrics",
+                "augury",
+                "senseye",
             }
             for solution in existing:
                 if str(solution).lower().strip() in direct_competitors:
@@ -256,10 +262,9 @@ def is_suppressed(
                         .execute()
                     )
                     if not replies.data:
-                        cooldown_end = (
-                            datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
-                            + timedelta(days=SEQUENCE_COOLDOWN_DAYS)
-                        )
+                        cooldown_end = datetime.fromisoformat(
+                            completed_at.replace("Z", "+00:00")
+                        ) + timedelta(days=SEQUENCE_COOLDOWN_DAYS)
                         if datetime.now(timezone.utc) < cooldown_end:
                             days_left = (cooldown_end - datetime.now(timezone.utc)).days
                             return True, f"cooldown:{days_left}d_remaining"
@@ -287,19 +292,12 @@ def is_suppressed(
     if contact_id:
         try:
             contact_row = (
-                db.client.table("contacts")
-                .select("email")
-                .eq("id", contact_id)
-                .limit(1)
-                .execute()
+                db.client.table("contacts").select("email").eq("id", contact_id).limit(1).execute()
             )
             email = (contact_row.data[0].get("email") or "") if contact_row.data else ""
             if email:
                 sibling_rows = (
-                    db.client.table("contacts")
-                    .select("id")
-                    .ilike("email", email)
-                    .execute()
+                    db.client.table("contacts").select("id").ilike("email", email).execute()
                 )
                 sibling_ids = [r["id"] for r in sibling_rows.data if r["id"] != contact_id]
                 if sibling_ids:

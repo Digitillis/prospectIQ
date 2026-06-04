@@ -52,9 +52,7 @@ def _make_db_mock() -> MagicMock:
     be a real empty list — not a MagicMock — to avoid TypeError on iteration.
     """
     db = MagicMock()
-    db.client.table.return_value.select.return_value\
-        .eq.return_value.in_.return_value\
-        .execute.return_value.data = []
+    db.client.table.return_value.select.return_value.eq.return_value.in_.return_value.execute.return_value.data = []
     return db
 
 
@@ -94,7 +92,9 @@ def test_spam_complaint_updates_company_status():
         patch("backend.app.api.routes.webhooks.get_settings", return_value=_make_settings_mock()),
     ):
         client = TestClient(app, raise_server_exceptions=True)
-        resp = client.post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=_spam_payload())
+        resp = client.post(
+            f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=_spam_payload()
+        )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -135,10 +135,7 @@ def test_spam_complaint_records_company_suppression():
     )
 
     # Find the company-scope call (kwargs style — handler uses keyword args throughout)
-    company_calls = [
-        c for c in mock_record.call_args_list
-        if c.kwargs.get("scope") == "company"
-    ]
+    company_calls = [c for c in mock_record.call_args_list if c.kwargs.get("scope") == "company"]
     assert company_calls, "record_suppression was not called with scope='company'"
 
     kwargs = company_calls[0].kwargs

@@ -82,6 +82,7 @@ def main(
         return
 
     from collections import Counter
+
     tier_counts = Counter(c.get("tier") or "?" for c in targets)
     console.print("\n  Breakdown by tier:")
     for t, n in sorted(tier_counts.items()):
@@ -98,14 +99,17 @@ def main(
     reset = 0
     for company in targets:
         try:
-            db.update_company(company["id"], {
-                "status": "discovered",
-                "pqs_total": 0,
-                "pqs_firmographic": 0,
-                "pqs_technographic": 0,
-                "pqs_timing": 0,
-                "qualification_notes": None,
-            })
+            db.update_company(
+                company["id"],
+                {
+                    "status": "discovered",
+                    "pqs_total": 0,
+                    "pqs_firmographic": 0,
+                    "pqs_technographic": 0,
+                    "pqs_timing": 0,
+                    "qualification_notes": None,
+                },
+            )
             reset += 1
         except Exception as e:
             console.print(f"  [red]Error resetting {company.get('name')}: {e}[/red]")

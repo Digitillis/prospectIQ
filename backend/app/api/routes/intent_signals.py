@@ -31,6 +31,7 @@ def get_db() -> Database:
 
 class SignalType(str, Enum):
     """Types of intent signals indicating readiness for outreach."""
+
     RECENT_RESEARCH = "recent_research"  # Recently researched in system
     PQS_IMPROVEMENT = "pqs_improvement"  # PQS score increased significantly
     ENGAGEMENT_SPIKE = "engagement_spike"  # Increased email open rate
@@ -45,6 +46,7 @@ class SignalType(str, Enum):
 
 class SignalPriority(str, Enum):
     """Signal urgency levels."""
+
     CRITICAL = "critical"  # Act immediately
     HIGH = "high"  # High priority, this week
     MEDIUM = "medium"  # This month
@@ -53,6 +55,7 @@ class SignalPriority(str, Enum):
 
 class IntentSignal(BaseModel):
     """A single intent signal for a prospect."""
+
     company_id: int
     company_name: str
     signal_type: SignalType
@@ -66,6 +69,7 @@ class IntentSignal(BaseModel):
 
 class IntentSummary(BaseModel):
     """Summary of all intent signals."""
+
     total_signals: int
     critical_count: int
     high_count: int
@@ -75,6 +79,7 @@ class IntentSummary(BaseModel):
 
 class CommandCenterItem(BaseModel):
     """High-priority item for command center dashboard."""
+
     item_id: str
     item_type: str  # "intent_signal", "hitl_queue", "meeting", "deal"
     priority: str
@@ -95,7 +100,7 @@ class CommandCenterItem(BaseModel):
 @router.get("/detected", response_model=IntentSummary)
 async def get_intent_signals(
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
     priority: Optional[SignalPriority] = Query(None),
     signal_type: Optional[SignalType] = Query(None),
     limit: int = Query(50, ge=1, le=500),
@@ -129,7 +134,7 @@ async def get_intent_signals(
 async def get_prospect_signals(
     company_id: int,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Get all detected intent signals for a specific prospect."""
     workspace_id = get_workspace_id()
@@ -156,7 +161,7 @@ async def get_prospect_signals(
 @router.get("/command-center", response_model=dict)
 async def get_command_center(
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Get high-priority items for command center dashboard."""
@@ -169,18 +174,20 @@ async def get_command_center(
     # 1. Critical intent signals
     signals = await _detect_all_signals(db, workspace_id, SignalPriority.CRITICAL, None, limit)
     for signal in signals:
-        items.append(CommandCenterItem(
-            item_id=f"signal-{signal.company_id}",
-            item_type="intent_signal",
-            priority=signal.priority.value,
-            company_id=signal.company_id,
-            company_name=signal.company_name,
-            title=f"{signal.signal_type.value.replace('_', ' ').title()} Detected",
-            description=signal.description,
-            action_required=signal.recommended_action,
-            created_at=signal.signal_date,
-            expires_at=signal.signal_date + timedelta(days=signal.action_urgency_days),
-        ))
+        items.append(
+            CommandCenterItem(
+                item_id=f"signal-{signal.company_id}",
+                item_type="intent_signal",
+                priority=signal.priority.value,
+                company_id=signal.company_id,
+                company_name=signal.company_name,
+                title=f"{signal.signal_type.value.replace('_', ' ').title()} Detected",
+                description=signal.description,
+                action_required=signal.recommended_action,
+                created_at=signal.signal_date,
+                expires_at=signal.signal_date + timedelta(days=signal.action_urgency_days),
+            )
+        )
 
     # 2. High-priority HITL items
     hitl_result = (
@@ -194,7 +201,7 @@ async def get_command_center(
         .execute()
     )
 
-    for hitl_item in (hitl_result.data or []):
+    for hitl_item in hitl_result.data or []:
         company_result = (
             db.client.table("companies")
             .select("id, name")
@@ -206,17 +213,19 @@ async def get_command_center(
 
         if company_result.data:
             company = company_result.data
-            items.append(CommandCenterItem(
-                item_id=f"hitl-{hitl_item['id']}",
-                item_type="hitl_queue",
-                priority="high",
-                company_id=company["id"],
-                company_name=company["name"],
-                title=f"HITL Review: {hitl_item['classification'].replace('_', ' ').title()}",
-                description="Review and take action on this prospect",
-                action_required="Review in HITL queue",
-                created_at=datetime.fromisoformat(hitl_item["created_at"]),
-            ))
+            items.append(
+                CommandCenterItem(
+                    item_id=f"hitl-{hitl_item['id']}",
+                    item_type="hitl_queue",
+                    priority="high",
+                    company_id=company["id"],
+                    company_name=company["name"],
+                    title=f"HITL Review: {hitl_item['classification'].replace('_', ' ').title()}",
+                    description="Review and take action on this prospect",
+                    action_required="Review in HITL queue",
+                    created_at=datetime.fromisoformat(hitl_item["created_at"]),
+                )
+            )
 
     # 3. Upcoming meetings
     meeting_result = (
@@ -231,7 +240,7 @@ async def get_command_center(
         .execute()
     )
 
-    for meeting in (meeting_result.data or []):
+    for meeting in meeting_result.data or []:
         company_result = (
             db.client.table("companies")
             .select("id, name")
@@ -243,18 +252,20 @@ async def get_command_center(
 
         if company_result.data:
             company = company_result.data
-            items.append(CommandCenterItem(
-                item_id=f"meeting-{meeting['id']}",
-                item_type="meeting",
-                priority="high",
-                company_id=company["id"],
-                company_name=company["name"],
-                title=f"Meeting: {meeting.get('title', 'Scheduled')}",
-                description=f"Scheduled for {meeting['scheduled_at']}",
-                action_required="Prepare for meeting",
-                created_at=datetime.now(timezone.utc),
-                expires_at=datetime.fromisoformat(meeting["scheduled_at"]),
-            ))
+            items.append(
+                CommandCenterItem(
+                    item_id=f"meeting-{meeting['id']}",
+                    item_type="meeting",
+                    priority="high",
+                    company_id=company["id"],
+                    company_name=company["name"],
+                    title=f"Meeting: {meeting.get('title', 'Scheduled')}",
+                    description=f"Scheduled for {meeting['scheduled_at']}",
+                    action_required="Prepare for meeting",
+                    created_at=datetime.now(timezone.utc),
+                    expires_at=datetime.fromisoformat(meeting["scheduled_at"]),
+                )
+            )
 
     # 4. At-risk deals
     deal_result = (
@@ -267,7 +278,7 @@ async def get_command_center(
         .execute()
     )
 
-    for deal in (deal_result.data or []):
+    for deal in deal_result.data or []:
         company_result = (
             db.client.table("companies")
             .select("id, name")
@@ -279,18 +290,22 @@ async def get_command_center(
 
         if company_result.data:
             company = company_result.data
-            items.append(CommandCenterItem(
-                item_id=f"deal-{deal['id']}",
-                item_type="deal",
-                priority="medium",
-                company_id=company["id"],
-                company_name=company["name"],
-                title=f"Deal in Negotiation: {deal['title']}",
-                description="Actively working on deal closure",
-                action_required="Follow up on proposal",
-                created_at=datetime.now(timezone.utc),
-                expires_at=datetime.fromisoformat(deal["expected_close_date"]) if deal.get("expected_close_date") else None,
-            ))
+            items.append(
+                CommandCenterItem(
+                    item_id=f"deal-{deal['id']}",
+                    item_type="deal",
+                    priority="medium",
+                    company_id=company["id"],
+                    company_name=company["name"],
+                    title=f"Deal in Negotiation: {deal['title']}",
+                    description="Actively working on deal closure",
+                    action_required="Follow up on proposal",
+                    created_at=datetime.now(timezone.utc),
+                    expires_at=datetime.fromisoformat(deal["expected_close_date"])
+                    if deal.get("expected_close_date")
+                    else None,
+                )
+            )
 
     # Sort by priority and return limit
     priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -331,18 +346,20 @@ async def _detect_all_signals(
         .execute()
     )
 
-    for company in (result.data or []):
-        signals.append(IntentSignal(
-            company_id=company["id"],
-            company_name=company["name"],
-            signal_type=SignalType.RECENT_RESEARCH,
-            priority=SignalPriority.MEDIUM,
-            description=f"Prospect was recently researched",
-            signal_date=datetime.fromisoformat(company["updated_at"]),
-            data={"updated_at": company["updated_at"]},
-            recommended_action="Schedule discovery call",
-            action_urgency_days=3,
-        ))
+    for company in result.data or []:
+        signals.append(
+            IntentSignal(
+                company_id=company["id"],
+                company_name=company["name"],
+                signal_type=SignalType.RECENT_RESEARCH,
+                priority=SignalPriority.MEDIUM,
+                description=f"Prospect was recently researched",
+                signal_date=datetime.fromisoformat(company["updated_at"]),
+                data={"updated_at": company["updated_at"]},
+                recommended_action="Schedule discovery call",
+                action_urgency_days=3,
+            )
+        )
 
     # Get high engagement prospects
     engagement_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
@@ -354,7 +371,7 @@ async def _detect_all_signals(
         .execute()
     )
 
-    for company in (result.data or []):
+    for company in result.data or []:
         # Check for recent contact engagement
         contact_activity = (
             db.client.table("outreach_drafts")
@@ -368,17 +385,19 @@ async def _detect_all_signals(
         )
 
         if contact_activity.data:
-            signals.append(IntentSignal(
-                company_id=company["id"],
-                company_name=company["name"],
-                signal_type=SignalType.ENGAGEMENT_SPIKE,
-                priority=SignalPriority.HIGH,
-                description=f"Strong engagement: High PQS ({company['pqs_total']}) + recent opens",
-                signal_date=datetime.now(timezone.utc),
-                data={"pqs_score": company["pqs_total"]},
-                recommended_action="Schedule demo or call",
-                action_urgency_days=2,
-            ))
+            signals.append(
+                IntentSignal(
+                    company_id=company["id"],
+                    company_name=company["name"],
+                    signal_type=SignalType.ENGAGEMENT_SPIKE,
+                    priority=SignalPriority.HIGH,
+                    description=f"Strong engagement: High PQS ({company['pqs_total']}) + recent opens",
+                    signal_date=datetime.now(timezone.utc),
+                    data={"pqs_score": company["pqs_total"]},
+                    recommended_action="Schedule demo or call",
+                    action_urgency_days=2,
+                )
+            )
 
     # Get companies with positive sentiment in recent interactions
     sentiment_cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
@@ -392,7 +411,7 @@ async def _detect_all_signals(
     )
 
     seen_companies = set()
-    for draft in (result.data or []):
+    for draft in result.data or []:
         company_id = draft["company_id"]
         if company_id not in seen_companies:
             seen_companies.add(company_id)
@@ -407,17 +426,19 @@ async def _detect_all_signals(
 
             if company_result.data:
                 company = company_result.data
-                signals.append(IntentSignal(
-                    company_id=company["id"],
-                    company_name=company["name"],
-                    signal_type=SignalType.INBOUND_INTEREST,
-                    priority=SignalPriority.CRITICAL,
-                    description="Prospect showed positive interest in recent communication",
-                    signal_date=datetime.now(timezone.utc),
-                    data={"latest_status": "replied_positive"},
-                    recommended_action="Call immediately or send proposal",
-                    action_urgency_days=1,
-                ))
+                signals.append(
+                    IntentSignal(
+                        company_id=company["id"],
+                        company_name=company["name"],
+                        signal_type=SignalType.INBOUND_INTEREST,
+                        priority=SignalPriority.CRITICAL,
+                        description="Prospect showed positive interest in recent communication",
+                        signal_date=datetime.now(timezone.utc),
+                        data={"latest_status": "replied_positive"},
+                        recommended_action="Call immediately or send proposal",
+                        action_urgency_days=1,
+                    )
+                )
 
     # Filter by priority/type if requested
     if priority:
@@ -426,7 +447,12 @@ async def _detect_all_signals(
         signals = [s for s in signals if s.signal_type == signal_type]
 
     # Sort by priority and urgency
-    priority_order = {SignalPriority.CRITICAL: 0, SignalPriority.HIGH: 1, SignalPriority.MEDIUM: 2, SignalPriority.LOW: 3}
+    priority_order = {
+        SignalPriority.CRITICAL: 0,
+        SignalPriority.HIGH: 1,
+        SignalPriority.MEDIUM: 2,
+        SignalPriority.LOW: 3,
+    }
     signals.sort(key=lambda x: (priority_order[x.priority], x.action_urgency_days))
 
     return signals[:limit]
@@ -458,31 +484,35 @@ async def _detect_signals_for_company(
     # Check recent research
     cutoff_recent = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     if company["updated_at"] >= cutoff_recent:
-        signals.append(IntentSignal(
-            company_id=company["id"],
-            company_name=company["name"],
-            signal_type=SignalType.RECENT_RESEARCH,
-            priority=SignalPriority.MEDIUM,
-            description="Prospect was recently researched in the system",
-            signal_date=datetime.fromisoformat(company["updated_at"]),
-            data={"updated_at": company["updated_at"]},
-            recommended_action="Schedule discovery call",
-            action_urgency_days=3,
-        ))
+        signals.append(
+            IntentSignal(
+                company_id=company["id"],
+                company_name=company["name"],
+                signal_type=SignalType.RECENT_RESEARCH,
+                priority=SignalPriority.MEDIUM,
+                description="Prospect was recently researched in the system",
+                signal_date=datetime.fromisoformat(company["updated_at"]),
+                data={"updated_at": company["updated_at"]},
+                recommended_action="Schedule discovery call",
+                action_urgency_days=3,
+            )
+        )
 
     # Check high PQS
     if company["pqs_total"] >= 70:
-        signals.append(IntentSignal(
-            company_id=company["id"],
-            company_name=company["name"],
-            signal_type=SignalType.PQS_IMPROVEMENT,
-            priority=SignalPriority.HIGH,
-            description=f"Strong company fit with PQS score of {company['pqs_total']}",
-            signal_date=datetime.now(timezone.utc),
-            data={"pqs_score": company["pqs_total"]},
-            recommended_action="Prioritize for outreach",
-            action_urgency_days=7,
-        ))
+        signals.append(
+            IntentSignal(
+                company_id=company["id"],
+                company_name=company["name"],
+                signal_type=SignalType.PQS_IMPROVEMENT,
+                priority=SignalPriority.HIGH,
+                description=f"Strong company fit with PQS score of {company['pqs_total']}",
+                signal_date=datetime.now(timezone.utc),
+                data={"pqs_score": company["pqs_total"]},
+                recommended_action="Prioritize for outreach",
+                action_urgency_days=7,
+            )
+        )
 
     # Check for positive sentiment
     sentiment_result = (
@@ -497,16 +527,18 @@ async def _detect_signals_for_company(
     )
 
     if sentiment_result.data:
-        signals.append(IntentSignal(
-            company_id=company["id"],
-            company_name=company["name"],
-            signal_type=SignalType.INBOUND_INTEREST,
-            priority=SignalPriority.CRITICAL,
-            description="Prospect has shown positive interest in recent communication",
-            signal_date=datetime.now(timezone.utc),
-            data={"latest_status": "replied_positive"},
-            recommended_action="Call immediately or send proposal",
-            action_urgency_days=1,
-        ))
+        signals.append(
+            IntentSignal(
+                company_id=company["id"],
+                company_name=company["name"],
+                signal_type=SignalType.INBOUND_INTEREST,
+                priority=SignalPriority.CRITICAL,
+                description="Prospect has shown positive interest in recent communication",
+                signal_date=datetime.now(timezone.utc),
+                data={"latest_status": "replied_positive"},
+                recommended_action="Call immediately or send proposal",
+                action_urgency_days=1,
+            )
+        )
 
     return signals

@@ -38,14 +38,19 @@ def get_db() -> Database:
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class CalibrateRequest(BaseModel):
-    samples: list[str] = Field(..., min_length=1, description="1–5 past posts to calibrate voice from")
+    samples: list[str] = Field(
+        ..., min_length=1, description="1–5 past posts to calibrate voice from"
+    )
 
 
 class GenerateRequest(BaseModel):
     topic: str = Field(..., description="What to write about")
     content_type: str = Field("linkedin_post", description="linkedin_post | short_article | thread")
-    target_persona: Optional[str] = Field(None, description="Who this content is aimed at, e.g. 'plant managers'")
+    target_persona: Optional[str] = Field(
+        None, description="Who this content is aimed at, e.g. 'plant managers'"
+    )
     include_cta: bool = Field(True, description="Whether to include a call-to-action")
     voice_profile_id: Optional[str] = Field(None, description="Override which voice profile to use")
 
@@ -57,6 +62,7 @@ class RegenerateRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("/voice-profile")
 async def get_voice_profile() -> dict[str, Any]:
@@ -70,7 +76,9 @@ async def get_voice_profile() -> dict[str, Any]:
         return {"profile": profile.to_dict()}
     except Exception as e:
         logger.error(f"get_voice_profile failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch voice profile: {str(e)[:200]}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch voice profile: {str(e)[:200]}"
+        )
 
 
 @router.post("/voice-profile/calibrate")
@@ -140,7 +148,9 @@ async def regenerate_post(post_id: str, request: RegenerateRequest) -> dict[str,
 
     engine = GhostwritingEngine()
     try:
-        post = await engine.regenerate(post_id=post_id, workspace_id=ws_id, feedback=request.feedback)
+        post = await engine.regenerate(
+            post_id=post_id, workspace_id=ws_id, feedback=request.feedback
+        )
         return {"post": post.to_dict()}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

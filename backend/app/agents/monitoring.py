@@ -51,13 +51,15 @@ class PipelineMonitor:
         try:
             result = (
                 self.db.client.table("pipeline_runs")
-                .insert({
-                    "agent": self.agent,
-                    "batch_id": self.batch_id,
-                    "started_at": datetime.now(timezone.utc).isoformat(),
-                    "status": "running",
-                    "meta": meta or {},
-                })
+                .insert(
+                    {
+                        "agent": self.agent,
+                        "batch_id": self.batch_id,
+                        "started_at": datetime.now(timezone.utc).isoformat(),
+                        "status": "running",
+                        "meta": meta or {},
+                    }
+                )
                 .execute()
             )
             if result.data:
@@ -103,11 +105,13 @@ class PipelineMonitor:
         if not self.run_id:
             return
         try:
-            self.db.client.table("pipeline_runs").update({
-                "finished_at": datetime.now(timezone.utc).isoformat(),
-                "status": "failed",
-                "error_detail": error_msg[:2000],
-            }).eq("id", self.run_id).execute()
+            self.db.client.table("pipeline_runs").update(
+                {
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "status": "failed",
+                    "error_detail": error_msg[:2000],
+                }
+            ).eq("id", self.run_id).execute()
         except Exception as e:
             logger.warning(f"[Monitor] Could not record run failure: {e}")
 
@@ -120,15 +124,17 @@ class PipelineMonitor:
     ) -> None:
         """Record an individual company-level error during a run."""
         try:
-            self.db.client.table("pipeline_errors").insert({
-                "run_id": self.run_id,
-                "agent": self.agent,
-                "company_id": company_id,
-                "error_type": error_type or "unknown",
-                "error_msg": error_msg[:2000],
-                "stack_trace": traceback.format_exc() if exc else None,
-                "occurred_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
+            self.db.client.table("pipeline_errors").insert(
+                {
+                    "run_id": self.run_id,
+                    "agent": self.agent,
+                    "company_id": company_id,
+                    "error_type": error_type or "unknown",
+                    "error_msg": error_msg[:2000],
+                    "stack_trace": traceback.format_exc() if exc else None,
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).execute()
         except Exception as e:
             logger.warning(f"[Monitor] Could not log error: {e}")
 
@@ -165,6 +171,7 @@ class HealthSnapshotAgent:
     def capture(self) -> dict[str, Any]:
         """Take a full pipeline health snapshot and persist it."""
         from backend.app.core.config import get_settings
+
         settings = get_settings()
 
         snapshot: dict[str, Any] = {
@@ -230,9 +237,7 @@ class HealthSnapshotAgent:
             # API cost total
             try:
                 costs = self.db.client.table("api_costs").select("cost_usd").execute()
-                total_cost = sum(
-                    float(r.get("cost_usd") or 0) for r in (costs.data or [])
-                )
+                total_cost = sum(float(r.get("cost_usd") or 0) for r in (costs.data or []))
                 snapshot["total_cost_usd"] = round(total_cost, 4)
             except Exception:
                 snapshot["total_cost_usd"] = None
@@ -260,6 +265,7 @@ class HealthSnapshotAgent:
             # Error count in last 24h
             try:
                 from datetime import timedelta
+
                 cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
                 errors = (
                     self.db.client.table("pipeline_errors")
@@ -276,7 +282,9 @@ class HealthSnapshotAgent:
                     .limit(1)
                     .execute()
                 )
-                snapshot["last_error_at"] = last_error.data[0]["occurred_at"] if last_error.data else None
+                snapshot["last_error_at"] = (
+                    last_error.data[0]["occurred_at"] if last_error.data else None
+                )
             except Exception:
                 snapshot["error_count_24h"] = 0
                 snapshot["last_error_at"] = None
@@ -288,9 +296,11 @@ class HealthSnapshotAgent:
         # Persist
         try:
             self.db.client.table("health_snapshots").insert(snapshot).execute()
-            logger.info(f"[HealthSnapshot] Captured: {snapshot.get('companies_total')} companies, "
-                        f"${snapshot.get('total_cost_usd', 0)} spent, "
-                        f"{snapshot.get('drafts_approved', 0)} drafts staged")
+            logger.info(
+                f"[HealthSnapshot] Captured: {snapshot.get('companies_total')} companies, "
+                f"${snapshot.get('total_cost_usd', 0)} spent, "
+                f"{snapshot.get('drafts_approved', 0)} drafts staged"
+            )
         except Exception as e:
             logger.error(f"[HealthSnapshot] Could not persist snapshot: {e}")
 

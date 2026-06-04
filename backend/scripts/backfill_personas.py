@@ -25,20 +25,45 @@ logger = logging.getLogger(__name__)
 # Titles / keywords that mark a contact as a definite non-buyer.
 # These roles have no authority over equipment, operations, or compliance spend.
 NON_BUYER_KEYWORDS = [
-    "sales manager", "account manager", "account executive",
-    "sales director", "inside sales", "outside sales",
-    "business development", "regional sales", "territory manager",
-    "hr manager", "human resources", "talent ", "recruiting",
-    "accounting", "finance manager", "controller", "bookkeeper",
-    "it manager", "it network", "helpdesk",
-    "marketing manager", "brand manager", "communications",
-    "legal", "compliance counsel",
-    "rf design", "hardware engineer", "software engineer",
-    "product development engineer", "validation engineer",
-    "aftermarket", "spare parts coordinator",
-    "purchasing manager", "procurement coordinator",
-    "facilities manager", "office manager",
-    "sec reporting", "revenue management", "project management",
+    "sales manager",
+    "account manager",
+    "account executive",
+    "sales director",
+    "inside sales",
+    "outside sales",
+    "business development",
+    "regional sales",
+    "territory manager",
+    "hr manager",
+    "human resources",
+    "talent ",
+    "recruiting",
+    "accounting",
+    "finance manager",
+    "controller",
+    "bookkeeper",
+    "it manager",
+    "it network",
+    "helpdesk",
+    "marketing manager",
+    "brand manager",
+    "communications",
+    "legal",
+    "compliance counsel",
+    "rf design",
+    "hardware engineer",
+    "software engineer",
+    "product development engineer",
+    "validation engineer",
+    "aftermarket",
+    "spare parts coordinator",
+    "purchasing manager",
+    "procurement coordinator",
+    "facilities manager",
+    "office manager",
+    "sec reporting",
+    "revenue management",
+    "project management",
 ]
 
 
@@ -51,7 +76,9 @@ def is_non_buyer(title: str | None) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill personas and remove non-buyers")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would happen, make no changes")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would happen, make no changes"
+    )
     parser.add_argument("--campaign", help="Limit to one campaign (e.g. mfg_wave2)")
     args = parser.parse_args()
 

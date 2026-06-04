@@ -27,10 +27,24 @@ NOW_ISO = datetime.now(timezone.utc).isoformat()
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_chain():
     m = MagicMock()
-    for attr in ("select", "eq", "neq", "in_", "is_", "not_", "lt", "gte", "order",
-                  "limit", "update", "delete", "insert"):
+    for attr in (
+        "select",
+        "eq",
+        "neq",
+        "in_",
+        "is_",
+        "not_",
+        "lt",
+        "gte",
+        "order",
+        "limit",
+        "update",
+        "delete",
+        "insert",
+    ):
         getattr(m, attr).return_value = m
     return m
 
@@ -78,6 +92,7 @@ def _make_db_client_no_attempt():
 # ---------------------------------------------------------------------------
 # TestReconcileDelivered
 # ---------------------------------------------------------------------------
+
 
 class TestReconcileDelivered:
     def test_reconcile_delivered_sets_reconciled_at(self):
@@ -145,6 +160,7 @@ class TestReconcileDelivered:
 # TestReconcileBounced
 # ---------------------------------------------------------------------------
 
+
 class TestReconcileBounced:
     def test_reconcile_bounced_marks_permanently_failed(self):
         """email.bounced → send_attempt PERMANENTLY_FAILED with failure_code=bounce."""
@@ -201,6 +217,7 @@ class TestReconcileBounced:
 # TestOutOfOrderEvents
 # ---------------------------------------------------------------------------
 
+
 class TestOutOfOrderEvents:
     def test_bounced_after_delivered_reconciliation(self):
         """Bounce arriving after delivered reconciliation: no DISPATCHED/DELIVERED rows → no-op."""
@@ -221,6 +238,7 @@ class TestOutOfOrderEvents:
 # TestWebhookSecretWarning
 # ---------------------------------------------------------------------------
 
+
 class TestWebhookSecretWarning:
     def test_missing_resend_webhook_secret_logs_warning(self):
         """No RESEND_WEBHOOK_SECRET configured → warning logged, not rejected."""
@@ -232,8 +250,11 @@ class TestWebhookSecretWarning:
         # Just test that the condition triggers a warning, not the full endpoint
         # (endpoint requires FastAPI test client setup)
         import logging
-        with patch("backend.app.api.routes.webhooks.get_settings", return_value=settings_mock), \
-             patch("backend.app.api.routes.webhooks.logger") as mock_logger:
+
+        with (
+            patch("backend.app.api.routes.webhooks.get_settings", return_value=settings_mock),
+            patch("backend.app.api.routes.webhooks.logger") as mock_logger,
+        ):
             # Import and call the check logic
             if not settings_mock.resend_webhook_secret:
                 mock_logger.warning(

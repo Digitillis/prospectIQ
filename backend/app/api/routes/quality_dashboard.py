@@ -63,13 +63,16 @@ def get_quality_metrics(
         )
         .gte("created_at", since)
         .execute()
-        .data or []
+        .data
+        or []
     )
 
     replied = [o for o in outcomes if o.get("replied_at")]
     wrong_person = [o for o in outcomes if o.get("wrong_person_flag")]
     meetings = [o for o in outcomes if o.get("meeting_booked_at")]
-    interested = [o for o in replied if o.get("reply_classification") in ("interested", "meeting_request")]
+    interested = [
+        o for o in replied if o.get("reply_classification") in ("interested", "meeting_request")
+    ]
 
     # Hard bounces from contacts
     bounce_result = (
@@ -162,7 +165,9 @@ def get_company_signals(
 
     q = (
         db.client.table("company_signals")
-        .select("id,company_id,signal_type,source,signal_text,observed_at,decay_half_life_days,value")
+        .select(
+            "id,company_id,signal_type,source,signal_text,observed_at,decay_half_life_days,value"
+        )
         .gte("observed_at", since)
         .order("observed_at", desc=True)
         .limit(limit)
@@ -202,7 +207,8 @@ def get_assertion_failures(
         .order("evaluated_at", desc=True)
         .limit(100)
         .execute()
-        .data or []
+        .data
+        or []
     )
 
     # Group by assertion type for summary
@@ -235,7 +241,8 @@ def get_outcome_breakdown(
         )
         .gte("created_at", since)
         .execute()
-        .data or []
+        .data
+        or []
     )
 
     replied = [o for o in outcomes if o.get("reply_sentiment")]
@@ -280,11 +287,11 @@ def get_contact_quality(
     contacts = (
         db.client.table("contacts")
         .select(
-            "is_outreach_eligible,contact_tier,email_status,"
-            "email_name_verified,ccs_score,has_email"
+            "is_outreach_eligible,contact_tier,email_status,email_name_verified,ccs_score,has_email"
         )
         .execute()
-        .data or []
+        .data
+        or []
     )
 
     total = len(contacts)
@@ -347,7 +354,8 @@ def list_icp_exclusions(
         .order("excluded_at", desc=True)
         .limit(200)
         .execute()
-        .data or []
+        .data
+        or []
     )
     return {"exclusions": rows, "total": len(rows)}
 
@@ -364,9 +372,11 @@ def add_icp_exclusion(
     """Manually exclude a company from the ICP pipeline."""
     if not company_id and not domain:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=422, detail="Either company_id or domain is required.")
 
     from backend.app.core.icp_manager import ICPManager
+
     mgr = ICPManager(db)
     if company_id:
         mgr.exclude_company(
@@ -377,12 +387,14 @@ def add_icp_exclusion(
         )
     else:
         # Domain-only exclusion (no matching company in DB yet)
-        db.client.table("icp_exclusions").insert({
-            "domain": domain,
-            "reason": reason,
-            "detail": detail or "",
-            "excluded_by": excluded_by,
-        }).execute()
+        db.client.table("icp_exclusions").insert(
+            {
+                "domain": domain,
+                "reason": reason,
+                "detail": detail or "",
+                "excluded_by": excluded_by,
+            }
+        ).execute()
     return {"status": "excluded"}
 
 
@@ -400,6 +412,7 @@ def remove_icp_exclusion(
 # Title Review Queue
 # ---------------------------------------------------------------------------
 
+
 @router.get("/title-review")
 def list_title_review(
     status: str = Query(default="pending"),
@@ -414,7 +427,8 @@ def list_title_review(
         .order("created_at", desc=True)
         .limit(limit)
         .execute()
-        .data or []
+        .data
+        or []
     )
     return {"items": rows, "total": len(rows)}
 
@@ -437,19 +451,17 @@ def resolve_title_review(
     VALID_TIERS = {"target", "borderline", "excluded"}
     if human_tier not in VALID_TIERS:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=422, detail=f"human_tier must be one of {VALID_TIERS}")
 
     # Fetch the queued item
     rows = (
-        db.client.table("title_review_queue")
-        .select("*")
-        .eq("id", item_id)
-        .limit(1)
-        .execute()
-        .data or []
+        db.client.table("title_review_queue").select("*").eq("id", item_id).limit(1).execute().data
+        or []
     )
     if not rows:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Item not found")
 
     item = rows[0]
@@ -462,23 +474,28 @@ def resolve_title_review(
     cache_key = hashlib.sha256(raw_key.encode()).hexdigest()[:32]
 
     # Write human override to title_classifications
-    db.client.table("title_classifications").upsert({
-        "cache_key": cache_key,
-        "title": title[:255],
-        "industry": industry,
-        "tier": human_tier,
-        "confidence": 1.0,
-        "source": "human",
-        "reasoning": f"Human review by {reviewed_by}",
-    }, on_conflict="cache_key").execute()
+    db.client.table("title_classifications").upsert(
+        {
+            "cache_key": cache_key,
+            "title": title[:255],
+            "industry": industry,
+            "tier": human_tier,
+            "confidence": 1.0,
+            "source": "human",
+            "reasoning": f"Human review by {reviewed_by}",
+        },
+        on_conflict="cache_key",
+    ).execute()
 
     # Mark queue item resolved
-    db.client.table("title_review_queue").update({
-        "status": "reviewed",
-        "human_tier": human_tier,
-        "reviewed_by": reviewed_by,
-        "reviewed_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", item_id).execute()
+    db.client.table("title_review_queue").update(
+        {
+            "status": "reviewed",
+            "human_tier": human_tier,
+            "reviewed_by": reviewed_by,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", item_id).execute()
 
     return {"status": "resolved", "tier": human_tier, "cache_key": cache_key}
 
@@ -486,6 +503,7 @@ def resolve_title_review(
 # ---------------------------------------------------------------------------
 # Threading State
 # ---------------------------------------------------------------------------
+
 
 @router.get("/threading")
 def get_threading_state(

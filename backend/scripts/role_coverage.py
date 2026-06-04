@@ -74,23 +74,26 @@ def build_coverage_matrix(
                 uncategorised.append(c)
 
         enriched_total = sum(
-            1 for c in contacts
+            1
+            for c in contacts
             if (c.get("completeness_score") or 0) >= 60 or c.get("enrichment_status") == "enriched"
         )
 
         covered_core = [p for p in CORE_PERSONAS if persona_map[p]]
         missing_core = [p for p in CORE_PERSONAS if not persona_map[p]]
 
-        rows.append({
-            "company": company,
-            "persona_map": persona_map,
-            "uncategorised": uncategorised,
-            "total_contacts": len(contacts),
-            "enriched_total": enriched_total,
-            "covered_core": covered_core,
-            "missing_core": missing_core,
-            "gap_count": len(missing_core),
-        })
+        rows.append(
+            {
+                "company": company,
+                "persona_map": persona_map,
+                "uncategorised": uncategorised,
+                "total_contacts": len(contacts),
+                "enriched_total": enriched_total,
+                "covered_core": covered_core,
+                "missing_core": missing_core,
+                "gap_count": len(missing_core),
+            }
+        )
 
     # Sort by gap count desc (most gaps first), then name
     rows.sort(key=lambda r: (-r["gap_count"], r["company"]["name"]))
@@ -122,9 +125,7 @@ def print_coverage_matrix(rows: list[dict]) -> None:
         for persona in PERSONA_PRIORITY:
             contacts = row["persona_map"][persona]
             if contacts:
-                names = ", ".join(
-                    c.get("full_name", "?").split()[0] for c in contacts[:2]
-                )
+                names = ", ".join(c.get("full_name", "?").split()[0] for c in contacts[:2])
                 cells.append(f"[green]✓ {names}[/green]")
             else:
                 cells.append("[dim]—[/dim]")

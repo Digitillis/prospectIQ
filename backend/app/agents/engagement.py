@@ -1934,7 +1934,9 @@ class EngagementAgent(BaseAgent):
                     if stype == "email":
                         from backend.app.agents.outreach import OutreachAgent
 
-                        outreach = OutreachAgent(batch_id=self.batch_id)
+                        outreach = OutreachAgent(
+                            batch_id=self.batch_id, workspace_id=self.workspace_id
+                        )
                         outreach.run(
                             company_ids=[seq["company_id"]],
                             sequence_name=seq_name,
@@ -2085,7 +2087,7 @@ class EngagementAgent(BaseAgent):
 
                     from backend.app.agents.outreach import OutreachAgent
 
-                    outreach = OutreachAgent(batch_id=self.batch_id)
+                    outreach = OutreachAgent(batch_id=self.batch_id, workspace_id=self.workspace_id)
                     outreach_result = outreach.run(
                         company_ids=[seq["company_id"]],
                         sequence_name=seq_name,
@@ -2400,7 +2402,7 @@ class EngagementAgent(BaseAgent):
                 # Generate the draft JIT
                 from backend.app.agents.outreach import OutreachAgent
 
-                outreach = OutreachAgent(batch_id=self.batch_id)
+                outreach = OutreachAgent(batch_id=self.batch_id, workspace_id=self.workspace_id)
                 outreach_result = outreach.run(
                     company_ids=[company_id],
                     sequence_name=seq_name,

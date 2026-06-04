@@ -68,9 +68,14 @@ async def get_potential_duplicates():
     """Find companies with duplicate domains or very similar names."""
     db = get_db()
     # Get all companies with domains
-    result = db._filter_ws(
-        db.client.table("companies").select("id, name, domain, tier, status, pqs_total")
-    ).not_.is_("domain", "null").order("domain").execute()
+    result = (
+        db._filter_ws(
+            db.client.table("companies").select("id, name, domain, tier, status, pqs_total")
+        )
+        .not_.is_("domain", "null")
+        .order("domain")
+        .execute()
+    )
 
     companies = result.data
     duplicates = []
@@ -87,11 +92,13 @@ async def get_potential_duplicates():
 
     for domain, group in domain_groups.items():
         if len(group) > 1:
-            duplicates.append({
-                "type": "domain",
-                "key": domain,
-                "companies": group,
-            })
+            duplicates.append(
+                {
+                    "type": "domain",
+                    "key": domain,
+                    "companies": group,
+                }
+            )
 
     return {"data": duplicates, "total_duplicate_groups": len(duplicates)}
 
@@ -102,7 +109,9 @@ async def get_sequence_performance():
     db = get_db()
 
     result = db._filter_ws(
-        db.client.table("outreach_drafts").select("sequence_name, sequence_step, approval_status, channel")
+        db.client.table("outreach_drafts").select(
+            "sequence_name, sequence_step, approval_status, channel"
+        )
     ).execute()
 
     sequences: dict = {}
@@ -140,21 +149,27 @@ async def get_competitive_risks():
     """Find researched companies that already use AI/ML competitors."""
     db = get_db()
     # Get research_intelligence entries with existing_solutions
-    result = db._filter_ws(
-        db.client.table("research_intelligence").select(
-            "company_id, existing_solutions, companies(id, name, tier, status, pqs_total)"
+    result = (
+        db._filter_ws(
+            db.client.table("research_intelligence").select(
+                "company_id, existing_solutions, companies(id, name, tier, status, pqs_total)"
+            )
         )
-    ).not_.is_("existing_solutions", "null").execute()
+        .not_.is_("existing_solutions", "null")
+        .execute()
+    )
 
     risks = []
     for r in result.data:
         solutions = r.get("existing_solutions") or []
         if solutions and len(solutions) > 0 and solutions != ["None found"]:
-            risks.append({
-                "company_id": r.get("company_id"),
-                "company": r.get("companies"),
-                "existing_solutions": solutions,
-            })
+            risks.append(
+                {
+                    "company_id": r.get("company_id"),
+                    "company": r.get("companies"),
+                    "existing_solutions": solutions,
+                }
+            )
 
     return {"data": risks, "total": len(risks)}
 
@@ -167,43 +182,60 @@ async def get_activity_feed(limit: int = 50):
     activities = []
 
     # Recent status changes (companies updated recently)
-    companies = db._filter_ws(
-        db.client.table("companies").select("id, name, status, tier, updated_at")
-    ).order("updated_at", desc=True).limit(limit).execute()
+    companies = (
+        db._filter_ws(db.client.table("companies").select("id, name, status, tier, updated_at"))
+        .order("updated_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
 
     for c in companies.data:
-        activities.append({
-            "type": "status_change",
-            "entity": "company",
-            "entity_id": c["id"],
-            "title": c["name"],
-            "description": f"Status: {c['status']}",
-            "tier": c.get("tier"),
-            "timestamp": c["updated_at"],
-        })
+        activities.append(
+            {
+                "type": "status_change",
+                "entity": "company",
+                "entity_id": c["id"],
+                "title": c["name"],
+                "description": f"Status: {c['status']}",
+                "tier": c.get("tier"),
+                "timestamp": c["updated_at"],
+            }
+        )
 
     # Recent outreach drafts
-    drafts = db._filter_ws(
-        db.client.table("outreach_drafts").select(
-            "id, company_id, approval_status, sequence_name, sequence_step, created_at, companies(name, tier)"
+    drafts = (
+        db._filter_ws(
+            db.client.table("outreach_drafts").select(
+                "id, company_id, approval_status, sequence_name, sequence_step, created_at, companies(name, tier)"
+            )
         )
-    ).order("created_at", desc=True).limit(limit).execute()
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
 
     for d in drafts.data:
-        activities.append({
-            "type": "outreach",
-            "entity": "draft",
-            "entity_id": d.get("company_id"),
-            "title": d.get("companies", {}).get("name", "Unknown"),
-            "description": f"{d['approval_status']} — {d['sequence_name']} step {d['sequence_step']}",
-            "tier": d.get("companies", {}).get("tier"),
-            "timestamp": d["created_at"],
-        })
+        activities.append(
+            {
+                "type": "outreach",
+                "entity": "draft",
+                "entity_id": d.get("company_id"),
+                "title": d.get("companies", {}).get("name", "Unknown"),
+                "description": f"{d['approval_status']} — {d['sequence_name']} step {d['sequence_step']}",
+                "tier": d.get("companies", {}).get("tier"),
+                "timestamp": d["created_at"],
+            }
+        )
 
     # Recent API costs (agent runs)
-    costs = db._filter_ws(
-        db.client.table("api_costs").select("batch_id, provider, model, cost, created_at")
-    ).order("created_at", desc=True).limit(20).execute()
+    costs = (
+        db._filter_ws(
+            db.client.table("api_costs").select("batch_id, provider, model, cost, created_at")
+        )
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
 
     seen_batches = set()
     for c in costs.data:
@@ -212,15 +244,17 @@ async def get_activity_feed(limit: int = 50):
             continue
         seen_batches.add(bid)
         agent = bid.split("_")[0] if "_" in bid else "unknown"
-        activities.append({
-            "type": "agent_run",
-            "entity": "agent",
-            "entity_id": None,
-            "title": f"{agent.title()} agent",
-            "description": f"via {c.get('provider', '?')} · ${c.get('cost', 0):.4f}",
-            "tier": None,
-            "timestamp": c["created_at"],
-        })
+        activities.append(
+            {
+                "type": "agent_run",
+                "entity": "agent",
+                "entity_id": None,
+                "title": f"{agent.title()} agent",
+                "description": f"via {c.get('provider', '?')} · ${c.get('cost', 0):.4f}",
+                "tier": None,
+                "timestamp": c["created_at"],
+            }
+        )
 
     # Sort all by timestamp descending
     activities.sort(key=lambda a: a.get("timestamp", ""), reverse=True)
@@ -254,17 +288,17 @@ async def get_data_quality():
     }
 
     # Get contact counts per company
-    contacts = db._filter_ws(
-        db.client.table("contacts").select("company_id")
-    ).execute()
+    contacts = db._filter_ws(db.client.table("contacts").select("company_id")).execute()
     companies_with_contacts = set(c["company_id"] for c in contacts.data)
     no_contacts = sum(1 for c in companies if c["id"] not in companies_with_contacts)
     missing["contacts"] = no_contacts
 
     # Companies with no email on any contact
-    contacts_with_email = db._filter_ws(
-        db.client.table("contacts").select("company_id, email")
-    ).not_.is_("email", "null").execute()
+    contacts_with_email = (
+        db._filter_ws(db.client.table("contacts").select("company_id, email"))
+        .not_.is_("email", "null")
+        .execute()
+    )
     companies_with_email = set(c["company_id"] for c in contacts_with_email.data)
     no_email = sum(1 for c in companies if c["id"] not in companies_with_email)
     missing["contact_email"] = no_email
@@ -281,23 +315,30 @@ async def get_data_quality():
         if not has_email:
             missing_fields.append("contact_email")
         if missing_fields:
-            incomplete_companies.append({
-                "id": c["id"],
-                "name": c["name"],
-                "status": c.get("status"),
-                "tier": c.get("tier"),
-                "missing_fields": missing_fields,
-                "completeness": round((1 - len(missing_fields) / 8) * 100),
-            })
+            incomplete_companies.append(
+                {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "status": c.get("status"),
+                    "tier": c.get("tier"),
+                    "missing_fields": missing_fields,
+                    "completeness": round((1 - len(missing_fields) / 8) * 100),
+                }
+            )
 
     incomplete_companies.sort(key=lambda c: c["completeness"])
 
     return {
         "data": {
             "total_companies": total,
-            "field_coverage": {k: {"missing": v, "coverage": round((1 - v/max(total, 1)) * 100)} for k, v in missing.items()},
+            "field_coverage": {
+                k: {"missing": v, "coverage": round((1 - v / max(total, 1)) * 100)}
+                for k, v in missing.items()
+            },
             "incomplete_companies": incomplete_companies[:50],
-            "overall_completeness": round((1 - sum(missing.values()) / (total * 8)) * 100) if total else 0,
+            "overall_completeness": round((1 - sum(missing.values()) / (total * 8)) * 100)
+            if total
+            else 0,
         }
     }
 
@@ -306,15 +347,24 @@ async def get_data_quality():
 async def get_campaign_performance():
     """Analyze discovery campaign effectiveness."""
     db = get_db()
-    result = db._filter_ws(
-        db.client.table("companies").select("campaign_name, status, pqs_total, tier")
-    ).not_.is_("campaign_name", "null").execute()
+    result = (
+        db._filter_ws(db.client.table("companies").select("campaign_name, status, pqs_total, tier"))
+        .not_.is_("campaign_name", "null")
+        .execute()
+    )
 
     campaigns: dict = {}
     for c in result.data:
         name = c.get("campaign_name", "unknown")
         if name not in campaigns:
-            campaigns[name] = {"name": name, "total": 0, "statuses": {}, "avg_pqs": 0, "pqs_sum": 0, "tiers": {}}
+            campaigns[name] = {
+                "name": name,
+                "total": 0,
+                "statuses": {},
+                "avg_pqs": 0,
+                "pqs_sum": 0,
+                "tiers": {},
+            }
         campaigns[name]["total"] += 1
         status = c.get("status", "unknown")
         campaigns[name]["statuses"][status] = campaigns[name]["statuses"].get(status, 0) + 1
@@ -326,10 +376,19 @@ async def get_campaign_performance():
         camp["avg_pqs"] = round(camp["pqs_sum"] / max(camp["total"], 1), 1)
         del camp["pqs_sum"]
         # Compute advancement rate: qualified + outreach_pending + contacted + engaged + meeting + pilot stages
-        advanced = sum(camp["statuses"].get(s, 0) for s in [
-            "qualified", "outreach_pending", "contacted", "engaged",
-            "meeting_scheduled", "pilot_discussion", "pilot_signed", "converted"
-        ])
+        advanced = sum(
+            camp["statuses"].get(s, 0)
+            for s in [
+                "qualified",
+                "outreach_pending",
+                "contacted",
+                "engaged",
+                "meeting_scheduled",
+                "pilot_discussion",
+                "pilot_signed",
+                "converted",
+            ]
+        )
         camp["advancement_rate"] = round(advanced / max(camp["total"], 1) * 100, 1)
 
     return {"data": sorted(campaigns.values(), key=lambda c: c["advancement_rate"], reverse=True)}
@@ -440,6 +499,7 @@ async def get_pipeline_velocity():
         updated = c.get("updated_at")
         if created and updated:
             from datetime import datetime
+
             try:
                 created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
                 updated_dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
@@ -466,11 +526,13 @@ async def get_pipeline_velocity():
 # Revenue Intelligence routes (feature/analytics-revenue)
 # ---------------------------------------------------------------------------
 
+
 @router.get("/funnel")
 async def get_full_funnel(days: int = Query(default=90, ge=1, le=365)):
     """Full 10-stage funnel with conversion rates, drop-off, and bottleneck detection."""
     db = get_db()
     from backend.app.analytics.funnel import FunnelAnalytics
+
     fa = FunnelAnalytics(db)
     result = fa.get_full_funnel(workspace_id=db.workspace_id, days=days)
     return result.model_dump()
@@ -484,6 +546,7 @@ async def get_cohort_analysis(
     """Cohort conversion performance grouped by cluster, tranche, persona, or sequence."""
     db = get_db()
     from backend.app.analytics.funnel import FunnelAnalytics
+
     fa = FunnelAnalytics(db)
     result = fa.get_cohort_analysis(workspace_id=db.workspace_id, group_by=group_by, days=days)
     return result.model_dump()
@@ -494,6 +557,7 @@ async def get_velocity_metrics():
     """Stage-by-stage velocity in days with trend vs prior 30-day period."""
     db = get_db()
     from backend.app.analytics.funnel import FunnelAnalytics
+
     fa = FunnelAnalytics(db)
     result = fa.get_velocity_metrics(workspace_id=db.workspace_id)
     return result.model_dump()
@@ -506,6 +570,7 @@ async def get_revenue_attribution(
     """Pipeline-to-revenue attribution with projected ARR and confidence range."""
     db = get_db()
     from backend.app.analytics.revenue import RevenueAnalytics
+
     ra = RevenueAnalytics(db)
     result = ra.get_revenue_attribution(workspace_id=db.workspace_id, deal_size_usd=deal_size)
     return result.model_dump()
@@ -516,6 +581,7 @@ async def get_activity_roi():
     """Reply rates by channel, sequence, persona, and cluster."""
     db = get_db()
     from backend.app.analytics.revenue import RevenueAnalytics
+
     ra = RevenueAnalytics(db)
     result = ra.get_activity_roi(workspace_id=db.workspace_id)
     return result.model_dump()
@@ -526,6 +592,7 @@ async def get_analytics_summary():
     """Combined analytics summary: top KPIs, funnel health, top cluster, projected ARR."""
     db = get_db()
     from backend.app.analytics.revenue import RevenueAnalytics
+
     ra = RevenueAnalytics(db)
     result = ra.get_analytics_summary(workspace_id=db.workspace_id)
     return result.model_dump()
@@ -543,6 +610,7 @@ async def get_benchmarks(days: int = Query(default=30, ge=1, le=365)):
     - Cost per enriched lead: $0.15
     """
     import datetime
+
     db = get_db()
     client = db.client
     since = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
@@ -664,18 +732,12 @@ async def get_benchmarks(days: int = Query(default=30, ge=1, le=365)):
 async def get_ab_tests():
     """Get A/B test stats for all tracked sequences."""
     from backend.app.analytics.ab_tracker import ABTracker
+
     db = get_db()
     tracker = ABTracker(db)
 
-    result = (
-        db._filter_ws(
-            db.client.table("ab_test_events").select("sequence_id")
-        )
-        .execute()
-    )
-    sequence_ids = list({
-        r["sequence_id"] for r in (result.data or []) if r.get("sequence_id")
-    })
+    result = db._filter_ws(db.client.table("ab_test_events").select("sequence_id")).execute()
+    sequence_ids = list({r["sequence_id"] for r in (result.data or []) if r.get("sequence_id")})
 
     stats = []
     for seq_id in sorted(sequence_ids):
@@ -690,6 +752,7 @@ async def get_ab_tests():
 async def get_ab_test(sequence_id: str):
     """Get A/B test stats for a specific sequence."""
     from backend.app.analytics.ab_tracker import ABTracker
+
     db = get_db()
     tracker = ABTracker(db)
     stats = tracker.get_variant_stats(sequence_id)
@@ -711,6 +774,7 @@ async def get_cost_per_meeting(days: int = Query(default=90, ge=1, le=365)):
     This is the north-star unit economic metric for the outreach program.
     """
     import datetime
+
     db = get_db()
     client = db.client
     workspace_id = db.workspace_id
@@ -735,8 +799,7 @@ async def get_cost_per_meeting(days: int = Query(default=90, ge=1, le=365)):
     # --- Meetings booked ---
     meetings_result = (
         db._filter_ws(
-            client.table("interactions")
-            .select("id, company_id, created_at", count="exact")
+            client.table("interactions").select("id, company_id, created_at", count="exact")
         )
         .eq("type", "meeting")
         .gte("created_at", since)
@@ -747,17 +810,17 @@ async def get_cost_per_meeting(days: int = Query(default=90, ge=1, le=365)):
     # --- Companies at advanced pipeline stages ---
     pipeline_result = (
         db._filter_ws(
-            client.table("companies")
-            .select("id, name, status, tier, pqs_total", count="exact")
+            client.table("companies").select("id, name, status, tier, pqs_total", count="exact")
         )
-        .in_("status", ["meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot", "converted"])
+        .in_(
+            "status",
+            ["meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot", "converted"],
+        )
         .execute()
     )
     pipeline_companies = pipeline_result.data or []
 
-    cost_per_meeting = (
-        round(total_cost / meetings_count, 2) if meetings_count > 0 else None
-    )
+    cost_per_meeting = round(total_cost / meetings_count, 2) if meetings_count > 0 else None
 
     return {
         "data": {

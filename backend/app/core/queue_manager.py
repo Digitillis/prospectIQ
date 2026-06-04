@@ -60,30 +60,65 @@ _PERSONA_DEFAULT = 8
 # Loaded from icp.yaml tier_scoring at startup via _load_weights_from_icp().
 _TIER_POINTS: dict[str, int] = {
     # Discrete manufacturing
-    "mfg1": 15, "mfg2": 14, "mfg3": 14, "mfg6": 13,
-    "mfg7": 12, "mfg4": 12, "mfg8": 11, "mfg5": 11,
+    "mfg1": 15,
+    "mfg2": 14,
+    "mfg3": 14,
+    "mfg6": 13,
+    "mfg7": 12,
+    "mfg4": 12,
+    "mfg8": 11,
+    "mfg5": 11,
     # Process manufacturing
-    "pmfg1": 14, "pmfg2": 13, "pmfg3": 13, "pmfg6": 13,
-    "pmfg4": 12, "pmfg5": 11, "pmfg7": 10, "pmfg8": 10,
+    "pmfg1": 14,
+    "pmfg2": 13,
+    "pmfg3": 13,
+    "pmfg6": 13,
+    "pmfg4": 12,
+    "pmfg5": 11,
+    "pmfg7": 10,
+    "pmfg8": 10,
     # F&B FSMA 204 (elevated — enforcement is live)
-    "fb_dairy": 12, "fb_seafood": 12, "fb_produce": 12,
-    "fb_meat": 11, "fb_bev": 11, "fb_food_general": 9, "fb_bakery": 8,
+    "fb_dairy": 12,
+    "fb_seafood": 12,
+    "fb_produce": 12,
+    "fb_meat": 11,
+    "fb_bev": 11,
+    "fb_food_general": 9,
+    "fb_bakery": 8,
     # Legacy tier keys (backward compat)
-    "fb1": 6, "fb2": 5, "fb3": 4, "fb4": 4,
+    "fb1": 6,
+    "fb2": 5,
+    "fb3": 4,
+    "fb4": 4,
 }
 _TIER_DEFAULT = 3
 
 # F&B tier keys — used to apply FSMA intent multiplier
-_FB_TIERS = frozenset({
-    "fb_dairy", "fb_seafood", "fb_produce", "fb_meat",
-    "fb_bev", "fb_food_general", "fb_bakery",
-    "fb1", "fb2", "fb3", "fb4",
-})
+_FB_TIERS = frozenset(
+    {
+        "fb_dairy",
+        "fb_seafood",
+        "fb_produce",
+        "fb_meat",
+        "fb_bev",
+        "fb_food_general",
+        "fb_bakery",
+        "fb1",
+        "fb2",
+        "fb3",
+        "fb4",
+    }
+)
 
 # FSMA-specific signal types that get a 1.5x multiplier for F&B companies
-_FSMA_SIGNAL_TYPES = frozenset({
-    "fda_warning_letter", "fda_warning_letter_fsma", "fda_recall", "osha_citation",
-})
+_FSMA_SIGNAL_TYPES = frozenset(
+    {
+        "fda_warning_letter",
+        "fda_warning_letter_fsma",
+        "fda_recall",
+        "osha_citation",
+    }
+)
 
 
 def _load_weights_from_icp() -> None:
@@ -95,6 +130,7 @@ def _load_weights_from_icp() -> None:
     global _PERSONA_POINTS, _TIER_POINTS
     try:
         from backend.app.core.config import get_icp_config
+
         icp = get_icp_config()
         persona_cfg = icp.get("persona_priority", {})
         tier_cfg = icp.get("tier_scoring", {})
@@ -174,9 +210,7 @@ def compute_priority_score(contact: dict, company: dict | None = None) -> int:
     # F&B FSMA intent multiplier: signals post Jan-20-2026 enforcement carry 1.5x
     if str(company_tier or "") in _FB_TIERS and raw_intent > 0:
         signals = (company or {}).get("active_signals", [])
-        has_fsma_signal = any(
-            s.get("signal_type") in _FSMA_SIGNAL_TYPES for s in signals
-        )
+        has_fsma_signal = any(s.get("signal_type") in _FSMA_SIGNAL_TYPES for s in signals)
         if has_fsma_signal:
             raw_intent = raw_intent * 1.5
 
@@ -214,7 +248,9 @@ class QueueManager:
         # Pull enriched contacts with email
         query = (
             self.db.client.table("contacts")
-            .select("*, companies!contacts_company_id_fkey(name, domain, tier, campaign_name, status)")
+            .select(
+                "*, companies!contacts_company_id_fkey(name, domain, tier, campaign_name, status)"
+            )
             .eq("enrichment_status", "enriched")
             .not_.is_("email", "null")
             .gte("completeness_score", min_completeness)
@@ -227,15 +263,15 @@ class QueueManager:
         # Filter by campaign
         if self.campaign_name:
             rows = [
-                r for r in rows
+                r
+                for r in rows
                 if (r.get("companies") or {}).get("campaign_name") == self.campaign_name
             ]
 
         # Exclude companies in terminal states
         skip_company_statuses = {"bounced", "not_interested", "disqualified", "unsubscribed"}
         rows = [
-            r for r in rows
-            if (r.get("companies") or {}).get("status") not in skip_company_statuses
+            r for r in rows if (r.get("companies") or {}).get("status") not in skip_company_statuses
         ]
 
         # Exclude contacts already sent today
@@ -258,6 +294,7 @@ class QueueManager:
         # Exclude DNC if requested
         if exclude_dnc:
             from backend.app.core.dnc_registry import DNCRegistry
+
             dnc = DNCRegistry()
             filtered = []
             for r in rows:
@@ -288,25 +325,24 @@ class QueueManager:
         # Fetch all enriched contacts
         query = (
             self.db.client.table("contacts")
-            .select("id, completeness_score, persona_type, updated_at, companies!contacts_company_id_fkey(tier, campaign_name)")
+            .select(
+                "id, completeness_score, persona_type, updated_at, companies!contacts_company_id_fkey(tier, campaign_name)"
+            )
             .eq("enrichment_status", "enriched")
         )
         rows = query.execute().data or []
 
         if campaign:
-            rows = [
-                r for r in rows
-                if (r.get("companies") or {}).get("campaign_name") == campaign
-            ]
+            rows = [r for r in rows if (r.get("companies") or {}).get("campaign_name") == campaign]
 
         updated = 0
         for contact in rows:
             company = contact.get("companies") or {}
             score = compute_priority_score(contact, company)
             try:
-                self.db.client.table("contacts").update(
-                    {"priority_score": score}
-                ).eq("id", contact["id"]).execute()
+                self.db.client.table("contacts").update({"priority_score": score}).eq(
+                    "id", contact["id"]
+                ).execute()
                 updated += 1
             except Exception as exc:
                 logger.warning(f"[queue] Failed to update priority for {contact['id'][:8]}: {exc}")
@@ -334,9 +370,11 @@ class QueueManager:
             priority = c.get("priority_score") or 0
             completeness = c.get("completeness_score") or 0
             priority_str = (
-                f"[green]{priority}[/green]" if priority >= 60 else
-                f"[yellow]{priority}[/yellow]" if priority >= 40 else
-                f"[dim]{priority}[/dim]"
+                f"[green]{priority}[/green]"
+                if priority >= 60
+                else f"[yellow]{priority}[/yellow]"
+                if priority >= 40
+                else f"[dim]{priority}[/dim]"
             )
             table.add_row(
                 str(i),

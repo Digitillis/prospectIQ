@@ -26,8 +26,10 @@ from backend.app.core.dnc_registry import DNCRegistry
 console = Console()
 logger = logging.getLogger(__name__)
 
+
 def _get_dnc(workspace_id: str | None = None) -> DNCRegistry:
     return DNCRegistry(workspace_id=workspace_id)
+
 
 # Default daily send limits per campaign type
 CAMPAIGN_DEFAULTS: dict[str, int] = {
@@ -40,9 +42,13 @@ CAMPAIGN_DEFAULTS: dict[str, int] = {
 class PaceLimiter:
     """Enforces daily send caps per campaign."""
 
-    def __init__(self, campaign_name: str, daily_limit: int | None = None, workspace_id: str | None = None):
+    def __init__(
+        self, campaign_name: str, daily_limit: int | None = None, workspace_id: str | None = None
+    ):
         self.campaign_name = campaign_name
-        self.daily_limit = daily_limit or CAMPAIGN_DEFAULTS.get(campaign_name, CAMPAIGN_DEFAULTS["default"])
+        self.daily_limit = daily_limit or CAMPAIGN_DEFAULTS.get(
+            campaign_name, CAMPAIGN_DEFAULTS["default"]
+        )
         self.db = Database(workspace_id=workspace_id)
         self._today_count: int | None = None  # cached for this limiter instance
 
@@ -99,24 +105,28 @@ class PaceLimiter:
         Returns True if recorded successfully, False if limit was already reached.
         """
         if not self.can_send(contact_id):
-            self.db.log_outreach_send({
+            self.db.log_outreach_send(
+                {
+                    "send_date": date.today().isoformat(),
+                    "campaign_name": self.campaign_name,
+                    "contact_id": contact_id,
+                    "company_id": company_id,
+                    "channel": channel,
+                    "status": "blocked",
+                }
+            )
+            return False
+
+        self.db.log_outreach_send(
+            {
                 "send_date": date.today().isoformat(),
                 "campaign_name": self.campaign_name,
                 "contact_id": contact_id,
                 "company_id": company_id,
                 "channel": channel,
-                "status": "blocked",
-            })
-            return False
-
-        self.db.log_outreach_send({
-            "send_date": date.today().isoformat(),
-            "campaign_name": self.campaign_name,
-            "contact_id": contact_id,
-            "company_id": company_id,
-            "channel": channel,
-            "status": "sent",
-        })
+                "status": "sent",
+            }
+        )
         self._today_count = (self._today_count or 0) + 1
         return True
 

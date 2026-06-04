@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 from rich.console import Console
@@ -35,19 +36,21 @@ from rich.table import Table
 from rich.text import Text
 from rich import box
 
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 logger = logging.getLogger(__name__)
 console = Console()
 
 CLASSIFICATION_LABELS = {
-    "interested":    "✅  Interested — open to a call/demo",
-    "objection":     "⚡  Objection — specific pushback (incumbent, budget, timing)",
-    "referral":      "➡️  Referral — pointing to someone else in the org",
-    "soft_no":       "🌫️  Soft No — not now, but not a hard rejection",
+    "interested": "✅  Interested — open to a call/demo",
+    "objection": "⚡  Objection — specific pushback (incumbent, budget, timing)",
+    "referral": "➡️  Referral — pointing to someone else in the org",
+    "soft_no": "🌫️  Soft No — not now, but not a hard rejection",
     "out_of_office": "📅  Out of Office — auto-reply",
-    "unsubscribe":   "🚫  Unsubscribe — remove me",
-    "bounce":        "❌  Bounce — delivery failure",
-    "other":         "❓  Other — needs human review",
+    "unsubscribe": "🚫  Unsubscribe — remove me",
+    "bounce": "❌  Bounce — delivery failure",
+    "other": "❓  Other — needs human review",
 }
 
 CLASSIFICATION_KEYS = list(CLASSIFICATION_LABELS.keys())
@@ -57,9 +60,11 @@ CLASSIFICATION_KEYS = list(CLASSIFICATION_LABELS.keys())
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db_and_agent():
     from backend.app.core.database import Database
     from backend.app.agents.thread import ThreadAgent
+
     db = Database()
     agent = ThreadAgent(batch_id="thread_cli")
     return db, agent
@@ -68,6 +73,7 @@ def _get_db_and_agent():
 def _pick_thread(db) -> dict | None:
     """Interactive thread picker — shows active/paused threads."""
     from backend.app.core.thread_manager import ThreadManager
+
     tm = ThreadManager(db)
 
     # Fetch all active/paused threads
@@ -128,15 +134,17 @@ def _confirm_classification(ai_result: dict) -> tuple[str, float]:
     signal = ai_result["extracted_signal"]
 
     console.print()
-    console.print(Panel(
-        f"[bold]AI Classification[/bold]\n\n"
-        f"  Category:   [cyan]{CLASSIFICATION_LABELS.get(classification, classification)}[/cyan]\n"
-        f"  Confidence: [{'green' if confidence >= 0.75 else 'yellow'}]{confidence*100:.0f}%[/]\n\n"
-        f"  [dim]Reasoning:[/dim] {reasoning}\n"
-        f"  [dim]Key signal:[/dim] {signal}",
-        title="🤖 Classification Result",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold]AI Classification[/bold]\n\n"
+            f"  Category:   [cyan]{CLASSIFICATION_LABELS.get(classification, classification)}[/cyan]\n"
+            f"  Confidence: [{'green' if confidence >= 0.75 else 'yellow'}]{confidence * 100:.0f}%[/]\n\n"
+            f"  [dim]Reasoning:[/dim] {reasoning}\n"
+            f"  [dim]Key signal:[/dim] {signal}",
+            title="🤖 Classification Result",
+            border_style="blue",
+        )
+    )
 
     console.print("\nOptions:")
     console.print("  [bold]1[/bold]  Confirm this classification")
@@ -169,27 +177,33 @@ def _confirm_classification(ai_result: dict) -> tuple[str, float]:
 def _show_draft(draft: dict, contact_name: str) -> None:
     """Pretty-print the AI-drafted reply."""
     console.print()
-    console.print(Panel(
-        f"[dim]Subject:[/dim] {draft['subject']}\n\n"
-        f"{draft['body']}\n\n"
-        f"[dim]Strategy: {draft.get('strategy_used', '')}[/dim]",
-        title=f"✉️  Draft Reply — To: {contact_name}",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            f"[dim]Subject:[/dim] {draft['subject']}\n\n"
+            f"{draft['body']}\n\n"
+            f"[dim]Strategy: {draft.get('strategy_used', '')}[/dim]",
+            title=f"✉️  Draft Reply — To: {contact_name}",
+            border_style="green",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
 # Command: insert-reply (Phase 1)
 # ---------------------------------------------------------------------------
 
+
 def cmd_insert_reply():
     """Manually insert a reply, classify it, and draft the next message."""
     db, agent = _get_db_and_agent()
     from backend.app.core.thread_manager import ThreadManager
+
     tm = ThreadManager(db)
 
     console.print("\n[bold blue]═══ INSERT REPLY ═══[/bold blue]")
-    console.print("[dim]Paste a reply you received and work through the adaptive thread flow.[/dim]\n")
+    console.print(
+        "[dim]Paste a reply you received and work through the adaptive thread flow.[/dim]\n"
+    )
 
     # Step 1: Pick or create a thread
     console.print("[bold]Step 1: Select the thread (company/contact)[/bold]")
@@ -203,12 +217,20 @@ def cmd_insert_reply():
             thread = tm.find_thread_by_email(email)
             if not thread:
                 console.print(f"[red]No active thread found for {email}.[/red]")
-                console.print("[dim]Tip: use 'list-threads' to see all threads, or create one by running the outreach pipeline first.[/dim]")
+                console.print(
+                    "[dim]Tip: use 'list-threads' to see all threads, or create one by running the outreach pipeline first.[/dim]"
+                )
                 sys.exit(1)
     else:
         # Create a new thread from a contact email
         email = Prompt.ask("Contact email")
-        contact_result = db.client.table("contacts").select("id, full_name, company_id").eq("email", email).limit(1).execute()
+        contact_result = (
+            db.client.table("contacts")
+            .select("id, full_name, company_id")
+            .eq("email", email)
+            .limit(1)
+            .execute()
+        )
         if not contact_result.data:
             console.print(f"[red]No contact found with email {email}[/red]")
             sys.exit(1)
@@ -299,7 +321,9 @@ def cmd_insert_reply():
         _show_draft(draft, contact.get("full_name", "contact"))
 
         console.print("\nOptions:")
-        console.print("  [bold]1[/bold]  Save as pending draft (you'll send manually / via Instantly)")
+        console.print(
+            "  [bold]1[/bold]  Save as pending draft (you'll send manually / via Instantly)"
+        )
         console.print("  [bold]2[/bold]  Regenerate draft")
         console.print("  [bold]3[/bold]  Skip — save classification only, draft later")
 
@@ -313,7 +337,11 @@ def cmd_insert_reply():
                 classification=confirmed_class,
             )
             console.print(f"\n[green]✓ Draft saved (ID: {draft_id})[/green]")
-            console.print("[dim]Approve and send via: python -m backend.scripts.manage_thread send --draft-id " + (draft_id or "?") + "[/dim]")
+            console.print(
+                "[dim]Approve and send via: python -m backend.scripts.manage_thread send --draft-id "
+                + (draft_id or "?")
+                + "[/dim]"
+            )
             break
         elif action == "2":
             console.print("[dim]Regenerating...[/dim]")
@@ -328,6 +356,7 @@ def cmd_insert_reply():
 # ---------------------------------------------------------------------------
 # Command: review-webhook-queue (Phase 2)
 # ---------------------------------------------------------------------------
+
 
 def cmd_review_webhook_queue():
     """Review auto-captured replies that need human classification confirmation."""
@@ -358,19 +387,21 @@ def cmd_review_webhook_queue():
         company = db.get_company(company_id) if company_id else {}
         company_name = (company or {}).get("name", "Unknown")
 
-        console.print(Panel(
-            f"[bold]{company_name}[/bold]\n"
-            f"[dim]{msg.get('subject', '(no subject)')}[/dim]\n\n"
-            f"{(msg.get('body') or '')[:400]}"
-            + ("..." if len(msg.get("body") or "") > 400 else ""),
-            title=f"Reply from {msg.get('sent_at', '')[:10]}",
-        ))
+        console.print(
+            Panel(
+                f"[bold]{company_name}[/bold]\n"
+                f"[dim]{msg.get('subject', '(no subject)')}[/dim]\n\n"
+                f"{(msg.get('body') or '')[:400]}"
+                + ("..." if len(msg.get("body") or "") > 400 else ""),
+                title=f"Reply from {msg.get('sent_at', '')[:10]}",
+            )
+        )
 
         # If there's an AI classification already (from auto-capture), show it
         if msg.get("classification") and not msg.get("classification_confirmed_by"):
             console.print(
                 f"[dim]AI suggested: {CLASSIFICATION_LABELS.get(msg['classification'], msg['classification'])} "
-                f"({(msg.get('classification_confidence') or 0)*100:.0f}% confidence)[/dim]"
+                f"({(msg.get('classification_confidence') or 0) * 100:.0f}% confidence)[/dim]"
             )
 
         # Build a mock ai_result for _confirm_classification
@@ -441,6 +472,7 @@ def cmd_review_webhook_queue():
 # Command: list-threads
 # ---------------------------------------------------------------------------
 
+
 def cmd_list_threads():
     """List all active and paused threads with their status."""
     db, _ = _get_db_and_agent()
@@ -458,7 +490,9 @@ def cmd_list_threads():
         console.print("[yellow]No threads found.[/yellow]")
         return
 
-    table = Table(title=f"Campaign Threads ({len(threads)} total)", box=box.ROUNDED, show_lines=True)
+    table = Table(
+        title=f"Campaign Threads ({len(threads)} total)", box=box.ROUNDED, show_lines=True
+    )
     table.add_column("Company", max_width=28)
     table.add_column("Contact", max_width=24)
     table.add_column("Seq", width=5, justify="center")
@@ -471,8 +505,12 @@ def cmd_list_threads():
         contact = t.get("contacts") or {}
         status = t["status"]
         color = {
-            "active": "green", "paused": "yellow", "converted": "blue",
-            "closed": "dim", "unsubscribed": "red", "bounced": "red",
+            "active": "green",
+            "paused": "yellow",
+            "converted": "blue",
+            "closed": "dim",
+            "unsubscribed": "red",
+            "bounced": "red",
         }.get(status, "white")
         table.add_row(
             company.get("name", "?"),
@@ -489,6 +527,7 @@ def cmd_list_threads():
 # ---------------------------------------------------------------------------
 # Command: send (Phase 3) — push approved draft to Instantly
 # ---------------------------------------------------------------------------
+
 
 def cmd_send(draft_id: str | None = None):
     """Push an approved reply draft to Instantly sending API (Phase 3)."""
@@ -540,13 +579,15 @@ def cmd_send(draft_id: str | None = None):
     contact = next((c for c in contacts if c["id"] == draft.get("contact_id")), {})
     company = db.get_company(draft["company_id"]) or {}
 
-    console.print(Panel(
-        f"To: {contact.get('full_name', '?')} <{contact.get('email', '?')}>\n"
-        f"Subject: {draft.get('subject', '?')}\n\n"
-        f"{draft.get('body', '')}",
-        title=f"📧  Sending to {company.get('name', '?')}",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            f"To: {contact.get('full_name', '?')} <{contact.get('email', '?')}>\n"
+            f"Subject: {draft.get('subject', '?')}\n\n"
+            f"{draft.get('body', '')}",
+            title=f"📧  Sending to {company.get('name', '?')}",
+            border_style="green",
+        )
+    )
 
     if not Confirm.ask("Send this via Instantly?", default=False):
         console.print("[dim]Cancelled.[/dim]")
@@ -593,7 +634,9 @@ def cmd_send(draft_id: str | None = None):
                 body_text=body_text,
             )
             sent_via = "reply_to_email"
-            console.print(f"[green]✓ Replied in-thread via Instantly (email_id: {email_id[:12]}...)[/green]")
+            console.print(
+                f"[green]✓ Replied in-thread via Instantly (email_id: {email_id[:12]}...)[/green]"
+            )
 
         else:
             # --- Fallback: add as campaign lead (sends as new email) ----------
@@ -616,9 +659,11 @@ def cmd_send(draft_id: str | None = None):
             console.print(f"[green]✓ Sent via Instantly (campaign: {campaign_id})[/green]")
 
         # --- Update draft status and record in thread -----------------------
-        db.client.table("outreach_drafts").update({
-            "approval_status": "approved",
-        }).eq("id", draft_id).execute()
+        db.client.table("outreach_drafts").update(
+            {
+                "approval_status": "approved",
+            }
+        ).eq("id", draft_id).execute()
 
         if thread:
             tm.add_outbound_message(
@@ -640,6 +685,7 @@ def cmd_send(draft_id: str | None = None):
 # ---------------------------------------------------------------------------
 # Webhook endpoint (Phase 2) — called by Instantly webhook handler
 # ---------------------------------------------------------------------------
+
 
 def register_webhook_routes(app):
     """Register the Instantly webhook route on a FastAPI app (Phase 2).
@@ -675,6 +721,7 @@ def register_webhook_routes(app):
 
         from dotenv import load_dotenv
         from pathlib import Path as _Path
+
         load_dotenv(_Path(__file__).resolve().parent.parent.parent / ".env")
 
         from backend.app.core.database import Database
@@ -713,8 +760,12 @@ if __name__ == "__main__":
     )
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("insert-reply", help="Manually insert a reply and work through the flow (Phase 1)")
-    sub.add_parser("review-webhook-queue", help="Review auto-captured replies needing confirmation (Phase 2)")
+    sub.add_parser(
+        "insert-reply", help="Manually insert a reply and work through the flow (Phase 1)"
+    )
+    sub.add_parser(
+        "review-webhook-queue", help="Review auto-captured replies needing confirmation (Phase 2)"
+    )
     sub.add_parser("list-threads", help="List all active threads")
     send_p = sub.add_parser("send", help="Push approved reply to Instantly (Phase 3)")
     send_p.add_argument("--draft-id", default=None, help="Specific draft ID to send")

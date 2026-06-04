@@ -43,7 +43,8 @@ def main() -> int:
             .eq("workspace_id", db.workspace_id)
             .range(offset, offset + page_size - 1)
             .execute()
-            .data or []
+            .data
+            or []
         )
         rows.extend(page)
         if len(page) < page_size:
@@ -75,7 +76,8 @@ def main() -> int:
         .eq("status", "outreach_pending")
         .limit(10000)
         .execute()
-        .data or []
+        .data
+        or []
     )
     pending_ids = {c["id"] for c in pending_companies}
 
@@ -83,9 +85,8 @@ def main() -> int:
 
     out_of_allowlist: list[dict] = []
     for c in pending_contacts:
-        cls = (
-            c.get("persona_classification")
-            or normalize_persona_classification(c.get("persona_type"))
+        cls = c.get("persona_classification") or normalize_persona_classification(
+            c.get("persona_type")
         )
         if cls not in _ALLOWED_PERSONAS:
             out_of_allowlist.append(c)

@@ -47,6 +47,7 @@ class FDARecallScraper:
 
         try:
             import httpx
+
             params = {
                 "search": f"report_date:[{since}+TO+99999999]",
                 "limit": limit,
@@ -89,9 +90,11 @@ class FDARecallScraper:
                 observed_at = None
                 if report_date and len(report_date) == 8:
                     try:
-                        observed_at = datetime.strptime(report_date, "%Y%m%d").replace(
-                            tzinfo=timezone.utc
-                        ).isoformat()
+                        observed_at = (
+                            datetime.strptime(report_date, "%Y%m%d")
+                            .replace(tzinfo=timezone.utc)
+                            .isoformat()
+                        )
                     except ValueError:
                         pass
 
@@ -126,7 +129,10 @@ class FDARecallScraper:
 
         logger.info(
             "FDA scraper complete: %d processed, %d matched, %d skipped, %d errors",
-            result["processed"], result["matched"], result["skipped"], result["errors"],
+            result["processed"],
+            result["matched"],
+            result["skipped"],
+            result["errors"],
         )
         return result
 
@@ -142,8 +148,19 @@ class FDARecallScraper:
 
         # Normalize firm name
         firm_lower = firm_name.lower().strip()
-        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited",
-                       " foods", " food", " industries", " group"):
+        for suffix in (
+            " llc",
+            " inc",
+            " corp",
+            " company",
+            " co.",
+            " ltd",
+            " limited",
+            " foods",
+            " food",
+            " industries",
+            " group",
+        ):
             firm_lower = firm_lower.replace(suffix, "")
         firm_lower = firm_lower.strip(" ,.")
 
@@ -164,7 +181,8 @@ class FDARecallScraper:
                 .ilike("name", f"%{firm_lower[:40]}%")
                 .limit(5)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             hit = _best(rows, state)
             if hit:
@@ -179,7 +197,8 @@ class FDARecallScraper:
                     .ilike("domain", f"%{kw}%")
                     .limit(5)
                     .execute()
-                    .data or []
+                    .data
+                    or []
                 )
                 hit = _best(rows, state)
                 if hit:
@@ -190,9 +209,17 @@ class FDARecallScraper:
 
         return None
 
-    def _upsert_signal(self, company_id: str, signal_type: str, source: str,
-                       source_id: str, signal_text: str, value: dict,
-                       observed_at: str | None, source_url: str | None) -> None:
+    def _upsert_signal(
+        self,
+        company_id: str,
+        signal_type: str,
+        source: str,
+        source_id: str,
+        signal_text: str,
+        value: dict,
+        observed_at: str | None,
+        source_url: str | None,
+    ) -> None:
         workspace_id = getattr(self._db, "workspace_id", None)
         row: dict = {
             "company_id": company_id,

@@ -18,7 +18,9 @@ app = typer.Typer(help="Run the ProspectIQ Qualification Agent.")
 
 @app.command()
 def main(
-    company_ids: Optional[list[str]] = typer.Option(None, "--company-ids", help="Specific company IDs to qualify (repeatable)."),
+    company_ids: Optional[list[str]] = typer.Option(
+        None, "--company-ids", help="Specific company IDs to qualify (repeatable)."
+    ),
     limit: int = typer.Option(100, "--limit", help="Max companies to qualify in this batch."),
 ) -> None:
     """Score and qualify researched companies using PQS."""

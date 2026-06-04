@@ -19,8 +19,12 @@ app = typer.Typer(help="Run the ProspectIQ Discovery Agent.")
 @app.command()
 def main(
     max_pages: int = typer.Option(5, "--max-pages", help="Max Apollo pages per tier to fetch."),
-    campaign: Optional[str] = typer.Option(None, "--campaign", help="Campaign name to tag discovered records."),
-    tiers: Optional[list[str]] = typer.Option(None, "--tiers", help="Specific tiers to search (repeatable)."),
+    campaign: Optional[str] = typer.Option(
+        None, "--campaign", help="Campaign name to tag discovered records."
+    ),
+    tiers: Optional[list[str]] = typer.Option(
+        None, "--tiers", help="Specific tiers to search (repeatable)."
+    ),
 ) -> None:
     """Discover manufacturing prospects from Apollo matching the ICP."""
     from backend.app.agents.discovery import DiscoveryAgent

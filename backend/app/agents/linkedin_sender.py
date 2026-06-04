@@ -201,11 +201,13 @@ class LinkedInSenderAgent(BaseAgent):
             if remaining <= 0:
                 logger.info(
                     "LinkedInSenderAgent: daily connection request limit reached (%d/%d)",
-                    sent_today, DAILY_CONNECTION_REQUEST_LIMIT,
+                    sent_today,
+                    DAILY_CONNECTION_REQUEST_LIMIT,
                 )
                 result.add_detail(
-                    "connection_requests", "skipped",
-                    f"Daily limit reached ({sent_today}/{DAILY_CONNECTION_REQUEST_LIMIT})"
+                    "connection_requests",
+                    "skipped",
+                    f"Daily limit reached ({sent_today}/{DAILY_CONNECTION_REQUEST_LIMIT})",
                 )
                 return
 
@@ -215,7 +217,8 @@ class LinkedInSenderAgent(BaseAgent):
             )
             logger.info(
                 "LinkedInSenderAgent: %d connection request drafts to send (limit: %d)",
-                len(drafts), remaining,
+                len(drafts),
+                remaining,
             )
 
             for draft in drafts:
@@ -255,7 +258,9 @@ class LinkedInSenderAgent(BaseAgent):
         if dry_run:
             logger.info(
                 "[DRY RUN] Would send connection request to %s (%s): %r",
-                contact_name, linkedin_url, message[:80],
+                contact_name,
+                linkedin_url,
+                message[:80],
             )
             result.processed += 1
             result.add_detail(contact_name, "dry_run_connection", company_name)
@@ -263,13 +268,18 @@ class LinkedInSenderAgent(BaseAgent):
 
         try:
             # Validate message compliance before sending
-            from backend.app.core.outbound_validator import OutboundValidator, OutboundValidationError
+            from backend.app.core.outbound_validator import (
+                OutboundValidator,
+                OutboundValidationError,
+            )
+
             try:
                 OutboundValidator().validate_linkedin_connect(message)
             except OutboundValidationError as ve:
                 logger.warning(
                     "LinkedInSenderAgent: connect note blocked by validator for %s: %s",
-                    contact_name, ve,
+                    contact_name,
+                    ve,
                 )
                 result.skipped += 1
                 result.add_detail(contact_name, "blocked", str(ve))
@@ -277,6 +287,7 @@ class LinkedInSenderAgent(BaseAgent):
 
             # Consume from DB-backed rate limiter
             from backend.app.core.linkedin_rate_limiter import LinkedInRateLimiter
+
             limiter = LinkedInRateLimiter(self.db, self.workspace_id)
             if not limiter.consume("linkedin_connect"):
                 result.add_detail(contact_name, "rate_limited", "Daily connect limit reached")
@@ -287,26 +298,32 @@ class LinkedInSenderAgent(BaseAgent):
 
             now_iso = datetime.now(timezone.utc).isoformat()
             # Mark contact as connection sent
-            self.db.client.table("contacts").update({
-                "linkedin_connection_sent_at": now_iso,
-            }).eq("id", draft["contact_id"]).execute()
+            self.db.client.table("contacts").update(
+                {
+                    "linkedin_connection_sent_at": now_iso,
+                }
+            ).eq("id", draft["contact_id"]).execute()
 
             # Mark draft as sent
-            self.db.client.table("outreach_drafts").update({
-                "sent_at": now_iso,
-                "approval_status": "approved",
-            }).eq("id", draft["id"]).execute()
+            self.db.client.table("outreach_drafts").update(
+                {
+                    "sent_at": now_iso,
+                    "approval_status": "approved",
+                }
+            ).eq("id", draft["id"]).execute()
 
             # Log interaction
-            self.db.insert_interaction({
-                "company_id": draft["company_id"],
-                "contact_id": draft["contact_id"],
-                "type": "linkedin_connection",
-                "channel": "linkedin",
-                "body": message,
-                "source": "linkedin_sender_agent",
-                "metadata": {"draft_id": draft["id"], "linkedin_url": linkedin_url},
-            })
+            self.db.insert_interaction(
+                {
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "type": "linkedin_connection",
+                    "channel": "linkedin",
+                    "body": message,
+                    "source": "linkedin_sender_agent",
+                    "metadata": {"draft_id": draft["id"], "linkedin_url": linkedin_url},
+                }
+            )
 
             result.processed += 1
             result.add_detail(contact_name, "connection_sent", company_name)
@@ -315,14 +332,13 @@ class LinkedInSenderAgent(BaseAgent):
         except httpx.HTTPStatusError as exc:
             logger.error(
                 "LinkedInSenderAgent: Unipile error sending connection to %s: %s",
-                contact_name, exc.response.text[:200],
+                contact_name,
+                exc.response.text[:200],
             )
             result.errors += 1
             result.add_detail(contact_name, "error", f"Unipile HTTP {exc.response.status_code}")
         except Exception as exc:
-            logger.error(
-                "LinkedInSenderAgent: unexpected error for %s: %s", contact_name, exc
-            )
+            logger.error("LinkedInSenderAgent: unexpected error for %s: %s", contact_name, exc)
             result.errors += 1
             result.add_detail(contact_name, "error", str(exc)[:200])
 
@@ -330,9 +346,7 @@ class LinkedInSenderAgent(BaseAgent):
     # Opening DMs
     # ─────────────────────────────────────────────────────────────────────
 
-    def _send_opening_dms(
-        self, unipile: UnipileClient, dry_run: bool, result: AgentResult
-    ) -> None:
+    def _send_opening_dms(self, unipile: UnipileClient, dry_run: bool, result: AgentResult) -> None:
         """Send opening DMs to contacts who have accepted the connection request."""
         try:
             drafts = self._get_approved_linkedin_drafts(
@@ -340,9 +354,7 @@ class LinkedInSenderAgent(BaseAgent):
                 require_connection_accepted=True,
                 limit=50,
             )
-            logger.info(
-                "LinkedInSenderAgent: %d opening DM drafts to send", len(drafts)
-            )
+            logger.info("LinkedInSenderAgent: %d opening DM drafts to send", len(drafts))
 
             for draft in drafts:
                 self._send_dm_draft(unipile, draft, "opening_dm", dry_run, result)
@@ -377,7 +389,9 @@ class LinkedInSenderAgent(BaseAgent):
         if dry_run:
             logger.info(
                 "[DRY RUN] Would send %s DM to %s: %r",
-                dm_type, contact_name, message[:80],
+                dm_type,
+                contact_name,
+                message[:80],
             )
             result.processed += 1
             result.add_detail(contact_name, f"dry_run_{dm_type}", company_name)
@@ -385,17 +399,24 @@ class LinkedInSenderAgent(BaseAgent):
 
         try:
             # Validate DM compliance
-            from backend.app.core.outbound_validator import OutboundValidator, OutboundValidationError
+            from backend.app.core.outbound_validator import (
+                OutboundValidator,
+                OutboundValidationError,
+            )
+
             try:
                 OutboundValidator().validate_linkedin_dm(message)
             except OutboundValidationError as ve:
-                logger.warning("LinkedInSenderAgent: DM blocked by validator for %s: %s", contact_name, ve)
+                logger.warning(
+                    "LinkedInSenderAgent: DM blocked by validator for %s: %s", contact_name, ve
+                )
                 result.skipped += 1
                 result.add_detail(contact_name, "blocked", str(ve))
                 return
 
             # DB-backed rate limiter
             from backend.app.core.linkedin_rate_limiter import LinkedInRateLimiter
+
             limiter = LinkedInRateLimiter(self.db, self.workspace_id)
             if not limiter.consume("linkedin_dm"):
                 result.add_detail(contact_name, "rate_limited", "Daily DM limit reached")
@@ -405,23 +426,29 @@ class LinkedInSenderAgent(BaseAgent):
             unipile.send_message(linkedin_url, message)
 
             now_iso = datetime.now(timezone.utc).isoformat()
-            self.db.client.table("contacts").update({
-                "linkedin_dm_sent_at": now_iso,
-            }).eq("id", draft["contact_id"]).execute()
+            self.db.client.table("contacts").update(
+                {
+                    "linkedin_dm_sent_at": now_iso,
+                }
+            ).eq("id", draft["contact_id"]).execute()
 
-            self.db.client.table("outreach_drafts").update({
-                "sent_at": now_iso,
-            }).eq("id", draft["id"]).execute()
+            self.db.client.table("outreach_drafts").update(
+                {
+                    "sent_at": now_iso,
+                }
+            ).eq("id", draft["id"]).execute()
 
-            self.db.insert_interaction({
-                "company_id": draft["company_id"],
-                "contact_id": draft["contact_id"],
-                "type": "linkedin_message",
-                "channel": "linkedin",
-                "body": message,
-                "source": "linkedin_sender_agent",
-                "metadata": {"draft_id": draft["id"], "dm_type": dm_type},
-            })
+            self.db.insert_interaction(
+                {
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "type": "linkedin_message",
+                    "channel": "linkedin",
+                    "body": message,
+                    "source": "linkedin_sender_agent",
+                    "metadata": {"draft_id": draft["id"], "dm_type": dm_type},
+                }
+            )
 
             result.processed += 1
             result.add_detail(contact_name, f"{dm_type}_sent", company_name)
@@ -429,7 +456,8 @@ class LinkedInSenderAgent(BaseAgent):
         except httpx.HTTPStatusError as exc:
             logger.error(
                 "LinkedInSenderAgent: Unipile DM error for %s: %s",
-                contact_name, exc.response.text[:200],
+                contact_name,
+                exc.response.text[:200],
             )
             result.errors += 1
             result.add_detail(contact_name, "error", f"Unipile HTTP {exc.response.status_code}")
@@ -455,9 +483,10 @@ class LinkedInSenderAgent(BaseAgent):
             pending = unipile.list_pending_invitations()
             cutoff = datetime.now(timezone.utc) - timedelta(days=STALE_INVITE_WITHDRAW_DAYS)
             stale = [
-                inv for inv in pending
-                if inv.get("sent_at") and
-                datetime.fromisoformat(inv["sent_at"].replace("Z", "+00:00")) < cutoff
+                inv
+                for inv in pending
+                if inv.get("sent_at")
+                and datetime.fromisoformat(inv["sent_at"].replace("Z", "+00:00")) < cutoff
             ]
 
             if not stale:
@@ -465,7 +494,8 @@ class LinkedInSenderAgent(BaseAgent):
 
             logger.info(
                 "LinkedInSenderAgent: withdrawing %d stale invites (>%d days old)",
-                len(stale), STALE_INVITE_WITHDRAW_DAYS,
+                len(stale),
+                STALE_INVITE_WITHDRAW_DAYS,
             )
 
             withdrawn = 0
@@ -500,8 +530,7 @@ class LinkedInSenderAgent(BaseAgent):
         try:
             query = (
                 self.db._filter_ws(
-                    self.db.client.table("outreach_drafts")
-                    .select(
+                    self.db.client.table("outreach_drafts").select(
                         "id, company_id, contact_id, body, edited_body, sequence_name, "
                         "companies(name)"
                     )
@@ -526,9 +555,7 @@ class LinkedInSenderAgent(BaseAgent):
 
             return drafts
         except Exception as exc:
-            logger.error(
-                "LinkedInSenderAgent: failed to fetch %s drafts: %s", sequence_name, exc
-            )
+            logger.error("LinkedInSenderAgent: failed to fetch %s drafts: %s", sequence_name, exc)
             return []
 
     def _get_contact(self, contact_id: Optional[str]) -> Optional[dict]:
@@ -553,13 +580,14 @@ class LinkedInSenderAgent(BaseAgent):
     def _count_sent_today(self, sequence_name: str) -> int:
         """Count LinkedIn connection requests sent today for this workspace."""
         try:
-            today_start = datetime.now(timezone.utc).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            ).isoformat()
+            today_start = (
+                datetime.now(timezone.utc)
+                .replace(hour=0, minute=0, second=0, microsecond=0)
+                .isoformat()
+            )
             result = (
                 self.db._filter_ws(
-                    self.db.client.table("outreach_drafts")
-                    .select("id", count="exact")
+                    self.db.client.table("outreach_drafts").select("id", count="exact")
                 )
                 .eq("channel", "linkedin")
                 .eq("sequence_name", sequence_name)
@@ -578,9 +606,11 @@ class LinkedInSenderAgent(BaseAgent):
         draft eligible for the next send cycle.
         """
         try:
-            self.db.client.table("contacts").update({
-                "linkedin_accepted_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", contact_id).execute()
+            self.db.client.table("contacts").update(
+                {
+                    "linkedin_accepted_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("id", contact_id).execute()
             logger.info(
                 "LinkedInSenderAgent: connection accepted for contact %s — "
                 "opening DM queued for next cycle",
@@ -589,5 +619,6 @@ class LinkedInSenderAgent(BaseAgent):
         except Exception as exc:
             logger.error(
                 "LinkedInSenderAgent: failed to mark connection accepted for %s: %s",
-                contact_id, exc,
+                contact_id,
+                exc,
             )

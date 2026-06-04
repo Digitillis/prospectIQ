@@ -38,6 +38,7 @@ def get_engine() -> LookalikeEngine:
 # Request / response models
 # ---------------------------------------------------------------------------
 
+
 class RunRequest(BaseModel):
     seed_company_ids: list[str]
     limit: Optional[int] = 50
@@ -53,6 +54,7 @@ class AddToPipelineRequest(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.post("/run")
 async def run_lookalike(body: RunRequest):
     """Run lookalike discovery from an explicit set of seed company IDs."""
@@ -64,9 +66,16 @@ async def run_lookalike(body: RunRequest):
     exclude_status = None
     if body.exclude_contacted:
         exclude_status = [
-            "contacted", "outreach_pending", "engaged",
-            "meeting_scheduled", "pilot_discussion", "pilot_signed",
-            "active_pilot", "converted", "not_interested", "bounced",
+            "contacted",
+            "outreach_pending",
+            "engaged",
+            "meeting_scheduled",
+            "pilot_discussion",
+            "pilot_signed",
+            "active_pilot",
+            "converted",
+            "not_interested",
+            "bounced",
         ]
 
     limit = max(1, min(body.limit or 50, 200))
@@ -100,13 +109,20 @@ async def auto_run_lookalike():
         raise HTTPException(
             status_code=422,
             detail="No high-value companies found to use as seed. "
-                   "You need at least one company with status: replied, interested, demo_booked, or customer.",
+            "You need at least one company with status: replied, interested, demo_booked, or customer.",
         )
 
     exclude_status = [
-        "contacted", "outreach_pending", "engaged",
-        "meeting_scheduled", "pilot_discussion", "pilot_signed",
-        "active_pilot", "converted", "not_interested", "bounced",
+        "contacted",
+        "outreach_pending",
+        "engaged",
+        "meeting_scheduled",
+        "pilot_discussion",
+        "pilot_signed",
+        "active_pilot",
+        "converted",
+        "not_interested",
+        "bounced",
     ]
 
     result = engine.find_lookalikes(
@@ -170,9 +186,14 @@ async def add_to_pipeline(run_id: str, body: AddToPipelineRequest):
     already_in_pipeline = 0
 
     pipeline_statuses = {
-        "outreach_pending", "contacted", "engaged",
-        "meeting_scheduled", "pilot_discussion", "pilot_signed",
-        "active_pilot", "converted",
+        "outreach_pending",
+        "contacted",
+        "engaged",
+        "meeting_scheduled",
+        "pilot_discussion",
+        "pilot_signed",
+        "active_pilot",
+        "converted",
     }
 
     for company_id in body.company_ids:

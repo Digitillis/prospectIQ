@@ -75,6 +75,7 @@ async def _bg_classify_reply(
     sent_at: str | None,
     campaign_id: str | None,
     raw_payload: dict,
+    workspace_id: str | None = None,
 ) -> None:
     """Background task: classify an incoming reply with Claude Sonnet and pause the lead.
 
@@ -87,7 +88,7 @@ async def _bg_classify_reply(
         from backend.app.agents.thread import ThreadAgent
         from backend.app.integrations.instantly import InstantlyClient
 
-        agent = ThreadAgent(batch_id="webhook_auto")
+        agent = ThreadAgent(batch_id="webhook_auto", workspace_id=workspace_id)
 
         result = agent.process_webhook_reply(
             sender_email=lead_email,
@@ -537,6 +538,7 @@ async def instantly_webhook(request: Request, background_tasks: BackgroundTasks)
             sent_at=_sent_at,
             campaign_id=_campaign_id,
             raw_payload=payload,
+            workspace_id=contact.get("workspace_id"),
         )
 
     # --- Fire email notification for reply events -------------------------

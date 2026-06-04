@@ -99,7 +99,11 @@ def test_run_unsubscribe_does_not_raise_attribute_error():
 
     # Patch the LLM call to return unsubscribe classification
     mock_response = MagicMock()
-    mock_response.content = [MagicMock(text='{"classification": "unsubscribe", "sentiment": "negative", "urgency": "low", "reasoning": "opted out"}')]
+    mock_response.content = [
+        MagicMock(
+            text='{"classification": "unsubscribe", "sentiment": "negative", "urgency": "low", "reasoning": "opted out"}'
+        )
+    ]
 
     reply_data = {
         "company_id": "co-1",

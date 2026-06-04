@@ -35,8 +35,14 @@ logging.basicConfig(level=logging.WARNING)
 
 # Seniority filter for People Search (free)
 SENIORITY_FILTER = ["vp", "c_suite", "director", "owner"]
-HIGH_VALUE_PERSONAS = {"vp_ops", "coo", "plant_manager", "vp_quality_food_safety",
-                       "maintenance_leader", "director_quality_food_safety"}
+HIGH_VALUE_PERSONAS = {
+    "vp_ops",
+    "coo",
+    "plant_manager",
+    "vp_quality_food_safety",
+    "maintenance_leader",
+    "director_quality_food_safety",
+}
 CAP_PER_COMPANY = 8  # Max contacts to store per company from People Search
 
 
@@ -61,20 +67,15 @@ def get_companies_needing_contacts(db, limit: int) -> list[dict]:
         offset += batch
 
     # Get contacts grouped by company
-    contacts_r = (
-        db.table("contacts")
-        .select("company_id, persona_type")
-        .execute()
-    )
+    contacts_r = db.table("contacts").select("company_id, persona_type").execute()
     company_personas: dict[str, set] = defaultdict(set)
-    for c in (contacts_r.data or []):
+    for c in contacts_r.data or []:
         if c.get("persona_type"):
             company_personas[c["company_id"]].add(c["persona_type"])
 
     # Filter to companies missing all high-value personas
     missing = [
-        co for co in companies
-        if not HIGH_VALUE_PERSONAS.intersection(company_personas[co["id"]])
+        co for co in companies if not HIGH_VALUE_PERSONAS.intersection(company_personas[co["id"]])
     ]
 
     return missing[:limit]
@@ -84,7 +85,9 @@ def main(limit: int = 200, dry_run: bool = False) -> None:
     if dry_run:
         console.print(f"[bold yellow]DRY RUN — Apollo search will run but NO inserts[/bold yellow]")
     else:
-        console.print(f"[bold cyan]Running free contact discovery for up to {limit} companies[/bold cyan]")
+        console.print(
+            f"[bold cyan]Running free contact discovery for up to {limit} companies[/bold cyan]"
+        )
 
     settings = get_settings()
     db = create_client(settings.supabase_url, settings.supabase_service_key)
@@ -161,7 +164,9 @@ def main(limit: int = 200, dry_run: bool = False) -> None:
                 total_found += found_this_company
                 total_inserted += inserted_this_company
                 results.append((company_name, pqs, found_this_company, inserted_this_company))
-                console.print(f"[green]{inserted_this_company} inserted[/green] ({found_this_company} found)")
+                console.print(
+                    f"[green]{inserted_this_company} inserted[/green] ({found_this_company} found)"
+                )
 
                 # Rate limit: Apollo enforces ~3.5s between requests
                 time.sleep(3.6)
@@ -195,7 +200,9 @@ def main(limit: int = 200, dry_run: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Free Apollo contact discovery (no enrichment credits)")
+    parser = argparse.ArgumentParser(
+        description="Free Apollo contact discovery (no enrichment credits)"
+    )
     parser.add_argument("--limit", type=int, default=200, help="Max companies to process")
     parser.add_argument("--dry-run", action="store_true", help="Search but don't insert")
     args = parser.parse_args()

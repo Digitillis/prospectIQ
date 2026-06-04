@@ -104,7 +104,10 @@ def test_approve_emits_workflow_event():
 
     with (
         patch("backend.app.api.routes.approvals.get_db", return_value=mock_db),
-        patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": "reviewer-1"}),
+        patch(
+            "backend.app.api.routes.approvals.get_current_user",
+            return_value={"user_id": "reviewer-1"},
+        ),
         patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
         patch("backend.app.api.routes.approvals.log_audit_event_from_ctx"),
         patch("backend.app.api.routes.approvals.emit_workflow_event", mock_emit),
@@ -173,7 +176,10 @@ def test_approve_succeeds_when_workflow_event_insert_fails():
 
     with (
         patch("backend.app.api.routes.approvals.get_db", return_value=mock_db),
-        patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": "reviewer-1"}),
+        patch(
+            "backend.app.api.routes.approvals.get_current_user",
+            return_value={"user_id": "reviewer-1"},
+        ),
         patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
         patch("backend.app.api.routes.approvals.log_audit_event_from_ctx"),
     ):
@@ -182,9 +188,7 @@ def test_approve_succeeds_when_workflow_event_insert_fails():
             approve_draft(DRAFT_ID, request=MagicMock(), body=None, _role=None, force=True)
         )
 
-    assert result.get("message") == "Draft approved", (
-        f"Expected 'Draft approved', got: {result}"
-    )
+    assert result.get("message") == "Draft approved", f"Expected 'Draft approved', got: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -210,9 +214,7 @@ def test_reject_succeeds_when_workflow_event_insert_fails():
             reject_draft(DRAFT_ID, body=RejectRequest(rejection_reason="test"), _role=None)
         )
 
-    assert result.get("message") == "Draft rejected", (
-        f"Expected 'Draft rejected', got: {result}"
-    )
+    assert result.get("message") == "Draft rejected", f"Expected 'Draft rejected', got: {result}"
 
 
 # ---------------------------------------------------------------------------

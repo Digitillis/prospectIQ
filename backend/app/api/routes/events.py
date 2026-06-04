@@ -36,8 +36,8 @@ class CreateEventRequest(BaseModel):
     contact_id: str
     company_id: Optional[str] = None
     event_type: str  # outreach_sent, response_received, connection_accepted, note_added,
-                     # meeting_scheduled, meeting_held, status_change, system_action
-    channel: Optional[str] = None   # linkedin, email, phone, in_person, system
+    # meeting_scheduled, meeting_held, status_change, system_action
+    channel: Optional[str] = None  # linkedin, email, phone, in_person, system
     direction: Optional[str] = "inbound"  # outbound, inbound, internal
     subject: Optional[str] = None
     body: Optional[str] = None
@@ -65,12 +65,7 @@ async def get_contact_events(
 
     try:
         result = (
-            db._filter_ws(
-                db.client.table("contact_events")
-                .select(
-                    "*, companies(name)"
-                )
-            )
+            db._filter_ws(db.client.table("contact_events").select("*, companies(name)"))
             .eq("contact_id", contact_id)
             .order("created_at", desc=True)
             .range(offset, offset + limit - 1)
@@ -100,10 +95,7 @@ async def create_event(req: CreateEventRequest):
     if not company_id:
         try:
             contact_row = (
-                db._filter_ws(
-                    db.client.table("contacts")
-                    .select("company_id")
-                )
+                db._filter_ws(db.client.table("contacts").select("company_id"))
                 .eq("id", req.contact_id)
                 .execute()
                 .data
@@ -174,10 +166,7 @@ async def create_event(req: CreateEventRequest):
     if pqs_delta != 0 and company_id:
         try:
             company_row = (
-                db._filter_ws(
-                    db.client.table("companies")
-                    .select("pqs_engagement, pqs_total")
-                )
+                db._filter_ws(db.client.table("companies").select("pqs_engagement, pqs_total"))
                 .eq("id", company_id)
                 .execute()
                 .data
@@ -188,11 +177,13 @@ async def create_event(req: CreateEventRequest):
                 new_engagement = max(0, min(25, current_engagement + pqs_delta))
                 new_total = max(0, current_total + pqs_delta)
                 db._filter_ws(
-                    db.client.table("companies").update({
-                        "pqs_engagement": new_engagement,
-                        "pqs_total": new_total,
-                        "updated_at": now,
-                    })
+                    db.client.table("companies").update(
+                        {
+                            "pqs_engagement": new_engagement,
+                            "pqs_total": new_total,
+                            "updated_at": now,
+                        }
+                    )
                 ).eq("id", company_id).execute()
         except Exception as e:
             logger.warning(f"Failed to update PQS from event: {e}")
@@ -217,8 +208,7 @@ async def update_next_action(event_id: str, req: UpdateNextActionRequest):
     try:
         result = (
             db._filter_ws(
-                db.client.table("contact_events")
-                .update({"next_action_status": req.status})
+                db.client.table("contact_events").update({"next_action_status": req.status})
             )
             .eq("id", event_id)
             .execute()
@@ -251,8 +241,7 @@ async def get_pending_actions():
     try:
         result = (
             db._filter_ws(
-                db.client.table("contact_events")
-                .select(
+                db.client.table("contact_events").select(
                     "id, contact_id, company_id, event_type, channel, next_action, "
                     "next_action_date, next_action_status, suggested_message, action_reasoning, "
                     "created_at, "

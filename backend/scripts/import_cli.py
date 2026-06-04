@@ -65,7 +65,9 @@ def normalize_csv_row(row: dict) -> tuple[dict, dict]:
     }
 
     contact_data = {
-        "full_name": row.get("full_name") or f"{row.get('first_name', '')} {row.get('last_name', '')}".strip() or None,
+        "full_name": row.get("full_name")
+        or f"{row.get('first_name', '')} {row.get('last_name', '')}".strip()
+        or None,
         "first_name": row.get("first_name") or None,
         "last_name": row.get("last_name") or None,
         "title": row.get("title") or None,
@@ -123,7 +125,9 @@ def run_import(
         company_id: str | None = None
 
         # Check in-batch cache first
-        dedup_key = (company_data.get("apollo_id") or company_data.get("domain") or company_name).lower()
+        dedup_key = (
+            company_data.get("apollo_id") or company_data.get("domain") or company_name
+        ).lower()
         if dedup_key in companies_seen:
             company_id = companies_seen[dedup_key]
         else:
@@ -134,11 +138,13 @@ def run_import(
             if not existing and company_data.get("domain"):
                 existing = db.get_company_by_domain(company_data["domain"])
                 if existing and existing.get("name", "").lower() != company_name.lower():
-                    domain_conflicts.append({
-                        "import_name": company_name,
-                        "existing_name": existing["name"],
-                        "domain": company_data["domain"],
-                    })
+                    domain_conflicts.append(
+                        {
+                            "import_name": company_name,
+                            "existing_name": existing["name"],
+                            "domain": company_data["domain"],
+                        }
+                    )
 
             if existing:
                 company_id = existing["id"]
@@ -192,7 +198,9 @@ def run_import(
                     "company_id": company_id,
                     "persona_type": persona_type,
                     "is_decision_maker": is_dm,
-                    "enrichment_status": "enriched" if contact_data.get("email") else "needs_enrichment",
+                    "enrichment_status": "enriched"
+                    if contact_data.get("email")
+                    else "needs_enrichment",
                 }
                 db.insert_contact(contact_insert)
                 contacts_inserted += 1
@@ -212,10 +220,16 @@ def run_import(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Import prospects from CSV or JSON with validation")
+    parser = argparse.ArgumentParser(
+        description="Import prospects from CSV or JSON with validation"
+    )
     parser.add_argument("--file", required=True, help="Path to CSV or JSON file")
-    parser.add_argument("--campaign", default="prospectiq_discovery", help="Campaign name to tag records with")
-    parser.add_argument("--dry-run", action="store_true", help="Validate and preview without writing to DB")
+    parser.add_argument(
+        "--campaign", default="prospectiq_discovery", help="Campaign name to tag records with"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Validate and preview without writing to DB"
+    )
     args = parser.parse_args()
 
     file_path = Path(args.file)
@@ -255,7 +269,7 @@ def main() -> None:
     for i, (company_data, contact_data) in enumerate(records):
         errs = validate_row(company_data, contact_data)
         for err in errs:
-            validation_errors.append(f"Row {i+1}: {err}")
+            validation_errors.append(f"Row {i + 1}: {err}")
 
     if validation_errors:
         console.print(f"\n[bold red]{len(validation_errors)} validation errors:[/bold red]")
@@ -274,13 +288,19 @@ def main() -> None:
 
     # Print summary
     console.print(f"\n[bold]Import {'Preview' if args.dry_run else 'Complete'}:[/bold]")
-    console.print(f"  Companies: [green]{summary['companies_inserted']} inserted[/green], "
-                  f"[dim]{summary['companies_skipped']} skipped (existing)[/dim]")
-    console.print(f"  Contacts:  [green]{summary['contacts_inserted']} inserted[/green], "
-                  f"[dim]{summary['contacts_skipped']} skipped (existing)[/dim]")
+    console.print(
+        f"  Companies: [green]{summary['companies_inserted']} inserted[/green], "
+        f"[dim]{summary['companies_skipped']} skipped (existing)[/dim]"
+    )
+    console.print(
+        f"  Contacts:  [green]{summary['contacts_inserted']} inserted[/green], "
+        f"[dim]{summary['contacts_skipped']} skipped (existing)[/dim]"
+    )
 
     if summary["domain_conflicts"]:
-        console.print(f"\n[bold yellow]{len(summary['domain_conflicts'])} domain conflicts (same domain, different company name):[/bold yellow]")
+        console.print(
+            f"\n[bold yellow]{len(summary['domain_conflicts'])} domain conflicts (same domain, different company name):[/bold yellow]"
+        )
         for conflict in summary["domain_conflicts"]:
             console.print(
                 f"  Import: [yellow]{conflict['import_name']}[/yellow] ↔ "

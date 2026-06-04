@@ -38,9 +38,12 @@ def _build_draft_row(contact_email: str = "contact@acme.com") -> dict:
         "sequence_name": "mfg-awareness",
         "companies": {"name": "Acme", "tier": "tier2", "campaign_cluster": "mfg_ops"},
         "contacts": {
-            "full_name": "Alice Smith", "email": contact_email,
-            "first_name": "Alice", "last_name": "Smith",
-            "company_id": "co-hot-1", "persona_type": "ops_manager",
+            "full_name": "Alice Smith",
+            "email": contact_email,
+            "first_name": "Alice",
+            "last_name": "Smith",
+            "company_id": "co-hot-1",
+            "persona_type": "ops_manager",
         },
     }
 
@@ -58,16 +61,23 @@ def test_hot_company_is_blocked_at_dispatch():
     queue_row = _build_queue_row()
 
     # Mock DB calls
-    agent.db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[draft_row])
+    agent.db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[draft_row]
+    )
 
     # Interactions with a reply → HOT
-    hot_interactions = [{"type": "email_replied", "created_at": datetime.now(timezone.utc).isoformat()}]
-    agent.db.client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(data=hot_interactions)
+    hot_interactions = [
+        {"type": "email_replied", "created_at": datetime.now(timezone.utc).isoformat()}
+    ]
+    agent.db.client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=hot_interactions
+    )
 
-    with patch("backend.app.agents.engagement.classify_engagement_tier", return_value=HOT), \
-         patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
-         patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)):
-
+    with (
+        patch("backend.app.agents.engagement.classify_engagement_tier", return_value=HOT),
+        patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)),
+        patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)),
+    ):
         outcome = agent.dispatch_queued_draft(
             queue_row=queue_row,
             attempt_number=1,
@@ -94,14 +104,20 @@ def test_cold_company_passes_hot_check():
     draft_row = _build_draft_row()
     queue_row = _build_queue_row()
 
-    agent.db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[draft_row])
-    agent.db.client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
+    agent.db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[draft_row]
+    )
+    agent.db.client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
 
     # COLD company — HOT check should pass
-    with patch("backend.app.agents.engagement.classify_engagement_tier", return_value=COLD), \
-         patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
-         patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
-         patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value=None):
+    with (
+        patch("backend.app.agents.engagement.classify_engagement_tier", return_value=COLD),
+        patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)),
+        patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)),
+        patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value=None),
+    ):
         outcome = agent.dispatch_queued_draft(
             queue_row=queue_row,
             attempt_number=1,

@@ -10,20 +10,23 @@ import pytest
 from backend.app.api.routes.contacts import _safe_search
 
 
-@pytest.mark.parametrize("input_val,expected", [
-    # Injection attempt: close-paren followed by a new predicate
-    ("alice),workspace_id.neq.other_tenant", "aliceworkspace_id.neq.other_tenant"),
-    # Multiple injection chars
-    ("a(b,c)d", "abcd"),
-    # Normal search — must pass through unchanged
-    ("alice smith", "alice smith"),
-    # Empty string
-    ("", ""),
-    # Injection at start
-    ("(SELECT 1)", "SELECT 1"),
-    # Comma-only
-    (",,,", ""),
-])
+@pytest.mark.parametrize(
+    "input_val,expected",
+    [
+        # Injection attempt: close-paren followed by a new predicate
+        ("alice),workspace_id.neq.other_tenant", "aliceworkspace_id.neq.other_tenant"),
+        # Multiple injection chars
+        ("a(b,c)d", "abcd"),
+        # Normal search — must pass through unchanged
+        ("alice smith", "alice smith"),
+        # Empty string
+        ("", ""),
+        # Injection at start
+        ("(SELECT 1)", "SELECT 1"),
+        # Comma-only
+        (",,,", ""),
+    ],
+)
 def test_safe_search_strips_injection_chars(input_val, expected):
     assert _safe_search(input_val) == expected
 

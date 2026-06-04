@@ -150,6 +150,7 @@ Return [] if insufficient data. Output ONLY the JSON array."""
 # Engine
 # ---------------------------------------------------------------------------
 
+
 class PersonalizationEngine:
     """Unified personalization pipeline for a single company."""
 
@@ -162,7 +163,9 @@ class PersonalizationEngine:
     # Public entry point
     # ------------------------------------------------------------------
 
-    def run_full_pipeline(self, company_id: str, workspace_id: str | None = None) -> PersonalizationResult:
+    def run_full_pipeline(
+        self, company_id: str, workspace_id: str | None = None
+    ) -> PersonalizationResult:
         """Run the full personalization pipeline for one company.
 
         Steps:
@@ -259,7 +262,9 @@ class PersonalizationEngine:
         """Extract buying triggers from research_summary using Claude Haiku."""
         research = self._build_research_context(company)
         if not research:
-            logger.debug(f"No research context for company {company.get('id')} — skipping trigger extraction")
+            logger.debug(
+                f"No research context for company {company.get('id')} — skipping trigger extraction"
+            )
             return []
 
         settings = get_settings()
@@ -268,6 +273,7 @@ class PersonalizationEngine:
             return []
 
         import anthropic
+
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
         prompt = (
@@ -345,10 +351,12 @@ class PersonalizationEngine:
         target_personas = personas_found[:3]
         top_triggers = triggers[:5]  # feed top 5 triggers max
 
-        trigger_summary = "\n".join(
-            f"- [{t.urgency.upper()}] {t.trigger_type}: {t.description}"
-            for t in top_triggers
-        ) or "No specific triggers identified."
+        trigger_summary = (
+            "\n".join(
+                f"- [{t.urgency.upper()}] {t.trigger_type}: {t.description}" for t in top_triggers
+            )
+            or "No specific triggers identified."
+        )
 
         company_context = (
             f"Company: {company.get('name', 'Unknown')}\n"
@@ -364,6 +372,7 @@ class PersonalizationEngine:
         )
 
         import anthropic
+
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
         try:
@@ -498,10 +507,13 @@ class PersonalizationEngine:
                 "personalization_last_run": now,
             }
 
-            self.db.update_company(company_id, {
-                "personalization_hooks": hook_texts,
-                "custom_tags": updated_tags,
-            })
+            self.db.update_company(
+                company_id,
+                {
+                    "personalization_hooks": hook_texts,
+                    "custom_tags": updated_tags,
+                },
+            )
         except Exception as e:
             logger.error(f"Failed to persist personalization results for {company_id}: {e}")
 

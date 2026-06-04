@@ -33,31 +33,71 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # FDA warning letters RSS — published in near-real-time, no auth required
-FDA_WL_RSS_URL = "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/warning-letters/rss.xml"
+FDA_WL_RSS_URL = (
+    "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/warning-letters/rss.xml"
+)
 
 # openFDA other/warning_letters endpoint (covers broader history)
 FDA_WL_API_URL = "https://api.fda.gov/other/warning_letters.json"
 
-DECAY_HALF_LIFE_FSMA = 90   # days — FSMA enforcement window
+DECAY_HALF_LIFE_FSMA = 90  # days — FSMA enforcement window
 DECAY_HALF_LIFE_GENERAL = 120  # days — general food safety letter
 
 # FSMA 204 / traceability keywords — any match → fda_warning_letter_fsma
-_FSMA_KEYWORDS = frozenset({
-    "traceability", "section 204", "fsma 204", "204(d)", "food traceability list",
-    "critical tracking event", "key data element", "cte", "kde",
-    "1-step forward", "1-step back", "one step forward", "one step back",
-    "recordkeeping", "records access", "21 cfr part 1", "part 1 subpart s",
-    "supply chain traceability", "lot code traceability",
-})
+_FSMA_KEYWORDS = frozenset(
+    {
+        "traceability",
+        "section 204",
+        "fsma 204",
+        "204(d)",
+        "food traceability list",
+        "critical tracking event",
+        "key data element",
+        "cte",
+        "kde",
+        "1-step forward",
+        "1-step back",
+        "one step forward",
+        "one step back",
+        "recordkeeping",
+        "records access",
+        "21 cfr part 1",
+        "part 1 subpart s",
+        "supply chain traceability",
+        "lot code traceability",
+    }
+)
 
 # Food safety subject keywords — must be present to process (skip non-food letters)
-_FOOD_SUBJECT_KEYWORDS = frozenset({
-    "food", "beverage", "dairy", "seafood", "produce", "meat", "poultry",
-    "juice", "infant formula", "dietary supplement", "allergen", "sanitation",
-    "haccp", "cgmp", "current good manufacturing", "adulterated",
-    "misbranded", "foreign matter", "listeria", "salmonella", "e. coli",
-    "ready-to-eat", "rte", "pasteurization", "fsma",
-})
+_FOOD_SUBJECT_KEYWORDS = frozenset(
+    {
+        "food",
+        "beverage",
+        "dairy",
+        "seafood",
+        "produce",
+        "meat",
+        "poultry",
+        "juice",
+        "infant formula",
+        "dietary supplement",
+        "allergen",
+        "sanitation",
+        "haccp",
+        "cgmp",
+        "current good manufacturing",
+        "adulterated",
+        "misbranded",
+        "foreign matter",
+        "listeria",
+        "salmonella",
+        "e. coli",
+        "ready-to-eat",
+        "rte",
+        "pasteurization",
+        "fsma",
+    }
+)
 
 
 def _is_fsma_letter(subject: str, body: str) -> bool:
@@ -84,8 +124,12 @@ class FDAWarningLetterScraper:
             Dict with processed, matched, skipped, fsma_signals, general_signals counts.
         """
         result = {
-            "processed": 0, "matched": 0, "skipped": 0,
-            "fsma_signals": 0, "general_signals": 0, "errors": 0,
+            "processed": 0,
+            "matched": 0,
+            "skipped": 0,
+            "fsma_signals": 0,
+            "general_signals": 0,
+            "errors": 0,
         }
 
         letters = self._fetch_letters_rss(days_back=days_back)
@@ -160,8 +204,12 @@ class FDAWarningLetterScraper:
         logger.info(
             "FDA WL scraper complete: %d processed, %d matched (%d fsma / %d general), "
             "%d skipped, %d errors",
-            result["processed"], result["matched"], result["fsma_signals"],
-            result["general_signals"], result["skipped"], result["errors"],
+            result["processed"],
+            result["matched"],
+            result["fsma_signals"],
+            result["general_signals"],
+            result["skipped"],
+            result["errors"],
         )
         return result
 
@@ -176,6 +224,7 @@ class FDAWarningLetterScraper:
 
         try:
             import httpx
+
             resp = httpx.get(FDA_WL_RSS_URL, timeout=30, follow_redirects=True)
             resp.raise_for_status()
             content = resp.text
@@ -211,16 +260,18 @@ class FDAWarningLetterScraper:
 
                 source_id = _slug_from_url(link) if link else f"wl-{hash(title)}"
 
-                letters.append({
-                    "firm_name": firm_name,
-                    "subject": title or "",
-                    "body_excerpt": (description or "")[:500],
-                    "issued_at": issued_at,
-                    "source_id": source_id,
-                    "source_url": link,
-                    "city": city,
-                    "state": state,
-                })
+                letters.append(
+                    {
+                        "firm_name": firm_name,
+                        "subject": title or "",
+                        "body_excerpt": (description or "")[:500],
+                        "issued_at": issued_at,
+                        "source_id": source_id,
+                        "source_url": link,
+                        "city": city,
+                        "state": state,
+                    }
+                )
             except Exception as e:
                 logger.debug("RSS item parse error: %s", e)
 
@@ -234,6 +285,7 @@ class FDAWarningLetterScraper:
 
         try:
             import httpx
+
             params = {
                 "search": f"date_posted:[{since}+TO+99999999]",
                 "limit": min(limit, 100),
@@ -258,9 +310,11 @@ class FDAWarningLetterScraper:
                 issued_at = None
                 if issued_str and len(issued_str) == 8:
                     try:
-                        issued_at = datetime.strptime(issued_str, "%Y%m%d").replace(
-                            tzinfo=timezone.utc
-                        ).isoformat()
+                        issued_at = (
+                            datetime.strptime(issued_str, "%Y%m%d")
+                            .replace(tzinfo=timezone.utc)
+                            .isoformat()
+                        )
                     except ValueError:
                         pass
                 elif issued_str:
@@ -269,16 +323,18 @@ class FDAWarningLetterScraper:
                     except ValueError:
                         pass
 
-                letters.append({
-                    "firm_name": firm_name,
-                    "subject": subject,
-                    "body_excerpt": record.get("body", "")[:500],
-                    "issued_at": issued_at,
-                    "source_id": record.get("id") or record.get("recall_number", ""),
-                    "source_url": record.get("url"),
-                    "city": record.get("city", ""),
-                    "state": record.get("state", ""),
-                })
+                letters.append(
+                    {
+                        "firm_name": firm_name,
+                        "subject": subject,
+                        "body_excerpt": record.get("body", "")[:500],
+                        "issued_at": issued_at,
+                        "source_id": record.get("id") or record.get("recall_number", ""),
+                        "source_url": record.get("url"),
+                        "city": record.get("city", ""),
+                        "state": record.get("state", ""),
+                    }
+                )
             except Exception as e:
                 logger.debug("API record parse error: %s", e)
 
@@ -292,8 +348,21 @@ class FDAWarningLetterScraper:
         if not firm_name:
             return None
         firm_lower = firm_name.lower().strip()
-        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited",
-                       " foods", " food", " industries", " group", " farms", " processing"):
+        for suffix in (
+            " llc",
+            " inc",
+            " corp",
+            " company",
+            " co.",
+            " ltd",
+            " limited",
+            " foods",
+            " food",
+            " industries",
+            " group",
+            " farms",
+            " processing",
+        ):
             firm_lower = firm_lower.replace(suffix, "")
         firm_lower = firm_lower.strip(" ,.")
 
@@ -313,7 +382,8 @@ class FDAWarningLetterScraper:
                 .ilike("name", f"%{firm_lower[:40]}%")
                 .limit(5)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             hit = _best(rows)
             if hit:
@@ -326,7 +396,8 @@ class FDAWarningLetterScraper:
                     .ilike("domain", f"%{kw}%")
                     .limit(5)
                     .execute()
-                    .data or []
+                    .data
+                    or []
                 )
                 hit = _best(rows)
                 if hit:
@@ -340,9 +411,16 @@ class FDAWarningLetterScraper:
     # ------------------------------------------------------------------
 
     def _upsert_signal(
-        self, company_id: str, signal_type: str, source: str, source_id: str,
-        signal_text: str, value: dict, observed_at: str | None,
-        decay: int, source_url: str | None,
+        self,
+        company_id: str,
+        signal_type: str,
+        source: str,
+        source_id: str,
+        signal_text: str,
+        value: dict,
+        observed_at: str | None,
+        decay: int,
+        source_url: str | None,
     ) -> None:
         workspace_id = getattr(self._db, "workspace_id", None)
         row: dict = {
@@ -370,6 +448,7 @@ class FDAWarningLetterScraper:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _xml_text(xml: str, tag: str) -> str:
     """Extract first occurrence of <tag>text</tag> from an XML fragment."""

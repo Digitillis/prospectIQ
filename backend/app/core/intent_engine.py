@@ -36,23 +36,27 @@ logger = logging.getLogger(__name__)
 SIGNAL_POINTS: dict[str, int] = {
     "job_posting": 15,
     "fda_warning_letter": 25,
-    "fda_warning_letter_fsma": 45,   # FSMA 204 enforcement — highest-value signal
+    "fda_warning_letter_fsma": 45,  # FSMA 204 enforcement — highest-value signal
     "fda_recall": 20,
     "osha_citation": 15,
     "funding_event": 10,
     "linkedin_activity": 10,
 }
 
-MAX_INTENT_SCORE = 60   # raised from 50 to accommodate FSMA signal value
+MAX_INTENT_SCORE = 60  # raised from 50 to accommodate FSMA signal value
 HOT_THRESHOLD = 20
 
 # F&B tier prefixes — FSMA enforcement multiplier applies to these
 _FB_TIER_PREFIXES = ("fb_", "fb1", "fb2", "fb3", "fb4")
 
 # Signals that qualify for the FSMA enforcement multiplier on F&B companies
-_FSMA_ENFORCEMENT_SIGNALS = frozenset({
-    "fda_warning_letter_fsma", "fda_warning_letter", "fda_recall",
-})
+_FSMA_ENFORCEMENT_SIGNALS = frozenset(
+    {
+        "fda_warning_letter_fsma",
+        "fda_warning_letter",
+        "fda_recall",
+    }
+)
 
 # ------------------------------------------------------------------
 # Buyer-signal job titles (case-insensitive keyword matching)
@@ -113,6 +117,7 @@ class IntentEngine:
         """
         try:
             from backend.app.core.config import get_settings
+
             settings = get_settings()
             if not settings.apollo_api_key:
                 logger.warning("[intent] APOLLO_API_KEY not set — skipping job posting scan")
@@ -129,9 +134,7 @@ class IntentEngine:
                 apollo_org_id=apollo_org_id,
             )
         except Exception as exc:
-            logger.warning(
-                f"[intent] Apollo job posting fetch failed for {company_name}: {exc}"
-            )
+            logger.warning(f"[intent] Apollo job posting fetch failed for {company_name}: {exc}")
             return []
 
         if not postings:
@@ -181,9 +184,7 @@ class IntentEngine:
                 logger.warning(f"[intent] Failed to insert job posting signal: {exc}")
 
         if new_signals:
-            logger.info(
-                f"[intent] {len(new_signals)} new job posting signal(s) for {company_name}"
-            )
+            logger.info(f"[intent] {len(new_signals)} new job posting signal(s) for {company_name}")
             self._refresh_company_score(company_id)
 
         return new_signals
@@ -223,13 +224,15 @@ class IntentEngine:
                 for job in jobs:
                     title = (job.get("title") or "").lower()
                     if any(keyword in title for keyword in BUYER_SIGNAL_TITLES):
-                        matched.append({
-                            "title": job.get("title", ""),
-                            "url": job.get("url") or job.get("job_url"),
-                            "posted_at": job.get("posted_at"),
-                            "location": job.get("location"),
-                            "apollo_org_id": apollo_org_id,
-                        })
+                        matched.append(
+                            {
+                                "title": job.get("title", ""),
+                                "url": job.get("url") or job.get("job_url"),
+                                "posted_at": job.get("posted_at"),
+                                "location": job.get("location"),
+                                "apollo_org_id": apollo_org_id,
+                            }
+                        )
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 422:
                     # Org ID not recognised — fall through to people search
@@ -244,6 +247,7 @@ class IntentEngine:
             # Fallback: use people search for buyer-signal titles at this company
             # This does NOT consume credits (search_people is free)
             from backend.app.integrations.apollo import ApolloClient
+
             try:
                 client = ApolloClient()
                 results = client.search_people(
@@ -261,13 +265,15 @@ class IntentEngine:
                         continue
                     if any(keyword in title_lower for keyword in BUYER_SIGNAL_TITLES):
                         seen_titles.add(title_lower)
-                        matched.append({
-                            "title": title,
-                            "url": person.get("linkedin_url"),
-                            "posted_at": None,
-                            "location": person.get("city"),
-                            "source_type": "people_search",
-                        })
+                        matched.append(
+                            {
+                                "title": title,
+                                "url": person.get("linkedin_url"),
+                                "posted_at": None,
+                                "location": person.get("city"),
+                                "source_type": "people_search",
+                            }
+                        )
                 client.close()
             except Exception as exc:
                 logger.warning(f"[intent] Apollo people search fallback failed: {exc}")
@@ -491,7 +497,8 @@ class IntentEngine:
                     .eq("id", company_id)
                     .limit(1)
                     .execute()
-                    .data or [{}]
+                    .data
+                    or [{}]
                 )[0]
                 tier = row.get("tier") or ""
             except Exception:
@@ -507,9 +514,7 @@ class IntentEngine:
             expires_at = s.get("expires_at")
             if expires_at:
                 try:
-                    exp_dt = datetime.fromisoformat(
-                        expires_at.replace("Z", "+00:00")
-                    )
+                    exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
                     if exp_dt < now:
                         to_expire.append(s["id"])
                         continue
@@ -520,9 +525,9 @@ class IntentEngine:
         # Deactivate expired signals in DB
         for sid in to_expire:
             try:
-                self.db.client.table("company_intent_signals").update(
-                    {"is_active": False}
-                ).eq("id", sid).execute()
+                self.db.client.table("company_intent_signals").update({"is_active": False}).eq(
+                    "id", sid
+                ).execute()
             except Exception as exc:
                 logger.warning(f"[intent] Failed to deactivate expired signal {sid}: {exc}")
 
@@ -590,9 +595,7 @@ class IntentEngine:
                 self.compute_company_intent_score(cid, company_tier=tier)
                 updated += 1
             except Exception as exc:
-                logger.warning(
-                    f"[intent] Failed to recompute score for company {cid}: {exc}"
-                )
+                logger.warning(f"[intent] Failed to recompute score for company {cid}: {exc}")
 
         logger.info(
             f"[intent] Recomputed intent scores for {updated} companies "

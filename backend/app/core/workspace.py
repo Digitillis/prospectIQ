@@ -19,8 +19,8 @@ class WorkspaceContext:
     workspace_id: str
     name: str
     owner_email: str
-    tier: str                          # e.g. "starter", "professional", "enterprise"
-    subscription_status: str           # e.g. "active", "trialing", "past_due", "canceled"
+    tier: str  # e.g. "starter", "professional", "enterprise"
+    subscription_status: str  # e.g. "active", "trialing", "past_due", "canceled"
     settings: dict = field(default_factory=dict)
     # Caller identity — populated from the auth token at request time
     user_id: str | None = None

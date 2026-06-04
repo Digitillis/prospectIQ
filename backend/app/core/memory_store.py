@@ -158,7 +158,9 @@ class MemoryStore:
             ).execute()
             rows = result.data or []
         except Exception as e:
-            logger.warning(f"MemoryStore._retrieve_vector: pgvector query failed: {e}. Falling back to text search.")
+            logger.warning(
+                f"MemoryStore._retrieve_vector: pgvector query failed: {e}. Falling back to text search."
+            )
             return self._retrieve_text(query, k)
 
         return [
@@ -176,6 +178,7 @@ class MemoryStore:
         """PostgreSQL tsvector full-text search fallback."""
         # Sanitise query for tsvector: keep only word characters
         import re
+
         words = re.findall(r"\w+", query)[:10]
         if not words:
             return []
@@ -245,6 +248,7 @@ class MemoryStore:
 
     def _track_access(self, node_ids: list[str | None]) -> None:
         from datetime import datetime, timezone
+
         ids = [nid for nid in node_ids if nid]
         if not ids:
             return

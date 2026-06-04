@@ -1662,7 +1662,7 @@ async def meeting_transcript_webhook(request: Request):
     try:
         from backend.app.agents.post_meeting import PostMeetingAgent
 
-        agent = PostMeetingAgent()
+        agent = PostMeetingAgent(workspace_id=get_workspace_id())
         result = agent.execute(
             company_id=company_id,
             contact_id=contact_id,

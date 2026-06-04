@@ -42,14 +42,14 @@ logger = logging.getLogger(__name__)
 
 # Classification labels shown to the user
 CLASSIFICATION_LABELS = {
-    "interested":   "✅  Interested — open to a call/demo",
-    "objection":    "⚡  Objection — specific pushback (competitor, budget, timing)",
-    "referral":     "➡️  Referral — pointing to someone else in the org",
-    "soft_no":      "🌫️  Soft No — not now, but not a hard rejection",
-    "out_of_office":"📅  Out of Office — auto-reply",
-    "unsubscribe":  "🚫  Unsubscribe — remove me",
-    "bounce":       "❌  Bounce — delivery failure",
-    "other":        "❓  Other — needs human review",
+    "interested": "✅  Interested — open to a call/demo",
+    "objection": "⚡  Objection — specific pushback (competitor, budget, timing)",
+    "referral": "➡️  Referral — pointing to someone else in the org",
+    "soft_no": "🌫️  Soft No — not now, but not a hard rejection",
+    "out_of_office": "📅  Out of Office — auto-reply",
+    "unsubscribe": "🚫  Unsubscribe — remove me",
+    "bounce": "❌  Bounce — delivery failure",
+    "other": "❓  Other — needs human review",
 }
 
 CLASSIFY_SYSTEM = """You are an expert B2B sales analyst.
@@ -97,6 +97,7 @@ OUTPUT FORMAT (JSON):
     "return_date": null
 }}"""
 
+
 def _build_thread_draft_system() -> str:
     """Build the thread draft system prompt dynamically from offer_context + outreach_guidelines.
 
@@ -104,6 +105,7 @@ def _build_thread_draft_system() -> str:
     """
     try:
         from backend.app.core.config import get_offer_context, get_outreach_guidelines
+
         offer = get_offer_context()
         guidelines = get_outreach_guidelines()
     except Exception:
@@ -114,11 +116,15 @@ def _build_thread_draft_system() -> str:
     sender_name = sender.get("short_name") or sender.get("name", "the sender")
     sender_title = sender.get("title", "")
     company_name = offer.get("company") or sender.get("company", "the company")
-    signature_block = sender.get("signature", f"{sender_name}\n{sender_title}, {company_name}").strip()
+    signature_block = sender.get(
+        "signature", f"{sender_name}\n{sender_title}, {company_name}"
+    ).strip()
 
     capabilities = offer.get("capabilities") or []
-    caps_block = "\n".join(f"- {c}" for c in capabilities[:6]) if capabilities else (
-        "- Refer to offer_context.yaml for product capabilities"
+    caps_block = (
+        "\n".join(f"- {c}" for c in capabilities[:6])
+        if capabilities
+        else ("- Refer to offer_context.yaml for product capabilities")
     )
 
     return f"""You are a world-class B2B sales writer for {company_name}.
@@ -138,6 +144,7 @@ Sign off (use the exact sender signature configured in outreach_guidelines.yaml)
 {signature_block}
 
 Output ONLY valid JSON. No markdown."""
+
 
 DRAFT_USER = """Draft the next reply in this conversation thread.
 
@@ -193,7 +200,9 @@ class ThreadAgent(BaseAgent):
     def run(self, **kwargs) -> AgentResult:
         """Not used directly — call classify_and_draft() or process_webhook_reply() instead."""
         result = AgentResult()
-        result.add_detail("N/A", "info", "Use classify_and_draft() or process_webhook_reply() directly.")
+        result.add_detail(
+            "N/A", "info", "Use classify_and_draft() or process_webhook_reply() directly."
+        )
         return result
 
     def classify_reply(
@@ -232,21 +241,33 @@ class ThreadAgent(BaseAgent):
         company_name = company.get("name", "Unknown") if company else "Unknown"
         research_summary = ""
         if research:
-            research_summary = research.get("company_description", "") or research.get("pain_signals", "")
+            research_summary = research.get("company_description", "") or research.get(
+                "pain_signals", ""
+            )
         if not research_summary and company:
             research_summary = company.get("research_summary", "No research available")
 
         # Build the classification prompt
         prompt = CLASSIFY_USER.format(
             company_name=company_name,
-            sub_sector=company.get("sub_sector", company.get("industry", "Manufacturing")) if company else "Manufacturing",
+            sub_sector=company.get("sub_sector", company.get("industry", "Manufacturing"))
+            if company
+            else "Manufacturing",
             tier=company.get("tier", "2") if company else "2",
             contact_name=contact.get("full_name", contact.get("first_name", "Unknown")),
             contact_title=contact.get("title", "Unknown"),
-            research_summary=research_summary[:600] if research_summary else "No research available",
+            research_summary=research_summary[:600]
+            if research_summary
+            else "No research available",
             current_step=thread.get("current_step", 1),
-            last_subject=last_outbound.get("subject", "(unknown)") if last_outbound else "(unknown)",
-            last_body=(last_outbound.get("body", "(original email not available)") if last_outbound else "(original email not available)")[:800],
+            last_subject=last_outbound.get("subject", "(unknown)")
+            if last_outbound
+            else "(unknown)",
+            last_body=(
+                last_outbound.get("body", "(original email not available)")
+                if last_outbound
+                else "(original email not available)"
+            )[:800],
             reply_subject=reply_subject,
             reply_body=reply_body[:800],
         )
@@ -309,6 +330,7 @@ class ThreadAgent(BaseAgent):
         if isinstance(hooks, str):
             try:
                 import json as _json
+
                 hooks = _json.loads(hooks)
             except Exception:
                 hooks = [hooks]
@@ -321,7 +343,9 @@ class ThreadAgent(BaseAgent):
                 parts = []
                 for k, v in tech.items():
                     if v:
-                        parts.append(f"{k}: {v}" if not isinstance(v, list) else f"{k}: {', '.join(v)}")
+                        parts.append(
+                            f"{k}: {v}" if not isinstance(v, list) else f"{k}: {', '.join(v)}"
+                        )
                 tech_stack = "; ".join(parts[:4])
             elif isinstance(tech, str):
                 tech_stack = tech[:200]
@@ -335,8 +359,7 @@ class ThreadAgent(BaseAgent):
             history_parts.append(
                 f"[Step {thread['current_step']} | {direction}]\n"
                 f"Subject: {m.get('subject', '(no subject)')}\n"
-                f"{snippet}"
-                + ("..." if len(m.get("body", "")) > 400 else "")
+                f"{snippet}" + ("..." if len(m.get("body", "")) > 400 else "")
             )
         thread_history = "\n\n---\n\n".join(history_parts)
 
@@ -348,12 +371,16 @@ class ThreadAgent(BaseAgent):
 
         prompt = DRAFT_USER.format(
             company_name=company.get("name", "Unknown") if company else "Unknown",
-            sub_sector=company.get("sub_sector", company.get("industry", "Manufacturing")) if company else "Manufacturing",
+            sub_sector=company.get("sub_sector", company.get("industry", "Manufacturing"))
+            if company
+            else "Manufacturing",
             tier=company.get("tier", "2") if company else "2",
             contact_name=contact.get("full_name", contact.get("first_name", "Unknown")),
             contact_title=contact.get("title", "Unknown"),
             research_summary=research_summary[:500],
-            personalization_hooks="\n".join(f"- {h}" for h in hooks[:5]) if hooks else "None available",
+            personalization_hooks="\n".join(f"- {h}" for h in hooks[:5])
+            if hooks
+            else "None available",
             technology_stack=tech_stack or "Unknown",
             thread_history=thread_history,
             classification=classification_result["classification"],
@@ -450,10 +477,7 @@ class ThreadAgent(BaseAgent):
 
         # Auto-confirm high-confidence classifications for non-human-review categories
         auto_confirm_categories = {"out_of_office", "unsubscribe", "bounce"}
-        if (
-            result["confidence"] >= 0.85
-            and result["classification"] in auto_confirm_categories
-        ):
+        if result["confidence"] >= 0.85 and result["classification"] in auto_confirm_categories:
             self._apply_classification_actions(
                 thread=result["thread"],
                 message_id=result["message_id"],

@@ -83,9 +83,9 @@ class OutreachCoordinator:
     def __init__(
         self,
         db: Database,
-        instantly_client=None,   # optional — pass when you need to call Instantly API
-        linkedin_tracker=None,   # optional LinkedInTracker instance
-        sequence_router=None,    # optional SequenceRouter / SequenceTemplateManager
+        instantly_client=None,  # optional — pass when you need to call Instantly API
+        linkedin_tracker=None,  # optional LinkedInTracker instance
+        sequence_router=None,  # optional SequenceRouter / SequenceTemplateManager
     ):
         self.db = db
         self.instantly_client = instantly_client
@@ -202,16 +202,18 @@ class OutreachCoordinator:
         )
 
         # Log the interaction
-        self.db.insert_interaction({
-            "contact_id": contact_id,
-            "company_id": company_id,
-            "interaction_type": "email_reply",
-            "channel": "email",
-            "direction": "inbound",
-            "notes": reply_text[:1000],
-            "outcome": "positive",
-            "created_at": _now_iso(),
-        })
+        self.db.insert_interaction(
+            {
+                "contact_id": contact_id,
+                "company_id": company_id,
+                "interaction_type": "email_reply",
+                "channel": "email",
+                "direction": "inbound",
+                "notes": reply_text[:1000],
+                "outcome": "positive",
+                "created_at": _now_iso(),
+            }
+        )
 
         # Bump company status to replied if it's in an earlier state
         if company_id:
@@ -260,16 +262,18 @@ class OutreachCoordinator:
             extra_updates={"demo_scheduled_at": demo_date},
         )
 
-        self.db.insert_interaction({
-            "contact_id": contact_id,
-            "company_id": company_id,
-            "interaction_type": "demo_scheduled",
-            "channel": "email",
-            "direction": "inbound",
-            "notes": f"Demo scheduled for {demo_date}",
-            "outcome": "demo_booked",
-            "created_at": _now_iso(),
-        })
+        self.db.insert_interaction(
+            {
+                "contact_id": contact_id,
+                "company_id": company_id,
+                "interaction_type": "demo_scheduled",
+                "channel": "email",
+                "direction": "inbound",
+                "notes": f"Demo scheduled for {demo_date}",
+                "outcome": "demo_booked",
+                "created_at": _now_iso(),
+            }
+        )
 
         if company_id:
             self.db.update_company(company_id, {"status": "demo_scheduled"})
@@ -314,16 +318,18 @@ class OutreachCoordinator:
             metadata={"reply_snippet": reply_text[:500]},
         )
 
-        self.db.insert_interaction({
-            "contact_id": contact_id,
-            "company_id": company_id,
-            "interaction_type": "email_reply",
-            "channel": "email",
-            "direction": "inbound",
-            "notes": reply_text[:1000],
-            "outcome": "negative",
-            "created_at": _now_iso(),
-        })
+        self.db.insert_interaction(
+            {
+                "contact_id": contact_id,
+                "company_id": company_id,
+                "interaction_type": "email_reply",
+                "channel": "email",
+                "direction": "inbound",
+                "notes": reply_text[:1000],
+                "outcome": "negative",
+                "created_at": _now_iso(),
+            }
+        )
 
         logger.info(f"[coordinator] {contact_id[:8]} → not_interested")
         return {
@@ -433,9 +439,7 @@ class OutreachCoordinator:
             updated_at_raw = row.get("outreach_state_updated_at")
             if updated_at_raw:
                 try:
-                    updated_at = datetime.fromisoformat(
-                        updated_at_raw.replace("Z", "+00:00")
-                    )
+                    updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
                     days_since = (now - updated_at).days
                     row["days_stalled"] = days_since
                 except Exception:
@@ -471,8 +475,7 @@ class OutreachCoordinator:
 
         if campaign_name:
             rows = [
-                r for r in rows
-                if (r.get("companies") or {}).get("campaign_name") == campaign_name
+                r for r in rows if (r.get("companies") or {}).get("campaign_name") == campaign_name
             ]
 
         counts: dict[str, int] = {}

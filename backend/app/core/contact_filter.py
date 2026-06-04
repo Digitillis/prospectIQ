@@ -28,85 +28,185 @@ logger = logging.getLogger(__name__)
 # Wrong-function title signals (case-insensitive substring match)
 # ---------------------------------------------------------------------------
 
-_EXCLUDED_SIGNALS = frozenset({
-    # Sales & business development
-    "sales representative", "sales manager", "sales engineer", "sales director",
-    "sales specialist", "sales coordinator", "sales associate",
-    "regional sales", "territory sales", "area sales", "key account",
-    "account manager", "account executive", "account representative",
-    "national sales", "inside sales", "outside sales", "channel sales",
-    "customer success", "customer service", "client services",
-    "business development manager", "business development director",
-    "business development representative", "bdr", "sdr",
-    # Marketing
-    "marketing manager", "marketing director", "marketing specialist",
-    "marketing coordinator", "marketing analyst", "marketing associate",
-    "product marketing", "brand manager", "digital marketing",
-    "content marketing", "demand generation", "growth marketing",
-    "communications manager", "public relations",
-    # Human resources
-    "human resources", "hr manager", "hr director", "hr generalist",
-    "hr business partner", "hr coordinator", "hrbp",
-    "recruiter", "recruiting manager", "talent acquisition",
-    "talent development", "talent management",
-    "people operations", "people partner",
-    "compensation manager", "benefits manager", "payroll manager",
-    # Legal
-    "legal counsel", "general counsel", "attorney", "lawyer",
-    "associate counsel", "deputy general counsel",
-    # Finance & accounting
-    "controller", "accounting manager", "accounts payable",
-    "accounts receivable", "payroll", "treasurer", "tax manager",
-    "financial analyst", "financial manager", "financial director",
-    # Procurement / purchasing (don't own AI budgets)
-    "purchasing manager", "purchasing director", "purchasing agent",
-    "buyer ", "procurement manager", "procurement director",
-    "supply chain coordinator",  # narrow: coordinator level, not director
-    # Customer-facing ops (not buyers)
-    "customer experience", "customer support",
-    "field service", "field sales",
-    "dealer", "distributor",
-    "inside sales",
-})
+_EXCLUDED_SIGNALS = frozenset(
+    {
+        # Sales & business development
+        "sales representative",
+        "sales manager",
+        "sales engineer",
+        "sales director",
+        "sales specialist",
+        "sales coordinator",
+        "sales associate",
+        "regional sales",
+        "territory sales",
+        "area sales",
+        "key account",
+        "account manager",
+        "account executive",
+        "account representative",
+        "national sales",
+        "inside sales",
+        "outside sales",
+        "channel sales",
+        "customer success",
+        "customer service",
+        "client services",
+        "business development manager",
+        "business development director",
+        "business development representative",
+        "bdr",
+        "sdr",
+        # Marketing
+        "marketing manager",
+        "marketing director",
+        "marketing specialist",
+        "marketing coordinator",
+        "marketing analyst",
+        "marketing associate",
+        "product marketing",
+        "brand manager",
+        "digital marketing",
+        "content marketing",
+        "demand generation",
+        "growth marketing",
+        "communications manager",
+        "public relations",
+        # Human resources
+        "human resources",
+        "hr manager",
+        "hr director",
+        "hr generalist",
+        "hr business partner",
+        "hr coordinator",
+        "hrbp",
+        "recruiter",
+        "recruiting manager",
+        "talent acquisition",
+        "talent development",
+        "talent management",
+        "people operations",
+        "people partner",
+        "compensation manager",
+        "benefits manager",
+        "payroll manager",
+        # Legal
+        "legal counsel",
+        "general counsel",
+        "attorney",
+        "lawyer",
+        "associate counsel",
+        "deputy general counsel",
+        # Finance & accounting
+        "controller",
+        "accounting manager",
+        "accounts payable",
+        "accounts receivable",
+        "payroll",
+        "treasurer",
+        "tax manager",
+        "financial analyst",
+        "financial manager",
+        "financial director",
+        # Procurement / purchasing (don't own AI budgets)
+        "purchasing manager",
+        "purchasing director",
+        "purchasing agent",
+        "buyer ",
+        "procurement manager",
+        "procurement director",
+        "supply chain coordinator",  # narrow: coordinator level, not director
+        # Customer-facing ops (not buyers)
+        "customer experience",
+        "customer support",
+        "field service",
+        "field sales",
+        "dealer",
+        "distributor",
+        "inside sales",
+    }
+)
 
 # Signals for borderline contacts — may have cross-functional authority
-_BORDERLINE_SIGNALS = frozenset({
-    # Business development at VP/director could be market-facing, not outbound sales
-    "business development",  # without manager/director, could be strategic BD
-    # EHS / safety (adjacent to ops, may sponsor reliability/safety tech)
-    "environmental", "health and safety", "ehs manager", "ehs director",
-    "safety manager", "safety director", "process safety",
-    # IT / OT (could be buyer for IIoT/ML platforms)
-    "information technology", "it manager", "it director",
-    "technology manager",
-    # Continuous improvement / lean (ops-adjacent, sometimes sponsors digital tools)
-    "lean manager", "lean director", "six sigma",
-    # Supply chain at director/VP level (may sponsor AI for planning)
-    "supply chain manager",
-    "logistics manager", "logistics director",
-    # R&D (sometimes sponsors process intelligence tools)
-    "r&d manager", "r&d director", "research and development",
-    # Compliance — borderline by default; upgraded to target when food-safety context present
-    "compliance officer", "compliance manager", "compliance director",
-    "regulatory affairs",
-})
+_BORDERLINE_SIGNALS = frozenset(
+    {
+        # Business development at VP/director could be market-facing, not outbound sales
+        "business development",  # without manager/director, could be strategic BD
+        # EHS / safety (adjacent to ops, may sponsor reliability/safety tech)
+        "environmental",
+        "health and safety",
+        "ehs manager",
+        "ehs director",
+        "safety manager",
+        "safety director",
+        "process safety",
+        # IT / OT (could be buyer for IIoT/ML platforms)
+        "information technology",
+        "it manager",
+        "it director",
+        "technology manager",
+        # Continuous improvement / lean (ops-adjacent, sometimes sponsors digital tools)
+        "lean manager",
+        "lean director",
+        "six sigma",
+        # Supply chain at director/VP level (may sponsor AI for planning)
+        "supply chain manager",
+        "logistics manager",
+        "logistics director",
+        # R&D (sometimes sponsors process intelligence tools)
+        "r&d manager",
+        "r&d director",
+        "research and development",
+        # Compliance — borderline by default; upgraded to target when food-safety context present
+        "compliance officer",
+        "compliance manager",
+        "compliance director",
+        "regulatory affairs",
+    }
+)
 
 # F&B food-safety context keywords — upgrade compliance titles to target in this context
-_FOOD_SAFETY_COMPLIANCE_UPGRADE = frozenset({
-    "food safety", "fsma", "haccp", "food quality", "sanitation", "sqa",
-    "food", "quality assurance", "fda",
-})
+_FOOD_SAFETY_COMPLIANCE_UPGRADE = frozenset(
+    {
+        "food safety",
+        "fsma",
+        "haccp",
+        "food quality",
+        "sanitation",
+        "sqa",
+        "food",
+        "quality assurance",
+        "fda",
+    }
+)
 
 # Seniority tokens that override wrong-function signals (VP/C-level have budget authority)
-_SENIORITY_OVERRIDE = frozenset({
-    "vp", "v.p.", "vice president", "evp", "svp", "senior vice president",
-    "executive vice president",
-    "chief", "ceo", "coo", "cto", "cfo", "ciso", "cdo",
-    "president",
-    "partner", "managing partner", "managing director",
-    "owner", "co-founder", "founder",
-    "general manager",
-})
+_SENIORITY_OVERRIDE = frozenset(
+    {
+        "vp",
+        "v.p.",
+        "vice president",
+        "evp",
+        "svp",
+        "senior vice president",
+        "executive vice president",
+        "chief",
+        "ceo",
+        "coo",
+        "cto",
+        "cfo",
+        "ciso",
+        "cdo",
+        "president",
+        "partner",
+        "managing partner",
+        "managing director",
+        "owner",
+        "co-founder",
+        "founder",
+        "general manager",
+    }
+)
 
 # Apollo scraping artifact patterns embedded in title fields
 _ARTIFACT_PATTERNS = (
@@ -124,16 +224,18 @@ _ARTIFACT_PATTERNS = (
 # is >= 0.70 are eligible for draft generation.
 # ---------------------------------------------------------------------------
 
-_ALLOWED_PERSONAS: frozenset[str] = frozenset({
-    "vp_operations",
-    "vp_quality",
-    "plant_manager",
-    "director_operations",
-    "director_quality",
-    "director_manufacturing",
-    "coo",
-    "vp_supply_chain",
-})
+_ALLOWED_PERSONAS: frozenset[str] = frozenset(
+    {
+        "vp_operations",
+        "vp_quality",
+        "plant_manager",
+        "director_operations",
+        "director_quality",
+        "director_manufacturing",
+        "coo",
+        "vp_supply_chain",
+    }
+)
 
 # Minimum classification confidence required for outreach eligibility.
 # Below this floor, even an allowlisted persona is rejected (low confidence
@@ -144,23 +246,23 @@ _PERSONA_CONFIDENCE_FLOOR: float = 0.70
 # in discovery.py to the canonical allowlist names above. Anything not in this
 # map (or mapped to None) is NOT in the allowlist and will be rejected.
 _PERSONA_TYPE_TO_CLASSIFICATION: dict[str, str | None] = {
-    "vp_ops":                       "vp_operations",
-    "coo":                          "coo",
-    "plant_manager":                "plant_manager",
-    "director_ops":                 "director_operations",
-    "vp_supply_chain":              "vp_supply_chain",
-    "vp_quality_food_safety":       "vp_quality",
+    "vp_ops": "vp_operations",
+    "coo": "coo",
+    "plant_manager": "plant_manager",
+    "director_ops": "director_operations",
+    "vp_supply_chain": "vp_supply_chain",
+    "vp_quality_food_safety": "vp_quality",
     "director_quality_food_safety": "director_quality",
-    "vp_food_safety":               "vp_quality",
+    "vp_food_safety": "vp_quality",
     # maintenance_leader is in the allowlist: for PdM / furnace reliability
     # pitch, the Reliability/Maintenance Manager is often the first buyer.
-    "maintenance_leader":           "director_manufacturing",
+    "maintenance_leader": "director_manufacturing",
     # Roles below are intentionally NOT in the allowlist — they map to None
     # so is_eligible() will reject them even though they used to score above 0.
-    "regulatory_affairs_director":  None,
-    "compliance_manager_fb":        None,
-    "digital_transformation":       None,
-    "cio":                          None,
+    "regulatory_affairs_director": None,
+    "compliance_manager_fb": None,
+    "digital_transformation": None,
+    "cio": None,
 }
 
 
@@ -196,9 +298,8 @@ def is_eligible(contact: dict) -> bool:
     For LLM-classified contacts (`persona_source == "llm"`), missing
     confidence is treated as below the floor.
     """
-    classification = (
-        contact.get("persona_classification")
-        or normalize_persona_classification(contact.get("persona_type"))
+    classification = contact.get("persona_classification") or normalize_persona_classification(
+        contact.get("persona_type")
     )
     if classification not in _ALLOWED_PERSONAS:
         return False
@@ -225,6 +326,7 @@ def is_eligible(contact: dict) -> bool:
 # Manufacturer-only structural filter (P3.2)
 # ---------------------------------------------------------------------------
 
+
 def is_manufacturer_company(company: dict | None) -> bool:
     """Return True only when the company.tier is set and is not 'non_mfg'.
 
@@ -247,12 +349,13 @@ def is_manufacturer_company(company: dict | None) -> bool:
 # Core classification
 # ---------------------------------------------------------------------------
 
+
 def _strip_artifacts(title: str) -> str:
     """Remove Apollo scraping artifacts to recover the real title text."""
     t = title.lower().strip()
     for artifact in _ARTIFACT_PATTERNS:
         if artifact in t:
-            t = t[:t.index(artifact)].strip(" ,|-–—")
+            t = t[: t.index(artifact)].strip(" ,|-–—")
     return t
 
 
@@ -284,9 +387,20 @@ def classify_contact_tier(title: str | None) -> str:
     if _has_seniority(t):
         # Check if the seniority-override person is in a pure non-buyer function
         # (e.g., "Chief HR Officer" should still be borderline, not target)
-        if any(sig in t for sig in ("human resources", "hr ", "recrui", "talent acquisition",
-                                     "marketing", "public relations", "legal counsel",
-                                     "general counsel", "attorney")):
+        if any(
+            sig in t
+            for sig in (
+                "human resources",
+                "hr ",
+                "recrui",
+                "talent acquisition",
+                "marketing",
+                "public relations",
+                "legal counsel",
+                "general counsel",
+                "attorney",
+            )
+        ):
             return "borderline"
         return "target"
 
@@ -303,8 +417,12 @@ def classify_contact_tier(title: str | None) -> str:
     for signal in _BORDERLINE_SIGNALS:
         if signal in t:
             # Compliance titles with food-safety context are target buyers (FSMA 204)
-            if signal in ("compliance officer", "compliance manager", "compliance director",
-                          "regulatory affairs"):
+            if signal in (
+                "compliance officer",
+                "compliance manager",
+                "compliance director",
+                "regulatory affairs",
+            ):
                 if any(fs in t for fs in _FOOD_SAFETY_COMPLIANCE_UPGRADE):
                     return "target"
             return "borderline"
@@ -470,7 +588,7 @@ def check_email_name_consistency(
 
         # 2d: lastname+initial_at_end format (havasij, bodensteinerr)
         if local_clean.startswith(ln_norm):
-            suffix = local_clean[len(ln_norm):]
+            suffix = local_clean[len(ln_norm) :]
             if suffix and len(suffix) <= 2 and fn_initials and suffix[0] in fn_initials:
                 return True, "lastname_plus_initial_at_end"
 
@@ -496,6 +614,7 @@ def check_email_name_consistency(
 # ---------------------------------------------------------------------------
 # Convenience function for agents
 # ---------------------------------------------------------------------------
+
 
 def compute_ccs(contact_data: dict) -> float:
     """Compute Contact Confidence Score (0-100) for a contact dict.
@@ -551,7 +670,7 @@ def compute_ccs(contact_data: dict) -> float:
     elif raw_source_count >= 2:
         score += 10  # Two or more independent sources confirm this person
     elif raw_source_count >= 1:
-        score += 5   # Single source verified
+        score += 5  # Single source verified
 
     return min(round(score, 2), 100.0)
 
@@ -575,6 +694,7 @@ def screen_contact_at_import(contact_data: dict, db=None) -> dict:
     title = contact_data.get("title")
     if db is not None:
         from backend.app.core.title_classifier import TitleClassifier
+
         industry = contact_data.get("industry", "")
         tier, _confidence, _source = TitleClassifier(db).classify(title, industry)
     else:
@@ -603,7 +723,10 @@ def screen_contact_at_import(contact_data: dict, db=None) -> dict:
         if not consistent:
             logger.warning(
                 "Email-name mismatch at import: %s %s → %s (%s)",
-                first, last, email, reason,
+                first,
+                last,
+                email,
+                reason,
             )
             # Block outreach if email doesn't match the person — even if function is fine
             contact_data["is_outreach_eligible"] = False
@@ -612,6 +735,7 @@ def screen_contact_at_import(contact_data: dict, db=None) -> dict:
 
     # Compute CCS now that all gate fields are set
     from datetime import datetime, timezone
+
     contact_data["ccs_score"] = compute_ccs(contact_data)
     contact_data["ccs_computed_at"] = datetime.now(timezone.utc).isoformat()
 

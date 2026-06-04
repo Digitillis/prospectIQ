@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 # Voyage AI voyage-3-lite: 1024 dimensions, 32K context window
 _VOYAGE_MODEL = "voyage-3-lite"
 _VOYAGE_BATCH_SIZE = 128
-_CHUNK_TOKENS = 400       # ~400 tokens per chunk (conservative for voyage-3-lite 32K limit)
+_CHUNK_TOKENS = 400  # ~400 tokens per chunk (conservative for voyage-3-lite 32K limit)
 _CHUNK_OVERLAP_CHARS = 100
-_CHARS_PER_TOKEN = 4      # approximate
+_CHARS_PER_TOKEN = 4  # approximate
 
 
 class Embedder:
@@ -46,6 +46,7 @@ class Embedder:
         if self._voyage_key:
             try:
                 import voyageai  # type: ignore[import]
+
                 self._client = voyageai.Client(api_key=self._voyage_key)
                 logger.info("Embedder: using Voyage AI voyage-3-lite (vector mode)")
             except ImportError:

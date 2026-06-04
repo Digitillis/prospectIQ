@@ -200,9 +200,7 @@ def _format_learnings(learnings: list[dict]) -> list[str]:
         channel = item.get("channel", "")
         evidence = item.get("evidence_count", 0)
         context_tags = " | ".join(filter(None, [segment, channel]))
-        lines.append(
-            f"{idx}. [{context_tags}] {summary} (evidence: {evidence} data points)"
-        )
+        lines.append(f"{idx}. [{context_tags}] {summary} (evidence: {evidence} data points)")
     lines.append("")
     return lines
 

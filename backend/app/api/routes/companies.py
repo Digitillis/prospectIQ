@@ -56,8 +56,18 @@ async def create_company(body: dict):
         "pqs_timing": 0,
         "pqs_engagement": 0,
     }
-    for field in ("domain", "website", "industry", "sub_sector", "tier", "state",
-                  "employee_count", "revenue_range", "phone", "linkedin_url"):
+    for field in (
+        "domain",
+        "website",
+        "industry",
+        "sub_sector",
+        "tier",
+        "state",
+        "employee_count",
+        "revenue_range",
+        "phone",
+        "linkedin_url",
+    ):
         val = body.get(field)
         if val not in (None, ""):
             company_data[field] = val
@@ -104,16 +114,21 @@ async def get_linkedin_messages(
 
     # Source 1: LinkedIn drafts (channel=linkedin, approved)
     all_drafts = (
-        db._filter_ws(db.client.table("outreach_drafts")
-        .select(
-            "id, company_id, contact_id, sequence_name, sequence_step, body, "
-            "personalization_notes, approval_status, created_at"
-        ))
-        .eq("channel", "linkedin")
-        .eq("approval_status", "approved")
-        .order("created_at", desc=True)
-        .limit(limit * 5)
-    ).execute().data
+        (
+            db._filter_ws(
+                db.client.table("outreach_drafts").select(
+                    "id, company_id, contact_id, sequence_name, sequence_step, body, "
+                    "personalization_notes, approval_status, created_at"
+                )
+            )
+            .eq("channel", "linkedin")
+            .eq("approval_status", "approved")
+            .order("created_at", desc=True)
+            .limit(limit * 5)
+        )
+        .execute()
+        .data
+    )
 
     draft_map: dict[tuple, list[dict]] = defaultdict(list)
     for draft in all_drafts:
@@ -122,13 +137,14 @@ async def get_linkedin_messages(
 
     # Source 2: Contacts with linkedin_status != 'not_sent' (manually reached out)
     active_contacts_query = (
-        db._filter_ws(db.client.table("contacts")
-        .select(
-            "id, company_id, full_name, first_name, last_name, title, persona_type, "
-            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
-            "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
-            "linkedin_responded_at, linkedin_meeting_booked_at"
-        ))
+        db._filter_ws(
+            db.client.table("contacts").select(
+                "id, company_id, full_name, first_name, last_name, title, persona_type, "
+                "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
+                "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
+                "linkedin_responded_at, linkedin_meeting_booked_at"
+            )
+        )
         .neq("linkedin_status", "not_sent")
         .order("created_at", desc=True)
         .limit(limit * 3)
@@ -161,12 +177,13 @@ async def get_linkedin_messages(
     # Bulk fetch companies
     company_ids = list({cid for cid, _ in pairs})
     companies_result = (
-        db._filter_ws(db.client.table("companies")
-        .select(
-            "id, name, tier, sub_sector, industry, pqs_total, city, state, domain, "
-            "employee_count, revenue_printed, headcount_growth_6m, is_public, "
-            "parent_company_name, pain_signals, personalization_hooks, research_summary"
-        ))
+        db._filter_ws(
+            db.client.table("companies").select(
+                "id, name, tier, sub_sector, industry, pqs_total, city, state, domain, "
+                "employee_count, revenue_printed, headcount_growth_6m, is_public, "
+                "parent_company_name, pain_signals, personalization_hooks, research_summary"
+            )
+        )
         .in_("id", company_ids)
         .execute()
     )
@@ -176,8 +193,11 @@ async def get_linkedin_messages(
     research_by_company: dict[str, dict] = {}
     try:
         research_rows = (
-            db._filter_ws(db.client.table("research")
-            .select("company_id, research_intelligence, pain_points, known_systems, confidence_level, created_at"))
+            db._filter_ws(
+                db.client.table("research").select(
+                    "company_id, research_intelligence, pain_points, known_systems, confidence_level, created_at"
+                )
+            )
             .in_("company_id", company_ids)
             .order("created_at", desc=True)
             .limit(len(company_ids) * 2)  # at most 2 per company to get latest
@@ -196,13 +216,14 @@ async def get_linkedin_messages(
     contact_by_id = dict(contact_prefetch)
     if missing_contact_ids:
         contacts_result = (
-            db._filter_ws(db.client.table("contacts")
-            .select(
-                "id, company_id, full_name, first_name, last_name, title, persona_type, "
-                "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
-                "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
-                "linkedin_responded_at, linkedin_meeting_booked_at"
-            ))
+            db._filter_ws(
+                db.client.table("contacts").select(
+                    "id, company_id, full_name, first_name, last_name, title, persona_type, "
+                    "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, created_at, "
+                    "linkedin_connection_sent_at, linkedin_accepted_at, linkedin_dm_sent_at, "
+                    "linkedin_responded_at, linkedin_meeting_booked_at"
+                )
+            )
             .in_("id", missing_contact_ids)
             .execute()
         )
@@ -269,16 +290,19 @@ async def get_linkedin_messages(
                 "products_services": ri.get("products_services", []),
                 "recent_news": ri.get("recent_news", []),
                 "pain_points": ri.get("pain_points", []) or research_row.get("pain_points", []),
-                "known_systems": ri.get("known_systems", []) or research_row.get("known_systems", []),
+                "known_systems": ri.get("known_systems", [])
+                or research_row.get("known_systems", []),
                 "confidence": research_row.get("confidence_level"),
             }
 
-        results.append({
-            "contact": contact,
-            "company": company,
-            "drafts": drafts_for_contact,
-            "intel": intel,
-        })
+        results.append(
+            {
+                "contact": contact,
+                "company": company,
+                "drafts": drafts_for_contact,
+                "intel": intel,
+            }
+        )
 
         if len(results) >= limit:
             break
@@ -303,13 +327,14 @@ async def get_linkedin_contacts(
 
     # Fetch contacts with linkedin_url set
     q = (
-        db._filter_ws(db.client.table("contacts")
-        .select(
-            "id, company_id, full_name, first_name, last_name, title, persona_type, "
-            "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, "
-            "created_at, linkedin_connection_sent_at, linkedin_accepted_at, "
-            "linkedin_dm_sent_at, linkedin_responded_at, linkedin_meeting_booked_at"
-        ))
+        db._filter_ws(
+            db.client.table("contacts").select(
+                "id, company_id, full_name, first_name, last_name, title, persona_type, "
+                "is_decision_maker, linkedin_url, linkedin_status, linkedin_notes, status, "
+                "created_at, linkedin_connection_sent_at, linkedin_accepted_at, "
+                "linkedin_dm_sent_at, linkedin_responded_at, linkedin_meeting_booked_at"
+            )
+        )
         .not_.is_("linkedin_url", "null")
         .neq("linkedin_url", "")
         .like("linkedin_url", "%linkedin.com/in/%")
@@ -321,7 +346,9 @@ async def get_linkedin_contacts(
     if search and search.strip():
         q = q.ilike("full_name", f"%{search.strip()}%")
 
-    contacts = q.order("created_at", desc=False).range(offset, offset + limit - 1).execute().data or []
+    contacts = (
+        q.order("created_at", desc=False).range(offset, offset + limit - 1).execute().data or []
+    )
 
     if not contacts:
         return {"data": [], "count": 0, "total": 0}
@@ -329,8 +356,9 @@ async def get_linkedin_contacts(
     # Bulk fetch companies
     company_ids = list({c["company_id"] for c in contacts if c.get("company_id")})
     companies_result = (
-        db._filter_ws(db.client.table("companies")
-        .select("id, name, tier, sub_sector, pqs_total, domain"))
+        db._filter_ws(
+            db.client.table("companies").select("id, name, tier, sub_sector, pqs_total, domain")
+        )
         .in_("id", company_ids)
         .execute()
     )
@@ -342,10 +370,12 @@ async def get_linkedin_contacts(
         company = company_by_id.get(contact.get("company_id", ""), {})
         if tier and tier != "all" and not (company.get("tier", "") or "").startswith(tier):
             continue
-        results.append({
-            "contact": contact,
-            "company": company,
-        })
+        results.append(
+            {
+                "contact": contact,
+                "company": company,
+            }
+        )
 
     results.sort(key=lambda x: x["company"].get("pqs_total") or 0, reverse=True)
 
@@ -375,8 +405,12 @@ async def update_linkedin_status(contact_id: str, body: dict):
     Valid statuses: not_sent, connection_sent, accepted, dm_sent, responded, meeting_booked
     """
     valid_statuses = {
-        "not_sent", "connection_sent", "accepted",
-        "dm_sent", "responded", "meeting_booked",
+        "not_sent",
+        "connection_sent",
+        "accepted",
+        "dm_sent",
+        "responded",
+        "meeting_booked",
     }
     new_status = body.get("status", "")
     if new_status not in valid_statuses:
@@ -405,6 +439,7 @@ async def update_linkedin_status(contact_id: str, body: dict):
 
     # Update the contact linkedin_status, notes, and timestamp for this transition
     from datetime import datetime, timezone
+
     update_data: dict = {"linkedin_status": new_status}
     if notes:
         update_data["linkedin_notes"] = notes
@@ -431,21 +466,26 @@ async def update_linkedin_status(contact_id: str, body: dict):
     if company_id:
         try:
             from backend.app.core.config import get_settings
+
             settings = get_settings()
-            db.client.table("interactions").insert({
-                "company_id": company_id,
-                "contact_id": contact_id,
-                "type": "linkedin",
-                "channel": "linkedin",
-                "subject": f"LinkedIn: {new_status.replace('_', ' ').title()}",
-                "body": interaction_body,
-                "source": "manual",
-                "workspace_id": settings.default_workspace_id,
-            }).execute()
+            db.client.table("interactions").insert(
+                {
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "type": "linkedin",
+                    "channel": "linkedin",
+                    "subject": f"LinkedIn: {new_status.replace('_', ' ').title()}",
+                    "body": interaction_body,
+                    "source": "manual",
+                    "workspace_id": settings.default_workspace_id,
+                }
+            ).execute()
         except Exception:
             pass  # Interaction log failure must not block status update
 
-    return {"data": {"contact_id": contact_id, "linkedin_status": new_status, "linkedin_notes": notes}}
+    return {
+        "data": {"contact_id": contact_id, "linkedin_status": new_status, "linkedin_notes": notes}
+    }
 
 
 @router.get("/")
@@ -527,8 +567,18 @@ async def create_contact(company_id: str, body: dict):
         "status": "identified",
         "is_decision_maker": bool(body.get("is_decision_maker", False)),
     }
-    for field in ("full_name", "first_name", "last_name", "email", "title",
-                  "phone", "linkedin_url", "seniority", "department", "persona_type"):
+    for field in (
+        "full_name",
+        "first_name",
+        "last_name",
+        "email",
+        "title",
+        "phone",
+        "linkedin_url",
+        "seniority",
+        "department",
+        "persona_type",
+    ):
         val = body.get(field)
         if val not in (None, ""):
             contact_data[field] = val
@@ -602,7 +652,7 @@ async def enrich_company(company_id: str):
         raise HTTPException(status_code=404, detail="Company not found")
 
     try:
-        agent = EnrichmentAgent()
+        agent = EnrichmentAgent(workspace_id=get_workspace_id())
         result = agent.execute(company_ids=[company_id], limit=1)
     except Exception as e:
         logger.error(f"Enrichment agent failed for {company_id}: {e}")
@@ -615,7 +665,9 @@ async def enrich_company(company_id: str):
             "contacts_skipped": result.skipped,
             "errors": result.errors,
             "details": result.details,
-            "error_message": result.details[0].get("message", "") if result.errors > 0 and result.details else "",
+            "error_message": result.details[0].get("message", "")
+            if result.errors > 0 and result.details
+            else "",
         }
     }
 
@@ -654,23 +706,37 @@ async def import_companies_csv(file: UploadFile):
                 continue
 
         try:
-            employee_raw = row.get("employee_count", "").strip() or row.get("Employee Count", "").strip()
-            db.client.table("companies").insert(db._inject_ws({
-                "name": name,
-                "domain": domain or None,
-                "website": row.get("website", "").strip() or row.get("Website", "").strip() or None,
-                "industry": row.get("industry", "").strip() or row.get("Industry", "").strip() or None,
-                "state": row.get("state", "").strip() or row.get("State", "").strip() or None,
-                "tier": row.get("tier", "").strip() or row.get("Tier", "").strip() or None,
-                "employee_count": int(employee_raw) if employee_raw.isdigit() else None,
-                "revenue_range": row.get("revenue_range", "").strip() or row.get("Revenue Range", "").strip() or None,
-                "status": "discovered",
-                "pqs_total": 0,
-                "pqs_firmographic": 0,
-                "pqs_technographic": 0,
-                "pqs_timing": 0,
-                "pqs_engagement": 0,
-            })).execute()
+            employee_raw = (
+                row.get("employee_count", "").strip() or row.get("Employee Count", "").strip()
+            )
+            db.client.table("companies").insert(
+                db._inject_ws(
+                    {
+                        "name": name,
+                        "domain": domain or None,
+                        "website": row.get("website", "").strip()
+                        or row.get("Website", "").strip()
+                        or None,
+                        "industry": row.get("industry", "").strip()
+                        or row.get("Industry", "").strip()
+                        or None,
+                        "state": row.get("state", "").strip()
+                        or row.get("State", "").strip()
+                        or None,
+                        "tier": row.get("tier", "").strip() or row.get("Tier", "").strip() or None,
+                        "employee_count": int(employee_raw) if employee_raw.isdigit() else None,
+                        "revenue_range": row.get("revenue_range", "").strip()
+                        or row.get("Revenue Range", "").strip()
+                        or None,
+                        "status": "discovered",
+                        "pqs_total": 0,
+                        "pqs_firmographic": 0,
+                        "pqs_technographic": 0,
+                        "pqs_timing": 0,
+                        "pqs_engagement": 0,
+                    }
+                )
+            ).execute()
             imported += 1
         except Exception as e:
             errors.append(f"{name}: {str(e)[:100]}")
@@ -692,7 +758,9 @@ async def update_tags(company_id: str, body: dict):
     """
     db = Database(workspace_id=get_workspace_id())
     tags = body.get("tags", [])
-    db._filter_ws(db.client.table("companies").update({"custom_tags": tags})).eq("id", company_id).execute()
+    db._filter_ws(db.client.table("companies").update({"custom_tags": tags})).eq(
+        "id", company_id
+    ).execute()
     return {"data": {"company_id": company_id, "tags": tags}}
 
 
@@ -720,34 +788,44 @@ async def record_outcome(company_id: str, body: OutcomeRequest):
         raise HTTPException(status_code=404, detail="Company not found")
 
     status_map = {"won": "converted", "lost": "not_interested", "no_response": "paused"}
-    outcome_map = {"won": "meeting_booked", "lost": "replied_negative", "no_response": "no_response"}
+    outcome_map = {
+        "won": "meeting_booked",
+        "lost": "replied_negative",
+        "no_response": "no_response",
+    }
 
     new_status = status_map[body.outcome]
     db.update_company(company_id, {"status": new_status})
 
-    db.insert_interaction({
-        "company_id": company_id,
-        "type": "status_change",
-        "channel": "other",
-        "subject": f"Outcome recorded: {body.outcome}",
-        "body": body.notes or f"Outcome marked as '{body.outcome}' via dashboard",
-        "source": "manual",
-    })
+    db.insert_interaction(
+        {
+            "company_id": company_id,
+            "type": "status_change",
+            "channel": "other",
+            "subject": f"Outcome recorded: {body.outcome}",
+            "body": body.notes or f"Outcome marked as '{body.outcome}' via dashboard",
+            "source": "manual",
+        }
+    )
 
     contacts = db.get_contacts_for_company(company_id)
-    primary = next((c for c in contacts if c.get("is_decision_maker")), contacts[0] if contacts else None)
+    primary = next(
+        (c for c in contacts if c.get("is_decision_maker")), contacts[0] if contacts else None
+    )
 
-    db.insert_learning_outcome({
-        "company_id": company_id,
-        "contact_id": primary["id"] if primary else None,
-        "outreach_approach": "initial_outreach",
-        "channel": "email",
-        "outcome": outcome_map[body.outcome],
-        "company_tier": company.get("tier"),
-        "sub_sector": company.get("sub_sector") or company.get("industry", ""),
-        "persona_type": (primary or {}).get("persona_type", ""),
-        "pqs_at_time": company.get("pqs_total", 0),
-    })
+    db.insert_learning_outcome(
+        {
+            "company_id": company_id,
+            "contact_id": primary["id"] if primary else None,
+            "outreach_approach": "initial_outreach",
+            "channel": "email",
+            "outcome": outcome_map[body.outcome],
+            "company_tier": company.get("tier"),
+            "sub_sector": company.get("sub_sector") or company.get("industry", ""),
+            "persona_type": (primary or {}).get("persona_type", ""),
+            "pqs_at_time": company.get("pqs_total", 0),
+        }
+    )
 
     return {
         "data": {

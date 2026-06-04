@@ -18,6 +18,7 @@ router = APIRouter(prefix="/deals", tags=["deals"])
 def get_db() -> Database:
     return Database(workspace_id=get_workspace_id())
 
+
 VALID_STAGES = ["prospect", "qualified", "proposal", "negotiation", "won", "lost"]
 
 
@@ -99,7 +100,7 @@ class DealActivityResponse(BaseModel):
 @router.get("", response_model=DealListResponse)
 async def list_deals(
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
     stage: Optional[str] = Query(None),
     company_id: Optional[int] = Query(None),
     include_summary: bool = Query(True),
@@ -121,10 +122,14 @@ async def list_deals(
     if company_id:
         query = query.eq("company_id", company_id)
 
-    result = query.order("expected_close_date", desc=False).range(offset, offset + limit - 1).execute()
+    result = (
+        query.order("expected_close_date", desc=False).range(offset, offset + limit - 1).execute()
+    )
 
     # Get total count
-    count_query = db.client.table("deals").select("id", count="exact").eq("workspace_id", workspace_id)
+    count_query = (
+        db.client.table("deals").select("id", count="exact").eq("workspace_id", workspace_id)
+    )
     if stage:
         count_query = count_query.eq("stage", stage)
     if company_id:
@@ -146,7 +151,7 @@ async def list_deals(
 async def get_deal(
     deal_id: UUID,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Get a specific deal."""
     workspace_id = get_workspace_id()
@@ -172,7 +177,7 @@ async def get_deal(
 async def create_deal(
     deal: DealCreate,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Create a new deal."""
     if deal.stage not in VALID_STAGES:
@@ -191,7 +196,9 @@ async def create_deal(
         "currency": deal.currency,
         "stage": deal.stage,
         "probability": deal.probability,
-        "expected_close_date": deal.expected_close_date.isoformat() if deal.expected_close_date else None,
+        "expected_close_date": deal.expected_close_date.isoformat()
+        if deal.expected_close_date
+        else None,
         "source": deal.source,
         "created_by": user["id"],
         "notes": deal.notes,
@@ -212,7 +219,7 @@ async def update_deal(
     deal_id: UUID,
     update: DealUpdate,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Update a deal."""
     workspace_id = get_workspace_id()
@@ -266,7 +273,7 @@ async def update_deal(
 async def mark_deal_won(
     deal_id: UUID,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Mark a deal as won."""
     workspace_id = get_workspace_id()
@@ -299,7 +306,7 @@ async def mark_deal_lost(
     deal_id: UUID,
     reason_lost: str,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Mark a deal as lost with a reason."""
     workspace_id = get_workspace_id()
@@ -332,7 +339,7 @@ async def mark_deal_lost(
 async def delete_deal(
     deal_id: UUID,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Delete a deal."""
     workspace_id = get_workspace_id()
@@ -363,7 +370,7 @@ async def add_activity(
     deal_id: UUID,
     activity: DealActivityCreate,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Log an activity for a deal."""
     workspace_id = get_workspace_id()
@@ -404,7 +411,7 @@ async def add_activity(
 async def get_activities(
     deal_id: UUID,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Get all activities for a deal."""
     workspace_id = get_workspace_id()

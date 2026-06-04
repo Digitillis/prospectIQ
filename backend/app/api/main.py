@@ -652,10 +652,14 @@ def _run_dispatched_sweeper() -> None:
 def _run_process_due_sequences() -> None:
     """Hourly job: process engagement sequences with due follow-up actions."""
     try:
-        from backend.app.agents.engagement import EngagementAgent
+        from backend.app.core.workspace_scheduler import for_each_workspace
 
-        agent = EngagementAgent()
-        agent.run(action="process_due")
+        def _process_ws(ws: dict) -> None:
+            from backend.app.agents.engagement import EngagementAgent
+
+            EngagementAgent(workspace_id=ws["id"]).run(action="process_due")
+
+        for_each_workspace(_process_ws, "process_due")
     except Exception as e:
         logger.error(f"Scheduled process_due failed: {e}")
 
@@ -667,10 +671,14 @@ def _run_poll_instantly() -> None:
 
         if not get_settings().instantly_api_key:
             return
-        from backend.app.agents.engagement import EngagementAgent
+        from backend.app.core.workspace_scheduler import for_each_workspace
 
-        agent = EngagementAgent()
-        agent.run(action="poll_events")
+        def _poll_ws(ws: dict) -> None:
+            from backend.app.agents.engagement import EngagementAgent
+
+            EngagementAgent(workspace_id=ws["id"]).run(action="poll_events")
+
+        for_each_workspace(_poll_ws, "poll_instantly")
     except Exception as e:
         logger.error(f"Scheduled poll_instantly failed: {e}")
 
@@ -714,11 +722,15 @@ def _run_personalization_refresh() -> None:
 def _run_jit_pregenerate() -> None:
     """Every-24-hour job: pre-generate follow-up drafts due within the next 3 days."""
     try:
-        from backend.app.agents.engagement import EngagementAgent
+        from backend.app.core.workspace_scheduler import for_each_workspace
 
-        agent = EngagementAgent()
-        result = agent.run(action="jit_pregenerate")
-        logger.info(f"JIT pre-generate: {result}")
+        def _jit_ws(ws: dict) -> None:
+            from backend.app.agents.engagement import EngagementAgent
+
+            result = EngagementAgent(workspace_id=ws["id"]).run(action="jit_pregenerate")
+            logger.info(f"JIT pre-generate [{ws.get('name', ws['id'])}]: {result}")
+
+        for_each_workspace(_jit_ws, "jit_pregenerate")
     except Exception as e:
         logger.error(f"Scheduled jit_pregenerate failed: {e}")
 

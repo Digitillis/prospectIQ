@@ -80,7 +80,10 @@ class TestApprovalAtomicEnqueue:
         with (
             patch("backend.app.api.routes.approvals.get_db", return_value=db),
             patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
-            patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": "user-1"}),
+            patch(
+                "backend.app.api.routes.approvals.get_current_user",
+                return_value={"user_id": "user-1"},
+            ),
             patch("backend.app.api.routes.approvals.require_role", return_value=lambda: None),
         ):
             from backend.app.api.routes.approvals import approve_draft
@@ -115,7 +118,9 @@ class TestApprovalAtomicEnqueue:
         with (
             patch("backend.app.api.routes.approvals.get_db", return_value=db),
             patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
-            patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}),
+            patch(
+                "backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}
+            ),
             patch("backend.app.api.routes.approvals.require_role", return_value=lambda: None),
         ):
             from backend.app.api.routes.approvals import approve_draft
@@ -134,14 +139,19 @@ class TestApprovalAtomicEnqueue:
         import asyncio
 
         draft = _make_draft("pending")
-        db = _mock_db(draft=draft, rpc_result=[{**draft, "approval_status": "edited", "edited_body": "New body"}])
+        db = _mock_db(
+            draft=draft,
+            rpc_result=[{**draft, "approval_status": "edited", "edited_body": "New body"}],
+        )
 
         body = ApproveRequest(edited_body="New body")
 
         with (
             patch("backend.app.api.routes.approvals.get_db", return_value=db),
             patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
-            patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}),
+            patch(
+                "backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}
+            ),
             patch("backend.app.api.routes.approvals.require_role", return_value=lambda: None),
         ):
             request = MagicMock()
@@ -170,9 +180,7 @@ class TestRejectionNoQueueRow:
             patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
         ):
             body = RejectRequest(rejection_reason="Weak opener")
-            asyncio.get_event_loop().run_until_complete(
-                reject_draft(DRAFT_ID, body, _role=None)
-            )
+            asyncio.get_event_loop().run_until_complete(reject_draft(DRAFT_ID, body, _role=None))
 
         db.client.rpc.assert_not_called()
         db.update_outreach_draft.assert_called_once()
@@ -194,7 +202,10 @@ class TestPendingSecondReviewNoQueueRow:
             draft=draft,
             rpc_result=[{**draft, "approval_status": "pending_second_review"}],
         )
-        db.update_outreach_draft.return_value = {**draft, "approval_status": "pending_second_review"}
+        db.update_outreach_draft.return_value = {
+            **draft,
+            "approval_status": "pending_second_review",
+        }
 
         passing_report = MagicMock()
         passing_report.score = 90
@@ -204,7 +215,10 @@ class TestPendingSecondReviewNoQueueRow:
         with (
             patch("backend.app.api.routes.approvals.get_db", return_value=db),
             patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
-            patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": "reviewer-1"}),
+            patch(
+                "backend.app.api.routes.approvals.get_current_user",
+                return_value={"user_id": "reviewer-1"},
+            ),
             patch("backend.app.api.routes.approvals.require_role", return_value=lambda: None),
             patch("backend.app.core.draft_quality.validate_draft", return_value=passing_report),
         ):
@@ -233,7 +247,9 @@ class TestRpcFailureHandling:
         with (
             patch("backend.app.api.routes.approvals.get_db", return_value=db),
             patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
-            patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}),
+            patch(
+                "backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}
+            ),
             patch("backend.app.api.routes.approvals.require_role", return_value=lambda: None),
         ):
             request = MagicMock()
@@ -259,7 +275,9 @@ class TestQueueRowContents:
         with (
             patch("backend.app.api.routes.approvals.get_db", return_value=db),
             patch("backend.app.api.routes.approvals.get_workspace_id", return_value=WORKSPACE_ID),
-            patch("backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}),
+            patch(
+                "backend.app.api.routes.approvals.get_current_user", return_value={"user_id": ""}
+            ),
             patch("backend.app.api.routes.approvals.require_role", return_value=lambda: None),
         ):
             request = MagicMock()

@@ -74,6 +74,7 @@ def require_quota(action: QuotaAction = "research"):
     API key callers (non-billing auth) are allowed through — quota is only
     enforced for dashboard sessions where a workspace tier is known.
     """
+
     async def _check(ctx: WorkspaceContext = Depends(require_workspace_member)) -> None:
         # Subscription status gate
         if ctx.subscription_status not in _ACTIVE_STATUSES:

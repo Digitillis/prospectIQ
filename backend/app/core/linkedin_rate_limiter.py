@@ -55,9 +55,11 @@ class LinkedInRateLimiter:
             return False
 
         try:
-            self.db.client.table("provider_rate_limits").update({
-                "tokens_used": row["tokens_used"] + count,
-            }).eq("id", row["id"]).execute()
+            self.db.client.table("provider_rate_limits").update(
+                {
+                    "tokens_used": row["tokens_used"] + count,
+                }
+            ).eq("id", row["id"]).execute()
             return True
         except Exception as e:
             logger.error(f"RateLimiter.consume: update failed: {e}")
@@ -84,6 +86,7 @@ class LinkedInRateLimiter:
     def reset_time(self, provider: str) -> str:
         """ISO timestamp of when the window resets (midnight UTC)."""
         from datetime import timedelta
+
         tomorrow = date.today() + timedelta(days=1)
         reset_dt = datetime(tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=timezone.utc)
         return reset_dt.isoformat()

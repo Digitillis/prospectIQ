@@ -71,6 +71,7 @@ def _load_jwks() -> list[tuple[str, str, Any]]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _decode_bearer(token: str) -> dict[str, Any]:
     """Decode a Supabase JWT using JWKS (ES256/RS256) or legacy HS256 secret."""
     settings = get_settings()
@@ -169,6 +170,7 @@ def _fetch_workspace(workspace_id: str) -> dict[str, Any] | None:
 # FastAPI dependencies
 # ---------------------------------------------------------------------------
 
+
 async def get_current_user(request: Request) -> dict[str, Any]:
     """Resolve the calling identity from Authorization or X-API-Key header.
 
@@ -186,9 +188,13 @@ async def get_current_user(request: Request) -> dict[str, Any]:
 
         # If workspace_id wasn't in the JWT claims, look it up from the DB
         if not user["workspace_id"]:
-            logger.debug(f"get_current_user: workspace_id not in JWT, looking up for user_id={user['user_id']}")
+            logger.debug(
+                f"get_current_user: workspace_id not in JWT, looking up for user_id={user['user_id']}"
+            )
             user["workspace_id"] = _lookup_workspace_for_user(user["user_id"])
-            logger.debug(f"get_current_user: workspace_members lookup result={user['workspace_id']}")
+            logger.debug(
+                f"get_current_user: workspace_members lookup result={user['workspace_id']}"
+            )
 
         logger.debug(f"get_current_user: returning user={user}")
         return user
@@ -345,6 +351,7 @@ def get_db():
     """Return a Database instance with workspace_id from context."""
     from backend.app.core.database import Database
     from backend.app.core.workspace import get_workspace_id
+
     ws_id = get_workspace_id()
     logger.debug(f"get_db() called: workspace_id from context={ws_id}")
     return Database(workspace_id=ws_id)

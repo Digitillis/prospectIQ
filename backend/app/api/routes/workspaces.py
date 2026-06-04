@@ -38,6 +38,7 @@ router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 # Models
 # ---------------------------------------------------------------------------
 
+
 class WorkspaceUpdateRequest(BaseModel):
     name: str | None = None
     settings: dict | None = None
@@ -51,7 +52,7 @@ class InviteMemberRequest(BaseModel):
 class AuditLogQuery(BaseModel):
     limit: int = 50
     offset: int = 0
-    action: str | None = None   # filter by action prefix, e.g. "member."
+    action: str | None = None  # filter by action prefix, e.g. "member."
 
 
 class CreateApiKeyRequest(BaseModel):
@@ -62,6 +63,7 @@ class CreateApiKeyRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_audit(
     client,
@@ -77,16 +79,18 @@ def _write_audit(
 ) -> None:
     """Insert a row into workspace_audit_log.  Best-effort — never raises."""
     try:
-        client.table("workspace_audit_log").insert({
-            "workspace_id": workspace_id,
-            "user_id": user_id,
-            "user_email": user_email,
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "metadata": metadata or {},
-            "ip_address": ip_address,
-        }).execute()
+        client.table("workspace_audit_log").insert(
+            {
+                "workspace_id": workspace_id,
+                "user_id": user_id,
+                "user_email": user_email,
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "metadata": metadata or {},
+                "ip_address": ip_address,
+            }
+        ).execute()
     except Exception:
         logger.debug("audit log write failed for action=%s", action, exc_info=True)
 
@@ -108,17 +112,14 @@ def _generate_api_key() -> tuple[str, str, str]:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/me")
-async def get_workspace(ctx: WorkspaceContext = Depends(require_workspace_member)) -> dict[str, Any]:
+async def get_workspace(
+    ctx: WorkspaceContext = Depends(require_workspace_member),
+) -> dict[str, Any]:
     """Return the calling user's workspace."""
     client = get_supabase_client()
-    result = (
-        client.table("workspaces")
-        .select("*")
-        .eq("id", ctx.workspace_id)
-        .limit(1)
-        .execute()
-    )
+    result = client.table("workspaces").select("*").eq("id", ctx.workspace_id).limit(1).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return result.data[0]
@@ -139,12 +140,7 @@ async def update_workspace(
     if not update_data:
         raise HTTPException(status_code=400, detail="Nothing to update")
 
-    result = (
-        client.table("workspaces")
-        .update(update_data)
-        .eq("id", ctx.workspace_id)
-        .execute()
-    )
+    result = client.table("workspaces").update(update_data).eq("id", ctx.workspace_id).execute()
     return result.data[0] if result.data else {}
 
 
@@ -170,17 +166,30 @@ async def remove_member(
 ) -> None:
     """Remove a member from the workspace (owners cannot be removed)."""
     client = get_supabase_client()
-    result = client.table("workspace_members").select("role, email").eq("workspace_id", ctx.workspace_id).eq("user_id", user_id).limit(1).execute()
+    result = (
+        client.table("workspace_members")
+        .select("role, email")
+        .eq("workspace_id", ctx.workspace_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
     if result.data and result.data[0].get("role") == "owner":
         raise HTTPException(status_code=400, detail="Cannot remove workspace owner")
 
     removed_email = result.data[0].get("email") if result.data else None
-    client.table("workspace_members").delete().eq("workspace_id", ctx.workspace_id).eq("user_id", user_id).execute()
+    client.table("workspace_members").delete().eq("workspace_id", ctx.workspace_id).eq(
+        "user_id", user_id
+    ).execute()
 
     _write_audit(
-        client, ctx.workspace_id, "member.removed",
-        user_id=ctx.user_id, user_email=ctx.user_email,
-        resource_type="workspace_member", resource_id=user_id,
+        client,
+        ctx.workspace_id,
+        "member.removed",
+        user_id=ctx.user_id,
+        user_email=ctx.user_email,
+        resource_type="workspace_member",
+        resource_id=user_id,
         metadata={"removed_email": removed_email},
         ip_address=request.client.host if request.client else None,
     )
@@ -202,7 +211,13 @@ async def invite_member(
     client = get_supabase_client()
 
     # Check seats limit
-    ws = client.table("workspaces").select("seats_limit, name, owner_email").eq("id", ctx.workspace_id).limit(1).execute()
+    ws = (
+        client.table("workspaces")
+        .select("seats_limit, name, owner_email")
+        .eq("id", ctx.workspace_id)
+        .limit(1)
+        .execute()
+    )
     if not ws.data:
         raise HTTPException(status_code=404, detail="Workspace not found")
     ws_row = ws.data[0]
@@ -240,16 +255,22 @@ async def invite_member(
     app_base_url = os.environ.get("APP_BASE_URL", "https://app.prospectiq.ai")
     invite_url = f"{app_base_url}/invite/{invite_token}"
 
-    result = client.table("workspace_members").insert({
-        "workspace_id": ctx.workspace_id,
-        "user_id": None,           # Unknown until they sign up / log in
-        "email": body.email,
-        "role": body.role,
-        "invited_by": ctx.user_id,
-        "status": "pending",
-        "invite_token": invite_token,
-        "invited_at": datetime.datetime.utcnow().isoformat(),
-    }).execute()
+    result = (
+        client.table("workspace_members")
+        .insert(
+            {
+                "workspace_id": ctx.workspace_id,
+                "user_id": None,  # Unknown until they sign up / log in
+                "email": body.email,
+                "role": body.role,
+                "invited_by": ctx.user_id,
+                "status": "pending",
+                "invite_token": invite_token,
+                "invited_at": datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        .execute()
+    )
 
     row = result.data[0] if result.data else {}
 
@@ -265,9 +286,13 @@ async def invite_member(
         logger.warning("Failed to send invite email to %s: %s", body.email, exc)
 
     _write_audit(
-        client, ctx.workspace_id, "member.invited",
-        user_id=ctx.user_id, user_email=ctx.user_email,
-        resource_type="workspace_member", resource_id=str(row.get("id", "")),
+        client,
+        ctx.workspace_id,
+        "member.invited",
+        user_id=ctx.user_id,
+        user_email=ctx.user_email,
+        resource_type="workspace_member",
+        resource_id=str(row.get("id", "")),
         metadata={"invitee_email": body.email, "role": body.role},
         ip_address=request.client.host if request.client else None,
     )
@@ -280,6 +305,7 @@ async def invite_member(
 # ---------------------------------------------------------------------------
 # Usage summary
 # ---------------------------------------------------------------------------
+
 
 @router.get("/me/usage")
 async def get_usage(ctx: WorkspaceContext = Depends(require_workspace_member)) -> dict[str, Any]:
@@ -309,9 +335,22 @@ async def get_usage(ctx: WorkspaceContext = Depends(require_workspace_member)) -
         return q.execute().count or 0
 
     qualified = sum(
-        _count("companies", status=s) for s in ("qualified", "outreach_pending", "contacted", "engaged", "meeting_scheduled", "pilot_discussion", "pilot_signed", "active_pilot", "converted")
+        _count("companies", status=s)
+        for s in (
+            "qualified",
+            "outreach_pending",
+            "contacted",
+            "engaged",
+            "meeting_scheduled",
+            "pilot_discussion",
+            "pilot_signed",
+            "active_pilot",
+            "converted",
+        )
     )
-    hot_prospects = _count("companies", status="qualified")  # companies scored hot_prospect keep status=qualified
+    hot_prospects = _count(
+        "companies", status="qualified"
+    )  # companies scored hot_prospect keep status=qualified
 
     contacts_total = _count("contacts")
 
@@ -370,6 +409,7 @@ async def get_usage(ctx: WorkspaceContext = Depends(require_workspace_member)) -
 # Audit log
 # ---------------------------------------------------------------------------
 
+
 @router.get("/me/audit-log")
 async def get_audit_log(
     limit: int = 50,
@@ -413,6 +453,7 @@ async def get_audit_log(
 # API Keys
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api-keys")
 async def list_api_keys(ctx: WorkspaceContext = Depends(require_workspace_member)) -> list[dict]:
     """List all active API keys for the workspace (key hash not returned)."""
@@ -438,21 +479,31 @@ async def create_api_key(
     raw_key, key_hash, key_prefix = _generate_api_key()
 
     client = get_supabase_client()
-    result = client.table("workspace_api_keys").insert({
-        "workspace_id": ctx.workspace_id,
-        "name": body.name,
-        "key_hash": key_hash,
-        "key_prefix": key_prefix,
-        "scopes": body.scopes,
-    }).execute()
+    result = (
+        client.table("workspace_api_keys")
+        .insert(
+            {
+                "workspace_id": ctx.workspace_id,
+                "name": body.name,
+                "key_hash": key_hash,
+                "key_prefix": key_prefix,
+                "scopes": body.scopes,
+            }
+        )
+        .execute()
+    )
 
     row = result.data[0] if result.data else {}
     key_id = str(row.get("id", ""))
 
     _write_audit(
-        client, ctx.workspace_id, "api_key.created",
-        user_id=ctx.user_id, user_email=ctx.user_email,
-        resource_type="workspace_api_key", resource_id=key_id,
+        client,
+        ctx.workspace_id,
+        "api_key.created",
+        user_id=ctx.user_id,
+        user_email=ctx.user_email,
+        resource_type="workspace_api_key",
+        resource_id=key_id,
         metadata={"name": body.name, "scopes": body.scopes, "key_prefix": key_prefix},
         ip_address=request.client.host if request.client else None,
     )
@@ -469,13 +520,17 @@ async def revoke_api_key(
 ) -> None:
     """Revoke an API key."""
     client = get_supabase_client()
-    client.table("workspace_api_keys").update({
-        "revoked_at": datetime.datetime.utcnow().isoformat()
-    }).eq("id", key_id).eq("workspace_id", ctx.workspace_id).execute()
+    client.table("workspace_api_keys").update(
+        {"revoked_at": datetime.datetime.utcnow().isoformat()}
+    ).eq("id", key_id).eq("workspace_id", ctx.workspace_id).execute()
 
     _write_audit(
-        client, ctx.workspace_id, "api_key.revoked",
-        user_id=ctx.user_id, user_email=ctx.user_email,
-        resource_type="workspace_api_key", resource_id=key_id,
+        client,
+        ctx.workspace_id,
+        "api_key.revoked",
+        user_id=ctx.user_id,
+        user_email=ctx.user_email,
+        resource_type="workspace_api_key",
+        resource_id=key_id,
         ip_address=request.client.host if request.client else None,
     )

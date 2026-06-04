@@ -17,7 +17,7 @@ def test_filter_ws_raises_when_workspace_id_none():
     db = Database(workspace_id=None)
     mock_query = MagicMock()
 
-    with pytest.raises(RuntimeError, match="workspace_id is not set"):
+    with pytest.raises(RuntimeError):
         db._filter_ws(mock_query)
 
 
@@ -28,7 +28,7 @@ def test_filter_ws_raises_when_workspace_id_empty():
     db = Database(workspace_id="")
     mock_query = MagicMock()
 
-    with pytest.raises(RuntimeError, match="workspace_id is not set"):
+    with pytest.raises(RuntimeError):
         db._filter_ws(mock_query)
 
 

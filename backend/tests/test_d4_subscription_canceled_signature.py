@@ -45,8 +45,10 @@ def test_apply_subscription_canceled_uses_caller_seats_limit():
     execute_calls: list[tuple] = []
 
     mock_conn = AsyncMock()
+
     async def capture_execute(query, *args):
         execute_calls.append((query, args))
+
     mock_conn.execute.side_effect = capture_execute
     mock_conn.fetchval = AsyncMock(return_value=None)  # workspace_id lookup
 
@@ -55,11 +57,13 @@ def test_apply_subscription_canceled_uses_caller_seats_limit():
     mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
     adapter._pool = mock_pool
 
-    _run(adapter.apply_subscription_canceled(
-        workspace_id="ws-1",
-        subscription_id="sub_123",
-        free_tier_seats_limit=7,  # caller-specified, NOT hardcoded
-    ))
+    _run(
+        adapter.apply_subscription_canceled(
+            workspace_id="ws-1",
+            subscription_id="sub_123",
+            free_tier_seats_limit=7,  # caller-specified, NOT hardcoded
+        )
+    )
 
     # Find the UPDATE call
     update_calls = [(q, a) for q, a in execute_calls if "UPDATE" in q.upper()]
@@ -67,9 +71,7 @@ def test_apply_subscription_canceled_uses_caller_seats_limit():
 
     query, args = update_calls[0]
     # seats_limit should be the caller-supplied 7, not a hardcoded value
-    assert 7 in args, (
-        f"Expected free_tier_seats_limit=7 in the UPDATE args, got: {args}"
-    )
+    assert 7 in args, f"Expected free_tier_seats_limit=7 in the UPDATE args, got: {args}"
 
 
 def test_apply_subscription_canceled_without_free_tier_seats_limit_still_works():
@@ -88,11 +90,13 @@ def test_apply_subscription_canceled_without_free_tier_seats_limit_still_works()
 
     # Must not raise — free_tier_seats_limit has a default fallback
     try:
-        _run(adapter.apply_subscription_canceled(
-            workspace_id="ws-1",
-            subscription_id="sub_123",
-            # free_tier_seats_limit not provided — uses default
-        ))
+        _run(
+            adapter.apply_subscription_canceled(
+                workspace_id="ws-1",
+                subscription_id="sub_123",
+                # free_tier_seats_limit not provided — uses default
+            )
+        )
     except TypeError as e:
         pytest.fail(f"Should not raise TypeError: {e}")
 
@@ -113,16 +117,20 @@ def test_webhook_handler_calls_adapter_with_three_args():
 
     tier_plans = {
         "free": TierPlan(tier="free", label="Free", price_id="", monthly_usd=0, seats_limit=5),
-        "starter": TierPlan(tier="starter", label="Starter", price_id="", monthly_usd=99, seats_limit=10),
+        "starter": TierPlan(
+            tier="starter", label="Starter", price_id="", monthly_usd=99, seats_limit=10
+        ),
     }
     handler = BillingWebhookHandler(adapter, tier_plans, free_tier="free")
 
     event = {
         "type": "customer.subscription.deleted",
-        "data": {"object": {
-            "id": "sub_123",
-            "metadata": {"workspace_id": "ws-abc"},
-        }},
+        "data": {
+            "object": {
+                "id": "sub_123",
+                "metadata": {"workspace_id": "ws-abc"},
+            }
+        },
     }
 
     asyncio.get_event_loop().run_until_complete(handler.dispatch(event))

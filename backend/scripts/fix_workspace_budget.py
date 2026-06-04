@@ -19,8 +19,12 @@ from backend.app.core.database import get_supabase_client
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Raise workspace monthly API budget cap")
-    parser.add_argument("--budget", type=float, default=350.0, help="New monthly budget in USD (default: 350)")
-    parser.add_argument("--dry-run", action="store_true", help="Print what would change without writing")
+    parser.add_argument(
+        "--budget", type=float, default=350.0, help="New monthly budget in USD (default: 350)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print what would change without writing"
+    )
     args = parser.parse_args()
 
     client = get_supabase_client()
@@ -47,7 +51,9 @@ def main() -> None:
             print("  [dry-run — not written]")
             continue
 
-        client.table("workspaces").update({"settings": json.dumps(new_settings)}).eq("id", ws_id).execute()
+        client.table("workspaces").update({"settings": json.dumps(new_settings)}).eq(
+            "id", ws_id
+        ).execute()
         print("  [updated]")
 
     if not args.dry_run:

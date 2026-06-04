@@ -39,6 +39,7 @@ def get_db() -> Database:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class GoalsUpdateRequest(BaseModel):
     researched_target: Optional[int] = None
     emails_sent_target: Optional[int] = None
@@ -48,15 +49,22 @@ class GoalsUpdateRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
-    company_id: Optional[str] = None   # scope to one company if provided
-    max_context_items: int = 20         # cap context fed to Claude
+    company_id: Optional[str] = None  # scope to one company if provided
+    max_context_items: int = 20  # cap context fed to Claude
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _safe_count(db: Database, table: str, filters: dict | None = None, not_null: str | None = None, is_null: str | None = None) -> int:
+
+def _safe_count(
+    db: Database,
+    table: str,
+    filters: dict | None = None,
+    not_null: str | None = None,
+    is_null: str | None = None,
+) -> int:
     """Count rows in a table, returning 0 on any error."""
     try:
         q = db._filter_ws(db.client.table(table).select("id", count="exact"))
@@ -181,8 +189,14 @@ def _get_cost_breakdown(db: Database) -> dict:
             agent = c.get("agent_name") or "unknown"
             by_agent[agent] = by_agent.get(agent, 0) + (c.get("estimated_cost_usd") or 0)
 
-        research_cost = sum(v for k, v in by_agent.items() if "research" in k.lower() or "discovery" in k.lower())
-        draft_cost = sum(v for k, v in by_agent.items() if "outreach" in k.lower() or "draft" in k.lower() or "thread" in k.lower())
+        research_cost = sum(
+            v for k, v in by_agent.items() if "research" in k.lower() or "discovery" in k.lower()
+        )
+        draft_cost = sum(
+            v
+            for k, v in by_agent.items()
+            if "outreach" in k.lower() or "draft" in k.lower() or "thread" in k.lower()
+        )
 
         return {
             "total_usd": round(total, 4),
@@ -251,8 +265,7 @@ def _get_pending_drafts_top(db: Database, limit: int = 5) -> list[dict]:
     try:
         result = (
             db._filter_ws(
-                db.client.table("outreach_drafts")
-                .select(
+                db.client.table("outreach_drafts").select(
                     "id, subject, body, sequence_name, sequence_step, created_at, quality_score, "
                     "companies(id, name, tier, pqs_total, campaign_cluster), "
                     "contacts(id, full_name, title, persona_type)"
@@ -277,8 +290,9 @@ def _get_hot_signals_top(db: Database, limit: int = 5) -> list[dict]:
     try:
         result = (
             db._filter_ws(
-                db.client.table("companies")
-                .select("id, name, tier, pqs_total, campaign_cluster, status, intent_score, research_summary, pain_signals")
+                db.client.table("companies").select(
+                    "id, name, tier, pqs_total, campaign_cluster, status, intent_score, research_summary, pain_signals"
+                )
             )
             .gt("intent_score", 0)
             .in_("status", ["discovered", "qualified", "researched"])
@@ -306,11 +320,14 @@ def _get_billing_status(db: Database) -> dict:
     """Get billing tier and usage percentage."""
     try:
         from backend.app.core.config import get_settings
+
         settings = get_settings()
         workspace_id = get_workspace_id()
 
         # Get current month company count
-        month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0).isoformat()
+        month_start = (
+            datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0).isoformat()
+        )
         r = (
             db._filter_ws(db.client.table("companies").select("id", count="exact"))
             .gte("created_at", month_start)
@@ -320,8 +337,18 @@ def _get_billing_status(db: Database) -> dict:
 
         # Get workspace billing tier
         try:
-            ws_result = db.client.table("workspaces").select("billing_tier").eq("id", workspace_id).limit(1).execute()
-            tier = (ws_result.data[0].get("billing_tier") or "starter") if ws_result.data else "starter"
+            ws_result = (
+                db.client.table("workspaces")
+                .select("billing_tier")
+                .eq("id", workspace_id)
+                .limit(1)
+                .execute()
+            )
+            tier = (
+                (ws_result.data[0].get("billing_tier") or "starter")
+                if ws_result.data
+                else "starter"
+            )
         except Exception:
             tier = "starter"
 
@@ -352,6 +379,7 @@ def _get_billing_status(db: Database) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api/intelligence/signals")
 async def get_signals():
     """Intent signals (research-detected) and buying signals (behavioral)."""
@@ -362,8 +390,9 @@ async def get_signals():
     try:
         rows = (
             db._filter_ws(
-                db.client.table("companies")
-                .select("id, name, tier, pqs_total, campaign_cluster, status, intent_score, pain_signals, personalization_hooks, research_summary")
+                db.client.table("companies").select(
+                    "id, name, tier, pqs_total, campaign_cluster, status, intent_score, pain_signals, personalization_hooks, research_summary"
+                )
             )
             .gt("intent_score", 0)
             .order("intent_score", desc=True)
@@ -377,22 +406,25 @@ async def get_signals():
             pain = c.get("pain_signals") or []
             if isinstance(pain, str):
                 import json
+
                 try:
                     pain = json.loads(pain)
                 except Exception:
                     pain = [pain]
-            intent_signals.append({
-                "company_id": c["id"],
-                "company_name": c.get("name", "Unknown"),
-                "tier": c.get("tier"),
-                "pqs_total": c.get("pqs_total") or 0,
-                "cluster": c.get("campaign_cluster"),
-                "status": c.get("status"),
-                "intent_score": score,
-                "intent_level": level,
-                "pain_signals": pain[:3] if isinstance(pain, list) else [],
-                "research_summary": (c.get("research_summary") or "")[:150],
-            })
+            intent_signals.append(
+                {
+                    "company_id": c["id"],
+                    "company_name": c.get("name", "Unknown"),
+                    "tier": c.get("tier"),
+                    "pqs_total": c.get("pqs_total") or 0,
+                    "cluster": c.get("campaign_cluster"),
+                    "status": c.get("status"),
+                    "intent_score": score,
+                    "intent_level": level,
+                    "pain_signals": pain[:3] if isinstance(pain, list) else [],
+                    "research_summary": (c.get("research_summary") or "")[:150],
+                }
+            )
     except Exception as exc:
         logger.warning(f"Intent signals query failed: {exc}")
 
@@ -401,14 +433,16 @@ async def get_signals():
     try:
         rows = (
             db._filter_ws(
-                db.client.table("contacts")
-                .select(
+                db.client.table("contacts").select(
                     "id, full_name, title, persona_type, outreach_state, open_count, click_count, "
                     "companies!contacts_company_id_fkey(id, name, tier, pqs_total, campaign_cluster)"
                 )
             )
             .gt("open_count", 2)
-            .in_("outreach_state", ["touch_1_sent", "touch_2_sent", "touch_3_sent", "touch_4_sent", "touch_5_sent"])
+            .in_(
+                "outreach_state",
+                ["touch_1_sent", "touch_2_sent", "touch_3_sent", "touch_4_sent", "touch_5_sent"],
+            )
             .order("open_count", desc=True)
             .limit(20)
             .execute()
@@ -421,22 +455,24 @@ async def get_signals():
             level = "hot" if score >= 20 else "warm" if score >= 8 else "warming"
             signal = "link click detected" if clicks > 0 else f"{opens} email opens"
             company = r.get("companies") or {}
-            buying_signals.append({
-                "contact_id": r["id"],
-                "contact_name": r.get("full_name"),
-                "title": r.get("title"),
-                "persona_type": r.get("persona_type"),
-                "company_id": company.get("id"),
-                "company_name": company.get("name"),
-                "tier": company.get("tier"),
-                "pqs_total": company.get("pqs_total") or 0,
-                "cluster": company.get("campaign_cluster"),
-                "open_count": opens,
-                "click_count": clicks,
-                "signal_description": signal,
-                "intent_level": level,
-                "outreach_state": r.get("outreach_state"),
-            })
+            buying_signals.append(
+                {
+                    "contact_id": r["id"],
+                    "contact_name": r.get("full_name"),
+                    "title": r.get("title"),
+                    "persona_type": r.get("persona_type"),
+                    "company_id": company.get("id"),
+                    "company_name": company.get("name"),
+                    "tier": company.get("tier"),
+                    "pqs_total": company.get("pqs_total") or 0,
+                    "cluster": company.get("campaign_cluster"),
+                    "open_count": opens,
+                    "click_count": clicks,
+                    "signal_description": signal,
+                    "intent_level": level,
+                    "outreach_state": r.get("outreach_state"),
+                }
+            )
     except Exception as exc:
         logger.debug(f"Buying signals query failed: {exc}")
 
@@ -453,6 +489,7 @@ async def get_funnel(days: int = Query(default=30, ge=1, le=365)):
     """Full funnel counts and conversion rates."""
     db = get_db()
     from backend.app.analytics.funnel import FunnelAnalytics
+
     fa = FunnelAnalytics(db)
     funnel = fa.get_funnel_counts(days=days)
     reply_by_vertical = fa.get_reply_rate_by_vertical(days=days)
@@ -469,6 +506,7 @@ async def get_velocity():
     """Pipeline velocity in days per stage."""
     db = get_db()
     from backend.app.analytics.funnel import FunnelAnalytics
+
     fa = FunnelAnalytics(db)
     velocity = fa.get_pipeline_velocity()
     return {"data": velocity}
@@ -483,6 +521,7 @@ async def get_costs_intelligence():
     # Weekly spend trend
     try:
         from backend.app.analytics.funnel import FunnelAnalytics
+
         fa = FunnelAnalytics(db)
         weekly = fa.get_weekly_activity(weeks=8)
     except Exception:
@@ -492,12 +531,17 @@ async def get_costs_intelligence():
     anthropic_balance = None
     try:
         from backend.app.core.config import get_settings
+
         settings = get_settings()
         if settings.anthropic_api_key:
             import httpx
+
             resp = httpx.get(
                 "https://api.anthropic.com/v1/account/credits",
-                headers={"x-api-key": settings.anthropic_api_key, "anthropic-version": "2023-06-01"},
+                headers={
+                    "x-api-key": settings.anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                },
                 timeout=5,
             )
             if resp.status_code == 200:
@@ -518,6 +562,7 @@ async def get_weekly_activity(weeks: int = Query(default=8, ge=1, le=52)):
     """Weekly activity for sparklines."""
     db = get_db()
     from backend.app.analytics.funnel import FunnelAnalytics
+
     fa = FunnelAnalytics(db)
     weekly = fa.get_weekly_activity(weeks=weeks)
     return {"data": weekly}
@@ -549,9 +594,13 @@ async def update_goals(body: GoalsUpdateRequest):
         # Try upsert into app_settings
         existing = db.client.table("app_settings").select("id").eq("key", "weekly_goals").execute()
         if existing.data:
-            db.client.table("app_settings").update({"value": merged}).eq("key", "weekly_goals").execute()
+            db.client.table("app_settings").update({"value": merged}).eq(
+                "key", "weekly_goals"
+            ).execute()
         else:
-            db.client.table("app_settings").insert({"key": "weekly_goals", "value": merged}).execute()
+            db.client.table("app_settings").insert(
+                {"key": "weekly_goals", "value": merged}
+            ).execute()
     except Exception as exc:
         logger.warning(f"Could not persist goals (app_settings may not have 'value' column): {exc}")
 
@@ -615,42 +664,55 @@ async def get_command_center():
     }
 
     # Attention items
-    pending_drafts_count = _safe_count(db, "outreach_drafts", {"approval_status": "pending"}, is_null="sent_at")
+    pending_drafts_count = _safe_count(
+        db, "outreach_drafts", {"approval_status": "pending"}, is_null="sent_at"
+    )
     threads_needing_action = _get_threads_needing_action(db, limit=5)
     hot_signals_count = 0
     try:
-        r = db._filter_ws(db.client.table("companies").select("id", count="exact")).gt("intent_score", 15).execute()
+        r = (
+            db._filter_ws(db.client.table("companies").select("id", count="exact"))
+            .gt("intent_score", 15)
+            .execute()
+        )
         hot_signals_count = r.count or 0
     except Exception:
         pass
 
     attention_items: list[dict] = []
     if len(threads_needing_action) > 0:
-        attention_items.append({
-            "type": "replies",
-            "count": len(threads_needing_action),
-            "label": f"{len(threads_needing_action)} {'reply needs' if len(threads_needing_action) == 1 else 'replies need'} classification",
-            "href": "/threads",
-        })
+        attention_items.append(
+            {
+                "type": "replies",
+                "count": len(threads_needing_action),
+                "label": f"{len(threads_needing_action)} {'reply needs' if len(threads_needing_action) == 1 else 'replies need'} classification",
+                "href": "/threads",
+            }
+        )
     if pending_drafts_count > 0:
-        attention_items.append({
-            "type": "drafts",
-            "count": pending_drafts_count,
-            "label": f"{pending_drafts_count} {'draft' if pending_drafts_count == 1 else 'drafts'} ready to approve",
-            "href": "/outreach",
-        })
+        attention_items.append(
+            {
+                "type": "drafts",
+                "count": pending_drafts_count,
+                "label": f"{pending_drafts_count} {'draft' if pending_drafts_count == 1 else 'drafts'} ready to approve",
+                "href": "/outreach",
+            }
+        )
     if hot_signals_count > 0:
-        attention_items.append({
-            "type": "signals",
-            "count": hot_signals_count,
-            "label": f"{hot_signals_count} {'company flagged' if hot_signals_count == 1 else 'companies flagged'} hot",
-            "href": "/signals",
-        })
+        attention_items.append(
+            {
+                "type": "signals",
+                "count": hot_signals_count,
+                "label": f"{hot_signals_count} {'company flagged' if hot_signals_count == 1 else 'companies flagged'} hot",
+                "href": "/signals",
+            }
+        )
 
     # Funnel summary
     funnel_summary: dict[str, Any] = {}
     try:
         from backend.app.analytics.funnel import FunnelAnalytics
+
         fa = FunnelAnalytics(db)
         funnel_summary = fa.get_funnel_counts(days=30)
     except Exception:
@@ -678,6 +740,7 @@ async def get_command_center():
 # ---------------------------------------------------------------------------
 # Ask ProspectIQ — natural language Q&A over your pipeline intelligence
 # ---------------------------------------------------------------------------
+
 
 @router.post("/ask")
 async def ask_prospectiq(body: AskRequest):
@@ -707,6 +770,7 @@ async def ask_prospectiq(body: AskRequest):
 
     if not question:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail="question is required")
 
     # ------------------------------------------------------------------
@@ -778,18 +842,12 @@ async def ask_prospectiq(body: AskRequest):
     try:
         int_query = db._filter_ws(
             db.client.table("interactions").select(
-                "type, channel, subject, created_at, company_id, "
-                "companies(name)"
+                "type, channel, subject, created_at, company_id, companies(name)"
             )
         )
         if company_id:
             int_query = int_query.eq("company_id", company_id)
-        interactions = (
-            int_query
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
-        ).data or []
+        interactions = (int_query.order("created_at", desc=True).limit(limit).execute()).data or []
 
         if interactions:
             lines = ["RECENT INTERACTIONS:"]
@@ -798,7 +856,7 @@ async def ask_prospectiq(body: AskRequest):
                 lines.append(
                     f"  - {i.get('created_at', '')[:10]} | {co_name} | "
                     f"{i.get('type', '')} via {i.get('channel', '')} | "
-                    f"\"{i.get('subject', '')[:80]}\""
+                    f'"{i.get("subject", "")[:80]}"'
                 )
             context_blocks.append("\n".join(lines))
     except Exception as e:
@@ -818,6 +876,7 @@ async def ask_prospectiq(body: AskRequest):
 
         if outcomes:
             from collections import Counter
+
             outcome_counts = Counter(o.get("outcome", "") for o in outcomes)
             sector_counts = Counter(o.get("sub_sector", "Unknown") for o in outcomes)
             lines = [
@@ -863,6 +922,7 @@ async def ask_prospectiq(body: AskRequest):
     except Exception as e:
         logger.error(f"ask: Claude call failed: {e}")
         from fastapi import HTTPException
+
         raise HTTPException(status_code=500, detail=f"AI call failed: {str(e)[:100]}")
 
     return {

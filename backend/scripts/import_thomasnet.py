@@ -79,44 +79,55 @@ SOURCE_TAG = "thomasnet"
 # ---------------------------------------------------------------------------
 
 NAICS_TIER_MAP: dict[str, str] = {
-    "333": "mfg1",   # Industrial Machinery
-    "332": "mfg2",   # Metal Fabrication
-    "336": "mfg3",   # Automotive / Transportation
-    "335": "mfg4",   # Electrical Equipment
-    "334": "mfg5",   # Electronics / Semiconductors
+    "333": "mfg1",  # Industrial Machinery
+    "332": "mfg2",  # Metal Fabrication
+    "336": "mfg3",  # Automotive / Transportation
+    "335": "mfg4",  # Electrical Equipment
+    "334": "mfg5",  # Electronics / Semiconductors
     "3364": "mfg6",  # Aerospace & Defense
-    "331": "mfg7",   # Primary Metals
-    "326": "mfg8",   # Plastics & Rubber
+    "331": "mfg7",  # Primary Metals
+    "326": "mfg8",  # Plastics & Rubber
     "325": "pmfg1",  # Chemical
     "211": "pmfg2",  # Oil & Gas Extraction
     "324": "pmfg3",  # Petroleum Refining
     "212": "pmfg4",  # Mining
     "221": "pmfg5",  # Utilities
-    "3254": "pmfg6", # Pharma / Biotech
+    "3254": "pmfg6",  # Pharma / Biotech
     "322": "pmfg7",  # Paper & Pulp
     "327": "pmfg8",  # Cement / Glass / Ceramics
-    "311": "fb1",    # Food Manufacturing
-    "312": "fb2",    # Beverage Manufacturing
-    "3116": "fb3",   # Meat & Poultry
-    "3115": "fb4",   # Dairy
+    "311": "fb1",  # Food Manufacturing
+    "312": "fb2",  # Beverage Manufacturing
+    "3116": "fb3",  # Meat & Poultry
+    "3115": "fb4",  # Dairy
 }
 
 # ThomasNet export column name variants (they change slightly between exports)
 COLUMN_ALIASES: dict[str, list[str]] = {
-    "name":          ["Company Name", "company_name", "Company", "Name", "COMPANY NAME"],
-    "street":        ["Street", "Address", "Street Address", "address_line1"],
-    "city":          ["City", "CITY"],
-    "state":         ["State", "STATE", "State/Province"],
-    "zip":           ["Zip", "ZIP", "Postal Code", "zip_code"],
-    "phone":         ["Phone", "PHONE", "Telephone", "phone_number"],
-    "website":       ["Website", "URL", "Web Address", "website_url", "Domain"],
-    "annual_sales":  ["Annual Sales", "Annual Revenue", "Revenue", "annual_revenue", "Sales Volume"],
-    "employees":     ["Employees", "Employee Count", "# Employees", "Number of Employees", "employee_count"],
-    "sic_code":      ["SIC Code", "SIC", "sic"],
-    "naics_code":    ["NAICS Code", "NAICS", "naics"],
-    "description":   ["Product/Service Description", "Description", "Products/Services", "Business Description"],
-    "years_in_biz":  ["Years in Business", "Founded", "Year Founded", "established"],
-    "ownership":     ["Ownership Type", "Ownership", "ownership_type"],
+    "name": ["Company Name", "company_name", "Company", "Name", "COMPANY NAME"],
+    "street": ["Street", "Address", "Street Address", "address_line1"],
+    "city": ["City", "CITY"],
+    "state": ["State", "STATE", "State/Province"],
+    "zip": ["Zip", "ZIP", "Postal Code", "zip_code"],
+    "phone": ["Phone", "PHONE", "Telephone", "phone_number"],
+    "website": ["Website", "URL", "Web Address", "website_url", "Domain"],
+    "annual_sales": ["Annual Sales", "Annual Revenue", "Revenue", "annual_revenue", "Sales Volume"],
+    "employees": [
+        "Employees",
+        "Employee Count",
+        "# Employees",
+        "Number of Employees",
+        "employee_count",
+    ],
+    "sic_code": ["SIC Code", "SIC", "sic"],
+    "naics_code": ["NAICS Code", "NAICS", "naics"],
+    "description": [
+        "Product/Service Description",
+        "Description",
+        "Products/Services",
+        "Business Description",
+    ],
+    "years_in_biz": ["Years in Business", "Founded", "Year Founded", "established"],
+    "ownership": ["Ownership Type", "Ownership", "ownership_type"],
 }
 
 
@@ -198,15 +209,15 @@ def _infer_tier(naics_code: str | None, sic_code: str | None) -> str:
         sic = sic_code.strip()[:4]
         sic_int = int(sic) if sic.isdigit() else 0
         if 3310 <= sic_int <= 3399:
-            return "mfg7"   # Primary metals / fabrication
+            return "mfg7"  # Primary metals / fabrication
         if 3400 <= sic_int <= 3499:
-            return "mfg2"   # Fabricated metal products
+            return "mfg2"  # Fabricated metal products
         if 3500 <= sic_int <= 3599:
-            return "mfg1"   # Industrial / commercial machinery
+            return "mfg1"  # Industrial / commercial machinery
         if 3600 <= sic_int <= 3699:
-            return "mfg4"   # Electrical equipment
+            return "mfg4"  # Electrical equipment
         if 3700 <= sic_int <= 3799:
-            return "mfg3"   # Transportation equipment
+            return "mfg3"  # Transportation equipment
         if 2600 <= sic_int <= 2699:
             return "pmfg7"  # Paper
         if 2800 <= sic_int <= 2899:
@@ -216,9 +227,9 @@ def _infer_tier(naics_code: str | None, sic_code: str | None) -> str:
         if 3290 <= sic_int <= 3299:
             return "pmfg8"  # Concrete / glass
         if 2000 <= sic_int <= 2099:
-            return "fb1"    # Food
+            return "fb1"  # Food
         if 2080 <= sic_int <= 2089:
-            return "fb2"    # Beverages
+            return "fb2"  # Beverages
     return "mfg1"  # Default — industrial machinery (most common ThomasNet category)
 
 
@@ -275,8 +286,15 @@ def _calc_firmographic_score(
         if is_midwest(state):
             score += 5
         elif state in {
-            "Pennsylvania", "Kentucky", "Tennessee", "North Carolina",
-            "Alabama", "Texas", "Georgia", "South Carolina", "Virginia",
+            "Pennsylvania",
+            "Kentucky",
+            "Tennessee",
+            "North Carolina",
+            "Alabama",
+            "Texas",
+            "Georgia",
+            "South Carolina",
+            "Virginia",
         }:
             score += 2
 
@@ -290,6 +308,7 @@ def _calc_firmographic_score(
 # ---------------------------------------------------------------------------
 # Main import logic
 # ---------------------------------------------------------------------------
+
 
 def import_thomasnet(
     filepath: Path,
@@ -341,7 +360,9 @@ def import_thomasnet(
         header_map = _normalise_header(raw_headers)
 
         if not header_map:
-            console.print("[red]ERROR: Could not map any CSV columns. Check column names match ThomasNet export format.[/red]")
+            console.print(
+                "[red]ERROR: Could not map any CSV columns. Check column names match ThomasNet export format.[/red]"
+            )
             console.print(f"  Found columns: {raw_headers}")
             console.print(f"  Expected one of: {list(COLUMN_ALIASES.keys())}")
             sys.exit(1)
@@ -379,7 +400,7 @@ def import_thomasnet(
             emp_ok = (employees is None) or (min_employees <= employees <= max_employees)
             rev_ok = (revenue is None) or (min_revenue <= revenue <= max_revenue)
             # If both are None we can't filter — include tentatively (research will score)
-            both_unknown = (employees is None and revenue is None)
+            both_unknown = employees is None and revenue is None
 
             if not both_unknown and not (emp_ok and rev_ok):
                 stats["skipped_filter"] += 1
@@ -413,15 +434,17 @@ def import_thomasnet(
 
             if dry_run:
                 stats["inserted"] += 1
-                rows_preview.append({
-                    "name": name,
-                    "state": state or "?",
-                    "tier": tier,
-                    "employees": str(employees) if employees else "?",
-                    "revenue": f"${revenue:,}" if revenue else "?",
-                    "pqs": str(firmographic_score),
-                    "status": "[cyan]would insert[/cyan]",
-                })
+                rows_preview.append(
+                    {
+                        "name": name,
+                        "state": state or "?",
+                        "tier": tier,
+                        "employees": str(employees) if employees else "?",
+                        "revenue": f"${revenue:,}" if revenue else "?",
+                        "pqs": str(firmographic_score),
+                        "status": "[cyan]would insert[/cyan]",
+                    }
+                )
                 continue
 
             # --- Deduplication: check by domain, then by name ---
@@ -433,28 +456,32 @@ def import_thomasnet(
 
             if existing:
                 stats["skipped_duplicate"] += 1
-                rows_preview.append({
+                rows_preview.append(
+                    {
+                        "name": name,
+                        "state": state or "?",
+                        "tier": tier,
+                        "employees": str(employees) if employees else "?",
+                        "revenue": f"${revenue:,}" if revenue else "?",
+                        "pqs": str(firmographic_score),
+                        "status": "[dim]duplicate — skipped[/dim]",
+                    }
+                )
+                continue
+
+            db.insert_company(company_payload)
+            stats["inserted"] += 1
+            rows_preview.append(
+                {
                     "name": name,
                     "state": state or "?",
                     "tier": tier,
                     "employees": str(employees) if employees else "?",
                     "revenue": f"${revenue:,}" if revenue else "?",
                     "pqs": str(firmographic_score),
-                    "status": "[dim]duplicate — skipped[/dim]",
-                })
-                continue
-
-            db.insert_company(company_payload)
-            stats["inserted"] += 1
-            rows_preview.append({
-                "name": name,
-                "state": state or "?",
-                "tier": tier,
-                "employees": str(employees) if employees else "?",
-                "revenue": f"${revenue:,}" if revenue else "?",
-                "pqs": str(firmographic_score),
-                "status": "[green]inserted[/green]",
-            })
+                    "status": "[green]inserted[/green]",
+                }
+            )
 
         except Exception as e:
             logger.error(f"Error processing row '{data.get('name', '?')}': {e}")
@@ -462,7 +489,9 @@ def import_thomasnet(
 
     # --- Summary table (show first 50 rows) ---
     if rows_preview:
-        table = Table(title=f"ThomasNet Import — {'DRY RUN ' if dry_run else ''}Results (first 50 shown)")
+        table = Table(
+            title=f"ThomasNet Import — {'DRY RUN ' if dry_run else ''}Results (first 50 shown)"
+        )
         table.add_column("Company", max_width=32)
         table.add_column("State", max_width=4)
         table.add_column("Tier", max_width=8)
@@ -472,8 +501,13 @@ def import_thomasnet(
         table.add_column("Status")
         for r in rows_preview[:50]:
             table.add_row(
-                r["name"], r["state"], r["tier"],
-                r["employees"], r["revenue"], r["pqs"], r["status"],
+                r["name"],
+                r["state"],
+                r["tier"],
+                r["employees"],
+                r["revenue"],
+                r["pqs"],
+                r["status"],
             )
         console.print()
         console.print(table)
@@ -529,10 +563,21 @@ TAGGING (for easy removal if needed)
     parser.add_argument("--file", required=True, help="Path to ThomasNet CSV export")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     parser.add_argument("--tier", default=None, help="Force all records into this tier (e.g. mfg2)")
-    parser.add_argument("--min-employees", type=int, default=100, help="Min employees (default 100)")
-    parser.add_argument("--max-employees", type=int, default=5000, help="Max employees (default 5000)")
-    parser.add_argument("--min-revenue", type=int, default=25_000_000, help="Min revenue dollars (default 25000000)")
-    parser.add_argument("--max-revenue", type=int, default=500_000_000, help="Max revenue dollars (default 500000000)")
+    parser.add_argument(
+        "--min-employees", type=int, default=100, help="Min employees (default 100)"
+    )
+    parser.add_argument(
+        "--max-employees", type=int, default=5000, help="Max employees (default 5000)"
+    )
+    parser.add_argument(
+        "--min-revenue", type=int, default=25_000_000, help="Min revenue dollars (default 25000000)"
+    )
+    parser.add_argument(
+        "--max-revenue",
+        type=int,
+        default=500_000_000,
+        help="Max revenue dollars (default 500000000)",
+    )
     args = parser.parse_args()
 
     filepath = Path(args.file)
@@ -541,6 +586,7 @@ TAGGING (for easy removal if needed)
         sys.exit(1)
 
     from dotenv import load_dotenv
+
     load_dotenv()
 
     import_thomasnet(

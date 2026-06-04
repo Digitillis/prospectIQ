@@ -27,13 +27,13 @@ DEFAULT_DEAL_SIZE_USD = 48_000.0
 
 # Conversion rate assumptions per stage (probability of reaching closed_won)
 _STAGE_WIN_PROBABILITY = {
-    "outreach_sent": 0.02,      # 2% of all contacted close
-    "replied":       0.10,      # 10% of replies close
-    "interested":    0.25,      # 25% of interested close
-    "demo_booked":   0.40,      # 40% of demos close
-    "proposal":      0.60,
-    "closed_won":    1.0,
-    "closed_lost":   0.0,
+    "outreach_sent": 0.02,  # 2% of all contacted close
+    "replied": 0.10,  # 10% of replies close
+    "interested": 0.25,  # 25% of interested close
+    "demo_booked": 0.40,  # 40% of demos close
+    "proposal": 0.60,
+    "closed_won": 1.0,
+    "closed_lost": 0.0,
 }
 
 _POSITIVE_STATES = {"replied", "demo_scheduled", "closed_won"}
@@ -72,7 +72,9 @@ class RevenueAnalytics:
             DealStage(
                 stage="outreach_sent",
                 count=outreach_sent,
-                est_value_usd=outreach_sent * deal_size_usd * _STAGE_WIN_PROBABILITY["outreach_sent"],
+                est_value_usd=outreach_sent
+                * deal_size_usd
+                * _STAGE_WIN_PROBABILITY["outreach_sent"],
             ),
             DealStage(
                 stage="replied",
@@ -137,12 +139,17 @@ class RevenueAnalytics:
         # --- By channel ---
         by_channel: list[ChannelROI] = []
         try:
-            drafts = self.db._filter_ws(
-                self.db.client.table("outreach_drafts").select(
-                    "channel, sent_at, "
-                    "contacts(outreach_state)"
+            drafts = (
+                self.db._filter_ws(
+                    self.db.client.table("outreach_drafts").select(
+                        "channel, sent_at, contacts(outreach_state)"
+                    )
                 )
-            ).not_.is_("sent_at", "null").execute().data or []
+                .not_.is_("sent_at", "null")
+                .execute()
+                .data
+                or []
+            )
 
             channel_buckets: dict[str, dict[str, int]] = {}
             for d in drafts:
@@ -154,12 +161,14 @@ class RevenueAnalytics:
                     channel_buckets[ch]["replied"] += 1
 
             for ch, b in channel_buckets.items():
-                by_channel.append(ChannelROI(
-                    channel=ch,
-                    total_sent=b["sent"],
-                    total_replied=b["replied"],
-                    reply_rate_pct=_safe_div(b["replied"], b["sent"]),
-                ))
+                by_channel.append(
+                    ChannelROI(
+                        channel=ch,
+                        total_sent=b["sent"],
+                        total_replied=b["replied"],
+                        reply_rate_pct=_safe_div(b["replied"], b["sent"]),
+                    )
+                )
             by_channel.sort(key=lambda x: x.reply_rate_pct, reverse=True)
         except Exception as exc:
             logger.error(f"get_activity_roi by_channel failed: {exc}")
@@ -167,12 +176,17 @@ class RevenueAnalytics:
         # --- By sequence ---
         by_sequence: list[SequenceROI] = []
         try:
-            seq_rows = self.db._filter_ws(
-                self.db.client.table("outreach_drafts").select(
-                    "sequence_name, sent_at, "
-                    "contacts(outreach_state)"
+            seq_rows = (
+                self.db._filter_ws(
+                    self.db.client.table("outreach_drafts").select(
+                        "sequence_name, sent_at, contacts(outreach_state)"
+                    )
                 )
-            ).not_.is_("sent_at", "null").execute().data or []
+                .not_.is_("sent_at", "null")
+                .execute()
+                .data
+                or []
+            )
 
             seq_buckets: dict[str, dict[str, int]] = {}
             for r in seq_rows:
@@ -184,12 +198,14 @@ class RevenueAnalytics:
                     seq_buckets[name]["replied"] += 1
 
             for name, b in seq_buckets.items():
-                by_sequence.append(SequenceROI(
-                    sequence_name=name,
-                    total_sent=b["sent"],
-                    total_replied=b["replied"],
-                    reply_rate_pct=_safe_div(b["replied"], b["sent"]),
-                ))
+                by_sequence.append(
+                    SequenceROI(
+                        sequence_name=name,
+                        total_sent=b["sent"],
+                        total_replied=b["replied"],
+                        reply_rate_pct=_safe_div(b["replied"], b["sent"]),
+                    )
+                )
             by_sequence.sort(key=lambda x: x.reply_rate_pct, reverse=True)
         except Exception as exc:
             logger.error(f"get_activity_roi by_sequence failed: {exc}")
@@ -200,12 +216,16 @@ class RevenueAnalytics:
         # --- By cluster ---
         by_cluster: list[dict] = []
         try:
-            cluster_rows = self.db._filter_ws(
-                self.db.client.table("contacts").select(
-                    "outreach_state, "
-                    "companies(campaign_cluster)"
+            cluster_rows = (
+                self.db._filter_ws(
+                    self.db.client.table("contacts").select(
+                        "outreach_state, companies(campaign_cluster)"
+                    )
                 )
-            ).execute().data or []
+                .execute()
+                .data
+                or []
+            )
 
             cluster_buckets: dict[str, dict[str, int]] = {}
             for r in cluster_rows:
@@ -218,12 +238,14 @@ class RevenueAnalytics:
                     cluster_buckets[cluster]["replied"] += 1
 
             for cluster, b in cluster_buckets.items():
-                by_cluster.append({
-                    "cluster": cluster,
-                    "total_sequenced": b["total"],
-                    "replied": b["replied"],
-                    "reply_rate_pct": _safe_div(b["replied"], b["total"]),
-                })
+                by_cluster.append(
+                    {
+                        "cluster": cluster,
+                        "total_sequenced": b["total"],
+                        "replied": b["replied"],
+                        "reply_rate_pct": _safe_div(b["replied"], b["total"]),
+                    }
+                )
             by_cluster.sort(key=lambda x: x["reply_rate_pct"], reverse=True)
         except Exception as exc:
             logger.error(f"get_activity_roi by_cluster failed: {exc}")
@@ -251,13 +273,19 @@ class RevenueAnalytics:
 
         total_pipeline = sum(
             funnel.get(s, 0)
-            for s in ("discovered", "enriched", "sequenced",
-                      "touch_1_sent", "touch_2_sent", "touch_3_sent",
-                      "replied", "demo_scheduled", "closed_won")
+            for s in (
+                "discovered",
+                "enriched",
+                "sequenced",
+                "touch_1_sent",
+                "touch_2_sent",
+                "touch_3_sent",
+                "replied",
+                "demo_scheduled",
+                "closed_won",
+            )
         )
-        total_contacted = sum(
-            funnel.get(f"touch_{n}_sent", 0) for n in range(1, 6)
-        )
+        total_contacted = sum(funnel.get(f"touch_{n}_sent", 0) for n in range(1, 6))
         total_replied = funnel.get("replied", 0)
         total_interested = funnel.get("demo_scheduled", 0) + funnel.get("closed_won", 0)
 
@@ -275,9 +303,7 @@ class RevenueAnalytics:
             since_14 = _since_iso(14)
             # Companies in "researched" state that haven't advanced
             r = (
-                self.db._filter_ws(
-                    self.db.client.table("companies").select("id", count="exact")
-                )
+                self.db._filter_ws(self.db.client.table("companies").select("id", count="exact"))
                 .eq("status", "researched")
                 .lt("updated_at", since_14)
                 .execute()
@@ -306,11 +332,16 @@ class RevenueAnalytics:
     def _get_best_cluster(self) -> str:
         """Return cluster name with highest reply rate (min 5 contacts)."""
         try:
-            rows = self.db._filter_ws(
-                self.db.client.table("contacts").select(
-                    "outreach_state, companies(campaign_cluster)"
+            rows = (
+                self.db._filter_ws(
+                    self.db.client.table("contacts").select(
+                        "outreach_state, companies(campaign_cluster)"
+                    )
                 )
-            ).execute().data or []
+                .execute()
+                .data
+                or []
+            )
 
             buckets: dict[str, dict] = {}
             for r in rows:
@@ -323,7 +354,11 @@ class RevenueAnalytics:
                     buckets[cluster]["replied"] += 1
 
             best = max(
-                ((k, _safe_div(v["replied"], v["total"])) for k, v in buckets.items() if v["total"] >= 5),
+                (
+                    (k, _safe_div(v["replied"], v["total"]))
+                    for k, v in buckets.items()
+                    if v["total"] >= 5
+                ),
                 key=lambda x: x[1],
                 default=("Unknown", 0.0),
             )
@@ -334,11 +369,17 @@ class RevenueAnalytics:
     def _get_best_sequence(self) -> str:
         """Return sequence name with highest reply rate (min 10 sent)."""
         try:
-            rows = self.db._filter_ws(
-                self.db.client.table("outreach_drafts").select(
-                    "sequence_name, sent_at, contacts(outreach_state)"
+            rows = (
+                self.db._filter_ws(
+                    self.db.client.table("outreach_drafts").select(
+                        "sequence_name, sent_at, contacts(outreach_state)"
+                    )
                 )
-            ).not_.is_("sent_at", "null").execute().data or []
+                .not_.is_("sent_at", "null")
+                .execute()
+                .data
+                or []
+            )
 
             buckets: dict[str, dict] = {}
             for r in rows:
@@ -350,7 +391,11 @@ class RevenueAnalytics:
                     buckets[name]["replied"] += 1
 
             best = max(
-                ((k, _safe_div(v["replied"], v["sent"])) for k, v in buckets.items() if v["sent"] >= 10),
+                (
+                    (k, _safe_div(v["replied"], v["sent"]))
+                    for k, v in buckets.items()
+                    if v["sent"] >= 10
+                ),
                 key=lambda x: x[1],
                 default=("Unknown", 0.0),
             )
@@ -362,8 +407,13 @@ class RevenueAnalytics:
     def _find_bottleneck(funnel: dict) -> str:
         """Find stage with highest absolute drop-off from previous stage."""
         stages = [
-            "discovered", "enriched", "sequenced",
-            "touch_1_sent", "replied", "demo_scheduled", "closed_won",
+            "discovered",
+            "enriched",
+            "sequenced",
+            "touch_1_sent",
+            "replied",
+            "demo_scheduled",
+            "closed_won",
         ]
         max_drop = 0
         bottleneck = "enriched"

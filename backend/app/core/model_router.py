@@ -30,9 +30,9 @@ HAIKU = "claude-haiku-4-5-20251001"
 # Explicit task → model mapping.  Add new task types here as needed.
 _TASK_MODEL: dict[str, str] = {
     # Outreach drafts — step-aware routing
-    "outreach_step1": SONNET,         # Cold opens: first impression, highest quality bar
-    "outreach_step2plus": HAIKU,      # Follow-ups: shorter, formulaic, prospect has context
-    "draft_score": HAIKU,             # Quality scoring: classification task, merged into draft call
+    "outreach_step1": SONNET,  # Cold opens: first impression, highest quality bar
+    "outreach_step2plus": HAIKU,  # Follow-ups: shorter, formulaic, prospect has context
+    "draft_score": HAIKU,  # Quality scoring: classification task, merged into draft call
     # Legacy key — kept for any callers not yet migrated
     "outreach": SONNET,
     # Research

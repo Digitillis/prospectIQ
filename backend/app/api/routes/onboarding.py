@@ -35,24 +35,29 @@ router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 # Models
 # ---------------------------------------------------------------------------
 
+
 class Step1Vertical(BaseModel):
-    vertical: str               # e.g. "manufacturing", "food_beverage", "general"
+    vertical: str  # e.g. "manufacturing", "food_beverage", "general"
     sub_verticals: list[str] = []
 
+
 class Step2Senders(BaseModel):
-    senders: list[dict]         # [{name, email}, ...]
+    senders: list[dict]  # [{name, email}, ...]
     reply_to: str
+
 
 class Step3Credentials(BaseModel):
     apollo_api_key: str | None = None
     resend_api_key: str | None = None
 
+
 class Step4ReplyInbox(BaseModel):
     gmail_user: str
     gmail_app_password: str
 
+
 class Step5Import(BaseModel):
-    mode: str = "discovery"     # "discovery" | "csv_uploaded"
+    mode: str = "discovery"  # "discovery" | "csv_uploaded"
     csv_company_count: int = 0  # how many rows were uploaded (informational)
 
 
@@ -60,14 +65,11 @@ class Step5Import(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _update_workspace_settings(workspace_id: str, updates: dict) -> None:
     client = get_supabase_client()
     row = (
-        client.table("workspaces")
-        .select("settings")
-        .eq("id", workspace_id)
-        .limit(1)
-        .execute()
+        client.table("workspaces").select("settings").eq("id", workspace_id).limit(1).execute()
     ).data
     current = (row[0]["settings"] or {}) if row else {}
     merged = {**current, **updates}
@@ -77,11 +79,7 @@ def _update_workspace_settings(workspace_id: str, updates: dict) -> None:
 def _get_workspace_settings(workspace_id: str) -> dict:
     client = get_supabase_client()
     row = (
-        client.table("workspaces")
-        .select("settings")
-        .eq("id", workspace_id)
-        .limit(1)
-        .execute()
+        client.table("workspaces").select("settings").eq("id", workspace_id).limit(1).execute()
     ).data
     return (row[0]["settings"] or {}) if row else {}
 
@@ -89,6 +87,7 @@ def _get_workspace_settings(workspace_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("/status")
 async def onboarding_status(
@@ -114,11 +113,16 @@ async def step1_vertical(
     ctx: WorkspaceContext = Depends(require_workspace_member),
 ) -> dict[str, Any]:
     """Step 1: Choose target industry vertical."""
-    _update_workspace_settings(ctx.workspace_id, {
-        "vertical": body.vertical,
-        "sub_verticals": body.sub_verticals,
-        "onboarding_step": max(1, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)),
-    })
+    _update_workspace_settings(
+        ctx.workspace_id,
+        {
+            "vertical": body.vertical,
+            "sub_verticals": body.sub_verticals,
+            "onboarding_step": max(
+                1, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)
+            ),
+        },
+    )
     return {"ok": True, "step": 1, "vertical": body.vertical}
 
 
@@ -144,25 +148,34 @@ async def step2_senders(
     ).data
 
     if existing:
-        client.table("outreach_send_config").update({
-            "sender_pool": body.senders,
-            "reply_to": body.reply_to,
-        }).eq("workspace_id", ctx.workspace_id).execute()
+        client.table("outreach_send_config").update(
+            {
+                "sender_pool": body.senders,
+                "reply_to": body.reply_to,
+            }
+        ).eq("workspace_id", ctx.workspace_id).execute()
     else:
-        client.table("outreach_send_config").insert({
-            "workspace_id": ctx.workspace_id,
+        client.table("outreach_send_config").insert(
+            {
+                "workspace_id": ctx.workspace_id,
+                "sender_pool": body.senders,
+                "reply_to": body.reply_to,
+                "daily_limit": 125,
+                "batch_size": 25,
+                "send_enabled": True,
+            }
+        ).execute()
+
+    _update_workspace_settings(
+        ctx.workspace_id,
+        {
             "sender_pool": body.senders,
             "reply_to": body.reply_to,
-            "daily_limit": 125,
-            "batch_size": 25,
-            "send_enabled": True,
-        }).execute()
-
-    _update_workspace_settings(ctx.workspace_id, {
-        "sender_pool": body.senders,
-        "reply_to": body.reply_to,
-        "onboarding_step": max(2, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)),
-    })
+            "onboarding_step": max(
+                2, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)
+            ),
+        },
+    )
     return {"ok": True, "step": 2, "sender_count": len(body.senders)}
 
 
@@ -173,6 +186,7 @@ async def step3_credentials(
 ) -> dict[str, Any]:
     """Step 3: Store Apollo and Resend API keys (encrypted)."""
     from backend.app.core.credential_store import CredentialStore
+
     store = CredentialStore(ctx.workspace_id)
 
     saved = []
@@ -183,11 +197,16 @@ async def step3_credentials(
         store.set("resend", "api_key", body.resend_api_key)
         saved.append("resend")
 
-    _update_workspace_settings(ctx.workspace_id, {
-        "has_apollo_key": store.has("apollo", "api_key"),
-        "has_resend_key": store.has("resend", "api_key"),
-        "onboarding_step": max(3, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)),
-    })
+    _update_workspace_settings(
+        ctx.workspace_id,
+        {
+            "has_apollo_key": store.has("apollo", "api_key"),
+            "has_resend_key": store.has("resend", "api_key"),
+            "onboarding_step": max(
+                3, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)
+            ),
+        },
+    )
     return {"ok": True, "step": 3, "saved": saved}
 
 
@@ -198,32 +217,43 @@ async def step4_reply_inbox(
 ) -> dict[str, Any]:
     """Step 4: Connect Gmail reply inbox."""
     from backend.app.core.credential_store import CredentialStore
+
     store = CredentialStore(ctx.workspace_id)
 
     # Validate credentials before saving
     try:
         from backend.app.integrations.gmail_imap import GmailImapClient
+
         with GmailImapClient(body.gmail_user, body.gmail_app_password) as gmail:
             gmail.fetch_unseen_replies()  # Will raise if credentials are wrong
     except Exception as exc:
-        raise HTTPException(400, f"Gmail connection failed: {exc}. Check the address and app password.")
+        raise HTTPException(
+            400, f"Gmail connection failed: {exc}. Check the address and app password."
+        )
 
     store.set("gmail", "user", body.gmail_user)
     store.set("gmail", "app_password", body.gmail_app_password)
 
     # Also persist gmail_user to outreach_send_config for reference
     try:
-        get_supabase_client().table("outreach_send_config").update({
-            "gmail_user": body.gmail_user,
-        }).eq("workspace_id", ctx.workspace_id).execute()
+        get_supabase_client().table("outreach_send_config").update(
+            {
+                "gmail_user": body.gmail_user,
+            }
+        ).eq("workspace_id", ctx.workspace_id).execute()
     except Exception:
         pass
 
-    _update_workspace_settings(ctx.workspace_id, {
-        "has_reply_inbox": True,
-        "gmail_user_hint": body.gmail_user,
-        "onboarding_step": max(4, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)),
-    })
+    _update_workspace_settings(
+        ctx.workspace_id,
+        {
+            "has_reply_inbox": True,
+            "gmail_user_hint": body.gmail_user,
+            "onboarding_step": max(
+                4, _get_workspace_settings(ctx.workspace_id).get("onboarding_step", 0)
+            ),
+        },
+    )
     return {"ok": True, "step": 4, "gmail_user": body.gmail_user}
 
 
@@ -233,10 +263,13 @@ async def step5_import(
     ctx: WorkspaceContext = Depends(require_workspace_member),
 ) -> dict[str, Any]:
     """Step 5: Choose import mode (discovery or CSV upload)."""
-    _update_workspace_settings(ctx.workspace_id, {
-        "import_mode": body.mode,
-        "onboarding_step": 5,
-    })
+    _update_workspace_settings(
+        ctx.workspace_id,
+        {
+            "import_mode": body.mode,
+            "onboarding_step": 5,
+        },
+    )
     return {"ok": True, "step": 5, "mode": body.mode}
 
 
@@ -245,10 +278,13 @@ async def complete_onboarding(
     ctx: WorkspaceContext = Depends(require_workspace_member),
 ) -> dict[str, Any]:
     """Mark onboarding as complete — unlocks the full dashboard."""
-    _update_workspace_settings(ctx.workspace_id, {
-        "onboarding_complete": True,
-        "onboarding_step": 5,
-    })
+    _update_workspace_settings(
+        ctx.workspace_id,
+        {
+            "onboarding_complete": True,
+            "onboarding_step": 5,
+        },
+    )
     logger.info("Onboarding complete for workspace %s", ctx.workspace_id)
     return {"ok": True, "onboarding_complete": True}
 
@@ -259,6 +295,7 @@ async def list_credentials(
 ) -> dict[str, Any]:
     """Return credential metadata (hints only — no plaintext) for this workspace."""
     from backend.app.core.credential_store import CredentialStore
+
     store = CredentialStore(ctx.workspace_id)
     return {"credentials": store.list_providers()}
 
@@ -271,5 +308,6 @@ async def delete_credential(
 ) -> dict[str, Any]:
     """Remove a stored credential (e.g. to replace with a new key)."""
     from backend.app.core.credential_store import CredentialStore
+
     CredentialStore(ctx.workspace_id).delete(provider, key_name)
     return {"ok": True}
