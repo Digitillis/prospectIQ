@@ -41,9 +41,7 @@ _FUNNEL_STAGES = [
 ]
 
 # States that count as "positive outcome" for a touch step
-_TOUCH_STATES = {
-    f"touch_{n}_sent" for n in range(1, 7)
-}
+_TOUCH_STATES = {f"touch_{n}_sent" for n in range(1, 7)}
 
 # Terminal positive states
 _POSITIVE_STATES = {"replied", "demo_scheduled", "closed_won"}
@@ -88,10 +86,12 @@ class FunnelAnalytics:
         since = _since_iso(days)
 
         try:
-            # Fetch all contacts with their outreach state
+            # Fetch contacts created within the time window with their outreach state.
+            # Without .gte("created_at", since), every time-windowed call (7d/30d/90d)
+            # returns identical all-time totals — the dead date-filter bug (D5).
             query = self.db._filter_ws(
                 self.db.client.table("contacts").select("outreach_state, company_id")
-            )
+            ).gte("created_at", since)
             if campaign_name:
                 # Join via companies
                 company_ids = self._get_campaign_company_ids(campaign_name)
@@ -111,9 +111,7 @@ class FunnelAnalytics:
             state_counts[state] = state_counts.get(state, 0) + 1
 
         # Aggregate touch states across all steps
-        total_touch = sum(
-            state_counts.get(f"touch_{n}_sent", 0) for n in range(1, 6)
-        )
+        total_touch = sum(state_counts.get(f"touch_{n}_sent", 0) for n in range(1, 6))
 
         result: dict[str, Any] = {}
         for stage in _FUNNEL_STAGES:
@@ -132,7 +130,7 @@ class FunnelAnalytics:
         prev_count = result.get(_FUNNEL_STAGES[0], 0)
         for i, stage in enumerate(_FUNNEL_STAGES[1:], 1):
             conv = _safe_div(result.get(stage, 0), prev_count)
-            conversion_rates[f"{_FUNNEL_STAGES[i-1]}_to_{stage}"] = conv
+            conversion_rates[f"{_FUNNEL_STAGES[i - 1]}_to_{stage}"] = conv
             if result.get(stage, 0) > 0:
                 prev_count = result[stage]
 
@@ -162,12 +160,19 @@ class FunnelAnalytics:
         Returns list of {vertical, total_sequenced, replied, reply_rate_pct}
         sorted by reply_rate_pct desc.
         """
+        since = _since_iso(days)
         try:
-            rows = self.db._filter_ws(
-                self.db.client.table("contacts").select(
-                    "outreach_state, companies(campaign_name, industry)"
+            rows = (
+                self.db._filter_ws(
+                    self.db.client.table("contacts").select(
+                        "outreach_state, companies(campaign_name, industry)"
+                    )
                 )
-            ).execute().data or []
+                .gte("created_at", since)
+                .execute()
+                .data
+                or []
+            )
         except Exception as exc:
             logger.error(f"get_reply_rate_by_vertical failed: {exc}")
             return []
@@ -189,12 +194,14 @@ class FunnelAnalytics:
 
         result = []
         for vertical, counts in buckets.items():
-            result.append({
-                "vertical": vertical,
-                "total_sequenced": counts["total"],
-                "replied": counts["replied"],
-                "reply_rate_pct": _safe_div(counts["replied"], counts["total"]),
-            })
+            result.append(
+                {
+                    "vertical": vertical,
+                    "total_sequenced": counts["total"],
+                    "replied": counts["replied"],
+                    "reply_rate_pct": _safe_div(counts["replied"], counts["total"]),
+                }
+            )
 
         return sorted(result, key=lambda x: x["reply_rate_pct"], reverse=True)
 
@@ -203,10 +210,17 @@ class FunnelAnalytics:
 
         Returns list of {persona_type, total_sequenced, replied, reply_rate_pct}.
         """
+        since = _since_iso(days)
         try:
-            rows = self.db._filter_ws(
-                self.db.client.table("contacts").select("outreach_state, persona_type")
-            ).execute().data or []
+            rows = (
+                self.db._filter_ws(
+                    self.db.client.table("contacts").select("outreach_state, persona_type")
+                )
+                .gte("created_at", since)
+                .execute()
+                .data
+                or []
+            )
         except Exception as exc:
             logger.error(f"get_reply_rate_by_persona failed: {exc}")
             return []
@@ -226,12 +240,14 @@ class FunnelAnalytics:
 
         result = []
         for persona, counts in buckets.items():
-            result.append({
-                "persona_type": persona,
-                "total_sequenced": counts["total"],
-                "replied": counts["replied"],
-                "reply_rate_pct": _safe_div(counts["replied"], counts["total"]),
-            })
+            result.append(
+                {
+                    "persona_type": persona,
+                    "total_sequenced": counts["total"],
+                    "replied": counts["replied"],
+                    "reply_rate_pct": _safe_div(counts["replied"], counts["total"]),
+                }
+            )
 
         return sorted(result, key=lambda x: x["reply_rate_pct"], reverse=True)
 
@@ -248,23 +264,25 @@ class FunnelAnalytics:
             # Get all email_sent events with sequence_step in metadata
             sent_rows = (
                 self.db._filter_ws(
-                    self.db.client.table("outreach_state_log")
-                    .select("metadata, contact_id")
+                    self.db.client.table("outreach_state_log").select("metadata, contact_id")
                 )
                 .eq("instantly_event", "email_sent")
                 .gte("created_at", since)
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
 
             # Get reply events
             reply_rows = (
                 self.db._filter_ws(
-                    self.db.client.table("outreach_state_log")
-                    .select("contact_id, created_at")
+                    self.db.client.table("outreach_state_log").select("contact_id, created_at")
                 )
                 .eq("instantly_event", "email_replied")
                 .gte("created_at", since)
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
         except Exception as exc:
             logger.error(f"get_reply_rate_by_touch failed: {exc}")
@@ -303,12 +321,14 @@ class FunnelAnalytics:
         for touch in range(1, 6):
             sent = sends_by_touch.get(touch, 0)
             replied = replies_by_touch.get(touch, 0)
-            result.append({
-                "touch_number": touch,
-                "emails_sent": sent,
-                "replies_from_touch": replied,
-                "reply_rate_pct": _safe_div(replied, sent),
-            })
+            result.append(
+                {
+                    "touch_number": touch,
+                    "emails_sent": sent,
+                    "replies_from_touch": replied,
+                    "reply_rate_pct": _safe_div(replied, sent),
+                }
+            )
 
         return result
 
@@ -327,14 +347,15 @@ class FunnelAnalytics:
         try:
             rows = (
                 self.db._filter_ws(
-                    self.db.client.table("contacts")
-                    .select(
+                    self.db.client.table("contacts").select(
                         "company_id, outreach_state, reply_sentiment, "
                         "open_count, click_count, intent_score, "
                         "companies(id, name, domain, tier, campaign_name, intent_score)"
                     )
                 )
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
         except Exception as exc:
             logger.error(f"get_top_converting_companies failed: {exc}")
@@ -426,26 +447,18 @@ class FunnelAnalytics:
                         pass
             return round(sum(deltas) / len(deltas), 1) if deltas else 0.0
 
-        pairs_enrich = [
-            (ct.get("enriched"), ct.get("sequenced"))
-            for ct in contact_ts.values()
-        ]
+        pairs_enrich = [(ct.get("enriched"), ct.get("sequenced")) for ct in contact_ts.values()]
         pairs_seq = [
             (ct.get("sequenced") or ct.get("touch_1_sent"), ct.get("replied"))
             for ct in contact_ts.values()
         ]
-        pairs_overall = [
-            (ct.get("enriched"), ct.get("replied"))
-            for ct in contact_ts.values()
-        ]
+        pairs_overall = [(ct.get("enriched"), ct.get("replied")) for ct in contact_ts.values()]
 
         return {
             "enriched_to_sequenced_days": _avg_days(pairs_enrich),
             "sequenced_to_replied_days": _avg_days(pairs_seq),
             "overall_discovery_to_reply_days": _avg_days(pairs_overall),
-            "contacts_with_reply": sum(
-                1 for ct in contact_ts.values() if "replied" in ct
-            ),
+            "contacts_with_reply": sum(1 for ct in contact_ts.values() if "replied" in ct),
         }
 
     # ------------------------------------------------------------------
@@ -462,11 +475,11 @@ class FunnelAnalytics:
         try:
             # Contacts created per week
             contact_rows = (
-                self.db._filter_ws(
-                    self.db.client.table("contacts").select("created_at")
-                )
+                self.db._filter_ws(self.db.client.table("contacts").select("created_at"))
                 .gte("created_at", since)
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
 
             # State log events per week
@@ -476,7 +489,9 @@ class FunnelAnalytics:
                 )
                 .in_("to_state", ["sequenced", "touch_1_sent", "replied"])
                 .gte("created_at", since)
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
         except Exception as exc:
             logger.error(f"get_weekly_activity failed: {exc}")
@@ -507,9 +522,7 @@ class FunnelAnalytics:
                 weekly[wk]["replied"] += 1
 
         result = [
-            {"week_start": wk, **counts}
-            for wk, counts in sorted(weekly.items())
-            if wk != "unknown"
+            {"week_start": wk, **counts} for wk, counts in sorted(weekly.items()) if wk != "unknown"
         ]
         return result[-weeks:]
 
@@ -525,10 +538,13 @@ class FunnelAnalytics:
         try:
             rows = (
                 self.db._filter_ws(
-                    self.db.client.table("contacts")
-                    .select("outreach_state, intent_score, companies(intent_score)")
+                    self.db.client.table("contacts").select(
+                        "outreach_state, intent_score, companies(intent_score)"
+                    )
                 )
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
         except Exception as exc:
             logger.error(f"get_intent_signal_impact failed: {exc}")
@@ -569,11 +585,11 @@ class FunnelAnalytics:
     def _get_campaign_company_ids(self, campaign_name: str) -> list[str]:
         try:
             rows = (
-                self.db._filter_ws(
-                    self.db.client.table("companies").select("id")
-                )
+                self.db._filter_ws(self.db.client.table("companies").select("id"))
                 .eq("campaign_name", campaign_name)
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
             return [r["id"] for r in rows]
         except Exception:
@@ -630,15 +646,15 @@ class FunnelAnalytics:
 
         # Ordered stage definitions: (stage_key, display_name, velocity_key or None)
         stage_defs = [
-            ("discovered",      "Discovered",   None),
-            ("enriched",        "Enriched",     "enriched_to_sequenced_days"),
-            ("sequenced",       "Sequenced",    "enriched_to_sequenced_days"),
-            ("touch_1_sent",    "Touch 1 Sent", None),
-            ("touch_2_sent",    "Touch 2 Sent", None),
-            ("touch_3_sent",    "Touch 3 Sent", None),
-            ("replied",         "Replied",      "sequenced_to_replied_days"),
-            ("demo_scheduled",  "Demo Booked",  None),
-            ("closed_won",      "Closed Won",   None),
+            ("discovered", "Discovered", None),
+            ("enriched", "Enriched", "enriched_to_sequenced_days"),
+            ("sequenced", "Sequenced", "enriched_to_sequenced_days"),
+            ("touch_1_sent", "Touch 1 Sent", None),
+            ("touch_2_sent", "Touch 2 Sent", None),
+            ("touch_3_sent", "Touch 3 Sent", None),
+            ("replied", "Replied", "sequenced_to_replied_days"),
+            ("demo_scheduled", "Demo Booked", None),
+            ("closed_won", "Closed Won", None),
         ]
 
         stage_counts = {k: counts.get(k, 0) for k, _, _ in stage_defs}
@@ -663,14 +679,16 @@ class FunnelAnalytics:
                     max_drop_off = drop_off
                     bottleneck_key = stage_key
 
-            stages.append(FunnelStage(
-                stage_name=stage_name,
-                stage_key=stage_key,
-                count=count,
-                conversion_rate=conv_rate,
-                avg_days_in_stage=avg_days,
-                drop_off=drop_off,
-            ))
+            stages.append(
+                FunnelStage(
+                    stage_name=stage_name,
+                    stage_key=stage_key,
+                    count=count,
+                    conversion_rate=conv_rate,
+                    avg_days_in_stage=avg_days,
+                    drop_off=drop_off,
+                )
+            )
 
             if count > 0:
                 prev_count = count
@@ -679,10 +697,12 @@ class FunnelAnalytics:
 
         # Mark bottleneck
         for s in stages:
-            s.is_bottleneck = (s.stage_key == bottleneck_key)
+            s.is_bottleneck = s.stage_key == bottleneck_key
 
         total_entered = stage_counts["discovered"]
-        total_converted = stage_counts["replied"] + stage_counts["demo_scheduled"] + stage_counts["closed_won"]
+        total_converted = (
+            stage_counts["replied"] + stage_counts["demo_scheduled"] + stage_counts["closed_won"]
+        )
         overall_conv = _safe_div(total_converted, total_entered) if total_entered else 0.0
 
         return FunnelData(
@@ -712,9 +732,9 @@ class FunnelAnalytics:
 
         # Map group_by to the correct table/column
         group_field_map = {
-            "cluster":       ("companies", "campaign_cluster"),
-            "tranche":       ("companies", "tranche"),
-            "persona":       ("contacts",  "persona_type"),
+            "cluster": ("companies", "campaign_cluster"),
+            "tranche": ("companies", "tranche"),
+            "persona": ("contacts", "persona_type"),
             "sequence_name": ("outreach_drafts", "sequence_name"),
         }
         if group_by not in group_field_map:
@@ -724,12 +744,16 @@ class FunnelAnalytics:
 
         try:
             if table == "companies":
-                rows = self.db._filter_ws(
-                    self.db.client.table("contacts").select(
-                        f"outreach_state, intent_score, "
-                        f"companies(id, pqs_total, {field})"
+                rows = (
+                    self.db._filter_ws(
+                        self.db.client.table("contacts").select(
+                            f"outreach_state, intent_score, companies(id, pqs_total, {field})"
+                        )
                     )
-                ).execute().data or []
+                    .execute()
+                    .data
+                    or []
+                )
 
                 buckets: dict[str, dict] = {}
                 for row in rows:
@@ -740,8 +764,11 @@ class FunnelAnalytics:
 
                     if key not in buckets:
                         buckets[key] = {
-                            "total": 0, "contacted": 0, "replied": 0,
-                            "interested": 0, "pqs_sum": 0,
+                            "total": 0,
+                            "contacted": 0,
+                            "replied": 0,
+                            "interested": 0,
+                            "pqs_sum": 0,
                         }
 
                     b = buckets[key]
@@ -756,12 +783,16 @@ class FunnelAnalytics:
                         b["interested"] += 1
 
             elif table == "contacts":
-                rows = self.db._filter_ws(
-                    self.db.client.table("contacts").select(
-                        f"outreach_state, {field}, intent_score, "
-                        f"companies(pqs_total)"
+                rows = (
+                    self.db._filter_ws(
+                        self.db.client.table("contacts").select(
+                            f"outreach_state, {field}, intent_score, companies(pqs_total)"
+                        )
                     )
-                ).execute().data or []
+                    .execute()
+                    .data
+                    or []
+                )
 
                 buckets = {}
                 for row in rows:
@@ -771,8 +802,11 @@ class FunnelAnalytics:
 
                     if key not in buckets:
                         buckets[key] = {
-                            "total": 0, "contacted": 0, "replied": 0,
-                            "interested": 0, "pqs_sum": 0,
+                            "total": 0,
+                            "contacted": 0,
+                            "replied": 0,
+                            "interested": 0,
+                            "pqs_sum": 0,
                         }
 
                     b = buckets[key]
@@ -788,12 +822,17 @@ class FunnelAnalytics:
 
             else:
                 # sequence_name — join via outreach_drafts
-                rows = self.db._filter_ws(
-                    self.db.client.table("outreach_drafts").select(
-                        "sequence_name, approval_status, sent_at, "
-                        "contacts(outreach_state), companies(pqs_total)"
+                rows = (
+                    self.db._filter_ws(
+                        self.db.client.table("outreach_drafts").select(
+                            "sequence_name, approval_status, sent_at, "
+                            "contacts(outreach_state), companies(pqs_total)"
+                        )
                     )
-                ).execute().data or []
+                    .execute()
+                    .data
+                    or []
+                )
 
                 buckets = {}
                 for row in rows:
@@ -804,8 +843,11 @@ class FunnelAnalytics:
 
                     if key not in buckets:
                         buckets[key] = {
-                            "total": 0, "contacted": 0, "replied": 0,
-                            "interested": 0, "pqs_sum": 0,
+                            "total": 0,
+                            "contacted": 0,
+                            "replied": 0,
+                            "interested": 0,
+                            "pqs_sum": 0,
                         }
 
                     b = buckets[key]
@@ -826,15 +868,17 @@ class FunnelAnalytics:
         cohort_rows: list[CohortRow] = []
         for name, b in buckets.items():
             total = b["total"]
-            cohort_rows.append(CohortRow(
-                cohort_name=name,
-                count=total,
-                contacted_pct=_safe_div(b["contacted"], total),
-                reply_rate=_safe_div(b["replied"], b["contacted"] or 1),
-                interested_pct=_safe_div(b["interested"], b["contacted"] or 1),
-                conversion_rate=_safe_div(b["replied"], total),
-                avg_pqs=round(b["pqs_sum"] / max(total, 1), 1),
-            ))
+            cohort_rows.append(
+                CohortRow(
+                    cohort_name=name,
+                    count=total,
+                    contacted_pct=_safe_div(b["contacted"], total),
+                    reply_rate=_safe_div(b["replied"], b["contacted"] or 1),
+                    interested_pct=_safe_div(b["interested"], b["contacted"] or 1),
+                    conversion_rate=_safe_div(b["replied"], total),
+                    avg_pqs=round(b["pqs_sum"] / max(total, 1), 1),
+                )
+            )
 
         cohort_rows.sort(key=lambda r: r.conversion_rate, reverse=True)
 
@@ -886,13 +930,16 @@ class FunnelAnalytics:
 
             log_rows = (
                 self.db._filter_ws(
-                    self.db.client.table("outreach_state_log")
-                    .select("contact_id, to_state, created_at")
+                    self.db.client.table("outreach_state_log").select(
+                        "contact_id, to_state, created_at"
+                    )
                 )
                 .in_("to_state", ["enriched", "sequenced", "touch_1_sent", "replied"])
                 .gte("created_at", since_60)
                 .order("created_at")
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
 
             def _split_and_compute(rows: list, cutoff: str) -> tuple[dict, dict]:
