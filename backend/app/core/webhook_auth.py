@@ -6,6 +6,8 @@ handlers are a code-smell — the properties (fail-closed when unconfigured,
 timing-safe compare, structured error) must be applied consistently.
 """
 
+from __future__ import annotations
+
 import hmac
 import logging
 
