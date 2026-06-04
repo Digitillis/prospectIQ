@@ -680,7 +680,7 @@ def _run_process_hitl_snoozed() -> None:
     try:
         from backend.app.core.database import Database
 
-        db = Database()
+        db = Database()  # INTENTIONALLY UNSCOPED — processes all workspaces' snooze queues; hitl_queue has no workspace filter here
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         result = (
             db.client.table("hitl_queue")
@@ -1163,7 +1163,7 @@ def _run_gmail_intake_LEGACY() -> None:
         if not settings.gmail_user or not settings.gmail_app_password:
             return  # Not configured — skip silently
 
-        db = Database()
+        db = Database()  # INTENTIONALLY UNSCOPED — Gmail inbox is shared; workspace discovered per-reply from the matched outreach_draft
         processed = 0
         skipped = 0
 
@@ -2378,7 +2378,9 @@ def _run_weekly_signal_scrapers() -> None:
         from backend.app.core.database import get_supabase_client
         from backend.app.core.database import Database
 
-        db = Database()  # workspace-agnostic — scrapers match by company name across all workspaces
+        db = (
+            Database()
+        )  # INTENTIONALLY UNSCOPED — scrapers match by company name across all workspaces
 
         from backend.app.agents.signal_scrapers.fda_scraper import FDARecallScraper
         from backend.app.agents.signal_scrapers.osha_scraper import OSHACitationScraper
@@ -2750,7 +2752,7 @@ def _run_auto_action_low_priority() -> None:
         from backend.app.core.database import Database
         from datetime import datetime, timezone, timedelta
 
-        db = Database()
+        db = Database()  # INTENTIONALLY UNSCOPED — processes all workspaces' soft_no queues
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
         result = (
             db.client.table("hitl_queue")
@@ -3403,7 +3405,9 @@ async def send_trace():
     trace.append("resend_api_key=set")
 
     client = get_supabase_client()
-    db = Database()
+    db = (
+        Database()
+    )  # INTENTIONALLY UNSCOPED — send-trace is an admin diagnostic over all workspaces
 
     # Step 2: daily count
     today = date.today().isoformat()

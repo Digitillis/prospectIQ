@@ -20,7 +20,7 @@ Usage:
     from backend.app.core.database import Database
     from backend.app.core.outreach_coordinator import OutreachCoordinator
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     coordinator = OutreachCoordinator(db)
 
     # Move a contact to the next logical state

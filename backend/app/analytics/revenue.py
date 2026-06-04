@@ -6,7 +6,7 @@ Usage:
     from backend.app.analytics.revenue import RevenueAnalytics
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     ra = RevenueAnalytics(db)
     print(ra.get_revenue_attribution(workspace_id="ws_xxx"))
     print(ra.get_activity_roi(workspace_id="ws_xxx"))

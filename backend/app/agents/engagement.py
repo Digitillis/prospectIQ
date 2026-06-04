@@ -2630,9 +2630,9 @@ class EngagementAgent(BaseAgent):
         """
         from backend.app.core.database import Database
 
-        # Use unscoped DB for initial lookup — webhooks arrive without auth context.
-        # We discover the workspace_id from the contact record, then re-scope all writes.
-        _lookup_db = Database()
+        _lookup_db = (
+            Database()
+        )  # INTENTIONALLY UNSCOPED — cross-workspace email lookup; re-scoped after contact found
         email = event_data.get("email") or event_data.get("lead_email", "")
 
         if not email:

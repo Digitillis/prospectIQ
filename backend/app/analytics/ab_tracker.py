@@ -9,7 +9,7 @@ Usage:
     from backend.app.analytics.ab_tracker import ABTracker
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     tracker = ABTracker(db)
 
     tracker.record_send(contact_id="uuid", variant="a",

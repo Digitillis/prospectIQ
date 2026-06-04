@@ -16,12 +16,8 @@ from typing import Any
 
 from rich.console import Console
 
-from backend.app.core.database import Database
+from backend.app.core.database import Database, WorkspaceRequiredError
 from backend.app.core.cost_tracker import log_cost
-
-# Pipeline scripts set WORKSPACE_ID so all records are scoped to the right workspace.
-# Falls back to the default workspace if not set.
-_DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -41,11 +37,13 @@ class AgentResult:
         self.total_cost_usd: float = 0.0
 
     def add_detail(self, company_name: str, status: str, message: str = ""):
-        self.details.append({
-            "company": company_name,
-            "status": status,
-            "message": message,
-        })
+        self.details.append(
+            {
+                "company": company_name,
+                "status": status,
+                "message": message,
+            }
+        )
 
     def summary(self) -> str:
         return (
@@ -61,10 +59,19 @@ class BaseAgent(ABC):
     agent_name: str = "base"
 
     def __init__(self, batch_id: str | None = None, workspace_id: str | None = None):
-        ws_id = workspace_id or os.environ.get("WORKSPACE_ID") or _DEFAULT_WORKSPACE_ID
+        ws_id = workspace_id or os.environ.get("WORKSPACE_ID")
+        if not ws_id:
+            raise WorkspaceRequiredError(
+                f"{self.__class__.__name__} requires workspace_id. "
+                "Pass workspace_id= explicitly or set the WORKSPACE_ID environment variable. "
+                "Cron callbacks must iterate get_active_workspaces() and pass each ws['id']."
+            )
         self.db = Database(workspace_id=ws_id)
         self.workspace_id = ws_id
-        self.batch_id = batch_id or f"{self.agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        self.batch_id = (
+            batch_id
+            or f"{self.agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        )
         self.logger = logging.getLogger(f"prospectiq.{self.agent_name}")
         self._cost_accumulator: float = 0.0
         self._monitor = None  # Set by execute() — available to run() for per-company log_error()
@@ -129,14 +136,18 @@ class BaseAgent(ABC):
         """
         from backend.app.agents.monitoring import PipelineMonitor
 
-        console.print(f"\n[bold blue]{'='*60}[/bold blue]")
+        console.print(f"\n[bold blue]{'=' * 60}[/bold blue]")
         console.print(f"[bold blue]Agent: {self.agent_name}[/bold blue]")
         console.print(f"[bold blue]Batch: {self.batch_id}[/bold blue]")
-        console.print(f"[bold blue]{'='*60}[/bold blue]\n")
+        console.print(f"[bold blue]{'=' * 60}[/bold blue]\n")
 
-        monitor = PipelineMonitor(agent=self.agent_name, batch_id=self.batch_id, workspace_id=self.workspace_id)
+        monitor = PipelineMonitor(
+            agent=self.agent_name, batch_id=self.batch_id, workspace_id=self.workspace_id
+        )
         self._monitor = monitor
-        monitor.start(meta={"batch_id": self.batch_id, "kwargs": {k: str(v)[:100] for k, v in kwargs.items()}})
+        monitor.start(
+            meta={"batch_id": self.batch_id, "kwargs": {k: str(v)[:100] for k, v in kwargs.items()}}
+        )
 
         start_time = time.time()
         catastrophic = False
@@ -166,8 +177,10 @@ class BaseAgent(ABC):
 
         # Print summary
         status_color = "green" if result.success else "red"
-        console.print(f"\n[bold {status_color}]{'-'*60}[/bold {status_color}]")
-        console.print(f"[bold {status_color}]{self.agent_name} complete: {result.summary()}[/bold {status_color}]")
-        console.print(f"[bold {status_color}]{'-'*60}[/bold {status_color}]\n")
+        console.print(f"\n[bold {status_color}]{'-' * 60}[/bold {status_color}]")
+        console.print(
+            f"[bold {status_color}]{self.agent_name} complete: {result.summary()}[/bold {status_color}]"
+        )
+        console.print(f"[bold {status_color}]{'-' * 60}[/bold {status_color}]\n")
 
         return result

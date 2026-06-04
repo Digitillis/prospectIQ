@@ -16,7 +16,7 @@ Usage:
     from backend.app.core.database import Database
     from backend.app.core.linkedin_tracker import LinkedInTracker
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     tracker = LinkedInTracker(db)
 
     # Log that we viewed a prospect's profile

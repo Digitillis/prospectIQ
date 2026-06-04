@@ -7,7 +7,7 @@ Usage:
     from backend.app.analytics.reports import CampaignReporter
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     reporter = CampaignReporter(db)
     print(reporter.generate_weekly_report())
 """

@@ -8,7 +8,7 @@ Usage:
     from backend.app.analytics.funnel import FunnelAnalytics
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     fa = FunnelAnalytics(db)
     print(fa.get_funnel_counts(days=30))
     print(fa.get_full_funnel(workspace_id="ws_xxx", days=90))

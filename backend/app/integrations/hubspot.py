@@ -13,7 +13,7 @@ Usage:
     from backend.app.integrations.hubspot import HubSpotSync
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     hs = HubSpotSync(api_key="...", portal_id="12345")
     result = hs.sync_all(db)
 """

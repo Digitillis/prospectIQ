@@ -18,7 +18,7 @@ Usage:
     from backend.app.integrations.salesforce import SalesforceSync
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     sf = SalesforceSync(username="...", password="...", security_token="...")
     result = sf.sync_all(db)
 """
