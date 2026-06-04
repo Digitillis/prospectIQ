@@ -35,6 +35,21 @@ class TargetingStrategy(str, Enum):
     DEAL_FOCUSED = "deal_focused"  # High probability close deals
 
 
+# Strategies that are defined in the enum but have no real query behind them.
+# Previously they fell through to a generic 'pqs_total >= 50' list, which made
+# them indistinguishable from one another and from HIGH_PQS — silently lying
+# about what the strategy did. They now return an empty list with an explicit
+# not_implemented status until each gets a real query.
+_NOT_IMPLEMENTED_STRATEGIES = frozenset(
+    {
+        TargetingStrategy.WARM_LEADS,
+        TargetingStrategy.DECISION_MAKERS,
+        TargetingStrategy.MEETING_READY,
+        TargetingStrategy.DEAL_FOCUSED,
+    }
+)
+
+
 class ProspectScore(BaseModel):
     """Comprehensive scoring for a prospect."""
 
@@ -48,7 +63,9 @@ class ProspectScore(BaseModel):
     outreach_stage: str
     meeting_scheduled: bool
     engagement_score: float  # 0-100
-    conversion_probability: float  # 0-100, based on patterns
+    icp_fit_score: (
+        float  # 0-100 heuristic (PQS + deal stage + meeting signals); NOT an ML prediction
+    )
     priority: str  # "critical", "high", "medium", "low"
     recommended_next_action: str
 
@@ -60,6 +77,7 @@ class TargetingRecommendation(BaseModel):
     total_count: int
     prospects: list[ProspectScore]
     description: str
+    status: str = "ok"  # "ok" | "not_implemented"
 
 
 class ProspectFilterRequest(BaseModel):
@@ -91,16 +109,21 @@ async def get_smart_targets(
     if not workspace_id:
         raise HTTPException(status_code=401, detail="No workspace context")
 
+    if strategy in _NOT_IMPLEMENTED_STRATEGIES:
+        return TargetingRecommendation(
+            strategy=strategy.value,
+            total_count=0,
+            prospects=[],
+            description=f"Strategy '{strategy.value}' is not yet available.",
+            status="not_implemented",
+        )
+
     prospects = await _get_prospects_for_strategy(db, workspace_id, strategy, limit)
 
     strategy_descriptions = {
         "high_pqs": "Companies with strong PQS scores (60+) indicating good fit",
         "quick_wins": "Ready-to-contact prospects with research done and decent PQS",
-        "warm_leads": "Prospects with recent engagement and conversation momentum",
-        "decision_makers": "Companies with multiple high-value contacts",
         "recent_activity": "Recently researched or contacted companies",
-        "meeting_ready": "Prospects showing conversation readiness signals",
-        "deal_focused": "Companies with high-probability close opportunities",
     }
 
     return TargetingRecommendation(
@@ -280,10 +303,10 @@ async def get_prospect_score(
     engagement_score = _calculate_engagement_score(company, deal, meeting, contact_count)
 
     # Calculate conversion probability
-    conversion_prob = _calculate_conversion_probability(company, deal, meeting)
+    icp_fit = _calculate_icp_fit_score(company, deal, meeting)
 
     # Determine priority
-    priority = _determine_priority(company["pqs_total"], conversion_prob, company["status"])
+    priority = _determine_priority(company["pqs_total"], icp_fit, company["status"])
 
     # Recommend next action
     next_action = _recommend_next_action(company["status"], deal, meeting)
@@ -305,7 +328,7 @@ async def get_prospect_score(
         outreach_stage=company["status"],
         meeting_scheduled=bool(meeting and meeting["status"] in ["scheduled", "confirmed"]),
         engagement_score=engagement_score,
-        conversion_probability=conversion_prob,
+        icp_fit_score=icp_fit,
         priority=priority,
         recommended_next_action=next_action,
     )
@@ -364,15 +387,10 @@ async def _get_prospects_for_strategy(
         )
 
     else:
-        # Default: high PQS
-        result = (
-            db.client.table("companies")
-            .select("id, name, status, pqs_total, pqs_firmographic, pqs_technographic, updated_at")
-            .eq("workspace_id", workspace_id)
-            .gte("pqs_total", 50)
-            .limit(limit)
-            .execute()
-        )
+        # Strategy is defined in the enum but not yet implemented. Return an empty
+        # list rather than the old undifferentiated 'pqs_total >= 50' fallback,
+        # which silently presented the same results for every unimplemented strategy.
+        return []
 
     companies = result.data or []
     for company in companies:
@@ -411,8 +429,8 @@ async def _get_prospects_for_strategy(
         engagement_score = _calculate_engagement_score(
             company, has_deal, has_meeting, contact_count
         )
-        conversion_prob = _calculate_conversion_probability(company, has_deal, has_meeting)
-        priority = _determine_priority(company["pqs_total"], conversion_prob, company["status"])
+        icp_fit = _calculate_icp_fit_score(company, has_deal, has_meeting)
+        priority = _determine_priority(company["pqs_total"], icp_fit, company["status"])
         next_action = _recommend_next_action(company["status"], has_deal, has_meeting)
 
         prospects.append(
@@ -433,7 +451,7 @@ async def _get_prospects_for_strategy(
                 outreach_stage=company["status"],
                 meeting_scheduled=has_meeting,
                 engagement_score=engagement_score,
-                conversion_probability=conversion_prob,
+                icp_fit_score=icp_fit,
                 priority=priority,
                 recommended_next_action=next_action,
             )
@@ -463,17 +481,26 @@ def _calculate_engagement_score(company: dict, deal, meeting, contact_count: int
     return min(score, 100.0)
 
 
-def _calculate_conversion_probability(company: dict, deal, meeting) -> float:
-    """Estimate probability of conversion based on company attributes."""
-    prob = 0.0
+def _calculate_icp_fit_score(company: dict, deal, meeting) -> float:
+    """Heuristic ICP-fit score (0-100). NOT an ML conversion prediction.
 
-    # Base probability from PQS
+    Hand-tuned weighted sum, no model behind it:
+      - PQS contributes up to 40 points  (pqs_total / 100 * 40)
+      - Open deal stage contributes up to 50 points  (stage weight * 0.5)
+      - A scheduled meeting adds a flat 15 points
+    Clamped to 100. Expresses how well a prospect fits the ideal customer
+    profile given current pipeline signals — a prioritization aid, not a
+    calibrated probability.
+    """
+    score = 0.0
+
+    # PQS contribution (up to 40 points)
     pqs = company.get("pqs_total", 0)
-    prob = (pqs / 100) * 40  # PQS accounts for 40% of probability
+    score = (pqs / 100) * 40
 
-    # Deal stage contribution
+    # Deal stage contribution (up to 50 points)
     if deal:
-        stage_probs = {
+        stage_weights = {
             "prospect": 5,
             "qualified": 15,
             "proposal": 35,
@@ -481,22 +508,22 @@ def _calculate_conversion_probability(company: dict, deal, meeting) -> float:
             "won": 100,
         }
         stage = deal.get("stage") if isinstance(deal, dict) else "prospect"
-        prob += stage_probs.get(stage, 0) * 0.5  # Deal stage is 50%
+        score += stage_weights.get(stage, 0) * 0.5
 
-    # Meeting signals
+    # Meeting signal (flat 15 points)
     if meeting:
-        prob += 15  # 15% boost for having scheduled meetings
+        score += 15
 
-    return min(prob, 100.0)
+    return min(score, 100.0)
 
 
-def _determine_priority(pqs_score: int, conversion_prob: float, status: str) -> str:
+def _determine_priority(pqs_score: int, icp_fit: float, status: str) -> str:
     """Determine priority level based on scoring."""
-    if conversion_prob >= 70 or pqs_score >= 80:
+    if icp_fit >= 70 or pqs_score >= 80:
         return "critical"
-    elif conversion_prob >= 50 or pqs_score >= 60:
+    elif icp_fit >= 50 or pqs_score >= 60:
         return "high"
-    elif conversion_prob >= 25 or pqs_score >= 40:
+    elif icp_fit >= 25 or pqs_score >= 40:
         return "medium"
     else:
         return "low"
