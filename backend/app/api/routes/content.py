@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/content", tags=["content"])
 def get_db() -> Database:
     return Database(workspace_id=get_workspace_id())
 
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -40,18 +41,25 @@ _TIME_HORIZON_COUNTS: dict[str, int] = {
     "60_days": 24,
 }
 
-_ALL_PILLARS = ["manufacturing_intelligence", "manufacturing_strategy", "manufacturing_operations", "food_safety_compliance"]
+_ALL_PILLARS = [
+    "manufacturing_intelligence",
+    "manufacturing_strategy",
+    "manufacturing_operations",
+    "food_safety_compliance",
+]
 _ALL_FORMATS = ["data_insight", "framework", "contrarian", "benchmark"]
 
 
 class ContentRequest(BaseModel):
     topic: Optional[str] = None
-    pillar: Optional[str] = None          # manufacturing_intelligence | manufacturing_strategy | manufacturing_operations | food_safety_compliance
-    format_type: Optional[str] = None     # data_insight | framework | contrarian | benchmark
+    pillar: Optional[str] = (
+        None  # manufacturing_intelligence | manufacturing_strategy | manufacturing_operations | food_safety_compliance
+    )
+    format_type: Optional[str] = None  # data_insight | framework | contrarian | benchmark
     # Batch generation fields
-    time_horizon: Optional[str] = None    # "1_week" (4 posts) | "30_days" (16) | "60_days" (32)
-    commentary: Optional[str] = None      # Free-text author guidance injected into each prompt
-    batch: bool = False                   # If True, generate multiple posts based on time_horizon
+    time_horizon: Optional[str] = None  # "1_week" (4 posts) | "30_days" (16) | "60_days" (32)
+    commentary: Optional[str] = None  # Free-text author guidance injected into each prompt
+    batch: bool = False  # If True, generate multiple posts based on time_horizon
 
 
 class ContentDraft(BaseModel):
@@ -69,10 +77,12 @@ class ContentDraft(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_quality_report(notes: str) -> Optional[dict]:
     """Extract and parse a quality_report JSON from personalization_notes."""
     import json as _json
     import re
+
     match = re.search(r"quality_report::(.+)", notes, re.DOTALL)
     if match:
         try:
@@ -85,6 +95,7 @@ def _parse_quality_report(notes: str) -> Optional[dict]:
 def _parse_intel_report(notes: str) -> Optional[str]:
     """Extract the raw intel report text from personalization_notes."""
     import re
+
     # intel_report:: comes before quality_report:: (if present)
     match = re.search(r"intel_report::(.+?)(?:\|quality_report::|$)", notes, re.DOTALL)
     if match:
@@ -103,6 +114,7 @@ def _parse_draft(row: dict) -> dict:
 
     # Strip intel_report:: and quality_report:: sections for clean pipe-split
     import re
+
     clean_notes = re.sub(r"\|intel_report::.*?(?=\|quality_report::|$)", "", notes, flags=re.DOTALL)
     clean_notes = re.sub(r"\|quality_report::.*", "", clean_notes, flags=re.DOTALL)
 
@@ -112,16 +124,16 @@ def _parse_draft(row: dict) -> dict:
     publish_ready = None
     for part in clean_notes.split("|"):
         if part.startswith("format:"):
-            fmt = part[len("format:"):]
+            fmt = part[len("format:") :]
         elif part.startswith("pillar:"):
-            pillar = part[len("pillar:"):]
+            pillar = part[len("pillar:") :]
         elif part.startswith("credibility:"):
             try:
-                credibility_score = int(part[len("credibility:"):].split("/")[0])
+                credibility_score = int(part[len("credibility:") :].split("/")[0])
             except (ValueError, IndexError):
                 pass
         elif part.startswith("publish_ready:"):
-            val = part[len("publish_ready:"):]
+            val = part[len("publish_ready:") :]
             publish_ready = val.lower() == "true"
 
     body = row.get("body", "") or ""
@@ -200,7 +212,9 @@ def _detail_to_draft(detail: dict) -> dict:
             "publish_ready": intel.get("publish_ready", False) if intel else None,
             "verification_rounds": intel.get("verification_rounds", 0) if intel else None,
             "error": intel.get("error") if intel and intel.get("error") else None,
-        } if intel else None,
+        }
+        if intel
+        else None,
     }
 
 
@@ -219,7 +233,7 @@ async def generate_content(req: ContentRequest):
     - If pillar + format_type, picks the matching calendar entry.
     - If nothing provided, generates the next post from the calendar.
     """
-    agent = ContentAgent()
+    agent = ContentAgent(workspace_id=get_workspace_id())
 
     try:
         result = agent.execute(
@@ -275,10 +289,7 @@ async def generate_batch(req: ContentRequest, background_tasks: BackgroundTasks)
     jobs: list[dict[str, str]] = []
 
     # Build a pool of topics from CONTENT_CALENDAR, filtered by pillar if given
-    calendar_pool = [
-        e for e in CONTENT_CALENDAR
-        if (pillar is None or e["pillar"] == pillar)
-    ]
+    calendar_pool = [e for e in CONTENT_CALENDAR if (pillar is None or e["pillar"] == pillar)]
 
     # If pillar filter gives us no entries fall back to full calendar
     if not calendar_pool:
@@ -306,14 +317,16 @@ async def generate_batch(req: ContentRequest, background_tasks: BackgroundTasks)
             target_pillar = entry["pillar"]
             fmt = entry["format"]
 
-        jobs.append({
-            "topic": entry["topic"],
-            "pillar": target_pillar,
-            "format": fmt,
-        })
+        jobs.append(
+            {
+                "topic": entry["topic"],
+                "pillar": target_pillar,
+                "format": fmt,
+            }
+        )
 
     # Generate all posts sequentially, collecting drafts ----------------------
-    agent = ContentAgent()
+    agent = ContentAgent(workspace_id=get_workspace_id())
     generated_drafts: list[dict] = []
     errors: list[str] = []
 
@@ -514,17 +527,19 @@ async def auto_generate_calendar(req: AutoCalendarRequest):
         for slot_idx, (pillar, fmt) in enumerate(rotation_week):
             posting_date = monday + timedelta(days=_POSTING_WEEKDAY_OFFSETS[slot_idx])
             topic = pick_topic(pillar)
-            slots.append({
-                "posting_date": posting_date,
-                "week_number": week_idx + 1,
-                "day_of_week": _DAY_NAMES[posting_date.weekday()],
-                "pillar": pillar,
-                "format": fmt,
-                "topic": topic,
-            })
+            slots.append(
+                {
+                    "posting_date": posting_date,
+                    "week_number": week_idx + 1,
+                    "day_of_week": _DAY_NAMES[posting_date.weekday()],
+                    "pillar": pillar,
+                    "format": fmt,
+                    "topic": topic,
+                }
+            )
 
     # ── Generate all posts sequentially ───────────────────────────────────────
-    agent = ContentAgent()
+    agent = ContentAgent(workspace_id=get_workspace_id())
     posts: list[dict[str, Any]] = []
     coverage: dict[str, int] = {}
 
@@ -581,20 +596,22 @@ async def auto_generate_calendar(req: AutoCalendarRequest):
         coverage[pillar] = coverage.get(pillar, 0) + 1
         coverage[fmt] = coverage.get(fmt, 0) + 1
 
-        posts.append({
-            "id": draft_id,
-            "scheduled_date": date_str,
-            "day_of_week": slot["day_of_week"],
-            "week_number": slot["week_number"],
-            "pillar": pillar,
-            "pillar_display": _PILLAR_DISPLAY.get(pillar, pillar),
-            "format": fmt,
-            "format_display": _FORMAT_DISPLAY.get(fmt, fmt),
-            "topic": topic,
-            "body": post_text,
-            "char_count": len(post_text),
-            "status": "generated",
-        })
+        posts.append(
+            {
+                "id": draft_id,
+                "scheduled_date": date_str,
+                "day_of_week": slot["day_of_week"],
+                "week_number": slot["week_number"],
+                "pillar": pillar,
+                "pillar_display": _PILLAR_DISPLAY.get(pillar, pillar),
+                "format": fmt,
+                "format_display": _FORMAT_DISPLAY.get(fmt, fmt),
+                "topic": topic,
+                "body": post_text,
+                "char_count": len(post_text),
+                "status": "generated",
+            }
+        )
 
     if not posts:
         raise HTTPException(
@@ -639,6 +656,7 @@ async def mark_content_posted(draft_id: str):
 # Content Archive
 # ---------------------------------------------------------------------------
 
+
 class ArchiveRequest(BaseModel):
     linkedin_post_url: Optional[str] = None
     posted_at: Optional[str] = None  # ISO date/datetime, defaults to now
@@ -667,9 +685,9 @@ async def get_content_archive(
     """List all archived (posted) content, ordered by posted_at DESC."""
     db = get_db()
     try:
-        query = db._filter_ws(
-            db.client.table("content_archive").select("*")
-        ).order("posted_at", desc=True)
+        query = db._filter_ws(db.client.table("content_archive").select("*")).order(
+            "posted_at", desc=True
+        )
         if pillar:
             query = query.eq("pillar", pillar)
         if format:
@@ -709,9 +727,9 @@ async def archive_content(draft_id: str, req: ArchiveRequest):
     fmt = ""
     for part in notes.split("|"):
         if part.startswith("format:"):
-            fmt = part[len("format:"):]
+            fmt = part[len("format:") :]
         elif part.startswith("pillar:"):
-            pillar = part[len("pillar:"):]
+            pillar = part[len("pillar:") :]
 
     # Resolve posted_at
     if req.posted_at:
@@ -745,11 +763,11 @@ async def archive_content(draft_id: str, req: ArchiveRequest):
     for part in notes.split("|"):
         if part.startswith("credibility:"):
             try:
-                credibility_score = int(part[len("credibility:"):].split("/")[0])
+                credibility_score = int(part[len("credibility:") :].split("/")[0])
             except (ValueError, IndexError):
                 pass
         elif part.startswith("publish_ready:"):
-            val = part[len("publish_ready:"):]
+            val = part[len("publish_ready:") :]
             publish_ready = val.lower() == "true"
 
     if credibility_score is not None:
@@ -843,8 +861,12 @@ async def get_archive_analytics():
         raise HTTPException(status_code=500, detail=f"Failed to fetch analytics: {str(e)}")
 
     total_posts = len(rows)
-    credibility_scores = [r["credibility_score"] for r in rows if r.get("credibility_score") is not None]
-    avg_credibility = round(sum(credibility_scores) / len(credibility_scores), 1) if credibility_scores else 0.0
+    credibility_scores = [
+        r["credibility_score"] for r in rows if r.get("credibility_score") is not None
+    ]
+    avg_credibility = (
+        round(sum(credibility_scores) / len(credibility_scores), 1) if credibility_scores else 0.0
+    )
 
     # Aggregate by pillar
     by_pillar: dict[str, dict[str, Any]] = {}
@@ -900,13 +922,17 @@ async def delete_all_drafts():
     """Delete all thought_leadership drafts (not archived posts)."""
     db = get_db()
     try:
-        result = db._filter_ws(
-            db.client.table("outreach_drafts").select("id")
-        ).eq("draft_type", "thought_leadership").execute()
+        result = (
+            db._filter_ws(db.client.table("outreach_drafts").select("id"))
+            .eq("draft_type", "thought_leadership")
+            .execute()
+        )
         ids = [r["id"] for r in (result.data or [])]
         if ids:
             for draft_id in ids:
-                db._filter_ws(db.client.table("outreach_drafts").delete()).eq("id", draft_id).execute()
+                db._filter_ws(db.client.table("outreach_drafts").delete()).eq(
+                    "id", draft_id
+                ).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear drafts: {str(e)}")
     return {"data": {"deleted_count": len(ids)}}
@@ -930,7 +956,12 @@ async def run_intel_on_draft(draft_id: str):
 
     # Fetch draft
     try:
-        res = db._filter_ws(db.client.table("outreach_drafts").select("*")).eq("id", draft_id).limit(1).execute()
+        res = (
+            db._filter_ws(db.client.table("outreach_drafts").select("*"))
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
@@ -943,7 +974,7 @@ async def run_intel_on_draft(draft_id: str):
         raise HTTPException(status_code=422, detail="Draft has no text to verify")
 
     # Run the intel verification using a ContentAgent instance
-    agent = ContentAgent()
+    agent = ContentAgent(workspace_id=get_workspace_id())
 
     intel_prompt = (
         "You are a fact-checking editor for a thought leadership publication.\n\n"
@@ -980,6 +1011,7 @@ async def run_intel_on_draft(draft_id: str):
 
     try:
         import anthropic
+
         client = anthropic.Anthropic()
         intel_response = client.messages.create(
             model="claude-sonnet-4-6",
@@ -1018,16 +1050,22 @@ async def run_intel_on_draft(draft_id: str):
 
     # Update persisted notes with intel report
     import json as _json
+
     notes = draft_row.get("personalization_notes", "") or ""
 
     # Strip any existing intel/quality sections
     import re
+
     clean_notes = re.sub(r"\|intel_report::.*?(?=\|quality_report::|$)", "", notes, flags=re.DOTALL)
     clean_notes = re.sub(r"\|quality_report::.*", "", clean_notes, flags=re.DOTALL)
 
     # Re-add credibility + publish_ready + intel report
     # Remove old credibility/publish_ready
-    parts = [p for p in clean_notes.split("|") if p and not p.startswith("credibility:") and not p.startswith("publish_ready:")]
+    parts = [
+        p
+        for p in clean_notes.split("|")
+        if p and not p.startswith("credibility:") and not p.startswith("publish_ready:")
+    ]
     parts.append(f"credibility:{credibility_score}/10")
     parts.append(f"publish_ready:{publish_ready}")
     updated_notes = "|".join(parts)
@@ -1040,9 +1078,13 @@ async def run_intel_on_draft(draft_id: str):
         updated_notes += f"|quality_report::{qr_match.group(1)}"
 
     try:
-        db._filter_ws(db.client.table("outreach_drafts").update({
-            "personalization_notes": updated_notes,
-        })).eq("id", draft_id).execute()
+        db._filter_ws(
+            db.client.table("outreach_drafts").update(
+                {
+                    "personalization_notes": updated_notes,
+                }
+            )
+        ).eq("id", draft_id).execute()
     except Exception:
         pass  # Non-critical — intel is still returned
 
@@ -1072,9 +1114,7 @@ async def check_dedup(topic: str = Query(..., description="Topic to check for du
 
     try:
         result = (
-            db._filter_ws(
-                db.client.table("content_archive").select("id, posted_at, topic")
-            )
+            db._filter_ws(db.client.table("content_archive").select("id, posted_at, topic"))
             .eq("topic_hash", th)
             .order("posted_at", desc=True)
             .limit(1)

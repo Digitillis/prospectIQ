@@ -49,8 +49,9 @@ def _fetch_bounced_drafts(db: Database) -> list[dict[str, Any]]:
     offset = 0
     while True:
         q = db._filter_ws(
-            db.client.table("outreach_drafts")
-            .select("id, contact_id, workspace_id, bounced_at, contacts(id, email, status, is_outreach_eligible)")
+            db.client.table("outreach_drafts").select(
+                "id, contact_id, workspace_id, bounced_at, contacts(id, email, status, is_outreach_eligible)"
+            )
         ).not_.is_("bounced_at", "null")
         page = q.range(offset, offset + page_size - 1).execute().data or []
         rows.extend(page)
@@ -70,23 +71,13 @@ def _existing_dnc_emails(db: Database, emails: set[str]) -> set[str]:
     for email in emails:
         chunk.append(email)
         if len(chunk) >= 200:
-            res = (
-                db.client.table("do_not_contact")
-                .select("email")
-                .in_("email", chunk)
-                .execute()
-            )
+            res = db.client.table("do_not_contact").select("email").in_("email", chunk).execute()
             for row in res.data or []:
                 if row.get("email"):
                     found.add(row["email"].lower())
             chunk = []
     if chunk:
-        res = (
-            db.client.table("do_not_contact")
-            .select("email")
-            .in_("email", chunk)
-            .execute()
-        )
+        res = db.client.table("do_not_contact").select("email").in_("email", chunk).execute()
         for row in res.data or []:
             if row.get("email"):
                 found.add(row["email"].lower())
@@ -96,12 +87,7 @@ def _existing_dnc_emails(db: Database, emails: set[str]) -> set[str]:
 def _existing_dnc_domains(db: Database, domains: set[str]) -> set[str]:
     if not domains:
         return set()
-    res = (
-        db.client.table("do_not_contact")
-        .select("domain")
-        .in_("domain", list(domains))
-        .execute()
-    )
+    res = db.client.table("do_not_contact").select("domain").in_("domain", list(domains)).execute()
     return {row["domain"].lower() for row in (res.data or []) if row.get("domain")}
 
 
@@ -155,14 +141,18 @@ def run_bounce_suppression(db: Database) -> dict[str, Any]:
         }
 
     if not by_contact:
-        logger.info("run_bounce_suppression: no bounced drafts found for workspace %s", workspace_id)
+        logger.info(
+            "run_bounce_suppression: no bounced drafts found for workspace %s", workspace_id
+        )
         return summary
 
     emails = {c["email"] for c in by_contact.values()}
     try:
         already_emails = _existing_dnc_emails(db, emails)
     except Exception as exc:
-        logger.warning("run_bounce_suppression: DNC lookup failed (%s) — assuming none suppressed", exc)
+        logger.warning(
+            "run_bounce_suppression: DNC lookup failed (%s) — assuming none suppressed", exc
+        )
         already_emails = set()
 
     dnc = DNCRegistry(workspace_id=workspace_id)
@@ -174,8 +164,7 @@ def run_bounce_suppression(db: Database) -> dict[str, Any]:
         email = info["email"]
         already_dnc = email in already_emails
         already_marked = (
-            info.get("status") == "bounced"
-            and info.get("is_outreach_eligible") is False
+            info.get("status") == "bounced" and info.get("is_outreach_eligible") is False
         )
 
         if already_dnc and already_marked:
@@ -183,12 +172,16 @@ def run_bounce_suppression(db: Database) -> dict[str, Any]:
             continue
 
         try:
-            db.client.table("contacts").update({
-                "status": "bounced",
-                "is_outreach_eligible": False,
-            }).eq("id", contact_id).execute()
+            db.client.table("contacts").update(
+                {
+                    "status": "bounced",
+                    "is_outreach_eligible": False,
+                }
+            ).eq("id", contact_id).execute()
         except Exception as exc:
-            logger.warning("run_bounce_suppression: failed to update contact %s: %s", contact_id, exc)
+            logger.warning(
+                "run_bounce_suppression: failed to update contact %s: %s", contact_id, exc
+            )
             summary["errors"].append(f"contact_update:{contact_id}:{exc}")
             continue
 
@@ -197,12 +190,14 @@ def run_bounce_suppression(db: Database) -> dict[str, Any]:
                 # add_entry does not inject workspace_id; insert directly to keep
                 # the existing public API unchanged while still satisfying the
                 # NOT NULL workspace_id constraint on do_not_contact.
-                db.client.table("do_not_contact").insert({
-                    "email": email,
-                    "reason": "bounced",
-                    "added_by": "bounce_suppressor",
-                    "workspace_id": workspace_id,
-                }).execute()
+                db.client.table("do_not_contact").insert(
+                    {
+                        "email": email,
+                        "reason": "bounced",
+                        "added_by": "bounce_suppressor",
+                        "workspace_id": workspace_id,
+                    }
+                ).execute()
             except Exception as exc:
                 # If a concurrent writer beat us to it the unique index will
                 # raise; treat that as already-suppressed rather than an error.
@@ -236,13 +231,15 @@ def run_bounce_suppression(db: Database) -> dict[str, Any]:
         if domain in already_domains:
             continue
         try:
-            db.client.table("do_not_contact").insert({
-                "domain": domain,
-                "reason": "bounced_domain",
-                "added_by": "bounce_suppressor",
-                "workspace_id": workspace_id,
-                "notes": f"Auto-suppressed after {len(by_domain[domain])} bounces",
-            }).execute()
+            db.client.table("do_not_contact").insert(
+                {
+                    "domain": domain,
+                    "reason": "bounced_domain",
+                    "added_by": "bounce_suppressor",
+                    "workspace_id": workspace_id,
+                    "notes": f"Auto-suppressed after {len(by_domain[domain])} bounces",
+                }
+            ).execute()
             summary["domains_suppressed"] += 1
         except Exception as exc:
             msg = str(exc).lower()

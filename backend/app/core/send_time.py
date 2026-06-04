@@ -19,29 +19,60 @@ from zoneinfo import ZoneInfo
 # State → timezone mapping (US manufacturing hubs)
 _STATE_TIMEZONE: dict[str, str] = {
     # Eastern
-    "CT": "US/Eastern", "DE": "US/Eastern", "FL": "US/Eastern",
-    "GA": "US/Eastern", "IN": "US/Eastern", "KY": "US/Eastern",
-    "MA": "US/Eastern", "MD": "US/Eastern", "ME": "US/Eastern",
-    "MI": "US/Eastern", "NC": "US/Eastern", "NH": "US/Eastern",
-    "NJ": "US/Eastern", "NY": "US/Eastern", "OH": "US/Eastern",
-    "PA": "US/Eastern", "RI": "US/Eastern", "SC": "US/Eastern",
-    "TN": "US/Eastern", "VA": "US/Eastern", "VT": "US/Eastern",
+    "CT": "US/Eastern",
+    "DE": "US/Eastern",
+    "FL": "US/Eastern",
+    "GA": "US/Eastern",
+    "IN": "US/Eastern",
+    "KY": "US/Eastern",
+    "MA": "US/Eastern",
+    "MD": "US/Eastern",
+    "ME": "US/Eastern",
+    "MI": "US/Eastern",
+    "NC": "US/Eastern",
+    "NH": "US/Eastern",
+    "NJ": "US/Eastern",
+    "NY": "US/Eastern",
+    "OH": "US/Eastern",
+    "PA": "US/Eastern",
+    "RI": "US/Eastern",
+    "SC": "US/Eastern",
+    "TN": "US/Eastern",
+    "VA": "US/Eastern",
+    "VT": "US/Eastern",
     "WV": "US/Eastern",
     # Central
-    "AL": "US/Central", "AR": "US/Central", "IA": "US/Central",
-    "IL": "US/Central", "KS": "US/Central", "LA": "US/Central",
-    "MN": "US/Central", "MO": "US/Central", "MS": "US/Central",
-    "NE": "US/Central", "ND": "US/Central", "OK": "US/Central",
-    "SD": "US/Central", "TX": "US/Central", "WI": "US/Central",
+    "AL": "US/Central",
+    "AR": "US/Central",
+    "IA": "US/Central",
+    "IL": "US/Central",
+    "KS": "US/Central",
+    "LA": "US/Central",
+    "MN": "US/Central",
+    "MO": "US/Central",
+    "MS": "US/Central",
+    "NE": "US/Central",
+    "ND": "US/Central",
+    "OK": "US/Central",
+    "SD": "US/Central",
+    "TX": "US/Central",
+    "WI": "US/Central",
     # Mountain
-    "AZ": "US/Mountain", "CO": "US/Mountain", "ID": "US/Mountain",
-    "MT": "US/Mountain", "NM": "US/Mountain", "UT": "US/Mountain",
+    "AZ": "US/Mountain",
+    "CO": "US/Mountain",
+    "ID": "US/Mountain",
+    "MT": "US/Mountain",
+    "NM": "US/Mountain",
+    "UT": "US/Mountain",
     "WY": "US/Mountain",
     # Pacific
-    "CA": "US/Pacific", "NV": "US/Pacific", "OR": "US/Pacific",
+    "CA": "US/Pacific",
+    "NV": "US/Pacific",
+    "OR": "US/Pacific",
     "WA": "US/Pacific",
     # Other
-    "AK": "US/Alaska", "HI": "US/Hawaii",
+    "AK": "US/Alaska",
+    "HI": "US/Hawaii",
 }
 
 # Optimal local send times by persona type
@@ -101,9 +132,7 @@ def get_optimal_send_time(
     prospect_tz = ZoneInfo(tz_name)
 
     # Determine optimal local time window
-    window_start, window_end = _PERSONA_WINDOWS.get(
-        persona_type or "", _DEFAULT_WINDOW
-    )
+    window_start, window_end = _PERSONA_WINDOWS.get(persona_type or "", _DEFAULT_WINDOW)
 
     # Convert now to prospect's local time
     local_now = now.astimezone(prospect_tz)
@@ -143,9 +172,7 @@ def get_send_time_explanation(
     tz_name = _STATE_TIMEZONE.get((state or "").upper(), "US/Eastern")
     tz_label = tz_name.replace("US/", "").replace("ern", "")  # "Eastern" → "East"
 
-    window_start, window_end = _PERSONA_WINDOWS.get(
-        persona_type or "", _DEFAULT_WINDOW
-    )
+    window_start, window_end = _PERSONA_WINDOWS.get(persona_type or "", _DEFAULT_WINDOW)
 
     return (
         f"{window_start.strftime('%I:%M%p').lstrip('0')}-"

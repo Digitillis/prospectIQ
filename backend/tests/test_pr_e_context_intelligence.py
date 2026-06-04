@@ -120,6 +120,7 @@ def _channel_mock(
 
 def _load_builder():
     from backend.app.core.context_intelligence import ContextPacketBuilder
+
     return ContextPacketBuilder
 
 
@@ -133,17 +134,26 @@ def test_full_packet_builds_from_contact_company_and_draft_data():
     ContextPacketBuilder = _load_builder()
     db = _make_db()
     builder = ContextPacketBuilder(db)
-    prior = [{"draft_id": "d-001", "step": 1, "channel": "email",
-               "subject": "Intro", "sent_at": "2026-05-01T10:00:00Z",
-               "primary_angle": "ops_efficiency"}]
+    prior = [
+        {
+            "draft_id": "d-001",
+            "step": 1,
+            "channel": "email",
+            "subject": "Intro",
+            "sent_at": "2026-05-01T10:00:00Z",
+            "primary_angle": "ops_efficiency",
+        }
+    ]
 
-    with patch.object(builder, "_load_contact", return_value=CONTACT), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=prior), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}):
+    with (
+        patch.object(builder, "_load_contact", return_value=CONTACT),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression"),
+        patch.object(builder, "_load_prior_messages", return_value=prior),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -173,13 +183,15 @@ def test_missing_contact_produces_degraded_packet():
     db = _make_db()
     builder = ContextPacketBuilder(db)
 
-    with patch.object(builder, "_load_contact", return_value=None), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=[]), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}):
+    with (
+        patch.object(builder, "_load_contact", return_value=None),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression"),
+        patch.object(builder, "_load_prior_messages", return_value=[]),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -203,13 +215,15 @@ def test_missing_company_produces_degraded_packet():
     db = _make_db()
     builder = ContextPacketBuilder(db)
 
-    with patch.object(builder, "_load_contact", return_value=CONTACT), \
-         patch.object(builder, "_load_company", return_value=None), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=[]), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}):
+    with (
+        patch.object(builder, "_load_contact", return_value=CONTACT),
+        patch.object(builder, "_load_company", return_value=None),
+        patch.object(builder, "_load_suppression"),
+        patch.object(builder, "_load_prior_messages", return_value=[]),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -233,14 +247,16 @@ def test_missing_workspace_id_logs_warning(caplog):
     builder = ContextPacketBuilder(db)
     contact_no_ws = {**CONTACT, "workspace_id": None}
 
-    with patch.object(builder, "_load_contact", return_value=contact_no_ws), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=[]), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}), \
-         caplog.at_level(logging.WARNING, logger="backend.app.core.context_intelligence"):
+    with (
+        patch.object(builder, "_load_contact", return_value=contact_no_ws),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression"),
+        patch.object(builder, "_load_prior_messages", return_value=[]),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+        caplog.at_level(logging.WARNING, logger="backend.app.core.context_intelligence"),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -250,9 +266,7 @@ def test_missing_workspace_id_logs_warning(caplog):
 
     assert packet.workspace_id == ""
     assert any(
-        "workspace_id=NULL" in r.message
-        for r in caplog.records
-        if r.levelno == logging.WARNING
+        "workspace_id=NULL" in r.message for r in caplog.records if r.levelno == logging.WARNING
     ), f"Expected workspace_id=NULL warning. Records: {[r.message for r in caplog.records]}"
 
 
@@ -267,21 +281,33 @@ def test_prior_messages_are_populated():
     db = _make_db()
     builder = ContextPacketBuilder(db)
     prior = [
-        {"draft_id": "d-001", "step": 1, "channel": "email",
-         "subject": "Intro", "sent_at": "2026-04-20T10:00:00+00:00",
-         "primary_angle": "ops_efficiency"},
-        {"draft_id": "d-002", "step": 2, "channel": "email",
-         "subject": "Follow-up", "sent_at": "2026-04-27T10:00:00+00:00",
-         "primary_angle": "cost_reduction"},
+        {
+            "draft_id": "d-001",
+            "step": 1,
+            "channel": "email",
+            "subject": "Intro",
+            "sent_at": "2026-04-20T10:00:00+00:00",
+            "primary_angle": "ops_efficiency",
+        },
+        {
+            "draft_id": "d-002",
+            "step": 2,
+            "channel": "email",
+            "subject": "Follow-up",
+            "sent_at": "2026-04-27T10:00:00+00:00",
+            "primary_angle": "cost_reduction",
+        },
     ]
 
-    with patch.object(builder, "_load_contact", return_value=CONTACT), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=prior), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}):
+    with (
+        patch.object(builder, "_load_contact", return_value=CONTACT),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression"),
+        patch.object(builder, "_load_prior_messages", return_value=prior),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -309,13 +335,15 @@ def test_suppression_status_is_reflected():
         packet.suppression_status = "company"
         packet.suppression_reason = "dnc_list"
 
-    with patch.object(builder, "_load_contact", return_value=CONTACT), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression", side_effect=_set_suppressed), \
-         patch.object(builder, "_load_prior_messages", return_value=[]), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}):
+    with (
+        patch.object(builder, "_load_contact", return_value=CONTACT),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression", side_effect=_set_suppressed),
+        patch.object(builder, "_load_prior_messages", return_value=[]),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -338,13 +366,15 @@ def test_company_lock_and_traction_are_reflected():
     builder = ContextPacketBuilder(db)
     ch = _channel_mock(locked=True, lock_reason="reply_in_progress", has_traction=True)
 
-    with patch.object(builder, "_load_contact", return_value=CONTACT), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=[]), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": ch}):
+    with (
+        patch.object(builder, "_load_contact", return_value=CONTACT),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression"),
+        patch.object(builder, "_load_prior_messages", return_value=[]),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": ch}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -369,18 +399,29 @@ def test_prohibited_prior_angle_added_for_step_two_and_beyond():
     builder = ContextPacketBuilder(db)
     prior_angle = "ops_efficiency_angle"
 
-    with patch.object(builder, "_load_contact", return_value=CONTACT), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=[
-             {"draft_id": "d-001", "step": 1, "channel": "email",
-              "subject": "Intro", "sent_at": "2026-05-01T10:00:00Z",
-              "primary_angle": prior_angle},
-         ]), \
-         patch.object(builder, "_get_prior_angle", return_value=prior_angle), \
-         patch.object(builder, "_load_reply_history", return_value=[]), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}):
+    with (
+        patch.object(builder, "_load_contact", return_value=CONTACT),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression"),
+        patch.object(
+            builder,
+            "_load_prior_messages",
+            return_value=[
+                {
+                    "draft_id": "d-001",
+                    "step": 1,
+                    "channel": "email",
+                    "subject": "Intro",
+                    "sent_at": "2026-05-01T10:00:00Z",
+                    "primary_angle": prior_angle,
+                },
+            ],
+        ),
+        patch.object(builder, "_get_prior_angle", return_value=prior_angle),
+        patch.object(builder, "_load_reply_history", return_value=[]),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,
@@ -405,20 +446,24 @@ def test_active_conversation_detected():
     ContextPacketBuilder = _load_builder()
     db = _make_db()
     builder = ContextPacketBuilder(db)
-    reply_history = [{
-        "contact_id": CONTACT_ID,
-        "sentiment": "interested",
-        "replied_at": "2026-05-10T09:00:00Z",
-        "body_excerpt": "Yes, let's set up a call.",
-    }]
+    reply_history = [
+        {
+            "contact_id": CONTACT_ID,
+            "sentiment": "interested",
+            "replied_at": "2026-05-10T09:00:00Z",
+            "body_excerpt": "Yes, let's set up a call.",
+        }
+    ]
 
-    with patch.object(builder, "_load_contact", return_value=CONTACT), \
-         patch.object(builder, "_load_company", return_value=COMPANY), \
-         patch.object(builder, "_load_suppression"), \
-         patch.object(builder, "_load_prior_messages", return_value=[]), \
-         patch.object(builder, "_load_reply_history", return_value=reply_history), \
-         patch.object(builder, "_load_sibling_history", return_value=[]), \
-         patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}):
+    with (
+        patch.object(builder, "_load_contact", return_value=CONTACT),
+        patch.object(builder, "_load_company", return_value=COMPANY),
+        patch.object(builder, "_load_suppression"),
+        patch.object(builder, "_load_prior_messages", return_value=[]),
+        patch.object(builder, "_load_reply_history", return_value=reply_history),
+        patch.object(builder, "_load_sibling_history", return_value=[]),
+        patch.dict(sys.modules, {"backend.app.core.channel_coordinator": _channel_mock()}),
+    ):
         packet = builder.build(
             contact_id=CONTACT_ID,
             company_id=COMPANY_ID,

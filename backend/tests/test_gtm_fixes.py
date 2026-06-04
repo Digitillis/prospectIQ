@@ -28,6 +28,7 @@ import pytest
 # Fix 1: Apollo ID validation (unit tests — no network calls)
 # ---------------------------------------------------------------------------
 
+
 class TestApolloIdValidation:
     """Tests for apollo_id pre-validation in enrichment.py.
 
@@ -270,23 +271,21 @@ class TestExistingIntegrityRulesRegression:
         )
 
     def test_past_customer_claim_still_caught(self) -> None:
-        assert "past_customer_claim" in _tags_for(
-            "Here's what we've seen in plants running Plex."
-        )
+        assert "past_customer_claim" in _tags_for("Here's what we've seen in plants running Plex.")
 
     def test_step_label_leak_still_caught(self) -> None:
-        assert "step_label_leak" in _tags_for(
-            "Following up on my first email from last week."
-        )
+        assert "step_label_leak" in _tags_for("Following up on my first email from last week.")
 
 
 # ---------------------------------------------------------------------------
 # Fix 4: Budget cap script is importable and has correct CLI args
 # ---------------------------------------------------------------------------
 
+
 class TestBudgetCapScript:
     def test_script_is_importable(self) -> None:
         import backend.scripts.fix_workspace_budget as m
+
         assert hasattr(m, "main")
 
     def test_argument_parser_default_budget(self) -> None:
@@ -297,10 +296,13 @@ class TestBudgetCapScript:
 
         # Parse empty args to get defaults
         import importlib
+
         src = open(m.__file__).read()
         # Verify defaults are embedded in the script
         assert "default=350.0" in src or "default: 350" in src
 
     def test_dry_run_flag_exists(self) -> None:
-        src = open(__import__("backend.scripts.fix_workspace_budget", fromlist=["__file__"]).__file__).read()
+        src = open(
+            __import__("backend.scripts.fix_workspace_budget", fromlist=["__file__"]).__file__
+        ).read()
         assert "--dry-run" in src

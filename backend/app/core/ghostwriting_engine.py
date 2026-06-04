@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # Data models
 # ---------------------------------------------------------------------------
 
+
 class VoiceProfile:
     """Extracted voice characteristics for a workspace."""
 
@@ -135,6 +136,7 @@ _CONTENT_TYPE_LABELS = {
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class GhostwritingEngine:
     """Voice calibration and content generation powered by Claude."""
@@ -259,7 +261,11 @@ Return only valid JSON. No explanation, no markdown fences."""
 
         content_label = _CONTENT_TYPE_LABELS.get(content_type, "LinkedIn post")
         audience_line = f"Target audience: {target_persona}." if target_persona else ""
-        cta_line = "End with a natural, non-salesy call-to-action that invites engagement." if include_cta else "Do not include an explicit call-to-action."
+        cta_line = (
+            "End with a natural, non-salesy call-to-action that invites engagement."
+            if include_cta
+            else "Do not include an explicit call-to-action."
+        )
 
         # Character guidance per type
         length_guidance = {
@@ -303,10 +309,7 @@ Write only the post content. No preamble, no explanation."""
         db = Database(workspace_id=workspace_id)
         insert_payload: dict[str, Any] = {
             "workspace_id": workspace_id,
-            "voice_profile_id": (
-                voice_profile_id
-                or (profile.profile_id if profile else None)
-            ),
+            "voice_profile_id": (voice_profile_id or (profile.profile_id if profile else None)),
             "topic": topic,
             "content_type": content_type,
             "generated_content": generated_content,
@@ -367,7 +370,7 @@ Write only the post content. No preamble, no explanation."""
         prompt = f"""You are a ghostwriter. Here is a {content_label} you previously wrote:
 
 ---
-{row['generated_content']}
+{row["generated_content"]}
 ---
 
 The author wants you to revise it with this feedback: "{feedback}"
@@ -393,11 +396,13 @@ Write only the revised post content. No preamble."""
         hook_line = _extract_hook(generated_content)
         word_count = len(generated_content.split())
 
-        db.client.table("ghostwritten_posts").update({
-            "generated_content": generated_content,
-            "hook_line": hook_line,
-            "word_count": word_count,
-        }).eq("id", post_id).execute()
+        db.client.table("ghostwritten_posts").update(
+            {
+                "generated_content": generated_content,
+                "hook_line": hook_line,
+                "word_count": word_count,
+            }
+        ).eq("id", post_id).execute()
 
         return GhostwrittenPost(
             post_id=post_id,
@@ -432,18 +437,20 @@ Write only the revised post content. No preamble."""
             .execute()
         )
         posts = []
-        for row in (result.data or []):
-            posts.append(GhostwrittenPost(
-                post_id=row["id"],
-                workspace_id=row["workspace_id"],
-                topic=row["topic"],
-                content_type=row["content_type"],
-                generated_content=row["generated_content"],
-                hook_line=row.get("hook_line") or _extract_hook(row["generated_content"]),
-                word_count=row.get("word_count") or len(row["generated_content"].split()),
-                status=row.get("status", "draft"),
-                created_at=row.get("created_at"),
-            ))
+        for row in result.data or []:
+            posts.append(
+                GhostwrittenPost(
+                    post_id=row["id"],
+                    workspace_id=row["workspace_id"],
+                    topic=row["topic"],
+                    content_type=row["content_type"],
+                    generated_content=row["generated_content"],
+                    hook_line=row.get("hook_line") or _extract_hook(row["generated_content"]),
+                    word_count=row.get("word_count") or len(row["generated_content"].split()),
+                    status=row.get("status", "draft"),
+                    created_at=row.get("created_at"),
+                )
+            )
         return posts
 
     async def get_voice_profile(self, workspace_id: str) -> VoiceProfile | None:
@@ -484,6 +491,7 @@ Write only the revised post content. No preamble."""
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _build_style_description(profile: VoiceProfile | None) -> str:
     """Convert a VoiceProfile into a plain-text style directive for the LLM."""

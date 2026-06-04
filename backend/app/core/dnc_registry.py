@@ -187,6 +187,7 @@ class DNCRegistry:
 # CLI helpers
 # ------------------------------------------------------------------
 
+
 def print_dnc_table(entries: list[dict]) -> None:
     table = Table(show_header=True, header_style="bold red")
     table.add_column("Type", min_width=8)

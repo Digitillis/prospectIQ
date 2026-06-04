@@ -165,12 +165,15 @@ class PostMeetingAgent(BaseAgent):
                     contact_name = contact.get("full_name", contact.get("first_name", "Unknown"))
                     contact_title = contact.get("title", "Unknown")
 
-            console.print(f"  [cyan]{company_name}: Processing meeting transcript ({len(transcript)} chars)...[/cyan]")
+            console.print(
+                f"  [cyan]{company_name}: Processing meeting transcript ({len(transcript)} chars)...[/cyan]"
+            )
 
             # Resolve sender signature from outreach_guidelines
             sender_signature = "the sender"
             try:
                 from backend.app.core.config import get_outreach_guidelines
+
                 _g = get_outreach_guidelines()
                 _s = _g.get("sender", {})
                 _parts = [_s.get("name", ""), _s.get("title", ""), _s.get("company", "")]
@@ -224,8 +227,11 @@ class PostMeetingAgent(BaseAgent):
             update_data: dict = {}
 
             if new_status and new_status in (
-                "contacted", "engaged", "meeting_scheduled",
-                "pilot_discussion", "pilot_signed",
+                "contacted",
+                "engaged",
+                "meeting_scheduled",
+                "pilot_discussion",
+                "pilot_signed",
             ):
                 update_data["status"] = new_status
 
@@ -251,26 +257,28 @@ class PostMeetingAgent(BaseAgent):
             meddic = parsed.get("meddic", {})
             qual_score = parsed.get("qualification_score", 0)
 
-            self.db.insert_interaction({
-                "company_id": company_id,
-                "contact_id": contact_id,
-                "type": "meeting",
-                "channel": "other",
-                "subject": f"Meeting — {meeting_dt} — {company_name}",
-                "body": parsed.get("meeting_summary", ""),
-                "source": meeting_source,
-                "metadata": {
-                    "bant": bant,
-                    "meddic": meddic,
-                    "deal_confidence": parsed.get("deal_confidence", ""),
-                    "qualification_score": qual_score,
-                    "budget_signal": parsed.get("budget_signal", ""),
-                    "competitors_mentioned": parsed.get("competitors_mentioned", []),
-                    "objections_raised": parsed.get("objections_raised", []),
-                    "next_step": parsed.get("next_step", ""),
-                    "internal_notes": parsed.get("internal_notes", ""),
-                },
-            })
+            self.db.insert_interaction(
+                {
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "type": "meeting",
+                    "channel": "other",
+                    "subject": f"Meeting — {meeting_dt} — {company_name}",
+                    "body": parsed.get("meeting_summary", ""),
+                    "source": meeting_source,
+                    "metadata": {
+                        "bant": bant,
+                        "meddic": meddic,
+                        "deal_confidence": parsed.get("deal_confidence", ""),
+                        "qualification_score": qual_score,
+                        "budget_signal": parsed.get("budget_signal", ""),
+                        "competitors_mentioned": parsed.get("competitors_mentioned", []),
+                        "objections_raised": parsed.get("objections_raised", []),
+                        "next_step": parsed.get("next_step", ""),
+                        "internal_notes": parsed.get("internal_notes", ""),
+                    },
+                }
+            )
 
             # --- Create follow-up draft ---
             follow_up_subject = parsed.get("follow_up_email_subject", "")
@@ -300,6 +308,7 @@ class PostMeetingAgent(BaseAgent):
             if parsed.get("deal_confidence") == "high" or qual_score >= 7:
                 try:
                     from backend.app.utils.notifications import notify_slack
+
                     notify_slack(
                         f"*Hot prospect: {company_name}* — meeting on {meeting_dt}. "
                         f"Deal confidence: {parsed.get('deal_confidence', 'N/A')}. "

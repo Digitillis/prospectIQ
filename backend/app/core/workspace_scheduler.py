@@ -28,6 +28,7 @@ def get_active_workspaces() -> list[dict[str, Any]]:
     """Return all workspaces whose subscription is active or trialing."""
     try:
         from backend.app.core.database import get_supabase_client
+
         result = (
             get_supabase_client()
             .table("workspaces")
@@ -60,7 +61,12 @@ def for_each_workspace(
         ws_id = ws["id"]
         ws_name = ws.get("name", ws_id)
         try:
-            from backend.app.core.workspace import WorkspaceContext, set_workspace_context, clear_workspace_context
+            from backend.app.core.workspace import (
+                WorkspaceContext,
+                set_workspace_context,
+                clear_workspace_context,
+            )
+
             ctx = WorkspaceContext(
                 workspace_id=ws_id,
                 name=ws_name,
@@ -72,7 +78,9 @@ def for_each_workspace(
             set_workspace_context(ctx)
             fn(ws)
         except Exception as exc:
-            logger.error("%s: failed for workspace %s (%s): %s", job_name, ws_name, ws_id, exc, exc_info=True)
+            logger.error(
+                "%s: failed for workspace %s (%s): %s", job_name, ws_name, ws_id, exc, exc_info=True
+            )
         finally:
             try:
                 clear_workspace_context()
@@ -89,10 +97,13 @@ def get_workspace_monthly_spend(workspace_id: str) -> float:
     try:
         from backend.app.core.database import get_supabase_client
         from datetime import datetime, timezone
+
         client = get_supabase_client()
-        month_start = datetime.now(timezone.utc).replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        ).isoformat()
+        month_start = (
+            datetime.now(timezone.utc)
+            .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            .isoformat()
+        )
         total = 0.0
         offset = 0
         while True:
@@ -127,6 +138,7 @@ def workspace_daily_sends_ok(workspace: dict, job_name: str = "outreach") -> boo
     try:
         from backend.app.core.database import get_supabase_client
         from datetime import datetime, timezone
+
         today_start = (
             datetime.now(timezone.utc)
             .replace(hour=0, minute=0, second=0, microsecond=0)
@@ -145,7 +157,10 @@ def workspace_daily_sends_ok(workspace: dict, job_name: str = "outreach") -> boo
         if today_count >= daily_limit:
             logger.warning(
                 "%s: workspace %s daily limit reached (%d/%d) — skipping",
-                job_name, workspace.get("name", ws_id), today_count, daily_limit,
+                job_name,
+                workspace.get("name", ws_id),
+                today_count,
+                daily_limit,
             )
             return False
         return True
@@ -172,19 +187,30 @@ def workspace_budget_ok(workspace: dict, job_name: str) -> bool:
     if pct >= 0.80:
         logger.warning(
             "%s: workspace %s budget at %.0f%% ($%.2f / $%.2f)",
-            job_name, workspace.get("name", ws_id), pct * 100, spend, budget,
+            job_name,
+            workspace.get("name", ws_id),
+            pct * 100,
+            spend,
+            budget,
         )
         _send_budget_alert(workspace, spend, budget, pct)
     elif pct >= 0.50:
         logger.warning(
             "%s: workspace %s budget at %.0f%% ($%.2f / $%.2f)",
-            job_name, workspace.get("name", ws_id), pct * 100, spend, budget,
+            job_name,
+            workspace.get("name", ws_id),
+            pct * 100,
+            spend,
+            budget,
         )
 
     if spend >= budget:
         logger.warning(
             "%s: workspace %s budget exhausted ($%.2f / $%.2f) — skipping",
-            job_name, workspace.get("name", ws_id), spend, budget,
+            job_name,
+            workspace.get("name", ws_id),
+            spend,
+            budget,
         )
         return False
     return True
@@ -217,29 +243,36 @@ def _send_budget_alert(workspace: dict, spend: float, budget: float, pct: float)
             return  # Already alerted this hour
 
         # Write a sentinel row so the next check in this hour is suppressed
-        client.table("api_costs").insert({
-            "workspace_id": ws_id,
-            "provider": "budget_alert",
-            "model": f"{pct:.0%}_threshold",
-            "estimated_cost_usd": 0,
-        }).execute()
+        client.table("api_costs").insert(
+            {
+                "workspace_id": ws_id,
+                "provider": "budget_alert",
+                "model": f"{pct:.0%}_threshold",
+                "estimated_cost_usd": 0,
+            }
+        ).execute()
 
         import asyncio
         from backend.app.core.notifications import send_email
-        asyncio.run(send_email(
-            to="avi@digitillis.io",
-            subject=f"[ProspectIQ] Budget alert: {pct:.0%} of ${budget:.0f} cap used",
-            html_body=(
-                f"<p><strong>{ws_name}</strong> has used "
-                f"<strong style='color:#d97706'>${spend:.2f}</strong> of its "
-                f"<strong>${budget:.0f}/month</strong> API budget "
-                f"({pct:.0%}).</p>"
-                f"<p>At the current burn rate this cap will be hit before month end. "
-                f"Either top up the Anthropic account or raise "
-                f"<code>monthly_api_budget_usd</code> in workspace settings.</p>"
-            ),
-        ))
-        logger.info("Budget alert email sent for workspace %s (%.0f%% of $%.0f)", ws_name, pct * 100, budget)
+
+        asyncio.run(
+            send_email(
+                to="avi@digitillis.io",
+                subject=f"[ProspectIQ] Budget alert: {pct:.0%} of ${budget:.0f} cap used",
+                html_body=(
+                    f"<p><strong>{ws_name}</strong> has used "
+                    f"<strong style='color:#d97706'>${spend:.2f}</strong> of its "
+                    f"<strong>${budget:.0f}/month</strong> API budget "
+                    f"({pct:.0%}).</p>"
+                    f"<p>At the current burn rate this cap will be hit before month end. "
+                    f"Either top up the Anthropic account or raise "
+                    f"<code>monthly_api_budget_usd</code> in workspace settings.</p>"
+                ),
+            )
+        )
+        logger.info(
+            "Budget alert email sent for workspace %s (%.0f%% of $%.0f)", ws_name, pct * 100, budget
+        )
     except Exception as exc:
         logger.warning("_send_budget_alert failed (non-critical): %s", exc)
 
@@ -259,10 +292,13 @@ def research_budget_ok(workspace: dict) -> bool:
     try:
         from backend.app.core.database import get_supabase_client
         from datetime import datetime, timezone
+
         client = get_supabase_client()
-        month_start = datetime.now(timezone.utc).replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        ).isoformat()
+        month_start = (
+            datetime.now(timezone.utc)
+            .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            .isoformat()
+        )
         # Paginate to avoid PostgREST 1000-row default limit silently truncating spend.
         research_spend = 0.0
         page_size = 1000
@@ -285,16 +321,22 @@ def research_budget_ok(workspace: dict) -> bool:
         if research_spend >= cap:
             logger.warning(
                 "research: workspace %s research budget exhausted ($%.2f / $%.2f) — pausing research",
-                workspace.get("name", ws_id), research_spend, cap,
+                workspace.get("name", ws_id),
+                research_spend,
+                cap,
             )
             return False
         logger.info(
             "research: workspace %s research spend $%.2f / $%.2f",
-            workspace.get("name", ws_id), research_spend, cap,
+            workspace.get("name", ws_id),
+            research_spend,
+            cap,
         )
         return True
     except Exception as exc:
-        logger.warning("research_budget_ok check failed (%s) — blocking research (fail-closed)", exc)
+        logger.warning(
+            "research_budget_ok check failed (%s) — blocking research (fail-closed)", exc
+        )
         return False  # Fail CLOSED — budget checks must pass; transient DB errors block research
 
 
@@ -314,6 +356,7 @@ def get_total_daily_capacity(workspace_id: str) -> int:
     """
     try:
         from backend.app.core.database import get_supabase_client
+
         ws = (
             get_supabase_client()
             .table("workspaces")
@@ -330,9 +373,7 @@ def get_total_daily_capacity(workspace_id: str) -> int:
         sender_pool = settings.get("sender_pool") or []
         if sender_pool:
             return sum(
-                int(acct.get("daily_limit", 30))
-                for acct in sender_pool
-                if acct.get("active", True)
+                int(acct.get("daily_limit", 30)) for acct in sender_pool if acct.get("active", True)
             )
 
         return int(settings.get("daily_send_limit", 125))
@@ -357,6 +398,7 @@ def apollo_credits_ok(workspace_id: str | None = None, min_buffer: int = 200) ->
     """
     try:
         from backend.app.integrations.apollo import ApolloClient
+
         with ApolloClient(workspace_id=workspace_id) as apollo:
             info = apollo.get_credits()
             remaining = info.get("credits_remaining", 9999)
@@ -364,12 +406,15 @@ def apollo_credits_ok(workspace_id: str | None = None, min_buffer: int = 200) ->
             limit = info.get("credit_limit", 0)
             logger.info(
                 "Apollo credits: %d used / %d limit (%d remaining)",
-                used, limit, remaining,
+                used,
+                limit,
+                remaining,
             )
             if remaining <= min_buffer:
                 logger.warning(
                     "Apollo credit guard triggered: %d remaining (min_buffer=%d) — enrichment halted",
-                    remaining, min_buffer,
+                    remaining,
+                    min_buffer,
                 )
                 return False
         return True

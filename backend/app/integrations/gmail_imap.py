@@ -41,25 +41,64 @@ IMAP_PORT = 993
 
 # Intent keyword heuristics — used before Claude escalation
 _INTERESTED_KWS = [
-    "interested", "let's connect", "let's talk", "tell me more", "sounds good",
-    "open to", "would like to", "schedule", "availability", "free to chat",
-    "demo", "learn more", "yes", "absolutely", "great timing",
+    "interested",
+    "let's connect",
+    "let's talk",
+    "tell me more",
+    "sounds good",
+    "open to",
+    "would like to",
+    "schedule",
+    "availability",
+    "free to chat",
+    "demo",
+    "learn more",
+    "yes",
+    "absolutely",
+    "great timing",
 ]
 _NOT_INTERESTED_KWS = [
-    "not interested", "no thanks", "unsubscribe", "remove me", "stop",
-    "please remove", "take me off", "don't contact", "do not contact",
-    "not a fit", "no longer", "already have a solution",
+    "not interested",
+    "no thanks",
+    "unsubscribe",
+    "remove me",
+    "stop",
+    "please remove",
+    "take me off",
+    "don't contact",
+    "do not contact",
+    "not a fit",
+    "no longer",
+    "already have a solution",
 ]
 _QUESTION_KWS = [
-    "?", "how does", "what is", "can you", "do you", "tell me about",
-    "more information", "more info", "curious about", "wondering",
+    "?",
+    "how does",
+    "what is",
+    "can you",
+    "do you",
+    "tell me about",
+    "more information",
+    "more info",
+    "curious about",
+    "wondering",
 ]
 _REFERRAL_KWS = [
-    "reach out to", "contact my", "talk to", "speak with", "connect with",
-    "cc:", "forwarding", "loop in",
+    "reach out to",
+    "contact my",
+    "talk to",
+    "speak with",
+    "connect with",
+    "cc:",
+    "forwarding",
+    "loop in",
 ]
 _OOO_KWS = [
-    "out of office", "auto-reply", "on vacation", "annual leave", "away until",
+    "out of office",
+    "auto-reply",
+    "on vacation",
+    "annual leave",
+    "away until",
     "automatic reply",
 ]
 
@@ -229,6 +268,7 @@ class GmailImapClient:
             date_str = msg.get("Date", "")
             try:
                 from email.utils import parsedate_to_datetime
+
                 received_at = parsedate_to_datetime(date_str).astimezone(timezone.utc).isoformat()
             except Exception:
                 received_at = datetime.now(timezone.utc).isoformat()
@@ -236,16 +276,18 @@ class GmailImapClient:
             body = _get_body(msg)
             reply_text = _strip_quoted_text(body)
 
-            results.append({
-                "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
-                "from_email": from_email,
-                "from_name": from_name,
-                "subject": subject,
-                "body": reply_text or body[:2000],
-                "received_at": received_at,
-                "message_id": msg.get("Message-ID", ""),
-                "in_reply_to": msg.get("In-Reply-To", ""),
-            })
+            results.append(
+                {
+                    "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
+                    "from_email": from_email,
+                    "from_name": from_name,
+                    "subject": subject,
+                    "body": reply_text or body[:2000],
+                    "received_at": received_at,
+                    "message_id": msg.get("Message-ID", ""),
+                    "in_reply_to": msg.get("In-Reply-To", ""),
+                }
+            )
 
         return results
 

@@ -39,10 +39,10 @@ app = typer.Typer(help="Select a research batch using the 5-step ICP filter.")
 # Contact quality tiers
 # "transformation-titled contact" signals budget mandate — Tier A
 # ---------------------------------------------------------------------------
-_CONTACT_TIER_A = {"digital_transformation", "coo", "cio"}   # mandate + budget
-_CONTACT_TIER_B = {"vp_ops", "vp_supply_chain"}              # operations authority
-_CONTACT_TIER_C = {"director_ops"}                            # operational entry
-_CONTACT_TIER_D = {"plant_manager"}                           # possible, harder entry
+_CONTACT_TIER_A = {"digital_transformation", "coo", "cio"}  # mandate + budget
+_CONTACT_TIER_B = {"vp_ops", "vp_supply_chain"}  # operations authority
+_CONTACT_TIER_C = {"director_ops"}  # operational entry
+_CONTACT_TIER_D = {"plant_manager"}  # possible, harder entry
 
 _CQ_SCORE: dict[str, int] = {p: 4 for p in _CONTACT_TIER_A}
 _CQ_SCORE.update({p: 3 for p in _CONTACT_TIER_B})
@@ -93,6 +93,7 @@ _LEGACY_YEAR = 2000
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _best_contact_score(contacts: list[dict]) -> int:
     """Return the highest contact quality score (0–4) across all contacts."""
@@ -149,10 +150,10 @@ def _select_group(
         even if state=NULL in the database.
         """
         candidates = [
-            c for c in pool
+            c
+            for c in pool
             if (
-                (c.get("state") or "").upper() in states
-                or (include_unknown and not c.get("state"))
+                (c.get("state") or "").upper() in states or (include_unknown and not c.get("state"))
             )
             and c["id"] not in seen
         ]
@@ -178,6 +179,7 @@ def _select_group(
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 @app.command()
 def main(
@@ -242,6 +244,7 @@ def main(
     # 1b. Diagnostics — show what tier and state values actually exist
     # ------------------------------------------------------------------
     from collections import Counter
+
     tier_counts = Counter((c.get("tier") or "NULL") for c in eligible)
     state_counts = Counter((c.get("state") or "NULL") for c in eligible)
     console.print("[dim]Tier distribution in eligible companies:[/dim]")
@@ -260,9 +263,9 @@ def main(
     for company in eligible:
         contacts_map[company["id"]] = db.get_contacts_for_company(company["id"])
 
-    with_dm = sum(1 for cid, cs in contacts_map.items() if any(
-        c.get("is_decision_maker") for c in cs
-    ))
+    with_dm = sum(
+        1 for cid, cs in contacts_map.items() if any(c.get("is_decision_maker") for c in cs)
+    )
     console.print(
         f"  Companies with a decision-maker contact : [bold]{with_dm}[/bold] / {len(eligible)}\n"
     )
@@ -276,7 +279,8 @@ def main(
 
     for group in TARGET_DISTRIBUTION:
         tier_pool = [
-            c for c in eligible
+            c
+            for c in eligible
             if (c.get("tier") or "") == group["tier"] and c["id"] not in selected_ids
         ]
         group_selected = _select_group(

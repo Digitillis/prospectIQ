@@ -22,9 +22,7 @@ from backend.app.core.database import Database
 console = Console()
 
 # Match lines like: | John Smith | VP Operations | john@acme.com | ...
-_CONTACT_ROW_RE = re.compile(
-    r"^\|\s*(?P<name>[^|]+)\s*\|\s*(?P<title>[^|]*)\s*\|(?P<rest>.*)$"
-)
+_CONTACT_ROW_RE = re.compile(r"^\|\s*(?P<name>[^|]+)\s*\|\s*(?P<title>[^|]*)\s*\|(?P<rest>.*)$")
 
 # Match company headings like: ## Acme Corp or ### Acme Corp
 _COMPANY_HEADING_RE = re.compile(r"^#{2,3}\s+(?P<name>.+)$")
@@ -61,11 +59,13 @@ def parse_markdown_prospects(markdown_dir: Path) -> dict[str, list[dict]]:
                     continue
                 if name.startswith("---") or not name:
                     continue
-                companies[current_company].append({
-                    "name": name,
-                    "title": title,
-                    "source_file": md_file.name,
-                })
+                companies[current_company].append(
+                    {
+                        "name": name,
+                        "title": title,
+                        "source_file": md_file.name,
+                    }
+                )
 
     return companies
 
@@ -96,7 +96,9 @@ def find_name_match(needle: str, haystack: list[dict]) -> dict | None:
     needle_parts = needle_norm.split()
 
     for c in haystack:
-        full_name = normalize_name(c.get("full_name") or f"{c.get('first_name', '')} {c.get('last_name', '')}")
+        full_name = normalize_name(
+            c.get("full_name") or f"{c.get('first_name', '')} {c.get('last_name', '')}"
+        )
         if needle_norm == full_name:
             return c
         # Match on last name only
@@ -115,13 +117,17 @@ def run_sync_check(
 
     console.print(f"[cyan]Parsing markdown files in {markdown_dir}...[/cyan]")
     md_companies = parse_markdown_prospects(markdown_dir)
-    console.print(f"  Found {len(md_companies)} companies, "
-                  f"{sum(len(v) for v in md_companies.values())} contacts in markdown")
+    console.print(
+        f"  Found {len(md_companies)} companies, "
+        f"{sum(len(v) for v in md_companies.values())} contacts in markdown"
+    )
 
     console.print(f"[cyan]Fetching DB records...[/cyan]")
     db_companies = get_db_contacts_by_company(db, campaign_name)
-    console.print(f"  Found {len(db_companies)} companies, "
-                  f"{sum(len(v) for v in db_companies.values())} contacts in DB")
+    console.print(
+        f"  Found {len(db_companies)} companies, "
+        f"{sum(len(v) for v in db_companies.values())} contacts in DB"
+    )
 
     in_md_not_db: list[dict] = []
     in_db_not_md: list[dict] = []
@@ -136,8 +142,9 @@ def run_sync_check(
                 db_company_name = db_name
                 break
             # Partial match
-            if normalize_name(company_name) in normalize_name(db_name) or \
-               normalize_name(db_name) in normalize_name(company_name):
+            if normalize_name(company_name) in normalize_name(db_name) or normalize_name(
+                db_name
+            ) in normalize_name(company_name):
                 db_company_name = db_name
                 break
 
@@ -150,13 +157,17 @@ def run_sync_check(
         for md_contact in md_contacts:
             match = find_name_match(md_contact["name"], db_contacts)
             if match:
-                matched.append({
-                    "md": md_contact,
-                    "db": match,
-                    "company": company_name,
-                })
+                matched.append(
+                    {
+                        "md": md_contact,
+                        "db": match,
+                        "company": company_name,
+                    }
+                )
             else:
-                in_md_not_db.append({**md_contact, "company": company_name, "reason": "contact not in DB"})
+                in_md_not_db.append(
+                    {**md_contact, "company": company_name, "reason": "contact not in DB"}
+                )
 
     return {
         "in_md_not_db": in_md_not_db,
@@ -179,7 +190,9 @@ def print_sync_report(diff: dict) -> None:
     console.print(f"  ℹ️  In DB, not markdown: [dim]{len(in_db_not_md)}[/dim]")
 
     if in_md_not_db:
-        console.print(f"\n[bold yellow]In markdown but missing from DB ({len(in_md_not_db)}):[/bold yellow]")
+        console.print(
+            f"\n[bold yellow]In markdown but missing from DB ({len(in_md_not_db)}):[/bold yellow]"
+        )
         table = Table(show_header=True, header_style="bold yellow")
         table.add_column("Company", min_width=24)
         table.add_column("Contact", min_width=22)

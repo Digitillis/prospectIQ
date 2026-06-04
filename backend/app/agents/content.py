@@ -24,21 +24,93 @@ logger = logging.getLogger(__name__)
 
 CONTENT_CALENDAR: list[dict[str, Any]] = [
     # Week 1
-    {"week": 1, "day": "Tuesday",  "format": "contrarian",   "pillar": "manufacturing_intelligence", "topic": "Why 85% of predictive maintenance pilots fail to scale"},
-    {"week": 1, "day": "Thursday", "format": "framework",    "pillar": "manufacturing_strategy",     "topic": "The capital allocation framework for manufacturing technology"},
-    {"week": 1, "day": "Saturday", "format": "data_insight", "pillar": "food_safety_compliance",     "topic": "FDA 483 patterns: what actually triggers citations"},
+    {
+        "week": 1,
+        "day": "Tuesday",
+        "format": "contrarian",
+        "pillar": "manufacturing_intelligence",
+        "topic": "Why 85% of predictive maintenance pilots fail to scale",
+    },
+    {
+        "week": 1,
+        "day": "Thursday",
+        "format": "framework",
+        "pillar": "manufacturing_strategy",
+        "topic": "The capital allocation framework for manufacturing technology",
+    },
+    {
+        "week": 1,
+        "day": "Saturday",
+        "format": "data_insight",
+        "pillar": "food_safety_compliance",
+        "topic": "FDA 483 patterns: what actually triggers citations",
+    },
     # Week 2
-    {"week": 2, "day": "Tuesday",  "format": "framework",    "pillar": "manufacturing_intelligence", "topic": "The maintenance maturity spectrum: where most plants actually sit"},
-    {"week": 2, "day": "Thursday", "format": "contrarian",   "pillar": "manufacturing_operations",   "topic": "Quality-first vs. throughput-first"},
-    {"week": 2, "day": "Saturday", "format": "data_insight", "pillar": "food_safety_compliance",     "topic": "FSMA compliance costs by food category"},
+    {
+        "week": 2,
+        "day": "Tuesday",
+        "format": "framework",
+        "pillar": "manufacturing_intelligence",
+        "topic": "The maintenance maturity spectrum: where most plants actually sit",
+    },
+    {
+        "week": 2,
+        "day": "Thursday",
+        "format": "contrarian",
+        "pillar": "manufacturing_operations",
+        "topic": "Quality-first vs. throughput-first",
+    },
+    {
+        "week": 2,
+        "day": "Saturday",
+        "format": "data_insight",
+        "pillar": "food_safety_compliance",
+        "topic": "FSMA compliance costs by food category",
+    },
     # Week 3
-    {"week": 3, "day": "Tuesday",  "format": "data_insight", "pillar": "manufacturing_intelligence", "topic": "OEE benchmarks by sub-sector: what good looks like"},
-    {"week": 3, "day": "Thursday", "format": "framework",    "pillar": "manufacturing_strategy",     "topic": "How to run a 90-day technology pilot that produces a decision"},
-    {"week": 3, "day": "Saturday", "format": "contrarian",   "pillar": "food_safety_compliance",     "topic": "Your HACCP plan is a compliance artifact, not a safety tool"},
+    {
+        "week": 3,
+        "day": "Tuesday",
+        "format": "data_insight",
+        "pillar": "manufacturing_intelligence",
+        "topic": "OEE benchmarks by sub-sector: what good looks like",
+    },
+    {
+        "week": 3,
+        "day": "Thursday",
+        "format": "framework",
+        "pillar": "manufacturing_strategy",
+        "topic": "How to run a 90-day technology pilot that produces a decision",
+    },
+    {
+        "week": 3,
+        "day": "Saturday",
+        "format": "contrarian",
+        "pillar": "food_safety_compliance",
+        "topic": "Your HACCP plan is a compliance artifact, not a safety tool",
+    },
     # Week 4
-    {"week": 4, "day": "Tuesday",  "format": "data_insight", "pillar": "manufacturing_intelligence", "topic": "The real cost of one unplanned stop"},
-    {"week": 4, "day": "Thursday", "format": "contrarian",   "pillar": "manufacturing_operations",   "topic": "Why continuous improvement programs plateau after 18 months"},
-    {"week": 4, "day": "Saturday", "format": "benchmark",    "pillar": "food_safety_compliance",     "topic": "We analyzed 200+ FDA warning letters: here is what we found"},
+    {
+        "week": 4,
+        "day": "Tuesday",
+        "format": "data_insight",
+        "pillar": "manufacturing_intelligence",
+        "topic": "The real cost of one unplanned stop",
+    },
+    {
+        "week": 4,
+        "day": "Thursday",
+        "format": "contrarian",
+        "pillar": "manufacturing_operations",
+        "topic": "Why continuous improvement programs plateau after 18 months",
+    },
+    {
+        "week": 4,
+        "day": "Saturday",
+        "format": "benchmark",
+        "pillar": "food_safety_compliance",
+        "topic": "We analyzed 200+ FDA warning letters: here is what we found",
+    },
 ]
 
 # Default guidelines used if content_guidelines.yaml doesn't exist
@@ -178,7 +250,7 @@ def _build_system_prompt(guidelines: dict[str, Any]) -> str:
         *[f"- {q}" for q in quality],
         "",
         "BANNED PHRASES (never use any of these):",
-        *[f"- \"{bp}\"" for bp in banned[:15]],
+        *[f'- "{bp}"' for bp in banned[:15]],
         "",
         "NEVER INCLUDE:",
         *[f"- {n}" for n in never],
@@ -304,19 +376,27 @@ class ContentAgent(BaseAgent):
         elif pillar and format_type:
             # Find next calendar entry matching pillar + format
             match = next(
-                (e for e in CONTENT_CALENDAR if e["pillar"] == pillar and e["format"] == format_type),
+                (
+                    e
+                    for e in CONTENT_CALENDAR
+                    if e["pillar"] == pillar and e["format"] == format_type
+                ),
                 None,
             )
             if match:
                 jobs.append({"topic": match["topic"], "pillar": pillar, "format": format_type})
             else:
-                console.print(f"[yellow]No calendar entry for pillar={pillar}, format={format_type}[/yellow]")
+                console.print(
+                    f"[yellow]No calendar entry for pillar={pillar}, format={format_type}[/yellow]"
+                )
                 result.success = False
                 return result
         else:
             # Generate next N posts from calendar
             for entry in CONTENT_CALENDAR[:limit]:
-                jobs.append({"topic": entry["topic"], "pillar": entry["pillar"], "format": entry["format"]})
+                jobs.append(
+                    {"topic": entry["topic"], "pillar": entry["pillar"], "format": entry["format"]}
+                )
 
         console.print(f"[cyan]Generating {len(jobs)} content draft(s)...[/cyan]")
 
@@ -327,16 +407,22 @@ class ContentAgent(BaseAgent):
 
             # Dedup check — skip if this topic was posted in the last 60 days
             import hashlib
+
             topic_hash = hashlib.sha256(job_topic.lower().strip().encode()).hexdigest()
             try:
-                existing = self.db.client.table("content_archive").select(
-                    "id, posted_at, topic"
-                ).eq("topic_hash", topic_hash).order(
-                    "posted_at", desc=True
-                ).limit(1).execute().data
+                existing = (
+                    self.db.client.table("content_archive")
+                    .select("id, posted_at, topic")
+                    .eq("topic_hash", topic_hash)
+                    .order("posted_at", desc=True)
+                    .limit(1)
+                    .execute()
+                    .data
+                )
 
                 if existing:
                     from datetime import datetime, timezone, timedelta
+
                     posted_at = datetime.fromisoformat(
                         existing[0]["posted_at"].replace("Z", "+00:00")
                     )
@@ -490,7 +576,9 @@ class ContentAgent(BaseAgent):
                         line_stripped = line.strip()
                         if line_stripped.startswith("CREDIBILITY SCORE:"):
                             try:
-                                score_part = line_stripped.split(":")[1].strip().split("/")[0].strip()
+                                score_part = (
+                                    line_stripped.split(":")[1].strip().split("/")[0].strip()
+                                )
                                 credibility_score = int(score_part)
                             except (ValueError, IndexError):
                                 pass
@@ -618,7 +706,7 @@ FLAGS: None"""
                             for line in text.split("\n"):
                                 stripped = line.strip()
                                 if stripped.startswith(f"{key}:"):
-                                    return stripped[len(f"{key}:"):].strip()
+                                    return stripped[len(f"{key}:") :].strip()
                             return ""
 
                         def _yes(val: str) -> bool:
@@ -630,15 +718,23 @@ FLAGS: None"""
                         except (ValueError, IndexError):
                             qr_score = 0
 
-                        qr_verdict = _parse_quality_line(quality_text, "VERDICT") or "Needs Revision"
+                        qr_verdict = (
+                            _parse_quality_line(quality_text, "VERDICT") or "Needs Revision"
+                        )
 
                         qr_fact_check = _parse_quality_line(quality_text, "FACT_CHECK")
                         qr_fc_sources_raw = _parse_quality_line(quality_text, "FACT_CHECK_SOURCES")
-                        qr_fc_sources = [s.strip() for s in qr_fc_sources_raw.split(",") if s.strip() and s.strip().lower() != "none"]
+                        qr_fc_sources = [
+                            s.strip()
+                            for s in qr_fc_sources_raw.split(",")
+                            if s.strip() and s.strip().lower() != "none"
+                        ]
                         qr_fc_note = _parse_quality_line(quality_text, "FACT_CHECK_NOTE")
 
                         qr_objectives_raw = _parse_quality_line(quality_text, "OBJECTIVE")
-                        qr_objectives = [o.strip() for o in qr_objectives_raw.split(",") if o.strip()]
+                        qr_objectives = [
+                            o.strip() for o in qr_objectives_raw.split(",") if o.strip()
+                        ]
 
                         qr_banned_raw = _parse_quality_line(quality_text, "CRAFT_BANNED")
                         if qr_banned_raw.lower() in ("none", "none found", ""):
@@ -661,45 +757,75 @@ FLAGS: None"""
                                 "note": qr_fc_note,
                             },
                             "publication_standard": {
-                                "mckinsey_share": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_MCKINSEY")),
-                                "fluff_free": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_FLUFF")),
-                                "claims_supported": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_CLAIMS")),
-                                "worth_sharing": _yes(_parse_quality_line(quality_text, "PUB_STANDARD_SHAREABLE")),
+                                "mckinsey_share": _yes(
+                                    _parse_quality_line(quality_text, "PUB_STANDARD_MCKINSEY")
+                                ),
+                                "fluff_free": _yes(
+                                    _parse_quality_line(quality_text, "PUB_STANDARD_FLUFF")
+                                ),
+                                "claims_supported": _yes(
+                                    _parse_quality_line(quality_text, "PUB_STANDARD_CLAIMS")
+                                ),
+                                "worth_sharing": _yes(
+                                    _parse_quality_line(quality_text, "PUB_STANDARD_SHAREABLE")
+                                ),
                             },
                             "content_objective": qr_objectives,
                             "positioning": {
-                                "systems_thinker": _yes(_parse_quality_line(quality_text, "POSITIONING_THINKER")),
-                                "pattern_recognizer": _yes(_parse_quality_line(quality_text, "POSITIONING_PATTERN")),
-                                "builder": _yes(_parse_quality_line(quality_text, "POSITIONING_BUILDER")),
+                                "systems_thinker": _yes(
+                                    _parse_quality_line(quality_text, "POSITIONING_THINKER")
+                                ),
+                                "pattern_recognizer": _yes(
+                                    _parse_quality_line(quality_text, "POSITIONING_PATTERN")
+                                ),
+                                "builder": _yes(
+                                    _parse_quality_line(quality_text, "POSITIONING_BUILDER")
+                                ),
                             },
                             "differentiation": {
-                                "could_100_write": _yes(_parse_quality_line(quality_text, "DIFFERENTIATION_100")),
-                                "original_insight": _yes(_parse_quality_line(quality_text, "DIFFERENTIATION_ORIGINAL")),
+                                "could_100_write": _yes(
+                                    _parse_quality_line(quality_text, "DIFFERENTIATION_100")
+                                ),
+                                "original_insight": _yes(
+                                    _parse_quality_line(quality_text, "DIFFERENTIATION_ORIGINAL")
+                                ),
                                 "note": _parse_quality_line(quality_text, "DIFFERENTIATION_NOTE"),
                             },
                             "craft": {
                                 "banned_phrases": qr_banned,
-                                "em_dashes": _yes(_parse_quality_line(quality_text, "CRAFT_EMDASH")),
-                                "char_count_ok": _parse_quality_line(quality_text, "CRAFT_CHARS").upper() != "OVER",
-                                "mobile_format": _yes(_parse_quality_line(quality_text, "CRAFT_MOBILE")),
+                                "em_dashes": _yes(
+                                    _parse_quality_line(quality_text, "CRAFT_EMDASH")
+                                ),
+                                "char_count_ok": _parse_quality_line(
+                                    quality_text, "CRAFT_CHARS"
+                                ).upper()
+                                != "OVER",
+                                "mobile_format": _yes(
+                                    _parse_quality_line(quality_text, "CRAFT_MOBILE")
+                                ),
                             },
                             "reader_value": {
-                                "actionable": _yes(_parse_quality_line(quality_text, "READER_ACTION")),
-                                "explains_why": _yes(_parse_quality_line(quality_text, "READER_WHY")),
+                                "actionable": _yes(
+                                    _parse_quality_line(quality_text, "READER_ACTION")
+                                ),
+                                "explains_why": _yes(
+                                    _parse_quality_line(quality_text, "READER_WHY")
+                                ),
                             },
                             "flags": qr_flags,
                         }
 
-                        console.print(
-                            f"  Quality Report: {qr_verdict} — {qr_score}/10"
-                        )
+                        console.print(f"  Quality Report: {qr_verdict} — {qr_score}/10")
 
                     except Exception as qr_err:
-                        logger.warning(f"Quality report generation failed for '{job_topic}': {qr_err}")
+                        logger.warning(
+                            f"Quality report generation failed for '{job_topic}': {qr_err}"
+                        )
                         quality_report = {}
 
                     # Update the draft's personalization_notes to include intel + quality report
                     import json as _json
+
                     updated_notes = (
                         f"format:{job_format}|pillar:{job_pillar}"
                         f"|credibility:{credibility_score}/10"
@@ -708,13 +834,18 @@ FLAGS: None"""
                     # Store the full intel report so it survives page reload
                     updated_notes += f"|intel_report::{intel_text}"
                     if quality_report:
-                        updated_notes += f"|quality_report::{_json.dumps(quality_report, separators=(',', ':'))}"
+                        updated_notes += (
+                            f"|quality_report::{_json.dumps(quality_report, separators=(',', ':'))}"
+                        )
 
                     if draft_id:
                         try:
-                            self.db.update_outreach_draft(draft_id, {
-                                "personalization_notes": updated_notes,
-                            })
+                            self.db.update_outreach_draft(
+                                draft_id,
+                                {
+                                    "personalization_notes": updated_notes,
+                                },
+                            )
                         except Exception:
                             pass
 
@@ -724,7 +855,9 @@ FLAGS: None"""
                     result.details[-1]["quality_report"] = quality_report
 
                     # Log verification result
-                    status_icon = "[green]PASS[/green]" if publish_ready else "[yellow]REVIEW[/yellow]"
+                    status_icon = (
+                        "[green]PASS[/green]" if publish_ready else "[yellow]REVIEW[/yellow]"
+                    )
                     console.print(
                         f"  Verification: {status_icon} — Credibility {credibility_score}/10"
                     )

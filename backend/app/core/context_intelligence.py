@@ -79,9 +79,9 @@ class ContextPacket:
     """
 
     # Identity
-    id: str | None = None              # UUID assigned after DB write; None if persist failed
+    id: str | None = None  # UUID assigned after DB write; None if persist failed
     workspace_id: str = ""
-    purpose: str = ""                  # draft_generation | approval | send | risk_score
+    purpose: str = ""  # draft_generation | approval | send | risk_score
     draft_id: str | None = None
     contact_id: str | None = None
     company_id: str | None = None
@@ -115,7 +115,7 @@ class ContextPacket:
     channel_reason: str = ""
     company_locked: bool = False
     company_lock_reason: str | None = None
-    suppression_status: str = "none"   # none | contact | company | domain | global
+    suppression_status: str = "none"  # none | contact | company | domain | global
     suppression_reason: str | None = None
 
     # ---- Content guardrails ----
@@ -132,12 +132,12 @@ class ContextPacket:
     prior_step_angle: str | None = None  # angle used in step N-1; step N must not repeat
 
     # ---- Risk indicators (pre-score) ----
-    traction_signal: str = "none"      # none | warm | active_reply | meeting_booked
+    traction_signal: str = "none"  # none | warm | active_reply | meeting_booked
     is_first_touch: bool = True
     days_since_last_touch: int | None = None
 
     # ---- Meta ----
-    content_hash: str = ""             # SHA-256 over decision-relevant fields
+    content_hash: str = ""  # SHA-256 over decision-relevant fields
     assembled_at: str = ""
     ttl_seconds: int = 300
     assembly_errors: list[str] = field(default_factory=list)
@@ -237,6 +237,7 @@ class ContextPacketBuilder:
         # 3. Channel assignment
         try:
             from backend.app.core.channel_coordinator import get_active_channel
+
             channel, reason = get_active_channel(self.db, contact_id)
             packet.channel_assignment = channel
             packet.channel_reason = reason or ""
@@ -247,6 +248,7 @@ class ContextPacketBuilder:
         if company_id:
             try:
                 from backend.app.core.channel_coordinator import is_company_locked
+
                 locked, lock_reason = is_company_locked(
                     self.db, company_id, exclude_contact_id=contact_id
                 )
@@ -267,9 +269,7 @@ class ContextPacketBuilder:
             last_sent_raw = last_msg.get("sent_at")
             if last_sent_raw:
                 try:
-                    last_sent = datetime.fromisoformat(
-                        last_sent_raw.replace("Z", "+00:00")
-                    )
+                    last_sent = datetime.fromisoformat(last_sent_raw.replace("Z", "+00:00"))
                     packet.days_since_last_touch = (now - last_sent).days
                 except (ValueError, AttributeError):
                     pass
@@ -303,9 +303,8 @@ class ContextPacketBuilder:
         if company_id:
             try:
                 from backend.app.core.channel_coordinator import get_company_traction
-                traction = get_company_traction(
-                    self.db, company_id, exclude_contact_id=contact_id
-                )
+
+                traction = get_company_traction(self.db, company_id, exclude_contact_id=contact_id)
                 if traction.get("has_traction"):
                     packet.traction_signal = "warm"
             except Exception as exc:
@@ -436,9 +435,7 @@ class ContextPacketBuilder:
                     "channel": r.get("channel"),
                     "subject": r.get("subject"),
                     "sent_at": r.get("sent_at"),
-                    "primary_angle": (
-                        (r.get("personalization_notes") or "").split("\n")[0][:200]
-                    ),
+                    "primary_angle": ((r.get("personalization_notes") or "").split("\n")[0][:200]),
                 }
                 for r in rows
             ]
@@ -490,9 +487,7 @@ class ContextPacketBuilder:
                     "contact_id": contact_id,
                     "sentiment": (r.get("metadata") or {}).get("sentiment"),
                     "replied_at": r.get("created_at"),
-                    "body_excerpt": (
-                        (r.get("metadata") or {}).get("body_excerpt", "")[:200]
-                    ),
+                    "body_excerpt": ((r.get("metadata") or {}).get("body_excerpt", "")[:200]),
                 }
                 for r in rows
             ]

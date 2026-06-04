@@ -50,19 +50,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _LAYER_1_PATTERNS: tuple[tuple[str, str], ...] = (
-    ("similar_plants",        r"\b(plants|companies|operations)\s+(in|with|of)\s+similar\b"),
-    ("cut_pct_range",         r"\bcut\s+\w+\s+\d{1,2}[-–]\d{2}\s*%"),
+    ("similar_plants", r"\b(plants|companies|operations)\s+(in|with|of)\s+similar\b"),
+    ("cut_pct_range", r"\bcut\s+\w+\s+\d{1,2}[-–]\d{2}\s*%"),
     ("catch_n_units_earlier", r"\bcatch\w*\s+\w+\s+\d+[-–]\d+\s+(days|hours|minutes)\s+earlier\b"),
-    ("typically_verb",        r"\btypically\s+(see|catch|reduce|cut|save)\b"),
-    ("pct_change_phrase",     r"\b\d{1,2}[-–]\d{2}\s*%\s+(reduction|improvement|decrease|increase)\b"),
-    ("similar_facilities",    r"\bsimilar\s+(facilities|manufacturers|plants|operations)\b"),
-    ("our_clients_saw",       r"\bour\s+(clients|customers)\s+(saw|achieved|reduced|cut)\b"),
+    ("typically_verb", r"\btypically\s+(see|catch|reduce|cut|save)\b"),
+    ("pct_change_phrase", r"\b\d{1,2}[-–]\d{2}\s*%\s+(reduction|improvement|decrease|increase)\b"),
+    ("similar_facilities", r"\bsimilar\s+(facilities|manufacturers|plants|operations)\b"),
+    ("our_clients_saw", r"\bour\s+(clients|customers)\s+(saw|achieved|reduced|cut)\b"),
 )
 
 
 # Numeric claim — covers both percentage forms (23-41%, 23%) and time forms
 # (2-5 days earlier, 7-14 days, 2 weeks).
-_NUMERIC_PCT  = re.compile(r"\b\d{1,3}(?:[-–]\d{1,3})?\s*%")
+_NUMERIC_PCT = re.compile(r"\b\d{1,3}(?:[-–]\d{1,3})?\s*%")
 _NUMERIC_TIME = re.compile(
     r"\b\d{1,3}(?:[-–]\d{1,3})?\s*(days?|hours?|minutes?|weeks?|months?|years?)\b",
     re.IGNORECASE,
@@ -76,16 +76,17 @@ _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 # Result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Finding:
     """One flagged claim from a draft body."""
 
-    layer: str                    # "layer1_regex" | "layer2_numeric" | "layer3_llm"
+    layer: str  # "layer1_regex" | "layer2_numeric" | "layer3_llm"
     sentence: str
-    excerpt: str                  # The matched substring
-    rule: str | None = None       # Layer 1 pattern name, or numeric kind
+    excerpt: str  # The matched substring
+    rule: str | None = None  # Layer 1 pattern name, or numeric kind
     evidence_id: str | None = None  # Which proof_point id (if attributed)
-    verdict: str = "unclear"      # "attributed" | "fabricated" | "unclear"
+    verdict: str = "unclear"  # "attributed" | "fabricated" | "unclear"
     detail: str | None = None
 
 
@@ -95,16 +96,14 @@ class BenchmarkAnalysis:
 
     has_violations: bool = False
     findings: list[Finding] = field(default_factory=list)
-    verdict: str = "clean"        # "clean" | "fabricated" | "unclear"
+    verdict: str = "clean"  # "clean" | "fabricated" | "unclear"
 
 
 # ---------------------------------------------------------------------------
 # Proof-point loading
 # ---------------------------------------------------------------------------
 
-_DEFAULT_OFFER_CONTEXT_PATH = (
-    Path(__file__).resolve().parents[3] / "config" / "offer_context.yaml"
-)
+_DEFAULT_OFFER_CONTEXT_PATH = Path(__file__).resolve().parents[3] / "config" / "offer_context.yaml"
 
 
 def load_proof_points(path: Path | None = None) -> list[dict]:
@@ -142,8 +141,18 @@ def _proof_point_keywords(proof_points: list[dict]) -> set[str]:
         text = pp.get("text", "")
         for tok in re.findall(r"\b[A-Z][A-Za-z&]+\b", text):
             if len(tok) >= 3 and tok.lower() not in {
-                "industry", "manufacturers", "the", "and", "with", "year",
-                "month", "week", "days", "report", "survey", "data",
+                "industry",
+                "manufacturers",
+                "the",
+                "and",
+                "with",
+                "year",
+                "month",
+                "week",
+                "days",
+                "report",
+                "survey",
+                "data",
             }:
                 tokens.add(tok)
     return tokens
@@ -152,6 +161,7 @@ def _proof_point_keywords(proof_points: list[dict]) -> set[str]:
 # ---------------------------------------------------------------------------
 # Detector
 # ---------------------------------------------------------------------------
+
 
 class BenchmarkDetector:
     """Three-layer fabricated-benchmark detector for outreach draft bodies."""
@@ -214,17 +224,19 @@ class BenchmarkDetector:
                 m = re.search(pattern, sent, flags=re.IGNORECASE)
                 if m:
                     has_citation = self._sentence_has_citation(sent)
-                    out.append(Finding(
-                        layer="layer1_regex",
-                        sentence=sent,
-                        excerpt=m.group(0),
-                        rule=name,
-                        verdict="attributed" if has_citation else "fabricated",
-                        detail=(
-                            f"Layer 1 regex match: {name} "
-                            f"({'cited' if has_citation else 'no citation'})"
-                        ),
-                    ))
+                    out.append(
+                        Finding(
+                            layer="layer1_regex",
+                            sentence=sent,
+                            excerpt=m.group(0),
+                            rule=name,
+                            verdict="attributed" if has_citation else "fabricated",
+                            detail=(
+                                f"Layer 1 regex match: {name} "
+                                f"({'cited' if has_citation else 'no citation'})"
+                            ),
+                        )
+                    )
         return out
 
     def _layer_2(self, sentences: list[str]) -> list[Finding]:
@@ -242,14 +254,16 @@ class BenchmarkDetector:
             if cited:
                 continue
             for kind, excerpt in numeric_matches:
-                out.append(Finding(
-                    layer="layer2_numeric",
-                    sentence=sent,
-                    excerpt=excerpt,
-                    rule=kind,
-                    verdict="unclear",
-                    detail="Numeric claim with no citation in sentence",
-                ))
+                out.append(
+                    Finding(
+                        layer="layer2_numeric",
+                        sentence=sent,
+                        excerpt=excerpt,
+                        rule=kind,
+                        verdict="unclear",
+                        detail="Numeric claim with no citation in sentence",
+                    )
+                )
         return out
 
     def _layer_3(self, findings: list[Finding]) -> None:
@@ -268,15 +282,19 @@ class BenchmarkDetector:
         # Group findings by sentence so the verifier sees full context.
         flagged_sentences: list[str] = []
         for f in findings:
-            if f.layer in ("layer1_regex", "layer2_numeric") and f.sentence not in flagged_sentences:
+            if (
+                f.layer in ("layer1_regex", "layer2_numeric")
+                and f.sentence not in flagged_sentences
+            ):
                 flagged_sentences.append(f.sentence)
 
         if not flagged_sentences:
             return
 
-        proof_block = "\n".join(
-            f"- {pp['id']}: {pp['text']}" for pp in self.proof_points
-        ) or "- (no proof points configured)"
+        proof_block = (
+            "\n".join(f"- {pp['id']}: {pp['text']}" for pp in self.proof_points)
+            or "- (no proof points configured)"
+        )
 
         prompt = (
             "You verify whether numeric claims in an outreach email sentence are "
@@ -286,9 +304,9 @@ class BenchmarkDetector:
             '{"verdict": "unclear", "evidence_id": null}.\n\n'
             f"Approved proof points:\n{proof_block}\n\n"
             "Sentences to verify (one per line):\n"
-            + "\n".join(f"{i+1}. {s}" for i, s in enumerate(flagged_sentences))
+            + "\n".join(f"{i + 1}. {s}" for i, s in enumerate(flagged_sentences))
             + '\n\nReturn a JSON object: {"results": [<verdict-object>, ...]} '
-              "in the same order as the sentences."
+            "in the same order as the sentences."
         )
 
         try:
@@ -338,8 +356,7 @@ class BenchmarkDetector:
         if re.search(r"\b(FDA|USDA|OSHA|EPA|CDC|FSMA|GAO)\b", sentence):
             return True
         sentence_tokens = set(
-            tok for tok in re.findall(r"\b[A-Z][A-Za-z&]+\b", sentence)
-            if len(tok) >= 3
+            tok for tok in re.findall(r"\b[A-Z][A-Za-z&]+\b", sentence) if len(tok) >= 3
         )
         overlap = self._proof_keywords & sentence_tokens
         return len(overlap) >= 2
@@ -379,6 +396,7 @@ class BenchmarkDetector:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _split_sentences(text: str) -> list[str]:
     parts = [p.strip() for p in _SENTENCE_SPLIT.split(text) if p.strip()]

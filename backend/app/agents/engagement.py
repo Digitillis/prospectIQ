@@ -1934,7 +1934,9 @@ class EngagementAgent(BaseAgent):
                     if stype == "email":
                         from backend.app.agents.outreach import OutreachAgent
 
-                        outreach = OutreachAgent(batch_id=self.batch_id)
+                        outreach = OutreachAgent(
+                            batch_id=self.batch_id, workspace_id=self.workspace_id
+                        )
                         outreach.run(
                             company_ids=[seq["company_id"]],
                             sequence_name=seq_name,
@@ -2085,7 +2087,7 @@ class EngagementAgent(BaseAgent):
 
                     from backend.app.agents.outreach import OutreachAgent
 
-                    outreach = OutreachAgent(batch_id=self.batch_id)
+                    outreach = OutreachAgent(batch_id=self.batch_id, workspace_id=self.workspace_id)
                     outreach_result = outreach.run(
                         company_ids=[seq["company_id"]],
                         sequence_name=seq_name,
@@ -2400,7 +2402,7 @@ class EngagementAgent(BaseAgent):
                 # Generate the draft JIT
                 from backend.app.agents.outreach import OutreachAgent
 
-                outreach = OutreachAgent(batch_id=self.batch_id)
+                outreach = OutreachAgent(batch_id=self.batch_id, workspace_id=self.workspace_id)
                 outreach_result = outreach.run(
                     company_ids=[company_id],
                     sequence_name=seq_name,
@@ -2630,9 +2632,9 @@ class EngagementAgent(BaseAgent):
         """
         from backend.app.core.database import Database
 
-        # Use unscoped DB for initial lookup — webhooks arrive without auth context.
-        # We discover the workspace_id from the contact record, then re-scope all writes.
-        _lookup_db = Database()
+        _lookup_db = (
+            Database()
+        )  # INTENTIONALLY UNSCOPED — cross-workspace email lookup; re-scoped after contact found
         email = event_data.get("email") or event_data.get("lead_email", "")
 
         if not email:

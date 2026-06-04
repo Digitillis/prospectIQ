@@ -122,12 +122,7 @@ class ReviewManifest:
         companies: dict[str, dict] = {}
         for i in range(0, len(company_ids), 100):
             chunk = company_ids[i : i + 100]
-            result = (
-                self.sb.table("companies")
-                .select("id, name")
-                .in_("id", chunk)
-                .execute()
-            )
+            result = self.sb.table("companies").select("id, name").in_("id", chunk).execute()
             for c in result.data or []:
                 companies[c["id"]] = c
 
@@ -175,16 +170,18 @@ class ReviewManifest:
             draft_ids.append(draft_id)
             content_hashes[draft_id] = body_hash
 
-            drafts_out.append({
-                "position": pos,
-                "draft_id": draft_id,
-                "contact_name": contact_name,
-                "company_name": company_name,
-                "subject": draft.get("subject", ""),
-                "body": body,
-                "sequence_step": draft.get("sequence_step"),
-                "content_hash": body_hash,
-            })
+            drafts_out.append(
+                {
+                    "position": pos,
+                    "draft_id": draft_id,
+                    "contact_name": contact_name,
+                    "company_name": company_name,
+                    "subject": draft.get("subject", ""),
+                    "body": body,
+                    "sequence_step": draft.get("sequence_step"),
+                    "content_hash": body_hash,
+                }
+            )
 
         # Persist manifest
         manifest_id = str(uuid.uuid4())
@@ -201,7 +198,9 @@ class ReviewManifest:
         }
         try:
             self.sb.table("review_manifests").insert(manifest_row).execute()
-            logger.info("[manifest] Created manifest %s with %d drafts", manifest_id[:8], len(draft_ids))
+            logger.info(
+                "[manifest] Created manifest %s with %d drafts", manifest_id[:8], len(draft_ids)
+            )
         except Exception as exc:
             logger.warning("[manifest] Failed to persist manifest (non-fatal): %s", exc)
 
@@ -294,11 +293,13 @@ class ReviewManifest:
                 stored_hash = stored_hashes.get(draft_id, "")
 
                 if current_hash != stored_hash:
-                    hash_mismatch.append({
-                        "draft_id": draft_id,
-                        "stored_hash": stored_hash[:16],
-                        "current_hash": current_hash[:16],
-                    })
+                    hash_mismatch.append(
+                        {
+                            "draft_id": draft_id,
+                            "stored_hash": stored_hash[:16],
+                            "current_hash": current_hash[:16],
+                        }
+                    )
                     decisions[draft_id] = {
                         "status": "hash_mismatch",
                         "stored_hash": stored_hash[:16],
@@ -306,7 +307,8 @@ class ReviewManifest:
                         "timestamp": now_iso,
                     }
                     logger.warning(
-                        "[manifest] Hash mismatch for %s: body changed since manifest fetch", draft_id[:8]
+                        "[manifest] Hash mismatch for %s: body changed since manifest fetch",
+                        draft_id[:8],
                     )
                     continue
 
@@ -317,27 +319,43 @@ class ReviewManifest:
 
             # Write approval
             try:
-                self.sb.table("outreach_drafts").update({
-                    "approval_status": "approved",
-                    "approved_at": now_iso,
-                    "approved_by": approved_by,
-                }).eq("id", draft_id).execute()
+                self.sb.table("outreach_drafts").update(
+                    {
+                        "approval_status": "approved",
+                        "approved_at": now_iso,
+                        "approved_by": approved_by,
+                    }
+                ).eq("id", draft_id).execute()
                 approved.append(draft_id)
-                decisions[draft_id] = {"status": "approved", "timestamp": now_iso, "approved_by": approved_by}
+                decisions[draft_id] = {
+                    "status": "approved",
+                    "timestamp": now_iso,
+                    "approved_by": approved_by,
+                }
                 logger.info("[manifest] Approved %s", draft_id[:8])
             except Exception as exc:
                 errors.append({"draft_id": draft_id, "error": str(exc)})
-                decisions[draft_id] = {"status": "db_error", "detail": str(exc), "timestamp": now_iso}
+                decisions[draft_id] = {
+                    "status": "db_error",
+                    "detail": str(exc),
+                    "timestamp": now_iso,
+                }
 
         # Update manifest record
-        new_status = "applied" if not errors and not hash_mismatch and not not_in_manifest else "applied_with_exceptions"
+        new_status = (
+            "applied"
+            if not errors and not hash_mismatch and not not_in_manifest
+            else "applied_with_exceptions"
+        )
         try:
-            self.sb.table("review_manifests").update({
-                "approved_at": now_iso,
-                "approved_by": approved_by,
-                "approval_decisions": json.dumps(decisions),
-                "status": new_status,
-            }).eq("manifest_id", manifest_id).execute()
+            self.sb.table("review_manifests").update(
+                {
+                    "approved_at": now_iso,
+                    "approved_by": approved_by,
+                    "approval_decisions": json.dumps(decisions),
+                    "status": new_status,
+                }
+            ).eq("manifest_id", manifest_id).execute()
         except Exception as exc:
             logger.warning("[manifest] Failed to update manifest status: %s", exc)
 

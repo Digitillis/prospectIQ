@@ -41,6 +41,7 @@ def _require_workspace() -> str:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/insights")
 async def get_insights(response: Response) -> Any:
     """Return the latest cached VoiceInsights snapshot.
@@ -115,4 +116,6 @@ async def get_sequence_metrics() -> Any:
         return {"steps": [s.model_dump() for s in steps], "count": len(steps)}
     except Exception as e:
         logger.error(f"GET /voice-of-prospect/sequence failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch sequence metrics: {str(e)[:200]}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch sequence metrics: {str(e)[:200]}"
+        )

@@ -19,6 +19,7 @@ from backend.app.core.contact_filter import is_manufacturer_company
 # is_manufacturer_company helper
 # -----------------------------
 
+
 @pytest.mark.parametrize("tier", ["mfg1", "mfg3", "fb_dairy", "pmfg1", "1", "2"])
 def test_manufacturer_tiers_pass(tier: str) -> None:
     assert is_manufacturer_company({"tier": tier}) is True
@@ -39,6 +40,7 @@ def test_null_tier_blocked() -> None:
 # ----------------------------------------------------------
 # Fake supabase-like client to exercise Database.get_companies
 # ----------------------------------------------------------
+
 
 class _FakeQuery:
     """Records filter calls and returns rows matching the predicates.
@@ -124,6 +126,7 @@ class _FakeQuery:
             def __init__(self, data):
                 self.data = data
                 self.count = len(data)
+
         return _R(rows)
 
 
@@ -142,10 +145,38 @@ def test_orchestrator_pull_excludes_non_manufacturer(monkeypatch) -> None:
     from backend.app.core.database import Database
 
     seeded = [
-        {"id": "co-mfg",   "name": "Big Mfg",   "tier": "mfg1",     "status": "qualified", "pqs_total": 50, "workspace_id": "ws"},
-        {"id": "co-fb",    "name": "Dairy Co",  "tier": "fb_dairy", "status": "qualified", "pqs_total": 60, "workspace_id": "ws"},
-        {"id": "co-non",   "name": "Health Co", "tier": "non_mfg",  "status": "qualified", "pqs_total": 80, "workspace_id": "ws"},
-        {"id": "co-null",  "name": "Unknown",   "tier": None,       "status": "qualified", "pqs_total": 70, "workspace_id": "ws"},
+        {
+            "id": "co-mfg",
+            "name": "Big Mfg",
+            "tier": "mfg1",
+            "status": "qualified",
+            "pqs_total": 50,
+            "workspace_id": "ws",
+        },
+        {
+            "id": "co-fb",
+            "name": "Dairy Co",
+            "tier": "fb_dairy",
+            "status": "qualified",
+            "pqs_total": 60,
+            "workspace_id": "ws",
+        },
+        {
+            "id": "co-non",
+            "name": "Health Co",
+            "tier": "non_mfg",
+            "status": "qualified",
+            "pqs_total": 80,
+            "workspace_id": "ws",
+        },
+        {
+            "id": "co-null",
+            "name": "Unknown",
+            "tier": None,
+            "status": "qualified",
+            "pqs_total": 70,
+            "workspace_id": "ws",
+        },
     ]
 
     fake = _FakeClient({"companies": seeded})
@@ -164,4 +195,4 @@ def test_orchestrator_pull_excludes_non_manufacturer(monkeypatch) -> None:
     assert "co-non" not in ids, "Non-manufacturer must be excluded"
     assert "co-null" not in ids, "Null-tier company must be excluded"
     assert "co-mfg" in ids
-    assert "co-fb"  in ids
+    assert "co-fb" in ids

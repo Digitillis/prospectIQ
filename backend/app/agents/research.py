@@ -19,6 +19,7 @@ from backend.app.core.models import ResearchResult
 console = Console()
 logger = logging.getLogger(__name__)
 
+
 def _extract_json(text: str) -> dict | None:
     """Extract a JSON object from a Claude response using multiple fallback strategies.
 
@@ -73,11 +74,7 @@ def _select_research_model(company: dict) -> tuple[str, str]:
     Low-PQS companies get Haiku with a slim extraction prompt to save cost.
     High-PQS companies get Sonnet with the full intelligence prompt.
     """
-    pqs_firmographic = (
-        company.get("pqs_firmographic")
-        or company.get("pqs_firm")
-        or 0
-    )
+    pqs_firmographic = company.get("pqs_firmographic") or company.get("pqs_firm") or 0
     try:
         pqs_firmographic = int(pqs_firmographic)
     except (TypeError, ValueError):
@@ -251,7 +248,11 @@ class ResearchAgent(BaseAgent):
         settings = get_settings()
         scoring_config = get_scoring_config()
 
-        min_score = min_firmographic_score if min_firmographic_score is not None else scoring_config.get("min_firmographic_for_research", 0)
+        min_score = (
+            min_firmographic_score
+            if min_firmographic_score is not None
+            else scoring_config.get("min_firmographic_for_research", 0)
+        )
         batch_limit = limit or settings.batch_size
 
         # Merge tier / tiers into a single list
@@ -264,7 +265,9 @@ class ResearchAgent(BaseAgent):
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         elif batch_id:
-            companies = self.db.get_companies(batch_id=batch_id, status="discovered", limit=batch_limit)
+            companies = self.db.get_companies(
+                batch_id=batch_id, status="discovered", limit=batch_limit
+            )
         elif tier_list:
             # Fetch per tier and merge (respecting overall limit)
             companies = []
@@ -273,18 +276,25 @@ class ResearchAgent(BaseAgent):
                 if remaining <= 0:
                     break
                 companies.extend(
-                    self.db.get_companies(status="discovered", tier=t, min_pqs=min_score, limit=remaining)
+                    self.db.get_companies(
+                        status="discovered", tier=t, min_pqs=min_score, limit=remaining
+                    )
                 )
         else:
-            companies = self.db.get_companies(status="discovered", min_pqs=min_score, limit=batch_limit)
+            companies = self.db.get_companies(
+                status="discovered", min_pqs=min_score, limit=batch_limit
+            )
 
         if not companies:
             console.print("[yellow]No companies to research.[/yellow]")
             return result
 
-        console.print(f"[cyan]Researching {len(companies)} companies (min PQS_firm={min_score})...[/cyan]")
+        console.print(
+            f"[cyan]Researching {len(companies)} companies (min PQS_firm={min_score})...[/cyan]"
+        )
 
         import anthropic
+
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
         for company in companies:
@@ -303,7 +313,9 @@ class ResearchAgent(BaseAgent):
                     if slim is None:
                         console.print("    [red]Slim research failed. Skipping.[/red]")
                         result.errors += 1
-                        result.add_detail(company_name, "error", "Haiku slim returned no valid JSON")
+                        result.add_detail(
+                            company_name, "error", "Haiku slim returned no valid JSON"
+                        )
                         if self._monitor:
                             self._monitor.log_error(
                                 "Haiku slim research failed",
@@ -323,15 +335,18 @@ class ResearchAgent(BaseAgent):
                         existing_tags["research_path"] = "haiku_only"
                         existing_tags["promote_to_full_research"] = False
 
-                        self.db.update_company(company_id, {
-                            "status": "researched",
-                            "manufacturing_profile": {
-                                "type": slim.get("manufacturing_type", "unknown"),
-                                "equipment": slim.get("equipment_types", []),
-                                "is_real_manufacturer": slim.get("is_real_manufacturer", False),
+                        self.db.update_company(
+                            company_id,
+                            {
+                                "status": "researched",
+                                "manufacturing_profile": {
+                                    "type": slim.get("manufacturing_type", "unknown"),
+                                    "equipment": slim.get("equipment_types", []),
+                                    "is_real_manufacturer": slim.get("is_real_manufacturer", False),
+                                },
+                                "custom_tags": existing_tags,
                             },
-                            "custom_tags": existing_tags,
-                        })
+                        )
                         confidence = slim.get("confidence_level", "low")
                         console.print(
                             f"    [yellow]Haiku-only path: {confidence} confidence, "
@@ -353,7 +368,9 @@ class ResearchAgent(BaseAgent):
                 if structured is None:
                     console.print("    [red]Research failed. Skipping.[/red]")
                     result.errors += 1
-                    result.add_detail(company_name, "error", "Claude research returned no valid JSON")
+                    result.add_detail(
+                        company_name, "error", "Claude research returned no valid JSON"
+                    )
                     if self._monitor:
                         self._monitor.log_error(
                             "Claude research returned no valid JSON",
@@ -363,26 +380,30 @@ class ResearchAgent(BaseAgent):
                     continue
 
                 # Upsert research_intelligence
-                self.db.upsert_research({
-                    "company_id": company_id,
-                    "perplexity_response": "",  # No longer used
-                    "claude_analysis": json.dumps(structured),
-                    "company_description": structured.get("company_description", ""),
-                    "manufacturing_type": structured.get("manufacturing_type", "unknown"),
-                    "equipment_types": structured.get("equipment_types", []),
-                    "known_systems": structured.get("known_systems", []),
-                    "iot_maturity": structured.get("iot_maturity", "unknown"),
-                    "maintenance_approach": structured.get("maintenance_approach", "unknown"),
-                    "digital_transformation_status": structured.get("digital_transformation_status", ""),
-                    "pain_points": structured.get("pain_points", []),
-                    "opportunities": structured.get("opportunities", []),
-                    "existing_solutions": structured.get("existing_solutions", []),
-                    "funding_status": structured.get("funding_status", ""),
-                    "funding_details": structured.get("funding_details", ""),
-                    "confidence_level": structured.get("confidence_level", "low"),
-                    # trigger_events + trigger_score are stored in claude_analysis JSONB above.
-                    # Dedicated columns require migration 014 to be run in Supabase dashboard first.
-                })
+                self.db.upsert_research(
+                    {
+                        "company_id": company_id,
+                        "perplexity_response": "",  # No longer used
+                        "claude_analysis": json.dumps(structured),
+                        "company_description": structured.get("company_description", ""),
+                        "manufacturing_type": structured.get("manufacturing_type", "unknown"),
+                        "equipment_types": structured.get("equipment_types", []),
+                        "known_systems": structured.get("known_systems", []),
+                        "iot_maturity": structured.get("iot_maturity", "unknown"),
+                        "maintenance_approach": structured.get("maintenance_approach", "unknown"),
+                        "digital_transformation_status": structured.get(
+                            "digital_transformation_status", ""
+                        ),
+                        "pain_points": structured.get("pain_points", []),
+                        "opportunities": structured.get("opportunities", []),
+                        "existing_solutions": structured.get("existing_solutions", []),
+                        "funding_status": structured.get("funding_status", ""),
+                        "funding_details": structured.get("funding_details", ""),
+                        "confidence_level": structured.get("confidence_level", "low"),
+                        # trigger_events + trigger_score are stored in claude_analysis JSONB above.
+                        # Dedicated columns require migration 014 to be run in Supabase dashboard first.
+                    }
+                )
 
                 # Update company record with key intelligence fields
                 trigger_events = structured.get("trigger_events", [])
@@ -400,7 +421,11 @@ class ResearchAgent(BaseAgent):
                     **existing_tags,
                     "trigger_score": trigger_score,
                     "trigger_count": len(trigger_events),
-                    **({"trigger_types": [e.get("type") for e in trigger_events]} if trigger_events else {}),
+                    **(
+                        {"trigger_types": [e.get("type") for e in trigger_events]}
+                        if trigger_events
+                        else {}
+                    ),
                 }
 
                 # Web-search augmentation DISABLED (2026-05-02).
@@ -411,20 +436,25 @@ class ResearchAgent(BaseAgent):
                 # pass above (RESEARCH_USER prompt explicitly asks for trigger events).
                 personalization_hooks = list(structured.get("personalization_hooks", []) or [])
 
-                self.db.update_company(company_id, {
-                    "research_summary": structured.get("company_description", ""),
-                    "technology_stack": structured.get("known_systems", []),
-                    "pain_signals": structured.get("pain_points", []),
-                    "manufacturing_profile": {
-                        "type": structured.get("manufacturing_type", "unknown"),
-                        "equipment": structured.get("equipment_types", []),
-                        "iot_maturity": structured.get("iot_maturity", "unknown"),
-                        "maintenance_approach": structured.get("maintenance_approach", "unknown"),
+                self.db.update_company(
+                    company_id,
+                    {
+                        "research_summary": structured.get("company_description", ""),
+                        "technology_stack": structured.get("known_systems", []),
+                        "pain_signals": structured.get("pain_points", []),
+                        "manufacturing_profile": {
+                            "type": structured.get("manufacturing_type", "unknown"),
+                            "equipment": structured.get("equipment_types", []),
+                            "iot_maturity": structured.get("iot_maturity", "unknown"),
+                            "maintenance_approach": structured.get(
+                                "maintenance_approach", "unknown"
+                            ),
+                        },
+                        "personalization_hooks": personalization_hooks,
+                        "custom_tags": updated_tags,
+                        "status": "researched",
                     },
-                    "personalization_hooks": personalization_hooks,
-                    "custom_tags": updated_tags,
-                    "status": "researched",
-                })
+                )
 
                 confidence = structured.get("confidence_level", "low")
                 console.print(f"    [green]Done. Confidence: {confidence}[/green]")
@@ -436,10 +466,13 @@ class ResearchAgent(BaseAgent):
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
                 if self._monitor:
-                    self._monitor.log_error(str(e), company_id=company_id, error_type="research_error", exc=e)
+                    self._monitor.log_error(
+                        str(e), company_id=company_id, error_type="research_error", exc=e
+                    )
 
         try:
             from backend.app.utils.notifications import notify_slack
+
             notify_slack(
                 f"*Research complete:* {result.processed} companies researched, "
                 f"{result.skipped} skipped, {result.errors} errors. "
@@ -452,7 +485,10 @@ class ResearchAgent(BaseAgent):
         return result
 
     def _extract_trigger_events_with_web(
-        self, client, company_name: str, max_results: int = 5,
+        self,
+        client,
+        company_name: str,
+        max_results: int = 5,
     ) -> list[str]:
         """Use Anthropic's web-search tool to surface recent trigger events.
 
@@ -475,7 +511,7 @@ class ResearchAgent(BaseAgent):
             f"with source dates.\n\n"
             f"Output ONLY a JSON object with this exact shape:\n"
             f'{{"events": ["one-line factual finding with date", "another finding"]}}\n'
-            f"If you find nothing, return {{\"events\": []}}. "
+            f'If you find nothing, return {{"events": []}}. '
             f"Do not include speculation, marketing copy, or stale information."
         )
 
@@ -483,11 +519,13 @@ class ResearchAgent(BaseAgent):
             response = client.messages.create(
                 model=SONNET_MODEL,
                 max_tokens=800,
-                tools=[{
-                    "type": "web_search_20250305",
-                    "name": "web_search",
-                    "max_uses": 3,
-                }],
+                tools=[
+                    {
+                        "type": "web_search_20250305",
+                        "name": "web_search",
+                        "max_uses": 3,
+                    }
+                ],
                 messages=[{"role": "user", "content": prompt}],
             )
 
@@ -503,7 +541,7 @@ class ResearchAgent(BaseAgent):
 
             # Walk the content blocks looking for the final text answer
             text_parts: list[str] = []
-            for block in (response.content or []):
+            for block in response.content or []:
                 btype = getattr(block, "type", None)
                 if btype == "text":
                     text_parts.append(getattr(block, "text", ""))
@@ -539,7 +577,8 @@ class ResearchAgent(BaseAgent):
             # Any error (including web_search tool unavailable) → graceful no-op
             logger.warning(
                 "Web search trigger extraction failed for %s: %s",
-                company_name, exc,
+                company_name,
+                exc,
             )
             return []
 
@@ -590,16 +629,18 @@ class ResearchAgent(BaseAgent):
             return None
 
     def _research_with_claude(
-        self, client, company: dict,
+        self,
+        client,
+        company: dict,
     ) -> dict | None:
         """Research a company and extract structured intelligence in a single Claude call.
 
         Returns:
             Parsed dict or None if research fails.
         """
-        location = ", ".join(filter(None, [
-            company.get("city"), company.get("state"), company.get("country")
-        ]))
+        location = ", ".join(
+            filter(None, [company.get("city"), company.get("state"), company.get("country")])
+        )
 
         prompt = RESEARCH_USER.format(
             company_name=company.get("name", ""),

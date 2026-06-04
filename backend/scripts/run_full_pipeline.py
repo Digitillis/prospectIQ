@@ -20,13 +20,19 @@ logging.basicConfig(
 )
 
 console = Console()
-app = typer.Typer(help="Run the full ProspectIQ pipeline (discovery -> research -> qualification -> outreach).")
+app = typer.Typer(
+    help="Run the full ProspectIQ pipeline (discovery -> research -> qualification -> outreach)."
+)
 
 
 @app.command()
 def main(
-    max_pages: int = typer.Option(3, "--max-pages", help="Max Apollo pages per tier for discovery."),
-    campaign: Optional[str] = typer.Option(None, "--campaign", help="Campaign name for the pipeline run."),
+    max_pages: int = typer.Option(
+        3, "--max-pages", help="Max Apollo pages per tier for discovery."
+    ),
+    campaign: Optional[str] = typer.Option(
+        None, "--campaign", help="Campaign name for the pipeline run."
+    ),
     skip_outreach: bool = typer.Option(False, "--skip-outreach", help="Skip the outreach step."),
 ) -> None:
     """Run the full ProspectIQ pipeline end-to-end."""
@@ -39,10 +45,10 @@ def main(
     batch_prefix = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     pipeline_start = time.time()
 
-    console.print(f"\n[bold magenta]{'='*60}[/bold magenta]")
+    console.print(f"\n[bold magenta]{'=' * 60}[/bold magenta]")
     console.print(f"[bold magenta]ProspectIQ Full Pipeline[/bold magenta]")
     console.print(f"[bold magenta]Batch prefix: {batch_prefix}[/bold magenta]")
-    console.print(f"[bold magenta]{'='*60}[/bold magenta]\n")
+    console.print(f"[bold magenta]{'=' * 60}[/bold magenta]\n")
 
     results: dict[str, object] = {}
 
@@ -107,9 +113,9 @@ def _print_pipeline_summary(results: dict, pipeline_start: float) -> None:
     total_duration = round(time.time() - pipeline_start, 2)
     total_cost = sum(r.total_cost_usd for r in results.values())
 
-    console.print(f"\n[bold magenta]{'='*60}[/bold magenta]")
+    console.print(f"\n[bold magenta]{'=' * 60}[/bold magenta]")
     console.print("[bold magenta]Pipeline Summary[/bold magenta]")
-    console.print(f"[bold magenta]{'='*60}[/bold magenta]")
+    console.print(f"[bold magenta]{'=' * 60}[/bold magenta]")
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("Stage")
@@ -133,7 +139,9 @@ def _print_pipeline_summary(results: dict, pipeline_start: float) -> None:
         )
 
     console.print(table)
-    console.print(f"\n[bold]Total duration: {total_duration:.1f}s | Total cost: ${total_cost:.4f}[/bold]\n")
+    console.print(
+        f"\n[bold]Total duration: {total_duration:.1f}s | Total cost: ${total_cost:.4f}[/bold]\n"
+    )
 
 
 if __name__ == "__main__":

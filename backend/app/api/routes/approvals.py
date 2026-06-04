@@ -42,6 +42,7 @@ TIER_1_REQUIRES_DUAL_REVIEW: bool = True
 # so the founder can calibrate quality without reviewing every email.
 # Toggle via env var SAMPLED_QA_ENABLED=true.
 import os as _os
+
 SAMPLED_QA_ENABLED: bool = _os.environ.get("SAMPLED_QA_ENABLED", "false").lower() == "true"
 # Fraction of auto-approvable drafts held for human QA sample (default 20%).
 SAMPLED_QA_RATE: float = float(_os.environ.get("SAMPLED_QA_RATE", "0.20"))
@@ -67,6 +68,7 @@ def get_db() -> Database:
 def _max_approvals_per_reviewer_per_day() -> int:
     """Read the daily reviewer cap — env var takes precedence over YAML config."""
     import os
+
     env_val = os.environ.get("MAX_APPROVALS_PER_DAY")
     if env_val:
         try:
@@ -75,6 +77,7 @@ def _max_approvals_per_reviewer_per_day() -> int:
             pass
     try:
         from backend.app.core.limits import _load
+
         cfg = _load() or {}
         outreach = cfg.get("outreach") or {}
         return int(outreach.get("max_approvals_per_reviewer_per_day", 500))
@@ -118,8 +121,7 @@ async def list_sent_emails(
     db = get_db()
     query = (
         db._filter_ws(
-            db.client.table("outreach_drafts")
-            .select(
+            db.client.table("outreach_drafts").select(
                 "id, company_id, contact_id, subject, body, edited_body, "
                 "sent_at, approved_at, sequence_name, sequence_step, channel, "
                 "instantly_campaign_id, "
@@ -152,8 +154,7 @@ async def list_approved_queue(limit: int = 200):
     try:
         rows = (
             db._filter_ws(
-                db.client.table("outreach_drafts")
-                .select(
+                db.client.table("outreach_drafts").select(
                     "id, company_id, contact_id, subject, body, edited_body, "
                     "sequence_name, sequence_step, "
                     "channel, created_at, approval_status, "
@@ -196,8 +197,9 @@ async def list_pending_drafts(limit: int = 200):
         try:
             cos = (
                 db._filter_ws(
-                    db.client.table("companies")
-                    .select("id, name, tier, pqs_total, personalization_hooks, pain_signals")
+                    db.client.table("companies").select(
+                        "id, name, tier, pqs_total, personalization_hooks, pain_signals"
+                    )
                 )
                 .in_("id", company_ids)
                 .execute()
@@ -223,10 +225,13 @@ async def list_pending_drafts(limit: int = 200):
     # open/click events store resend_message_id but not sequence_step, so we join
     # via the sent outreach_drafts for the same contact.
     step_engagement_by_draft: dict[str, dict[str, str]] = {}
-    multi_step_contact_ids = list({
-        d["contact_id"] for d in drafts
-        if d.get("contact_id") and (d.get("sequence_step") or 0) > 1
-    })
+    multi_step_contact_ids = list(
+        {
+            d["contact_id"]
+            for d in drafts
+            if d.get("contact_id") and (d.get("sequence_step") or 0) > 1
+        }
+    )
     if multi_step_contact_ids:
         try:
             sent_rows = (
@@ -253,7 +258,8 @@ async def list_pending_drafts(limit: int = 200):
             # resend_message_id → (contact_id, sequence_step)
             msg_to_step: dict[str, tuple[str, int]] = {
                 r["resend_message_id"]: (r["contact_id"], int(r["sequence_step"] or 0))
-                for r in sent_rows if r.get("resend_message_id")
+                for r in sent_rows
+                if r.get("resend_message_id")
             }
             # Fetch engagement events for those messages
             all_msg_ids = list(msg_to_step.keys())
@@ -268,7 +274,11 @@ async def list_pending_drafts(limit: int = 200):
                 ).data or []
             # engagement level per (contact_id, step): "replied" > "clicked" > "opened" > "none"
             _RANK = {"replied": 3, "clicked": 2, "opened": 1, "none": 0}
-            _TYPE_MAP = {"email_replied": "replied", "email_clicked": "clicked", "email_opened": "opened"}
+            _TYPE_MAP = {
+                "email_replied": "replied",
+                "email_clicked": "clicked",
+                "email_opened": "opened",
+            }
             contact_step_eng: dict[tuple[str, int], str] = {}
             for ev in eng_rows:
                 mid = (ev.get("metadata") or {}).get("resend_message_id")
@@ -295,11 +305,11 @@ async def list_pending_drafts(limit: int = 200):
         except Exception:
             pass
 
-
     # Traction detection: for each company, check if any OTHER contact has
     # positive engagement signals. Surfaces a warning on step-1 cold drafts
     # when we already have traction at that company via a different contact.
     from backend.app.core.channel_coordinator import get_company_traction
+
     traction_by_company: dict[str, dict] = {}
     for draft in drafts:
         company_id = draft.get("company_id")
@@ -311,11 +321,16 @@ async def list_pending_drafts(limit: int = 200):
                 db, company_id, exclude_contact_id=contact_id
             )
         except Exception:
-            traction_by_company[company_id] = {"has_traction": False, "signals": [], "contact_name": "", "contact_id": ""}
+            traction_by_company[company_id] = {
+                "has_traction": False,
+                "signals": [],
+                "contact_name": "",
+                "contact_id": "",
+            }
 
     for draft in drafts:
         company_id = draft.get("company_id")
-        company  = companies_by_id.get(company_id) if company_id else None
+        company = companies_by_id.get(company_id) if company_id else None
         research = research_by_company.get(company_id) if company_id else None
 
         report = validate_draft(draft, company, research)
@@ -331,9 +346,7 @@ async def list_pending_drafts(limit: int = 200):
     # Get total pending count (unaffected by limit) for the UI to display
     try:
         total_result = (
-            db._filter_ws(
-                db.client.table("outreach_drafts").select("id", count="exact")
-            )
+            db._filter_ws(db.client.table("outreach_drafts").select("id", count="exact"))
             .eq("approval_status", "pending")
             .execute()
         )
@@ -352,7 +365,9 @@ async def list_alerts(hours: int = 24):
     Groups by assertion type so the UI can show a concise summary.
     """
     db = get_db()
-    cutoff = (datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=hours)).isoformat()
+    cutoff = (
+        datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=hours)
+    ).isoformat()
     # no_recent_company_send is a cold-outreach-only gate; follow-ups bypass it via
     # cooldown_days=0. Exclude it from dashboard alerts to avoid noise.
     _NOISE_ASSERTIONS = {"no_recent_company_send", "sender_daily_cap"}
@@ -444,9 +459,7 @@ async def approve_draft(
         try:
             since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             count_q = (
-                db._filter_ws(
-                    db.client.table("outreach_drafts").select("id", count="exact")
-                )
+                db._filter_ws(db.client.table("outreach_drafts").select("id", count="exact"))
                 .eq("approved_by", reviewer_id)
                 .gte("reviewed_at", since)
             )
@@ -469,10 +482,7 @@ async def approve_draft(
     # Run against edited_body if provided, otherwise the stored body.
     if not force:
         result_raw = (
-            db._filter_ws(
-                db.client.table("outreach_drafts")
-                .select("*, companies(name, tier)")
-            )
+            db._filter_ws(db.client.table("outreach_drafts").select("*, companies(name, tier)"))
             .eq("id", draft_id)
             .execute()
         )
@@ -486,6 +496,7 @@ async def approve_draft(
             research = draft_row.get("research_intelligence") or None
 
             from backend.app.core.draft_quality import validate_draft
+
             report = validate_draft(draft_row, company, research)
             errors = [i for i in report.issues if i.severity == "error"]
             if errors:
@@ -494,10 +505,7 @@ async def approve_draft(
                     detail={
                         "message": "Draft has quality errors and cannot be approved. Fix the issues or use ?force=true.",
                         "quality_score": report.score,
-                        "errors": [
-                            {"check": i.check_name, "message": i.message}
-                            for i in errors
-                        ],
+                        "errors": [{"check": i.check_name, "message": i.message} for i in errors],
                     },
                 )
 
@@ -507,8 +515,9 @@ async def approve_draft(
     is_tier_1 = False
     draft_lookup = (
         db._filter_ws(
-            db.client.table("outreach_drafts")
-            .select("id, approval_status, approved_by, companies(tier)")
+            db.client.table("outreach_drafts").select(
+                "id, approval_status, approved_by, companies(tier)"
+            )
         )
         .eq("id", draft_id)
         .execute()
@@ -608,8 +617,11 @@ async def approve_draft(
                 "reviewer/attestation fields. Run the reviewer-columns migration.",
                 exc,
             )
-            legacy_only = {k: v for k, v in update_data.items()
-                           if k not in {"approved_by", "reviewed_at", "attestation"}}
+            legacy_only = {
+                k: v
+                for k, v in update_data.items()
+                if k not in {"approved_by", "reviewed_at", "attestation"}
+            }
             draft = db.update_outreach_draft(draft_id, legacy_only)
 
     if not draft:
@@ -621,7 +633,9 @@ async def approve_draft(
         reviewer_update: dict = {}
         if reviewer_id:
             reviewer_update["approved_by"] = reviewer_id
-        reviewer_update["reviewed_at"] = update_data.get("reviewed_at", datetime.now(timezone.utc).isoformat())
+        reviewer_update["reviewed_at"] = update_data.get(
+            "reviewed_at", datetime.now(timezone.utc).isoformat()
+        )
         if update_data.get("attestation"):
             reviewer_update["attestation"] = update_data["attestation"]
         try:
@@ -643,25 +657,32 @@ async def approve_draft(
             opener_changed = orig_opener != edit_opener
             # Proof point heuristics: numbers or % in original but not edited
             import re as _re
-            orig_has_stat = bool(_re.search(r'\d+\s*%|\$\d+|\d+\s*(days?|hours?|weeks?)', original, _re.I))
-            edit_has_stat = bool(_re.search(r'\d+\s*%|\$\d+|\d+\s*(days?|hours?|weeks?)', edited, _re.I))
+
+            orig_has_stat = bool(
+                _re.search(r"\d+\s*%|\$\d+|\d+\s*(days?|hours?|weeks?)", original, _re.I)
+            )
+            edit_has_stat = bool(
+                _re.search(r"\d+\s*%|\$\d+|\d+\s*(days?|hours?|weeks?)", edited, _re.I)
+            )
             proof_point_removed = orig_has_stat and not edit_has_stat
-            db.client.table("outreach_edit_feedback").insert({
-                "draft_id": draft_id,
-                "company_id": draft.get("company_id"),
-                "contact_id": draft.get("contact_id"),
-                "sequence_name": draft.get("sequence_name"),
-                "sequence_step": draft.get("sequence_step"),
-                "original_body": original,
-                "edited_body": edited,
-                "original_word_count": orig_words,
-                "edited_word_count": edit_words,
-                "opener_changed": opener_changed,
-                "proof_point_removed": proof_point_removed,
-                "shortened": edit_words < orig_words - 10,
-                "original_model": draft.get("model"),
-                "workspace_id": get_workspace_id(),
-            }).execute()
+            db.client.table("outreach_edit_feedback").insert(
+                {
+                    "draft_id": draft_id,
+                    "company_id": draft.get("company_id"),
+                    "contact_id": draft.get("contact_id"),
+                    "sequence_name": draft.get("sequence_name"),
+                    "sequence_step": draft.get("sequence_step"),
+                    "original_body": original,
+                    "edited_body": edited,
+                    "original_word_count": orig_words,
+                    "edited_word_count": edit_words,
+                    "opener_changed": opener_changed,
+                    "proof_point_removed": proof_point_removed,
+                    "shortened": edit_words < orig_words - 10,
+                    "original_model": draft.get("model"),
+                    "workspace_id": get_workspace_id(),
+                }
+            ).execute()
         except Exception:
             pass  # non-critical — never block approval on feedback capture failure
 
@@ -778,8 +799,9 @@ async def test_send_draft(
     # Fetch the draft with company/contact info
     result = (
         db._filter_ws(
-            db.client.table("outreach_drafts")
-            .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email)")
+            db.client.table("outreach_drafts").select(
+                "*, companies(name, tier, pqs_total), contacts(full_name, title, email)"
+            )
         )
         .eq("id", draft_id)
         .execute()
@@ -808,20 +830,23 @@ async def test_send_draft(
     # Send via Resend
     try:
         from backend.app.core.config import get_settings
+
         settings = get_settings()
 
         if not settings.resend_api_key:
             raise HTTPException(
                 status_code=400,
-                detail="RESEND_API_KEY not configured. Set it in Railway Variables to enable test emails."
+                detail="RESEND_API_KEY not configured. Set it in Railway Variables to enable test emails.",
             )
 
         import resend
+
         resend.api_key = settings.resend_api_key
 
         # Get sender info from config
         try:
             from backend.app.core.config import get_outreach_guidelines
+
             guidelines = get_outreach_guidelines()
             sender = guidelines.get("sender", {})
             sender_email = sender.get("email", "noreply@example.com")
@@ -831,29 +856,36 @@ async def test_send_draft(
             from_addr = "ProspectIQ <noreply@example.com>"
 
         from backend.app.utils.email_html import plain_to_html
-        send_result = resend.Emails.send({
-            "from": from_addr,
-            "to": [body.test_email],
-            "subject": test_subject,
-            "html": plain_to_html(test_body),
-            "text": test_body,
-        })
+
+        send_result = resend.Emails.send(
+            {
+                "from": from_addr,
+                "to": [body.test_email],
+                "subject": test_subject,
+                "html": plain_to_html(test_body),
+                "text": test_body,
+            }
+        )
 
         # Log the test send as an interaction
-        db.insert_interaction({
-            "company_id": draft["company_id"],
-            "contact_id": draft.get("contact_id"),
-            "type": "note",
-            "channel": "email",
-            "subject": f"Test email sent to {body.test_email}",
-            "body": f"Draft {draft_id} sent as test to {body.test_email}",
-            "source": "system",
-            "metadata": {
-                "draft_id": draft_id,
-                "test_email": body.test_email,
-                "resend_id": send_result.get("id") if isinstance(send_result, dict) else str(send_result),
-            },
-        })
+        db.insert_interaction(
+            {
+                "company_id": draft["company_id"],
+                "contact_id": draft.get("contact_id"),
+                "type": "note",
+                "channel": "email",
+                "subject": f"Test email sent to {body.test_email}",
+                "body": f"Draft {draft_id} sent as test to {body.test_email}",
+                "source": "system",
+                "metadata": {
+                    "draft_id": draft_id,
+                    "test_email": body.test_email,
+                    "resend_id": send_result.get("id")
+                    if isinstance(send_result, dict)
+                    else str(send_result),
+                },
+            }
+        )
 
         return {
             "data": {"draft_id": draft_id, "sent_to": body.test_email},
@@ -877,9 +909,7 @@ async def get_draft_thread(draft_id: str):
 
     # Look up the draft to get contact_id
     draft_result = (
-        db._filter_ws(
-            db.client.table("outreach_drafts").select("id, contact_id, company_id")
-        )
+        db._filter_ws(db.client.table("outreach_drafts").select("id, contact_id, company_id"))
         .eq("id", draft_id)
         .execute()
     )
@@ -913,9 +943,7 @@ async def get_draft_research(draft_id: str):
     db = get_db()
 
     draft_result = (
-        db._filter_ws(
-            db.client.table("outreach_drafts").select("id, company_id")
-        )
+        db._filter_ws(db.client.table("outreach_drafts").select("id, company_id"))
         .eq("id", draft_id)
         .execute()
     )

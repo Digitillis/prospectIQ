@@ -29,6 +29,7 @@ def get_db() -> Database:
 def _get_hubspot():
     """Return a configured HubSpotSync or raise 400 if not configured."""
     from backend.app.integrations.hubspot import HubSpotSync
+
     settings = get_settings()
     if not settings.hubspot_api_key:
         raise HTTPException(
@@ -44,6 +45,7 @@ def _get_hubspot():
 def _get_salesforce():
     """Return a configured SalesforceSync or raise 400 if not configured."""
     from backend.app.integrations.salesforce import SalesforceSync
+
     settings = get_settings()
     if not settings.salesforce_username:
         raise HTTPException(
@@ -61,6 +63,7 @@ def _get_salesforce():
 # ------------------------------------------------------------------
 # HubSpot endpoints
 # ------------------------------------------------------------------
+
 
 @router.post("/hubspot/sync")
 async def hubspot_sync_all():
@@ -113,6 +116,7 @@ async def hubspot_sync_deals():
 # ------------------------------------------------------------------
 # Salesforce endpoints
 # ------------------------------------------------------------------
+
 
 @router.post("/salesforce/sync")
 async def salesforce_sync_all():

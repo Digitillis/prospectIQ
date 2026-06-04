@@ -10,6 +10,7 @@ Required env vars (set in Railway):
   GMAIL_REFRESH_TOKEN
   GMAIL_ACCOUNT  (e.g. avi@digitillis.io)
 """
+
 from __future__ import annotations
 
 import base64
@@ -97,9 +98,9 @@ def fetch_recent_replies(gmail_account: str) -> list[dict]:
     query = f"in:inbox after:{cutoff.strftime('%Y/%m/%d')} -from:{gmail_account}"
 
     try:
-        list_result = service.users().messages().list(
-            userId="me", q=query, maxResults=100
-        ).execute()
+        list_result = (
+            service.users().messages().list(userId="me", q=query, maxResults=100).execute()
+        )
     except Exception as e:
         logger.error("gmail_api: messages.list failed: %s", e)
         return []
@@ -111,9 +112,12 @@ def fetch_recent_replies(gmail_account: str) -> list[dict]:
     replies = []
     for msg_ref in messages:
         try:
-            msg = service.users().messages().get(
-                userId="me", id=msg_ref["id"], format="full"
-            ).execute()
+            msg = (
+                service.users()
+                .messages()
+                .get(userId="me", id=msg_ref["id"], format="full")
+                .execute()
+            )
         except Exception as e:
             logger.warning("gmail_api: message.get failed for %s: %s", msg_ref["id"], e)
             continue
@@ -129,27 +133,37 @@ def fetch_recent_replies(gmail_account: str) -> list[dict]:
         from_email = m.group(1).strip().lower() if m else from_raw.strip().lower()
 
         # Skip if this looks like a system/bounce/notification email
-        if any(skip in from_email for skip in ["noreply", "no-reply", "mailer-daemon", "postmaster"]):
+        if any(
+            skip in from_email for skip in ["noreply", "no-reply", "mailer-daemon", "postmaster"]
+        ):
             continue
 
         # Parse received timestamp
         try:
             internal_date_ms = int(msg.get("internalDate", 0))
-            received_at = datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc).isoformat()
+            received_at = datetime.fromtimestamp(
+                internal_date_ms / 1000, tz=timezone.utc
+            ).isoformat()
         except Exception:
             received_at = datetime.now(timezone.utc).isoformat()
 
         body = _decode_body(msg.get("payload", {}))
 
-        replies.append({
-            "from_email": from_email,
-            "subject": subject,
-            "body": body,
-            "received_at": received_at,
-            "message_id": msg_ref["id"],
-            "raw_message_id": raw_message_id,
-        })
+        replies.append(
+            {
+                "from_email": from_email,
+                "subject": subject,
+                "body": body,
+                "received_at": received_at,
+                "message_id": msg_ref["id"],
+                "raw_message_id": raw_message_id,
+            }
+        )
 
-    logger.info("gmail_api: fetched %d inbound messages for %s (last %dh)",
-                len(replies), gmail_account, _LOOKBACK_HOURS)
+    logger.info(
+        "gmail_api: fetched %d inbound messages for %s (last %dh)",
+        len(replies),
+        gmail_account,
+        _LOOKBACK_HOURS,
+    )
     return replies

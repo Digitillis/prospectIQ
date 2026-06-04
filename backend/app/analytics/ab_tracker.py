@@ -9,7 +9,7 @@ Usage:
     from backend.app.analytics.ab_tracker import ABTracker
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     tracker = ABTracker(db)
 
     tracker.record_send(contact_id="uuid", variant="a",
@@ -58,13 +58,15 @@ class ABTracker:
             return
         try:
             self.db.client.table("ab_test_events").insert(
-                self.db._inject_ws({
-                    "contact_id": contact_id,
-                    "sequence_id": sequence_id,
-                    "variant": variant,
-                    "subject_line": subject_line,
-                    "event_type": "sent",
-                })
+                self.db._inject_ws(
+                    {
+                        "contact_id": contact_id,
+                        "sequence_id": sequence_id,
+                        "variant": variant,
+                        "subject_line": subject_line,
+                        "event_type": "sent",
+                    }
+                )
             ).execute()
         except Exception as exc:
             logger.error(f"ABTracker.record_send failed: {exc}")
@@ -78,14 +80,14 @@ class ABTracker:
             # Look up the sequence_id from the most recent sent event for this contact
             row = (
                 self.db._filter_ws(
-                    self.db.client.table("ab_test_events")
-                    .select("sequence_id, subject_line")
+                    self.db.client.table("ab_test_events").select("sequence_id, subject_line")
                 )
                 .eq("contact_id", contact_id)
                 .eq("event_type", "sent")
                 .order("created_at", desc=True)
                 .limit(1)
-                .execute().data
+                .execute()
+                .data
             )
             if not row:
                 logger.debug(f"ABTracker.record_open: no prior send for contact {contact_id}")
@@ -94,13 +96,15 @@ class ABTracker:
             subject_line = row[0].get("subject_line")
 
             self.db.client.table("ab_test_events").insert(
-                self.db._inject_ws({
-                    "contact_id": contact_id,
-                    "sequence_id": sequence_id,
-                    "variant": variant,
-                    "subject_line": subject_line,
-                    "event_type": "opened",
-                })
+                self.db._inject_ws(
+                    {
+                        "contact_id": contact_id,
+                        "sequence_id": sequence_id,
+                        "variant": variant,
+                        "subject_line": subject_line,
+                        "event_type": "opened",
+                    }
+                )
             ).execute()
         except Exception as exc:
             logger.error(f"ABTracker.record_open failed: {exc}")
@@ -113,14 +117,14 @@ class ABTracker:
         try:
             row = (
                 self.db._filter_ws(
-                    self.db.client.table("ab_test_events")
-                    .select("sequence_id, subject_line")
+                    self.db.client.table("ab_test_events").select("sequence_id, subject_line")
                 )
                 .eq("contact_id", contact_id)
                 .eq("event_type", "sent")
                 .order("created_at", desc=True)
                 .limit(1)
-                .execute().data
+                .execute()
+                .data
             )
             if not row:
                 return
@@ -128,13 +132,15 @@ class ABTracker:
             subject_line = row[0].get("subject_line")
 
             self.db.client.table("ab_test_events").insert(
-                self.db._inject_ws({
-                    "contact_id": contact_id,
-                    "sequence_id": sequence_id,
-                    "variant": variant,
-                    "subject_line": subject_line,
-                    "event_type": "replied",
-                })
+                self.db._inject_ws(
+                    {
+                        "contact_id": contact_id,
+                        "sequence_id": sequence_id,
+                        "variant": variant,
+                        "subject_line": subject_line,
+                        "event_type": "replied",
+                    }
+                )
             ).execute()
         except Exception as exc:
             logger.error(f"ABTracker.record_reply failed: {exc}")
@@ -157,11 +163,14 @@ class ABTracker:
         try:
             rows = (
                 self.db._filter_ws(
-                    self.db.client.table("ab_test_events")
-                    .select("variant, event_type, subject_line")
+                    self.db.client.table("ab_test_events").select(
+                        "variant, event_type, subject_line"
+                    )
                 )
                 .eq("sequence_id", sequence_id)
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
         except Exception as exc:
             logger.error(f"ABTracker.get_variant_stats failed: {exc}")
@@ -229,9 +238,7 @@ class ABTracker:
         b = stats["b"]
 
         if a["sent"] < _MIN_SENDS_PER_VARIANT or b["sent"] < _MIN_SENDS_PER_VARIANT:
-            logger.info(
-                f"ABTracker: one variant has insufficient sends for {sequence_id}"
-            )
+            logger.info(f"ABTracker: one variant has insufficient sends for {sequence_id}")
             return None
 
         # Chi-squared test on reply counts
@@ -296,11 +303,10 @@ class ABTracker:
         """
         try:
             from backend.app.core.confidence_engine import ConfidenceEngine
+
             # Look up workspace_id from the ab_test_events for this sequence
             rows = (
-                self.db._filter_ws(
-                    self.db.client.table("ab_test_events").select("workspace_id")
-                )
+                self.db._filter_ws(self.db.client.table("ab_test_events").select("workspace_id"))
                 .eq("sequence_id", sequence_id)
                 .limit(1)
                 .execute()
@@ -342,6 +348,12 @@ class ABTracker:
 
     @staticmethod
     def _empty_stats(sequence_id: str) -> dict:
-        empty = {"sent": 0, "opened": 0, "replied": 0, "open_rate_pct": 0.0,
-                 "reply_rate_pct": 0.0, "subject_line": None}
+        empty = {
+            "sent": 0,
+            "opened": 0,
+            "replied": 0,
+            "open_rate_pct": 0.0,
+            "reply_rate_pct": 0.0,
+            "subject_line": None,
+        }
         return {"sequence_id": sequence_id, "a": dict(empty), "b": dict(empty), "total_sends": 0}

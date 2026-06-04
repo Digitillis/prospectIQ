@@ -38,6 +38,7 @@ _job_store: dict[str, dict] = {}
 # Request models
 # ------------------------------------------------------------------
 
+
 class DiscoveryRequest(BaseModel):
     max_pages: Optional[int] = None
     campaign: Optional[str] = None
@@ -110,6 +111,7 @@ class SignalMonitorRequest(BaseModel):
 # Helper to serialize AgentResult
 # ------------------------------------------------------------------
 
+
 def _serialize_result(result) -> dict:
     """Convert AgentResult to a JSON-safe dict."""
     return {
@@ -129,13 +131,14 @@ def _serialize_result(result) -> dict:
 # Endpoints
 # ------------------------------------------------------------------
 
+
 @router.post("/run/discovery")
 async def run_discovery(
     body: DiscoveryRequest,
     _quota: None = Depends(require_quota("discovery")),
 ):
     """Trigger the discovery agent to find new companies via Apollo."""
-    agent = DiscoveryAgent()
+    agent = DiscoveryAgent(workspace_id=get_workspace_id())
     result = agent.execute(
         max_pages=body.max_pages,
         campaign_name=body.campaign,
@@ -173,7 +176,7 @@ async def run_research(
 
     def _run_research():
         try:
-            agent = ResearchAgent()
+            agent = ResearchAgent(workspace_id=get_workspace_id())
             result = agent.execute(
                 company_ids=company_ids,
                 min_firmographic_score=min_score,
@@ -212,7 +215,7 @@ async def get_job_status(batch_id: str):
 @router.post("/run/qualification")
 async def run_qualification(body: QualificationRequest):
     """Trigger the qualification agent to score companies."""
-    agent = QualificationAgent()
+    agent = QualificationAgent(workspace_id=get_workspace_id())
     result = agent.execute(
         company_ids=body.company_ids,
         limit=body.limit,
@@ -230,7 +233,7 @@ async def run_enrichment(
     Consumes Apollo credits — only enriches the top-priority contact per company.
     Must run after qualification, before outreach.
     """
-    agent = EnrichmentAgent()
+    agent = EnrichmentAgent(workspace_id=get_workspace_id())
     result = agent.execute(
         company_ids=body.company_ids,
         limit=body.limit,
@@ -245,7 +248,7 @@ async def run_outreach(
     _role=Depends(require_role("member")),
 ):
     """Trigger the outreach agent to generate personalized drafts."""
-    agent = OutreachAgent()
+    agent = OutreachAgent(workspace_id=get_workspace_id())
     result = agent.execute(
         company_ids=body.company_ids,
         sequence_name=body.sequence_name,
@@ -257,12 +260,18 @@ async def run_outreach(
     log_audit_event_from_ctx(
         "pipeline.run",
         resource_type="agent",
-        metadata={"agent": "outreach", "processed": result.processed, "errors": result.errors, "cost_usd": result.total_cost_usd},
+        metadata={
+            "agent": "outreach",
+            "processed": result.processed,
+            "errors": result.errors,
+            "cost_usd": result.total_cost_usd,
+        },
     )
 
     if result.processed > 0:
         try:
             from backend.app.utils.notifications import notify_slack
+
             notify_slack(
                 f"*{result.processed} new outreach draft(s) ready for approval.* "
                 f"Open the ProspectIQ Approvals page to review and send.",
@@ -284,7 +293,7 @@ async def run_linkedin(
     All drafts are auto-approved since LinkedIn messages are copy-pasted manually.
     Only processes contacts that have a linkedin_url on their contact record.
     """
-    agent = LinkedInAgent()
+    agent = LinkedInAgent(workspace_id=get_workspace_id())
     result = agent.execute(
         company_ids=body.company_ids,
         limit=body.limit,
@@ -294,6 +303,7 @@ async def run_linkedin(
     if result.processed > 0:
         try:
             from backend.app.utils.notifications import notify_slack
+
             notify_slack(
                 f"*{result.processed} LinkedIn message set(s) generated.* "
                 f"Open the ProspectIQ LinkedIn page to review and copy.",
@@ -315,7 +325,7 @@ async def run_reengagement(
     Scans for contacts past the cooldown period (default 90 days) and
     moves them back to 'qualified' status for warm follow-up outreach.
     """
-    agent = ReengagementAgent()
+    agent = ReengagementAgent(workspace_id=get_workspace_id())
     result = agent.execute(limit=body.limit, cooldown_days=body.cooldown_days)
     return {"data": _serialize_result(result)}
 
@@ -334,7 +344,7 @@ async def run_engagement(
     - poll_events: Poll Instantly for per-lead opens/clicks/replies/bounces
                    (webhook-free alternative for lower-tier Instantly plans)
     """
-    agent = EngagementAgent()
+    agent = EngagementAgent(workspace_id=get_workspace_id())
     result = agent.execute(action=body.action, campaign_name=body.campaign_name)
     return {"data": _serialize_result(result)}
 
@@ -347,6 +357,7 @@ async def run_buying_signals():
     re-engagement after silence. Auto-bumps PQS and notifies Slack.
     """
     from backend.app.core.buying_signals import BuyingSignalDetector
+
     agent = BuyingSignalDetector()
     result = agent.execute()
     return {"data": _serialize_result(result)}
@@ -358,6 +369,7 @@ async def get_intent_signals(company_id: str):
     from backend.app.core.intent_signals import analyze_intent
     from backend.app.core.database import Database
     from backend.app.core.workspace import get_workspace_id
+
     db = Database(workspace_id=get_workspace_id())
     report = analyze_intent(db, company_id)
     return {
@@ -387,7 +399,7 @@ async def poll_instantly():
     Equivalent to POST /run/engagement with action=poll_events.
     Designed to be called on a schedule (e.g. every hour via cron or Railway cron job).
     """
-    agent = EngagementAgent()
+    agent = EngagementAgent(workspace_id=get_workspace_id())
     result = agent.execute(action="poll_events")
     return {"data": _serialize_result(result)}
 
@@ -411,7 +423,7 @@ async def run_linkedin_send(
     - withdraw_stale: withdraw pending invites older than 21 days
     - dry_run: log actions without sending anything
     """
-    agent = LinkedInSenderAgent()
+    agent = LinkedInSenderAgent(workspace_id=get_workspace_id())
     result = agent.execute(
         send_connection_requests=body.send_connection_requests,
         send_dms=body.send_dms,
@@ -435,7 +447,7 @@ async def run_signal_monitor(
     - Queues stale research for refresh
     - Sends Slack notification for high-value signals
     """
-    agent = SignalMonitorAgent()
+    agent = SignalMonitorAgent(workspace_id=get_workspace_id())
     result = agent.execute(
         company_ids=body.company_ids,
         limit=body.limit,
@@ -483,12 +495,14 @@ async def run_sequence_assign(
         contacts = db.get_contacts_for_company(company_id)
 
         if not contacts:
-            assignments.append({
-                "company_id": company_id,
-                "company_name": company.get("name"),
-                "assigned_sequence": None,
-                "reason": "no_contacts",
-            })
+            assignments.append(
+                {
+                    "company_id": company_id,
+                    "company_name": company.get("name"),
+                    "assigned_sequence": None,
+                    "reason": "no_contacts",
+                }
+            )
             continue
 
         # Pick best contact
@@ -517,16 +531,18 @@ async def run_sequence_assign(
             sequence = None
             reason = "no_reachable_channel"
 
-        assignments.append({
-            "company_id": company_id,
-            "company_name": company.get("name"),
-            "contact_name": primary.get("full_name", ""),
-            "persona": persona,
-            "assigned_sequence": sequence,
-            "has_email": has_email,
-            "has_linkedin": has_linkedin,
-            "reason": reason,
-        })
+        assignments.append(
+            {
+                "company_id": company_id,
+                "company_name": company.get("name"),
+                "contact_name": primary.get("full_name", ""),
+                "persona": persona,
+                "assigned_sequence": sequence,
+                "has_email": has_email,
+                "has_linkedin": has_linkedin,
+                "reason": reason,
+            }
+        )
 
     assigned_count = sum(1 for a in assignments if a.get("assigned_sequence"))
     return {
@@ -550,7 +566,7 @@ async def run_learning(body: LearningRequest):
     Set auto_apply=true to write scoring adjustments directly to scoring.yaml.
     Requires at least 20 outcome records in the analysis window.
     """
-    agent = LearningAgent()
+    agent = LearningAgent(workspace_id=get_workspace_id())
     result = agent.execute(period_days=body.period_days, auto_apply=body.auto_apply)
     return {"data": _serialize_result(result)}
 
@@ -568,16 +584,11 @@ async def run_full_pipeline(
 
     Set skip_outreach=true to stop after qualification (no drafts generated).
     """
-    pipeline = Pipeline()
+    pipeline = Pipeline(workspace_id=get_workspace_id())
     results = pipeline.run_full(
         max_pages=body.max_pages,
         campaign_name=body.campaign,
         skip_outreach=body.skip_outreach,
         tiers=body.tiers,
     )
-    return {
-        "data": {
-            stage: _serialize_result(result)
-            for stage, result in results.items()
-        }
-    }
+    return {"data": {stage: _serialize_result(result) for stage, result in results.items()}}

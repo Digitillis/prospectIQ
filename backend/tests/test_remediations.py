@@ -4,6 +4,7 @@ Each test proves a specific invariant that was broken in the pre-remediation
 corpus. CI will catch regressions if any of these tests starts failing after
 a future code change.
 """
+
 from __future__ import annotations
 
 import re
@@ -17,12 +18,14 @@ from unittest.mock import MagicMock, patch
 # R1 — SINCE-based reply ingestion
 # ---------------------------------------------------------------------------
 
+
 class TestR1ReplyIngestion(unittest.TestCase):
     """fetch_since_replies uses SINCE, not UNSEEN."""
 
     def test_fetch_since_replies_uses_since_criterion(self):
         """GmailImapClient.fetch_since_replies must call IMAP SEARCH with SINCE."""
         from backend.app.integrations.gmail_imap import GmailImapClient
+
         client = GmailImapClient("test@example.com", "password")
 
         mock_conn = MagicMock()
@@ -36,16 +39,14 @@ class TestR1ReplyIngestion(unittest.TestCase):
         call_args = mock_conn.search.call_args
         search_criterion = str(call_args[0])
         assert "SINCE" in search_criterion, (
-            "fetch_since_replies must use SINCE, not UNSEEN — "
-            f"got search args: {call_args}"
+            f"fetch_since_replies must use SINCE, not UNSEEN — got search args: {call_args}"
         )
-        assert "UNSEEN" not in search_criterion, (
-            "fetch_since_replies must NOT use UNSEEN"
-        )
+        assert "UNSEEN" not in search_criterion, "fetch_since_replies must NOT use UNSEEN"
 
     def test_fetch_since_replies_formats_date_correctly(self):
         """SINCE date must be DD-Mon-YYYY (IMAP RFC 3501 format)."""
         from backend.app.integrations.gmail_imap import GmailImapClient
+
         client = GmailImapClient("test@example.com", "password")
 
         mock_conn = MagicMock()
@@ -67,19 +68,21 @@ class TestR1ReplyIngestion(unittest.TestCase):
 # R2 — Rejected drafts cannot dispatch
 # ---------------------------------------------------------------------------
 
+
 class TestR2RejectedDraftGate(unittest.TestCase):
     """assert_not_rejected raises AssertionFailure for rejected/dispatch_failed drafts."""
 
     def _make_db(self, approval_status: str):
         db = MagicMock()
-        db.client.table.return_value.select.return_value\
-            .eq.return_value.limit.return_value.execute.return_value\
-            .data = [{"id": "draft-123", "approval_status": approval_status}]
+        db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+            {"id": "draft-123", "approval_status": approval_status}
+        ]
         db.client.table.return_value.insert.return_value.execute.return_value = None
         return db
 
     def test_rejected_draft_raises(self):
         from backend.app.core.pre_send_assertions import assert_not_rejected, AssertionFailure
+
         db = self._make_db("rejected")
         with self.assertRaises(AssertionFailure) as ctx:
             assert_not_rejected(db, "draft-123", "send_path")
@@ -87,18 +90,21 @@ class TestR2RejectedDraftGate(unittest.TestCase):
 
     def test_dispatch_failed_raises(self):
         from backend.app.core.pre_send_assertions import assert_not_rejected, AssertionFailure
+
         db = self._make_db("dispatch_failed")
         with self.assertRaises(AssertionFailure):
             assert_not_rejected(db, "draft-123", "send_path")
 
     def test_approved_draft_passes(self):
         from backend.app.core.pre_send_assertions import assert_not_rejected
+
         db = self._make_db("approved")
         # Must not raise
         assert_not_rejected(db, "draft-123", "send_path")
 
     def test_edited_draft_passes(self):
         from backend.app.core.pre_send_assertions import assert_not_rejected
+
         db = self._make_db("edited")
         assert_not_rejected(db, "draft-123", "send_path")
 
@@ -107,32 +113,37 @@ class TestR2RejectedDraftGate(unittest.TestCase):
 # R3 — Bot events do not promote company to 'engaged'
 # ---------------------------------------------------------------------------
 
+
 class TestR3BotFiltering(unittest.TestCase):
     """ClickClassifier correctly labels sub-90s events as bots."""
 
     def test_sub_90s_latency_is_bot(self):
         from backend.app.core.click_classifier import ClickClassifier
+
         result = ClickClassifier().classify({"latency_seconds": 15.0})
         assert result == "bot", f"Expected 'bot', got {result!r}"
 
     def test_89s_latency_is_bot(self):
         from backend.app.core.click_classifier import ClickClassifier
+
         result = ClickClassifier().classify({"latency_seconds": 89.9})
         assert result == "bot"
 
     def test_no_latency_defaults_to_unclear(self):
         from backend.app.core.click_classifier import ClickClassifier
+
         result = ClickClassifier().classify({})
-        assert result in ("unclear", "human"), (
-            "Unknown latency should not be 'bot'"
-        )
+        assert result in ("unclear", "human"), "Unknown latency should not be 'bot'"
 
     def test_scanner_ua_is_bot(self):
         from backend.app.core.click_classifier import ClickClassifier
-        result = ClickClassifier().classify({
-            "latency_seconds": 200.0,
-            "user_agent": "Mimecast SafetyNet Scanner/3.0",
-        })
+
+        result = ClickClassifier().classify(
+            {
+                "latency_seconds": 200.0,
+                "user_agent": "Mimecast SafetyNet Scanner/3.0",
+            }
+        )
         assert result == "bot"
 
 
@@ -140,12 +151,16 @@ class TestR3BotFiltering(unittest.TestCase):
 # R4 + R6 — Integrity validator catches fingerprints and requires hook URL
 # ---------------------------------------------------------------------------
 
+
 class TestR4R6IntegrityValidator(unittest.TestCase):
     """_check_draft_integrity catches recycled stats, fingerprints, missing hook."""
 
     def _check(self, body: str, subject: str = "", notes: str = "", step: int = 1):
         from backend.app.agents.outreach import _check_draft_integrity
-        return _check_draft_integrity(body, subject, personalization_notes=notes, sequence_step=step)
+
+        return _check_draft_integrity(
+            body, subject, personalization_notes=notes, sequence_step=step
+        )
 
     def test_missing_hook_url_rejected_step1(self):
         violations = self._check(
@@ -222,11 +237,13 @@ class TestR4R6IntegrityValidator(unittest.TestCase):
 # R6 — Batch fingerprint linter
 # ---------------------------------------------------------------------------
 
+
 class TestR6BatchLinter(unittest.TestCase):
     """check_batch_fingerprints catches corpus-level template saturation."""
 
     def test_high_rate_triggers_violation(self):
         from backend.app.agents.outreach import check_batch_fingerprints
+
         # 10 emails all containing "time-based maintenance schedules" = 100% rate
         bodies = ["Plants on time-based maintenance schedules lose efficiency."] * 10
         violations = check_batch_fingerprints(bodies, threshold=0.10)
@@ -236,11 +253,11 @@ class TestR6BatchLinter(unittest.TestCase):
 
     def test_low_rate_passes(self):
         from backend.app.agents.outreach import check_batch_fingerprints
+
         # 1 in 20 = 5% — below 10% threshold
-        bodies = (
-            ["Plants on time-based maintenance schedules lose efficiency."]
-            + ["Clean personalized email about induction furnace reliability."] * 19
-        )
+        bodies = ["Plants on time-based maintenance schedules lose efficiency."] + [
+            "Clean personalized email about induction furnace reliability."
+        ] * 19
         violations = check_batch_fingerprints(bodies, threshold=0.10)
         assert "time_based_maintenance" not in violations
 
@@ -249,12 +266,14 @@ class TestR6BatchLinter(unittest.TestCase):
 # R7 — Qualification scorer bugs
 # ---------------------------------------------------------------------------
 
+
 class TestR7Qualification(unittest.TestCase):
     """Rule-based scorer no longer awards bonus for NULL state or missing research."""
 
     def _make_scorer_and_company(self, state=None):
         """Return a partial scorer result for state_match evaluation."""
         from backend.app.agents.qualification import QualificationAgent
+
         agent = QualificationAgent.__new__(QualificationAgent)
         agent.db = MagicMock()
         company = {"state": state, "employee_count": 500}
@@ -263,6 +282,7 @@ class TestR7Qualification(unittest.TestCase):
     def test_null_state_does_not_get_midwest_bonus(self):
         """state=NULL must not award the Midwest geography bonus."""
         from backend.app.agents.qualification import QualificationAgent
+
         agent = QualificationAgent.__new__(QualificationAgent)
 
         # Simulate the state_match branch with qualifying states list
@@ -285,6 +305,7 @@ class TestR7Qualification(unittest.TestCase):
     def test_no_research_returns_zero_technographic(self):
         """_score_technographic returns 0 when no research record exists."""
         from backend.app.agents.qualification import QualificationAgent
+
         agent = QualificationAgent.__new__(QualificationAgent)
         agent._build_search_text = MagicMock(return_value="")
 
@@ -305,11 +326,13 @@ class TestR7Qualification(unittest.TestCase):
 # R8 — Step N references step N-1
 # ---------------------------------------------------------------------------
 
+
 class TestR8SequenceContinuity(unittest.TestCase):
     """Step-label-leak rule allows natural follow-up language."""
 
     def _check(self, body, notes="https://example.com", step=2):
         from backend.app.agents.outreach import _check_draft_integrity
+
         return _check_draft_integrity(body, personalization_notes=notes, sequence_step=step)
 
     def test_non_response_guilt_trip_still_flagged(self):
@@ -329,9 +352,7 @@ class TestR8SequenceContinuity(unittest.TestCase):
 
     def test_circling_back_allowed(self):
         """'Circling back after reaching out about X' must NOT be flagged."""
-        violations = self._check(
-            "Circling back after reaching out about your VAR furnace setup."
-        )
+        violations = self._check("Circling back after reaching out about your VAR furnace setup.")
         step_leaks = [v for v in violations if "step_label_leak" in v]
         assert not step_leaks, f"'Circling back' should be allowed: {violations}"
 

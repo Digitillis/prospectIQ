@@ -26,6 +26,7 @@ from backend.app.core.notifications import notify_reply_received
 # Phase 2 background tasks — thread management on email events
 # ---------------------------------------------------------------------------
 
+
 async def _bg_create_thread_on_send(contact: dict, payload: dict) -> None:
     """Background task: ensure a campaign thread exists when first email is sent.
 
@@ -34,7 +35,10 @@ async def _bg_create_thread_on_send(contact: dict, payload: dict) -> None:
     """
     try:
         from backend.app.core.thread_manager import ThreadManager
-        db = Database()
+
+        # Scope to the contact's workspace — contact dict carries workspace_id from
+        # the _lookup_db.get_contact_by_email() call that precedes this background task.
+        db = Database(workspace_id=contact.get("workspace_id"))
         tm = ThreadManager(db)
 
         company_id = contact.get("company_id")
@@ -50,9 +54,11 @@ async def _bg_create_thread_on_send(contact: dict, payload: dict) -> None:
 
         campaign_id: str | None = payload.get("campaign_id")
         if campaign_id and not thread.get("instantly_campaign_id"):
-            db.client.table("campaign_threads").update({
-                "instantly_campaign_id": campaign_id,
-            }).eq("id", thread["id"]).execute()
+            db.client.table("campaign_threads").update(
+                {
+                    "instantly_campaign_id": campaign_id,
+                }
+            ).eq("id", thread["id"]).execute()
 
         logger.info(
             f"Thread ensured on send: thread={thread['id']} "
@@ -69,6 +75,7 @@ async def _bg_classify_reply(
     sent_at: str | None,
     campaign_id: str | None,
     raw_payload: dict,
+    workspace_id: str | None = None,
 ) -> None:
     """Background task: classify an incoming reply with Claude Sonnet and pause the lead.
 
@@ -81,8 +88,7 @@ async def _bg_classify_reply(
         from backend.app.agents.thread import ThreadAgent
         from backend.app.integrations.instantly import InstantlyClient
 
-        db = Database()
-        agent = ThreadAgent(batch_id="webhook_auto")
+        agent = ThreadAgent(batch_id="webhook_auto", workspace_id=workspace_id)
 
         result = agent.process_webhook_reply(
             sender_email=lead_email,
@@ -98,9 +104,7 @@ async def _bg_classify_reply(
             try:
                 instantly = InstantlyClient()
                 instantly.pause_lead_sequence(campaign_id, lead_email)
-                logger.info(
-                    f"Instantly sequence paused for {lead_email} in campaign {campaign_id}"
-                )
+                logger.info(f"Instantly sequence paused for {lead_email} in campaign {campaign_id}")
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"pause_lead_sequence failed (non-fatal): {exc}")
 
@@ -113,6 +117,7 @@ async def _bg_classify_reply(
             )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"_bg_classify_reply failed (non-fatal): {exc}", exc_info=True)
+
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +183,7 @@ def _classify_sentiment(text: str) -> str:
 # HMAC signature verification
 # ---------------------------------------------------------------------------
 
+
 def _verify_signature(body: bytes, signature_header: str | None) -> bool:
     """Verify Instantly HMAC-SHA256 webhook signature.
 
@@ -197,9 +203,7 @@ def _verify_signature(body: bytes, signature_header: str | None) -> bool:
         logger.warning("Missing X-Instantly-Signature header on webhook request")
         return False
 
-    expected = hmac.new(
-        secret.encode("utf-8"), body, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
     return hmac.compare_digest(expected, signature_header)
 
@@ -207,6 +211,7 @@ def _verify_signature(body: bytes, signature_header: str | None) -> bool:
 # ---------------------------------------------------------------------------
 # Payload field extraction helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_field(payload: dict[str, Any], *keys: str) -> Any:
     """Return the first non-None value found among the given keys."""
@@ -228,6 +233,7 @@ def _parse_event(payload: dict[str, Any]) -> tuple[str, str, dict]:
 # ---------------------------------------------------------------------------
 # Event handlers
 # ---------------------------------------------------------------------------
+
 
 def _handle_email_sent(
     db: Database,
@@ -354,10 +360,7 @@ def _handle_email_replied(
 ) -> None:
     """Transition to 'replied', classify sentiment, stamp last-touch."""
     reply_text: str = (
-        data.get("reply_text")
-        or payload.get("reply_text")
-        or payload.get("body")
-        or ""
+        data.get("reply_text") or payload.get("reply_text") or payload.get("body") or ""
     )
     sentiment = _classify_sentiment(reply_text)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -434,7 +437,7 @@ _HANDLERS = {
     "email_opened": _handle_email_opened,
     "email_clicked": _handle_email_clicked,
     "email_replied": _handle_email_replied,
-    "reply_received": _handle_email_replied,   # alias Instantly sometimes uses
+    "reply_received": _handle_email_replied,  # alias Instantly sometimes uses
     "email_bounced": _handle_email_bounced,
     "email_unsubscribed": _handle_email_unsubscribed,
 }
@@ -443,6 +446,7 @@ _HANDLERS = {
 # ---------------------------------------------------------------------------
 # FastAPI route
 # ---------------------------------------------------------------------------
+
 
 @router.post("/instantly")
 async def instantly_webhook(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
@@ -481,9 +485,9 @@ async def instantly_webhook(request: Request, background_tasks: BackgroundTasks)
         return {"status": "ignored", "reason": "missing_lead_email"}
 
     # --- Look up contact -------------------------------------------------
-    # Use unscoped DB for initial lookup — webhooks arrive without auth context.
-    # After finding the contact, re-scope the DB to that contact's workspace.
-    _lookup_db = Database()
+    _lookup_db = (
+        Database()
+    )  # INTENTIONALLY UNSCOPED — cross-workspace email lookup; re-scoped after contact found
     contact = _lookup_db.get_contact_by_email(lead_email)
 
     if not contact:
@@ -519,22 +523,12 @@ async def instantly_webhook(request: Request, background_tasks: BackgroundTasks)
         )
     elif event_type in {"email_replied", "reply_received"}:
         _reply_body: str = (
-            data.get("reply_text")
-            or payload.get("reply_text")
-            or payload.get("body")
-            or ""
+            data.get("reply_text") or payload.get("reply_text") or payload.get("body") or ""
         )
-        _reply_subject: str = (
-            data.get("subject")
-            or payload.get("subject")
-            or ""
-        )
+        _reply_subject: str = data.get("subject") or payload.get("subject") or ""
         _campaign_id: str | None = data.get("campaign_id") or payload.get("campaign_id")
         _sent_at: str | None = (
-            data.get("sent_at")
-            or data.get("timestamp")
-            or payload.get("timestamp")
-            or None
+            data.get("sent_at") or data.get("timestamp") or payload.get("timestamp") or None
         )
         background_tasks.add_task(
             _bg_classify_reply,
@@ -544,21 +538,15 @@ async def instantly_webhook(request: Request, background_tasks: BackgroundTasks)
             sent_at=_sent_at,
             campaign_id=_campaign_id,
             raw_payload=payload,
+            workspace_id=contact.get("workspace_id"),
         )
 
     # --- Fire email notification for reply events -------------------------
     if event_type in {"email_replied", "reply_received"}:
         reply_text: str = (
-            data.get("reply_text")
-            or payload.get("reply_text")
-            or payload.get("body")
-            or ""
+            data.get("reply_text") or payload.get("reply_text") or payload.get("body") or ""
         )
-        contact_name: str = (
-            contact.get("full_name")
-            or contact.get("name")
-            or lead_email
-        )
+        contact_name: str = contact.get("full_name") or contact.get("name") or lead_email
         company_name: str = contact.get("company_name") or contact.get("company") or ""
         workspace_email: str = contact.get("workspace_email") or ""
 

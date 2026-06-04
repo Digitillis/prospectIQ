@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/auth/invite", tags=["invite"])
 # Models
 # ---------------------------------------------------------------------------
 
+
 class AcceptInviteRequest(BaseModel):
     token: str
 
@@ -30,6 +31,7 @@ class AcceptInviteRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("/validate")
 async def validate_invite(token: str = Query(...)) -> dict[str, Any]:
@@ -55,13 +57,17 @@ async def validate_invite(token: str = Query(...)) -> dict[str, Any]:
     )
 
     if not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found or expired.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found or expired."
+        )
 
     row = result.data[0]
 
     if row.get("status") == "active":
         # Token has already been used (member accepted previously)
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="This invite link has already been used.")
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE, detail="This invite link has already been used."
+        )
 
     # Fetch workspace name
     ws = (
@@ -127,12 +133,16 @@ async def accept_invite(
     )
 
     if not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found or expired.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found or expired."
+        )
 
     row = result.data[0]
 
     if row.get("status") == "active":
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="This invite link has already been used.")
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE, detail="This invite link has already been used."
+        )
 
     user_id = user.get("user_id")
     user_email = user.get("email", "")
@@ -156,12 +166,14 @@ async def accept_invite(
     # Activate the membership
     updated = (
         client.table("workspace_members")
-        .update({
-            "user_id": user_id,
-            "email": user_email or row.get("email"),
-            "status": "active",
-            "invite_token": None,  # consume the token
-        })
+        .update(
+            {
+                "user_id": user_id,
+                "email": user_email or row.get("email"),
+                "status": "active",
+                "invite_token": None,  # consume the token
+            }
+        )
         .eq("id", row["id"])
         .execute()
     )
@@ -173,15 +185,17 @@ async def accept_invite(
     # Stamp workspace_id into Auth user's app_metadata so future logins have it in JWT
     try:
         client.auth.admin.update_user_by_id(
-            user_id,
-            {"app_metadata": {"workspace_id": row["workspace_id"]}}
+            user_id, {"app_metadata": {"workspace_id": row["workspace_id"]}}
         )
     except Exception as e:
         logger.warning("Failed to update Auth user app_metadata: %s", e)
 
     logger.info(
         "Invite accepted: workspace=%s user=%s email=%s role=%s",
-        row["workspace_id"], user_id, user_email, row.get("role"),
+        row["workspace_id"],
+        user_id,
+        user_email,
+        row.get("role"),
     )
 
     return {

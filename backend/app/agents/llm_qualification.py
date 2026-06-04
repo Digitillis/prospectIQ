@@ -51,9 +51,21 @@ _GATE_LABELS = [
 
 # Keywords that immediately disqualify on title (gate 2, rule-based)
 _PRERULE_DISQUALIFY_TITLES = [
-    "intern", "student", "trainee", "junior", "assistant", "coordinator",
-    "receptionist", "hr ", "human resources", "recruiter", "marketing",
-    "sales representative", "sdr", "bdr", "account executive",
+    "intern",
+    "student",
+    "trainee",
+    "junior",
+    "assistant",
+    "coordinator",
+    "receptionist",
+    "hr ",
+    "human resources",
+    "recruiter",
+    "marketing",
+    "sales representative",
+    "sdr",
+    "bdr",
+    "account executive",
 ]
 
 
@@ -93,9 +105,11 @@ class LLMQualificationAgent(BaseAgent):
             )
             # Skip recently LLM-qualified (within last 7 days)
             from datetime import timedelta
+
             cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             companies = [
-                c for c in companies
+                c
+                for c in companies
                 if not c.get("llm_qualified_at") or c["llm_qualified_at"] < cutoff
             ]
 
@@ -117,7 +131,9 @@ class LLMQualificationAgent(BaseAgent):
                 _llm_update: dict = {
                     "llm_qualification_result": qual_result,
                     "llm_qualified_at": datetime.now(timezone.utc).isoformat(),
-                    "qualification_decision": "qualified" if qual_result.get("passed") else "disqualified",
+                    "qualification_decision": "qualified"
+                    if qual_result.get("passed")
+                    else "disqualified",
                 }
                 if not qual_result.get("passed"):
                     _llm_update["disqualification_reason"] = "llm_gate_failed"
@@ -230,6 +246,7 @@ class LLMQualificationAgent(BaseAgent):
     def _gate_dedup(self, contact: dict) -> dict:
         """Gate 1: Block if this contact was contacted within the last 90 days."""
         from datetime import timedelta
+
         cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
         try:
             result = (
@@ -298,7 +315,10 @@ class LLMQualificationAgent(BaseAgent):
                 max_tokens=150,
                 system=[
                     ctx_block,
-                    {"type": "text", "text": "You are a B2B sales qualification expert. Respond only with valid JSON."},
+                    {
+                        "type": "text",
+                        "text": "You are a B2B sales qualification expert. Respond only with valid JSON.",
+                    },
                 ],
                 messages=[{"role": "user", "content": prompt}],
                 extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
@@ -316,7 +336,12 @@ class LLMQualificationAgent(BaseAgent):
             }
         except Exception as e:
             logger.error(f"Gate 3 title_score failed: {e}")
-            return {"gate": "title_score", "result": "pass", "reasoning": "LLM unavailable — defaulting pass.", "numeric": 5}
+            return {
+                "gate": "title_score",
+                "result": "pass",
+                "reasoning": "LLM unavailable — defaulting pass.",
+                "numeric": 5,
+            }
 
     def _gate_company_research(
         self, client: anthropic.Anthropic, ctx_block: dict, company: dict, research: dict
@@ -330,14 +355,18 @@ class LLMQualificationAgent(BaseAgent):
             f"REVENUE: {company.get('revenue_range', 'Unknown')}\n"
             f"STATE: {company.get('state', 'Unknown')}\n"
             f"RESEARCH SUMMARY: {str(research.get('web_research', ''))[:600]}\n\n"
-            f"Respond: {{\"score\": 8, \"result\": \"pass\", \"reasoning\": \"...\"}}\n"
+            f'Respond: {{"score": 8, "result": "pass", "reasoning": "..."}}\n'
             f"result = 'pass' (score >= 5) or 'fail' (score < 5)."
         )
         return self._llm_gate(client, ctx_block, "company_research", prompt, model=SONNET)
 
     def _gate_buyer_persona(
-        self, client: anthropic.Anthropic, ctx_block: dict,
-        company: dict, contact: dict, research: dict
+        self,
+        client: anthropic.Anthropic,
+        ctx_block: dict,
+        company: dict,
+        contact: dict,
+        research: dict,
     ) -> dict:
         """Gate 5: Does this contact match the buying committee persona? (Sonnet)"""
         prompt = (
@@ -347,7 +376,7 @@ class LLMQualificationAgent(BaseAgent):
             f"SENIORITY: {contact.get('seniority', 'Unknown')}\n"
             f"COMPANY SIZE: {company.get('employee_count', '?')} employees\n"
             f"JOB POSTINGS CONTEXT: {str(research.get('job_postings', ''))[:400]}\n\n"
-            f"Respond: {{\"score\": 7, \"result\": \"pass\", \"reasoning\": \"...\"}}\n"
+            f'Respond: {{"score": 7, "result": "pass", "reasoning": "..."}}\n'
             f"result = 'pass' (score >= 5) or 'warn' (3-4) or 'fail' (score < 3)."
         )
         return self._llm_gate(client, ctx_block, "buyer_persona", prompt, model=SONNET)
@@ -364,14 +393,18 @@ class LLMQualificationAgent(BaseAgent):
             f"FUNDING EVENTS: {str(research.get('funding_events', ''))[:300]}\n"
             f"INTENT SIGNALS: {str(research.get('intent_signals', ''))[:300]}\n\n"
             f"Consider: too small = not ready, too large = too complex to land.\n"
-            f"Respond: {{\"score\": 8, \"result\": \"pass\", \"reasoning\": \"...\"}}\n"
+            f'Respond: {{"score": 8, "result": "pass", "reasoning": "..."}}\n'
             f"result = 'pass' (score >= 5) or 'fail' (score < 5)."
         )
         return self._llm_gate(client, ctx_block, "stage_fit", prompt, model=SONNET)
 
     def _gate_objection_check(
-        self, client: anthropic.Anthropic, ctx_block: dict,
-        company: dict, contact: dict, research: dict
+        self,
+        client: anthropic.Anthropic,
+        ctx_block: dict,
+        company: dict,
+        contact: dict,
+        research: dict,
     ) -> dict:
         """Gate 7: Pre-flag known objections and blockers (Sonnet, non-blocking)."""
         prompt = (
@@ -381,7 +414,7 @@ class LLMQualificationAgent(BaseAgent):
             f"RESEARCH: {str(research.get('web_research', ''))[:400]}\n\n"
             f"Common blockers: legacy ERP lock-in, union constraints, recent system purchase,\n"
             f"budget freeze, M&A transition, hostile IT environment.\n\n"
-            f"Respond: {{\"score\": 7, \"result\": \"pass\", \"objections\": [\"...\"], \"reasoning\": \"...\"}}\n"
+            f'Respond: {{"score": 7, "result": "pass", "objections": ["..."], "reasoning": "..."}}\n'
             f"result = 'pass' (score >= 4, manageable objections) or 'warn' (2-3) or 'fail' (score < 2)."
         )
         return self._llm_gate(client, ctx_block, "objection_precheck", prompt, model=SONNET)
@@ -401,7 +434,10 @@ class LLMQualificationAgent(BaseAgent):
                 max_tokens=250,
                 system=[
                     ctx_block,
-                    {"type": "text", "text": "You are a B2B sales qualification expert. Respond ONLY with valid JSON."},
+                    {
+                        "type": "text",
+                        "text": "You are a B2B sales qualification expert. Respond ONLY with valid JSON.",
+                    },
                 ],
                 messages=[{"role": "user", "content": prompt}],
                 extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},

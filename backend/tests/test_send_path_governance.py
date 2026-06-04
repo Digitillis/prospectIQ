@@ -64,15 +64,32 @@ class _Query:
         self._payload = payload
         return self
 
-    def eq(self, *_args): return self
-    def neq(self, *_args): return self
-    def is_(self, *_args): return self
-    def not_(self): return self
-    def gte(self, *_args): return self
-    def in_(self, *_args): return self
-    def order(self, *_args, **_kwargs): return self
-    def limit(self, *_args): return self
-    def range(self, *_args): return self
+    def eq(self, *_args):
+        return self
+
+    def neq(self, *_args):
+        return self
+
+    def is_(self, *_args):
+        return self
+
+    def not_(self):
+        return self
+
+    def gte(self, *_args):
+        return self
+
+    def in_(self, *_args):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args):
+        return self
+
+    def range(self, *_args):
+        return self
 
     # Support chained .not_.is_(...)
     def __getattr__(self, name):
@@ -85,9 +102,13 @@ class _Query:
 
 
 class _Table:
-    def __init__(self, name: str, rows: list[dict] | None = None,
-                 raise_on_update: Exception | None = None,
-                 raise_on_insert: Exception | None = None):
+    def __init__(
+        self,
+        name: str,
+        rows: list[dict] | None = None,
+        raise_on_update: Exception | None = None,
+        raise_on_insert: Exception | None = None,
+    ):
         self.name = name
         self._rows = rows or []
         self._raise_on_update = raise_on_update
@@ -180,10 +201,12 @@ def test_stale_contact_status_blocks_send_and_rolls_back():
     """assert_email_deliverable blocks a contact whose status went invalid after draft gen."""
     send_assertions_table = _Table("send_assertions")
     outreach_drafts_table = _Table("outreach_drafts")
-    db = _FakeDb({
-        "send_assertions": send_assertions_table,
-        "outreach_drafts": outreach_drafts_table,
-    })
+    db = _FakeDb(
+        {
+            "send_assertions": send_assertions_table,
+            "outreach_drafts": outreach_drafts_table,
+        }
+    )
 
     # Simulate: contact status is now 'invalid' at send time
     stale_contact = _contact(email_status="invalid")
@@ -202,8 +225,7 @@ def test_stale_contact_status_blocks_send_and_rolls_back():
     assert logged["assertion_context"] == "send_path"
 
     # Simulate rollback: sent_at is NULL'd on the draft
-    _rollback_sent_at(db, "draft-001", "contact-001", "company-001",
-                      failure.assertion, failure)
+    _rollback_sent_at(db, "draft-001", "contact-001", "company-001", failure.assertion, failure)
 
     assert len(outreach_drafts_table.updates) == 1
     assert outreach_drafts_table.updates[0] == {"sent_at": None}
@@ -355,10 +377,12 @@ def test_run_pre_send_assertions_propagates_send_path_context():
     send_assertions_table = _Table("send_assertions")
     outreach_drafts_table = _Table("outreach_drafts", rows=[])  # no recent sends
 
-    db = _FakeDb({
-        "send_assertions": send_assertions_table,
-        "outreach_drafts": outreach_drafts_table,
-    })
+    db = _FakeDb(
+        {
+            "send_assertions": send_assertions_table,
+            "outreach_drafts": outreach_drafts_table,
+        }
+    )
 
     contact = _contact(email_status="verified")
     company = _company()

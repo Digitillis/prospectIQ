@@ -55,6 +55,7 @@ class OSHACitationScraper:
 
         try:
             import httpx
+
             # DOL public API — no key required
             params = {
                 "date_opened": f">{since}",
@@ -104,9 +105,11 @@ class OSHACitationScraper:
                 observed_at = None
                 if date_opened:
                     try:
-                        observed_at = datetime.fromisoformat(date_opened).replace(
-                            tzinfo=timezone.utc
-                        ).isoformat()
+                        observed_at = (
+                            datetime.fromisoformat(date_opened)
+                            .replace(tzinfo=timezone.utc)
+                            .isoformat()
+                        )
                     except ValueError:
                         pass
 
@@ -142,7 +145,10 @@ class OSHACitationScraper:
 
         logger.info(
             "OSHA scraper complete: %d processed, %d matched, %d skipped, %d errors",
-            result["processed"], result["matched"], result["skipped"], result["errors"],
+            result["processed"],
+            result["matched"],
+            result["skipped"],
+            result["errors"],
         )
         return result
 
@@ -150,8 +156,18 @@ class OSHACitationScraper:
         if not establishment_name:
             return None
         name_lower = establishment_name.lower().strip()
-        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited",
-                       " manufacturing", " industries", " group"):
+        for suffix in (
+            " llc",
+            " inc",
+            " corp",
+            " company",
+            " co.",
+            " ltd",
+            " limited",
+            " manufacturing",
+            " industries",
+            " group",
+        ):
             name_lower = name_lower.replace(suffix, "")
         name_lower = name_lower.strip(" ,.")
 
@@ -171,7 +187,8 @@ class OSHACitationScraper:
                 .ilike("name", f"%{name_lower[:40]}%")
                 .limit(5)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             hit = _best(rows)
             if hit:
@@ -184,7 +201,8 @@ class OSHACitationScraper:
                     .ilike("domain", f"%{kw}%")
                     .limit(5)
                     .execute()
-                    .data or []
+                    .data
+                    or []
                 )
                 hit = _best(rows)
                 if hit:
@@ -193,9 +211,17 @@ class OSHACitationScraper:
             logger.warning("Company match failed for %r: %s", establishment_name, e)
         return None
 
-    def _upsert_signal(self, company_id: str, signal_type: str, source: str,
-                       source_id: str, signal_text: str, value: dict,
-                       observed_at: str | None, source_url: str | None) -> None:
+    def _upsert_signal(
+        self,
+        company_id: str,
+        signal_type: str,
+        source: str,
+        source_id: str,
+        signal_text: str,
+        value: dict,
+        observed_at: str | None,
+        source_url: str | None,
+    ) -> None:
         workspace_id = getattr(self._db, "workspace_id", None)
         row: dict = {
             "company_id": company_id,

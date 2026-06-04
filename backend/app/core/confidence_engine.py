@@ -51,8 +51,12 @@ _DEFAULT_EVIDENCE_POLICY = {
     "required_above_score": 0.50,
     "unevidenced_cap": 0.30,
     "acceptable_evidence_types": [
-        "press_release", "sec_filing", "job_posting",
-        "news_article", "company_blog", "regulatory_filing",
+        "press_release",
+        "sec_filing",
+        "job_posting",
+        "news_article",
+        "company_blog",
+        "regulatory_filing",
     ],
 }
 
@@ -65,7 +69,9 @@ def _load_evidence_policy() -> dict:
             doc = yaml.safe_load(fh) or {}
         policy = doc.get("signal_evidence_policy") or {}
     except Exception as exc:
-        logger.warning("evidence_policy: failed to load %s (%s) — using defaults", _SCORING_PATH, exc)
+        logger.warning(
+            "evidence_policy: failed to load %s (%s) — using defaults", _SCORING_PATH, exc
+        )
         policy = {}
     return {**_DEFAULT_EVIDENCE_POLICY, **policy}
 
@@ -74,11 +80,14 @@ def _load_evidence_policy() -> dict:
 # This is intentionally lenient: a signal carrying source='apollo' on a
 # job_posting URL still counts as 'job_posting'.
 _URL_TYPE_RULES: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(r"sec\.gov", re.I),                           "sec_filing"),
+    (re.compile(r"sec\.gov", re.I), "sec_filing"),
     (re.compile(r"(/jobs/|/careers/|greenhouse\.io|lever\.co|workday)", re.I), "job_posting"),
-    (re.compile(r"(prnewswire|businesswire|globenewswire|press[- ]?release)", re.I), "press_release"),
-    (re.compile(r"(/blog/|/insights/|/news/)", re.I),         "company_blog"),
-    (re.compile(r"\.gov(/|$)", re.I),                          "regulatory_filing"),
+    (
+        re.compile(r"(prnewswire|businesswire|globenewswire|press[- ]?release)", re.I),
+        "press_release",
+    ),
+    (re.compile(r"(/blog/|/insights/|/news/)", re.I), "company_blog"),
+    (re.compile(r"\.gov(/|$)", re.I), "regulatory_filing"),
     (re.compile(r"(reuters|bloomberg|cnbc|wsj|nytimes|forbes)", re.I), "news_article"),
 )
 
@@ -140,6 +149,7 @@ def reload_evidence_policy() -> None:
     """Drop the cached policy. Used by tests after editing scoring.yaml."""
     _load_evidence_policy.cache_clear()
 
+
 # Promotion thresholds
 _VALIDATED_EVIDENCE_MIN = 5
 _PROVEN_EVIDENCE_MIN = 15
@@ -179,13 +189,15 @@ class ConfidenceEngine:
         """
         # 1. Insert evidence record
         try:
-            self.db.client.table("intelligence_evidence").insert({
-                "outcome_id": outcome_id,
-                "source_type": source_type,
-                "source_ref": source_ref or "",
-                "signal_text": signal_text or "",
-                "workspace_id": self.workspace_id,
-            }).execute()
+            self.db.client.table("intelligence_evidence").insert(
+                {
+                    "outcome_id": outcome_id,
+                    "source_type": source_type,
+                    "source_ref": source_ref or "",
+                    "signal_text": signal_text or "",
+                    "workspace_id": self.workspace_id,
+                }
+            ).execute()
         except Exception as e:
             logger.error(f"ConfidenceEngine.record_evidence insert failed: {e}")
             return {}
@@ -332,10 +344,7 @@ class ConfidenceEngine:
             or evidence_count >= _PROVEN_EVIDENCE_MIN
             and source_count >= _PROVEN_SOURCE_MIN
         ):
-            if (
-                evidence_count >= _PROVEN_EVIDENCE_MIN
-                and source_count >= _PROVEN_SOURCE_MIN
-            ):
+            if evidence_count >= _PROVEN_EVIDENCE_MIN and source_count >= _PROVEN_SOURCE_MIN:
                 return "proven"
             if evidence_count >= _VALIDATED_EVIDENCE_MIN:
                 return "validated"

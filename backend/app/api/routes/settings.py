@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_settings_response() -> dict:
     icp = get_icp_config()
     scoring = get_scoring_config()
@@ -59,9 +60,7 @@ def _build_settings_response() -> dict:
                 for name, dim in scoring.get("dimensions", {}).items()
             },
             "thresholds": scoring.get("thresholds", {}),
-            "min_firmographic_for_research": scoring.get(
-                "min_firmographic_for_research", 10
-            ),
+            "min_firmographic_for_research": scoring.get("min_firmographic_for_research", 10),
         },
         "sequences": sequences_cfg.get("sequences", {}),
     }
@@ -70,6 +69,7 @@ def _build_settings_response() -> dict:
 # ---------------------------------------------------------------------------
 # Pydantic models for PATCH request
 # ---------------------------------------------------------------------------
+
 
 class ICPRevenuePatch(BaseModel):
     min: Optional[int] = None
@@ -133,6 +133,7 @@ class SettingsPatch(BaseModel):
 # Outreach Guidelines CRUD
 # ---------------------------------------------------------------------------
 
+
 @router.get("/outreach-guidelines")
 async def get_guidelines():
     """Get the current outreach guidelines (tone, structure, rules, signature)."""
@@ -182,8 +183,13 @@ async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role(
             data[field] = value
 
     # Update list fields
-    for field in ["must_include", "never_include", "banned_phrases",
-                   "banned_characters", "product_facts"]:
+    for field in [
+        "must_include",
+        "never_include",
+        "banned_phrases",
+        "banned_characters",
+        "product_facts",
+    ]:
         value = getattr(payload, field, None)
         if value is not None:
             data[field] = value
@@ -216,17 +222,22 @@ async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role(
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     log_audit_event_from_ctx("settings.updated", resource_type="outreach_guidelines")
-    return {"data": data, "message": "Outreach guidelines updated. Changes apply to the next outreach run."}
+    return {
+        "data": data,
+        "message": "Outreach guidelines updated. Changes apply to the next outreach run.",
+    }
 
 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.post("/test-slack")
 async def test_slack():
     """Send a test Slack notification to verify webhook configuration."""
     from backend.app.utils.notifications import notify_slack
+
     sent = notify_slack(
         "ProspectIQ test notification — your Slack integration is working!",
         emoji=":white_check_mark:",
@@ -310,17 +321,19 @@ async def get_templates():
     templates = []
     for seq_name, seq in sequences.items():
         for step in seq.get("steps", []):
-            templates.append({
-                "id": f"{seq_name}_step_{step['step']}",
-                "sequence_name": seq_name,
-                "sequence_display_name": seq.get("name", seq_name),
-                "sequence_description": seq.get("description", ""),
-                "step": step["step"],
-                "channel": step.get("channel", "email"),
-                "delay_days": step.get("delay_days", 0),
-                "template_name": step.get("template", ""),
-                "instructions": step.get("instructions", {}),
-            })
+            templates.append(
+                {
+                    "id": f"{seq_name}_step_{step['step']}",
+                    "sequence_name": seq_name,
+                    "sequence_display_name": seq.get("name", seq_name),
+                    "sequence_description": seq.get("description", ""),
+                    "step": step["step"],
+                    "channel": step.get("channel", "email"),
+                    "delay_days": step.get("delay_days", 0),
+                    "template_name": step.get("template", ""),
+                    "instructions": step.get("instructions", {}),
+                }
+            )
 
     return {"data": templates}
 
@@ -431,7 +444,9 @@ async def patch_settings(payload: SettingsPatch, _role=Depends(require_role("adm
 
         try:
             with open(scoring_path, "w") as f:
-                yaml.dump(scoring_raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                yaml.dump(
+                    scoring_raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+                )
         except Exception as exc:
             errors.append(f"Failed to write scoring.yaml: {exc}")
 
@@ -449,7 +464,9 @@ async def patch_settings(payload: SettingsPatch, _role=Depends(require_role("adm
     log_audit_event_from_ctx(
         "settings.updated",
         resource_type="settings",
-        metadata={"updated_sections": [k for k in ("icp", "scoring") if getattr(payload, k) is not None]},
+        metadata={
+            "updated_sections": [k for k in ("icp", "scoring") if getattr(payload, k) is not None]
+        },
     )
     return {"data": data, "message": "Settings saved successfully"}
 
@@ -457,6 +474,7 @@ async def patch_settings(payload: SettingsPatch, _role=Depends(require_role("adm
 # ---------------------------------------------------------------------------
 # Content Guidelines CRUD
 # ---------------------------------------------------------------------------
+
 
 @router.get("/content-guidelines")
 async def get_content_guidelines_route():
@@ -480,7 +498,9 @@ class ContentGuidelinesPatch(BaseModel):
 
 
 @router.patch("/content-guidelines")
-async def patch_content_guidelines(payload: ContentGuidelinesPatch, _role=Depends(require_role("admin"))):
+async def patch_content_guidelines(
+    payload: ContentGuidelinesPatch, _role=Depends(require_role("admin"))
+):
     """Update content guidelines. Changes take effect on the next content generation run.
 
     Only provided fields are updated. Others are left unchanged.
@@ -529,12 +549,16 @@ async def patch_content_guidelines(payload: ContentGuidelinesPatch, _role=Depend
     with open(guidelines_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-    return {"data": data, "message": "Content guidelines updated. Changes apply to the next content generation run."}
+    return {
+        "data": data,
+        "message": "Content guidelines updated. Changes apply to the next content generation run.",
+    }
 
 
 # ---------------------------------------------------------------------------
 # LinkedIn Messages Guidelines CRUD
 # ---------------------------------------------------------------------------
+
 
 @router.get("/linkedin-guidelines")
 async def get_linkedin_guidelines_route():
@@ -561,7 +585,9 @@ class LinkedInGuidelinesPatch(BaseModel):
 
 
 @router.patch("/linkedin-guidelines")
-async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch, _role=Depends(require_role("admin"))):
+async def patch_linkedin_guidelines(
+    payload: LinkedInGuidelinesPatch, _role=Depends(require_role("admin"))
+):
     """Update LinkedIn messages guidelines. Changes take effect on the next LinkedIn DM run.
 
     Only provided fields are updated. Others are left unchanged.
@@ -583,8 +609,12 @@ async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch, _role=Depe
             data[field] = value
 
     # Update list fields
-    for field in ["fb_question_templates", "mfg_question_templates",
-                   "banned_phrases", "never_include"]:
+    for field in [
+        "fb_question_templates",
+        "mfg_question_templates",
+        "banned_phrases",
+        "never_include",
+    ]:
         value = getattr(payload, field, None)
         if value is not None:
             data[field] = value
@@ -611,12 +641,16 @@ async def patch_linkedin_guidelines(payload: LinkedInGuidelinesPatch, _role=Depe
     with open(guidelines_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-    return {"data": data, "message": "LinkedIn messages guidelines updated. Changes apply to the next LinkedIn DM run."}
+    return {
+        "data": data,
+        "message": "LinkedIn messages guidelines updated. Changes apply to the next LinkedIn DM run.",
+    }
 
 
 # ---------------------------------------------------------------------------
 # Offer Context CRUD
 # ---------------------------------------------------------------------------
+
 
 @router.get("/offer-context")
 async def get_offer_context_route():
@@ -675,4 +709,7 @@ async def patch_offer_context(payload: OfferContextPatch, _role=Depends(require_
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     log_audit_event_from_ctx("settings.updated", resource_type="offer_context")
-    return {"data": data, "message": "Offer context updated. Changes apply to the next outreach run."}
+    return {
+        "data": data,
+        "message": "Offer context updated. Changes apply to the next outreach run.",
+    }

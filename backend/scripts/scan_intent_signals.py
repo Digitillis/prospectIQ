@@ -61,7 +61,9 @@ def main() -> None:
     db = Database()
     engine = IntentEngine(db)
 
-    campaign_label = f"[cyan]{args.campaign}[/cyan]" if args.campaign else "[dim]all campaigns[/dim]"
+    campaign_label = (
+        f"[cyan]{args.campaign}[/cyan]" if args.campaign else "[dim]all campaigns[/dim]"
+    )
 
     # ------------------------------------------------------------------
     # Preview companies to scan
@@ -113,9 +115,7 @@ def main() -> None:
     if hot:
         _print_hot_companies(hot, args.hot_threshold)
     else:
-        console.print(
-            f"[yellow]No companies with intent_score >= {args.hot_threshold}[/yellow]"
-        )
+        console.print(f"[yellow]No companies with intent_score >= {args.hot_threshold}[/yellow]")
 
 
 def _print_dry_run_preview(companies: list[dict]) -> None:
@@ -130,9 +130,11 @@ def _print_dry_run_preview(companies: list[dict]) -> None:
     for i, c in enumerate(companies[:50], 1):
         score = c.get("intent_score", 0)
         score_str = (
-            f"[green]{score}[/green]" if score >= HOT_THRESHOLD else
-            f"[yellow]{score}[/yellow]" if score > 0 else
-            f"[dim]{score}[/dim]"
+            f"[green]{score}[/green]"
+            if score >= HOT_THRESHOLD
+            else f"[yellow]{score}[/yellow]"
+            if score > 0
+            else f"[dim]{score}[/dim]"
         )
         table.add_row(
             str(i),

@@ -69,7 +69,9 @@ def test_dispatch_workspace_uses_stable_key():
     captured_keys: list[str] = []
     draft_id = "draft-xyz-789"
 
-    def fake_insert_send_attempt(db_client, draft_id, workspace_id, attempt_number, idempotency_key):
+    def fake_insert_send_attempt(
+        db_client, draft_id, workspace_id, attempt_number, idempotency_key
+    ):
         captured_keys.append(idempotency_key)
         return "attempt-id-1"
 
@@ -82,8 +84,10 @@ def test_dispatch_workspace_uses_stable_key():
     fake_outcome.provider_message_id = "msg-1"
     fake_agent.dispatch_queued_draft.return_value = fake_outcome
 
-    with patch.object(ds, "_insert_send_attempt", side_effect=fake_insert_send_attempt), \
-         patch("backend.app.agents.engagement.EngagementAgent", return_value=fake_agent):
+    with (
+        patch.object(ds, "_insert_send_attempt", side_effect=fake_insert_send_attempt),
+        patch("backend.app.agents.engagement.EngagementAgent", return_value=fake_agent),
+    ):
         ds.dispatch_workspace(fake_db, "ws-test", batch_size=10)
 
     assert len(captured_keys) == 1, "Expected exactly one send attempt"

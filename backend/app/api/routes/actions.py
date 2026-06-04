@@ -32,8 +32,7 @@ async def get_linkedin_tasks():
 
     rows = (
         db._filter_ws(
-            db.client.table("engagement_sequences")
-            .select(
+            db.client.table("engagement_sequences").select(
                 "*, "
                 "companies(name, domain, tier, linkedin_url, pqs_total), "
                 "contacts(full_name, title, linkedin_url)"
@@ -76,19 +75,21 @@ async def complete_linkedin_task(sequence_id: str):
     )
 
     # Log completed interaction
-    db.insert_interaction({
-        "company_id": seq["company_id"],
-        "contact_id": seq["contact_id"],
-        "type": interaction_type,
-        "channel": "linkedin",
-        "subject": f"LinkedIn touch — Step {seq['current_step'] + 1} completed",
-        "body": "Manual LinkedIn action marked done via dashboard",
-        "source": "manual",
-        "metadata": {
-            "sequence_name": seq["sequence_name"],
-            "sequence_step": seq["current_step"] + 1,
-        },
-    })
+    db.insert_interaction(
+        {
+            "company_id": seq["company_id"],
+            "contact_id": seq["contact_id"],
+            "type": interaction_type,
+            "channel": "linkedin",
+            "subject": f"LinkedIn touch — Step {seq['current_step'] + 1} completed",
+            "body": "Manual LinkedIn action marked done via dashboard",
+            "source": "manual",
+            "metadata": {
+                "sequence_name": seq["sequence_name"],
+                "sequence_step": seq["current_step"] + 1,
+            },
+        }
+    )
 
     # Advance to next step
     next_step = seq["current_step"] + 1
@@ -107,12 +108,15 @@ async def complete_linkedin_task(sequence_id: str):
                 next_action_type = f"send_{step['channel']}"
                 break
 
-    db.update_engagement_sequence(sequence_id, {
-        "current_step": next_step,
-        "next_action_at": next_action_at,
-        "next_action_type": next_action_type,
-        "status": "active" if further_step <= seq["total_steps"] else "completed",
-    })
+    db.update_engagement_sequence(
+        sequence_id,
+        {
+            "current_step": next_step,
+            "next_action_at": next_action_at,
+            "next_action_type": next_action_type,
+            "status": "active" if further_step <= seq["total_steps"] else "completed",
+        },
+    )
 
     return {
         "data": {
@@ -130,11 +134,8 @@ async def get_hot_replies():
 
     drafts = (
         db._filter_ws(
-            db.client.table("outreach_drafts")
-            .select(
-                "*, "
-                "companies(name, tier, pqs_total, status), "
-                "contacts(full_name, title, email)"
+            db.client.table("outreach_drafts").select(
+                "*, companies(name, tier, pqs_total, status), contacts(full_name, title, email)"
             )
         )
         .eq("approval_status", "pending")

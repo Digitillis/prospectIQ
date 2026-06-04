@@ -96,7 +96,8 @@ class ReplyClassifierAgent:
                 .eq("reply_hash", reply_hash)
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             if cached and cached[0].get("classification"):
                 logger.debug("Reply classification cache hit: %s", reply_hash)
@@ -107,23 +108,36 @@ class ReplyClassifierAgent:
         # Fetch contact + company context if not provided
         if not contact:
             try:
-                rows = self._db.client.table("contacts").select(
-                    "full_name,title,contact_tier"
-                ).eq("id", contact_id).limit(1).execute().data or []
+                rows = (
+                    self._db.client.table("contacts")
+                    .select("full_name,title,contact_tier")
+                    .eq("id", contact_id)
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
                 contact = rows[0] if rows else {}
             except Exception:
                 contact = {}
 
         if not company:
             try:
-                rows = self._db.client.table("companies").select(
-                    "name"
-                ).eq("id", company_id).limit(1).execute().data or []
+                rows = (
+                    self._db.client.table("companies")
+                    .select("name")
+                    .eq("id", company_id)
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
                 company = rows[0] if rows else {}
             except Exception:
                 company = {}
 
         from backend.app.core.config import get_outreach_guidelines
+
         g = get_outreach_guidelines()
         sender = g.get("sender", {})
 
@@ -140,9 +154,11 @@ class ReplyClassifierAgent:
         classification: dict = {}
         try:
             import anthropic
+
             settings = self._settings
             if not settings:
                 from backend.app.core.config import get_settings
+
                 settings = get_settings()
 
             client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -170,12 +186,14 @@ class ReplyClassifierAgent:
 
         # Write to cache table
         try:
-            self._db.client.table("reply_classifications").insert({
-                "reply_hash": reply_hash,
-                "contact_id": contact_id,
-                "company_id": company_id,
-                "classification": classification,
-            }).execute()
+            self._db.client.table("reply_classifications").insert(
+                {
+                    "reply_hash": reply_hash,
+                    "contact_id": contact_id,
+                    "company_id": company_id,
+                    "classification": classification,
+                }
+            ).execute()
         except Exception:
             pass
 
@@ -191,7 +209,10 @@ class ReplyClassifierAgent:
             self._handle_unsubscribe(contact_id, company_id)
 
         # Handle not_a_fit (add to ICP exclusions)
-        if classification.get("intent") == "not_interested" and classification.get("key_objection") == "not_a_fit":
+        if (
+            classification.get("intent") == "not_interested"
+            and classification.get("key_objection") == "not_a_fit"
+        ):
             self._handle_not_fit(company_id)
 
         # Propagate positive-reply signal to look-alike companies — closes
@@ -200,15 +221,18 @@ class ReplyClassifierAgent:
         if classification.get("intent") in ("interested", "meeting_request"):
             try:
                 from backend.app.core.lookalike_engine import LookalikeEngine
+
                 workspace_id = getattr(self._db, "workspace_id", None)
                 engine = LookalikeEngine(workspace_id=workspace_id)
                 boosted = engine.boost_similar_companies(
-                    source_company_id=company_id, boost_pts=10,
+                    source_company_id=company_id,
+                    boost_pts=10,
                 )
                 if boosted > 0:
                     logger.info(
                         "Look-alike boost: %d similar companies boosted after positive reply from %s",
-                        boosted, company_id,
+                        boosted,
+                        company_id,
                     )
                     # Flywheel: any boosted discovered-status companies whose
                     # new pqs_total now exceeds the qualification floor should
@@ -219,16 +243,25 @@ class ReplyClassifierAgent:
 
         logger.info(
             "Classified reply from %s at %s: intent=%s, sentiment=%s, wrong_person=%s",
-            contact.get("full_name"), company.get("name"),
-            classification.get("intent"), classification.get("sentiment"),
+            contact.get("full_name"),
+            company.get("name"),
+            classification.get("intent"),
+            classification.get("sentiment"),
             classification.get("wrong_person_flag"),
         )
 
         return classification
 
-    def _update_outcome(self, send_id: str | None, contact_id: str, company_id: str,
-                        classification: dict, reply_text: str) -> None:
+    def _update_outcome(
+        self,
+        send_id: str | None,
+        contact_id: str,
+        company_id: str,
+        classification: dict,
+        reply_text: str,
+    ) -> None:
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         update = {
             "replied_at": now,
@@ -253,24 +286,30 @@ class ReplyClassifierAgent:
         """Block outreach to contact, alert, and queue for re-enrichment."""
         logger.warning(
             "Wrong person reply: contact_id=%s (%s). Blocking outreach.",
-            contact_id, contact.get("full_name"),
+            contact_id,
+            contact.get("full_name"),
         )
         try:
-            self._db.client.table("contacts").update({
-                "is_outreach_eligible": False,
-                "email_name_verified": False,
-                "status": "wrong_person",
-            }).eq("id", contact_id).execute()
+            self._db.client.table("contacts").update(
+                {
+                    "is_outreach_eligible": False,
+                    "email_name_verified": False,
+                    "status": "wrong_person",
+                }
+            ).eq("id", contact_id).execute()
         except Exception as e:
             logger.warning("Could not update contact %s: %s", contact_id, e)
 
         try:
-            self._db.client.table("outbound_eligible_contacts").delete().eq("contact_id", contact_id).execute()
+            self._db.client.table("outbound_eligible_contacts").delete().eq(
+                "contact_id", contact_id
+            ).execute()
         except Exception:
             pass
 
         try:
             from backend.app.utils.notifications import notify_slack
+
             notify_slack(
                 f":warning: *Wrong person reply* — {contact.get('full_name', contact_id)} "
                 f"has been blocked and removed from outbound_eligible_contacts. "
@@ -282,11 +321,15 @@ class ReplyClassifierAgent:
 
     def _handle_unsubscribe(self, contact_id: str, company_id: str) -> None:
         try:
-            self._db.client.table("contacts").update({
-                "is_outreach_eligible": False,
-                "status": "unsubscribed",
-            }).eq("id", contact_id).execute()
-            self._db.client.table("outbound_eligible_contacts").delete().eq("contact_id", contact_id).execute()
+            self._db.client.table("contacts").update(
+                {
+                    "is_outreach_eligible": False,
+                    "status": "unsubscribed",
+                }
+            ).eq("id", contact_id).execute()
+            self._db.client.table("outbound_eligible_contacts").delete().eq(
+                "contact_id", contact_id
+            ).execute()
         except Exception as e:
             logger.warning("Could not process unsubscribe for %s: %s", contact_id, e)
 
@@ -294,8 +337,10 @@ class ReplyClassifierAgent:
         """Add company to ICP exclusions."""
         try:
             from backend.app.core.icp_manager import ICPManager
+
             ICPManager(self._db).exclude_company(
-                company_id, reason="not_a_fit",
+                company_id,
+                reason="not_a_fit",
                 detail="Prospect replied: not a fit",
                 excluded_by="reply_classifier",
             )
@@ -318,6 +363,7 @@ class ReplyClassifierAgent:
         """
         try:
             from datetime import datetime, timezone, timedelta
+
             cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
             boost_rows = (
                 self._db.client.table("lookalike_boosts")
@@ -325,7 +371,8 @@ class ReplyClassifierAgent:
                 .eq("source_company_id", source_company_id)
                 .gte("boosted_at", cutoff)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             target_ids = [r["target_company_id"] for r in boost_rows if r.get("target_company_id")]
             if not target_ids:
@@ -339,17 +386,20 @@ class ReplyClassifierAgent:
                 .eq("status", "discovered")
                 .gte("pqs_total", priority_threshold)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             if not comps:
                 return
 
             from datetime import datetime as _dt, timezone as _tz
+
             now_iso = _dt.now(_tz.utc).isoformat()
             for c in comps:
                 tags = c.get("custom_tags") or {}
                 if isinstance(tags, str):
                     import json as _json
+
                     try:
                         tags = _json.loads(tags)
                     except Exception:
@@ -358,14 +408,17 @@ class ReplyClassifierAgent:
                 tags["research_priority_at"] = now_iso
                 tags["research_priority_source"] = source_company_id
                 try:
-                    self._db.client.table("companies").update({
-                        "custom_tags": tags,
-                    }).eq("id", c["id"]).execute()
+                    self._db.client.table("companies").update(
+                        {
+                            "custom_tags": tags,
+                        }
+                    ).eq("id", c["id"]).execute()
                 except Exception:
                     continue
             logger.info(
                 "Queued %d boosted-discovered companies for priority research (source=%s)",
-                len(comps), source_company_id,
+                len(comps),
+                source_company_id,
             )
         except Exception as exc:
             logger.debug("priority-research queue failed: %s", exc)

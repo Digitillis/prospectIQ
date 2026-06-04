@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 def _clear_settings_cache():
     from backend.app.core.config import get_settings
+
     get_settings.cache_clear()
 
 
@@ -49,7 +50,8 @@ def test_health_shows_secret_set_bool():
                 r = c.get("/health")
                 data = r.json()
                 assert data["resend_webhook_secret_set"] is True
-                assert "resend_webhook_secret_preview" not in data, \
+                assert "resend_webhook_secret_preview" not in data, (
                     "resend_webhook_secret_preview must not be present in health response"
+                )
     finally:
         _clear_settings_cache()

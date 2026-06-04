@@ -88,7 +88,7 @@ class AttendeeResponse(BaseModel):
 @router.get("", response_model=MeetingListResponse)
 async def list_meetings(
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
     status: Optional[str] = Query(None),
     company_id: Optional[int] = Query(None),
     limit: int = Query(50, ge=1, le=200),
@@ -108,7 +108,9 @@ async def list_meetings(
 
     result = query.order("scheduled_at", desc=False).range(offset, offset + limit - 1).execute()
 
-    total_result = db.client.table("meetings").select("id", count="exact").eq("workspace_id", workspace_id)
+    total_result = (
+        db.client.table("meetings").select("id", count="exact").eq("workspace_id", workspace_id)
+    )
     if status:
         total_result = total_result.eq("status", status)
     if company_id:
@@ -122,7 +124,7 @@ async def list_meetings(
 async def get_meeting(
     meeting_id: UUID,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Get a specific meeting."""
     workspace_id = get_workspace_id()
@@ -148,7 +150,7 @@ async def get_meeting(
 async def create_meeting(
     meeting: MeetingCreate,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Schedule a new meeting."""
     workspace_id = get_workspace_id()
@@ -185,7 +187,7 @@ async def update_meeting(
     meeting_id: UUID,
     update: MeetingUpdate,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Update a meeting."""
     workspace_id = get_workspace_id()
@@ -229,7 +231,7 @@ async def update_meeting(
 async def delete_meeting(
     meeting_id: UUID,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Cancel a meeting."""
     workspace_id = get_workspace_id()
@@ -261,7 +263,7 @@ async def add_attendee(
     contact_email: str,
     contact_name: Optional[str] = None,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Add an attendee to a meeting."""
     workspace_id = get_workspace_id()
@@ -302,7 +304,7 @@ async def add_attendee(
 async def get_attendees(
     meeting_id: UUID,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Get attendees for a meeting."""
     workspace_id = get_workspace_id()
@@ -323,10 +325,7 @@ async def get_attendees(
         raise HTTPException(status_code=404, detail="Meeting not found")
 
     result = (
-        db.client.table("meeting_attendees")
-        .select("*")
-        .eq("meeting_id", str(meeting_id))
-        .execute()
+        db.client.table("meeting_attendees").select("*").eq("meeting_id", str(meeting_id)).execute()
     )
 
     return {"attendees": result.data or []}
@@ -338,7 +337,7 @@ async def update_attendee_response(
     attendee_id: UUID,
     response_status: str,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Update an attendee's response status (accepted/declined/tentative)."""
     if response_status not in ["accepted", "declined", "tentative"]:
@@ -363,7 +362,12 @@ async def update_attendee_response(
 
     result = (
         db.client.table("meeting_attendees")
-        .update({"response_status": response_status, "updated_at": datetime.now(timezone.utc).isoformat()})
+        .update(
+            {
+                "response_status": response_status,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         .eq("id", str(attendee_id))
         .eq("meeting_id", str(meeting_id))
         .execute()

@@ -1,0 +1,49 @@
+capability: platform-security-substrate
+type: system
+tier: standard
+coverage: PARTIAL
+coverage_note: >
+  These findings were surfaced as a side-effect of the send-dispatch-pipeline Stage 3 remediation
+  pass (the Security Reviewer lens pulled the webhook/admin/auth thread), NOT a dedicated security
+  sweep. Per founder decision 2026-06-04, this substrate was formalized into its own ledger rather
+  than re-run. Coverage is therefore "surfaced, not exhaustive" — a dedicated security audit of the
+  full API/auth surface would likely find more. Remediation is tracked in the shared handoff.
+target:
+  branch: fix/send-pipeline-step-gap-and-env-loading
+  base_sha: 07cc5ac775782cacd886ff0325aeeb62d9175736
+  repo: /Users/avanish/prospectIQ
+remediation_handoff: /tmp/art-prospectiq/REMEDIATION-HANDOFF.md   # Part A covers these
+scope_paths:
+  - backend/app/api/main.py
+  - backend/app/api/routes/webhooks.py
+  - backend/app/api/routes/monitoring.py
+  - backend/app/api/routes/contacts.py
+  - backend/app/core/workspace_middleware.py
+  - backend/app/core/credential_store.py
+  - backend/app/core/auth.py
+  - backend/app/core/thread_manager.py
+findings:
+  - {id: SEC-001, severity: critical, status: planned, tag: VERIFIED, title: "Five unauthenticated admin endpoints incl POST /api/admin/trigger-send (anon bulk send) + config/key leaks"}
+  - {id: SEC-002, severity: critical, status: planned, tag: VERIFIED, title: "/health leaks 8-char Resend webhook secret prefix to anon callers"}
+  - {id: SEC-004, severity: high, status: planned, tag: VERIFIED, title: "Resend webhook fails OPEN when secret unset; forged events suppress real prospects (== SDP#4 kill-switch)"}
+  - {id: SEC-005, severity: high, status: planned, tag: VERIFIED, title: "WorkspaceMiddleware trusts unsigned JWT sub when SUPABASE_JWT_SECRET unset"}
+  - {id: SEC-006, severity: high, status: planned, tag: VERIFIED, title: "PostgREST .or_() injection in contacts search -> cross-tenant PII enumeration"}
+  - {id: SEC-007, severity: high, status: planned, tag: VERIFIED, title: "credential_store null-pads short Fernet key, collapsing entropy on stored creds"}
+  - {id: SEC-003, severity: high, status: planned, tag: VERIFIED, title: "Non-constant-time webhook secret compares (timing oracle)"}
+  - {id: SEC-009, severity: high, status: planned, tag: VERIFIED, title: "CORS allow_origin_regex trusts all *.vercel.app/*.netlify.app with credentials"}
+  - {id: SEC-008, severity: medium, status: planned, tag: VERIFIED, title: "Rate limiter ignores X-Forwarded-For; per-IP buckets collapse behind Railway proxy"}
+  - {id: SEC-010, severity: medium, status: planned, tag: VERIFIED, title: "Trigify webhook has zero auth; mutates PQS/intent/Slack"}
+  - {id: SEC-011, severity: medium, status: planned, tag: VERIFIED, title: "Meeting-transcript webhook reuses the Instantly secret instead of its own"}
+  - {id: SEC-012, severity: medium, status: planned, tag: VERIFIED, title: "raw_webhook_payload stores redundant PII (write-only, no readers)"}
+  - {id: SEC-013, severity: medium, status: deferred_with_trigger, tag: VERIFIED, trigger: "enterprise customer / SOC2 auditor", adr: true, title: "Send-attempt audit-record immutability; interim app-guard now"}
+  - {id: SEC-014, severity: medium, status: deferred_with_trigger, tag: VERIFIED, trigger: "Lighthouse 2 / first paid contract", adr: true, title: "Tenant RLS (service-role BYPASSRLS makes naive RLS a no-op); harden app layer now"}
+corrected_verdict:
+  rag: Red
+  red_block: true
+  red_block_dimension: trust_governance
+  rationale: "2 unauthenticated-endpoint Criticals + fail-open webhooks + unsigned-JWT workspace + cross-tenant search injection. Trust&Governance well below the 3.0 red-block floor."
+totals: {critical: 2, high: 6, medium: 6, total: 14, design_escalations: 2}
+iterations:
+  - {round: 1, stage: surfaced_via_send_pipeline_stage3, by: wf_7483e7f1-691, verdict: Red, red_block: true}
+state: PLANNED
+approval: null

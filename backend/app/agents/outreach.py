@@ -30,11 +30,11 @@ class _NoResearchError(Exception):
 
 # Persona priority order — higher value = preferred primary contact
 PERSONA_PRIORITY = {
-    "vp_quality_food_safety": 100,     # F&B primary buyer (FSMA compliance)
+    "vp_quality_food_safety": 100,  # F&B primary buyer (FSMA compliance)
     "coo": 95,
     "vp_ops": 90,
     "plant_manager": 85,
-    "director_quality_food_safety": 80, # F&B secondary buyer
+    "director_quality_food_safety": 80,  # F&B secondary buyer
     "maintenance_leader": 75,
     "director_ops": 70,
     "digital_transformation": 65,
@@ -45,14 +45,34 @@ PERSONA_PRIORITY = {
 # Title keywords that disqualify a contact from cold outreach.
 # These roles don't buy manufacturing ops AI — emailing them burns credibility.
 _WRONG_PERSONA_TITLE_SIGNALS = (
-    "sales", "business development", " bd ", "account manager",
-    "account executive", "marketing", "advertising", "public relations",
-    "human resources", "hr manager", "hr director", "hr business", "hr generalist",
-    "recrui", "talent acquisition",
-    "finance", "financial", "controller", "accounting", "treasurer",
-    "legal", "counsel", "attorney", "compliance officer",
-    "procurement", "purchasing",  # borderline — exclude; they don't sponsor AI
-    "customer service", "customer success",
+    "sales",
+    "business development",
+    " bd ",
+    "account manager",
+    "account executive",
+    "marketing",
+    "advertising",
+    "public relations",
+    "human resources",
+    "hr manager",
+    "hr director",
+    "hr business",
+    "hr generalist",
+    "recrui",
+    "talent acquisition",
+    "finance",
+    "financial",
+    "controller",
+    "accounting",
+    "treasurer",
+    "legal",
+    "counsel",
+    "attorney",
+    "compliance officer",
+    "procurement",
+    "purchasing",  # borderline — exclude; they don't sponsor AI
+    "customer service",
+    "customer success",
 )
 
 # Suffix patterns that flag Apollo data scraping artifacts embedded in title fields.
@@ -63,11 +83,32 @@ _TITLE_ARTIFACT_PATTERNS = (
 )
 
 _REQUIRED_OPS_SIGNALS = (
-    "operation", "manufactur", "plant", "production", "maintenance",
-    "reliability", "engineering", "quality", "process", "supply chain",
-    "director", "vice president", "vp", "coo", "cto", "ceo", "president",
-    "general manager", "gm", "site manager", "facility", "continuous improvement",
-    "lean", "digital transform", "technology", "it ",
+    "operation",
+    "manufactur",
+    "plant",
+    "production",
+    "maintenance",
+    "reliability",
+    "engineering",
+    "quality",
+    "process",
+    "supply chain",
+    "director",
+    "vice president",
+    "vp",
+    "coo",
+    "cto",
+    "ceo",
+    "president",
+    "general manager",
+    "gm",
+    "site manager",
+    "facility",
+    "continuous improvement",
+    "lean",
+    "digital transform",
+    "technology",
+    "it ",
 )
 
 
@@ -107,96 +148,156 @@ import re as _re
 
 _INTEGRITY_RULES: list[tuple[str, str, str]] = [
     # (regex_pattern, violation_tag, example_match)
-
     # ── Step/sequence label leakage ──────────────────────────────────────────
     # Catches: "step 1", "step 2", "step 3" in any surrounding context
-    (r"\bstep\s+[123]\b",                  "step_label_leak",      "step 1/2/3 in body"),
+    (r"\bstep\s+[123]\b", "step_label_leak", "step 1/2/3 in body"),
     # Catches: "the/my/your first/previous/last email"
-    (r"\b(the|my|your)\s+(first|previous|last)\s+email\b",
-                                           "step_label_leak",      "prior email reference"),
+    (
+        r"\b(the|my|your)\s+(first|previous|last)\s+email\b",
+        "step_label_leak",
+        "prior email reference",
+    ),
     # Catches: "you didn't/haven't responded to..."
     # (keep this — guilt-tripping non-respondents is bad form)
-    (r"\byou\s+(didn.t|haven.t)\s+responded\b",
-                                           "step_label_leak",      "non-response reference"),
+    (r"\byou\s+(didn.t|haven.t)\s+responded\b", "step_label_leak", "non-response reference"),
     # NOTE: "I reached out", "I sent you", "in my last/previous note" are intentionally
     # NOT flagged — they are valid natural-language hooks for Step 2+ follow-ups.
     # The model should use them to signal continuity without labeling internal steps.
-
     # ── Past-customer fabrication claims ─────────────────────────────────────
     # Catches: "one/a [any word(s)] shop/plant/manufacturer/facility/operation/company/customer/client [verb]"
     # e.g. "one aerospace shop identified", "a tier supplier caught", "one process manufacturer using"
-    (r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem|processor|producer|fabricator|converter|integrator|distributor|company|tier)\s+\w+(ed|ing|s)?\b",
-                                           "fabricated_anecdote",  "one/a [X] shop/plant/manufacturer/processor/..."),
+    (
+        r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem|processor|producer|fabricator|converter|integrator|distributor|company|tier)\s+\w+(ed|ing|s)?\b",
+        "fabricated_anecdote",
+        "one/a [X] shop/plant/manufacturer/processor/...",
+    ),
     # Catches: "plants using/running similar X catch/caught/found..."
-    (r"\bplants\s+(using|running|with)\s+similar\b",
-                                           "fabricated_anecdote",  "plants using similar X"),
+    (
+        r"\bplants\s+(using|running|with)\s+similar\b",
+        "fabricated_anecdote",
+        "plants using similar X",
+    ),
     # Catches: "here's what we..." / "here is what we..." (implies observations from customers)
-    (r"\b(here.s|here\s+is)\s+what\s+we\b",
-                                           "past_customer_claim",  "here's/here is what we..."),
+    (r"\b(here.s|here\s+is)\s+what\s+we\b", "past_customer_claim", "here's/here is what we..."),
     # Catches: "we('ve) (trained|built|deployed|tested) our X on (real|actual|customer|live) Y"
-    (r"\bwe.ve?\s+(trained|built|deployed|tested)\s+our\s+\w+\s+on\s+(real|actual|customer|live|proprietary)\b",
-                                           "past_customer_claim",  "we've trained/built on real/customer data"),
+    (
+        r"\bwe.ve?\s+(trained|built|deployed|tested)\s+our\s+\w+\s+on\s+(real|actual|customer|live|proprietary)\b",
+        "past_customer_claim",
+        "we've trained/built on real/customer data",
+    ),
     # Catches: "we ran (diagnostics|analysis|tests|a study) on"
-    (r"\bwe\s+ran\s+(diagnostics|analysis|tests?|a\s+study|an\s+analysis)\s+on\b",
-                                           "past_customer_claim",  "we ran diagnostics/analysis on"),
+    (
+        r"\bwe\s+ran\s+(diagnostics|analysis|tests?|a\s+study|an\s+analysis)\s+on\b",
+        "past_customer_claim",
+        "we ran diagnostics/analysis on",
+    ),
     # Catches: "we (worked|partnered|connected|collaborated) with a"
-    (r"\bwe\s+(worked|partnered|connected|collaborated)\s+with\s+a\b",
-                                           "past_customer_claim",  "we worked/connected with a..."),
+    (
+        r"\bwe\s+(worked|partnered|connected|collaborated)\s+with\s+a\b",
+        "past_customer_claim",
+        "we worked/connected with a...",
+    ),
     # Catches: "one of our (clients|customers|partners)"
-    (r"\bone\s+of\s+our\s+(clients|customers|partners)\b",
-                                           "past_customer_claim",  "one of our clients/customers"),
+    (
+        r"\bone\s+of\s+our\s+(clients|customers|partners)\b",
+        "past_customer_claim",
+        "one of our clients/customers",
+    ),
     # Catches: "our client(s)", "a client of ours"
-    (r"\b(our\s+client|a\s+client\s+of\s+ours)\b",
-                                           "past_customer_claim",  "our client / a client of ours"),
+    (
+        r"\b(our\s+client|a\s+client\s+of\s+ours)\b",
+        "past_customer_claim",
+        "our client / a client of ours",
+    ),
     # Catches: "comparable/similar operation" as a reference to a prior customer
-    (r"\b(comparable|similar)\s+operation\b",
-                                           "past_customer_claim",  "comparable/similar operation"),
+    (
+        r"\b(comparable|similar)\s+operation\b",
+        "past_customer_claim",
+        "comparable/similar operation",
+    ),
     # Catches: "would('ve) cost them" / "cost them $X"
-    (r"\b(would.ve|would\s+have)\s+cost\s+them\b",
-                                           "fabricated_anecdote",  "would've cost them"),
-    (r"\bcost\s+them\s+\$",               "fabricated_anecdote",  "cost them $X"),
+    (r"\b(would.ve|would\s+have)\s+cost\s+them\b", "fabricated_anecdote", "would've cost them"),
+    (r"\bcost\s+them\s+\$", "fabricated_anecdote", "cost them $X"),
     # Catches: "prevented [N] (unplanned|outages|shutdowns|stops)"
-    (r"\bprevented\s+\w+\s+(unplanned|outage|shutdown|stop)",
-                                           "fabricated_anecdote",  "prevented N outages (anecdote)"),
-
+    (
+        r"\bprevented\s+\w+\s+(unplanned|outage|shutdown|stop)",
+        "fabricated_anecdote",
+        "prevented N outages (anecdote)",
+    ),
     # ── Recycled benchmark stat fingerprints (R6) ────────────────────────────
     # These three stat ranges appeared verbatim across 28% of the corpus, sprayed
     # across foundries, dairies, aerospace with no asset-specific grounding.
     # Reject drafts that carry them unless they are accompanied by an asset-specific
     # qualifier (which the model cannot add without real research data).
-    (r"\b1[5-9]\s*[-–]\s*2[0-5]\s*%\s+(of\s+)?(available\s+)?(machine|run|uptime|production)\s*time\b",
-                                           "recycled_stat",        "15-20% machine-time stat (generic benchmark)"),
-    (r"\b2[0-9]\s*[-–]\s*4[0-9]\s*%\s+reduction\s+in\s+unplanned\b",
-                                           "recycled_stat",        "23-41% unplanned-stop reduction (generic benchmark)"),
-    (r"\b4[0-9]\s*[-–]\s*6[0-9]\s*%\s+(cut|reduction|decrease)\s+in\s+reactive\b",
-                                           "recycled_stat",        "40-65% reactive-work-order cut (generic benchmark)"),
+    (
+        r"\b1[5-9]\s*[-–]\s*2[0-5]\s*%\s+(of\s+)?(available\s+)?(machine|run|uptime|production)\s*time\b",
+        "recycled_stat",
+        "15-20% machine-time stat (generic benchmark)",
+    ),
+    (
+        r"\b2[0-9]\s*[-–]\s*4[0-9]\s*%\s+reduction\s+in\s+unplanned\b",
+        "recycled_stat",
+        "23-41% unplanned-stop reduction (generic benchmark)",
+    ),
+    (
+        r"\b4[0-9]\s*[-–]\s*6[0-9]\s*%\s+(cut|reduction|decrease)\s+in\s+reactive\b",
+        "recycled_stat",
+        "40-65% reactive-work-order cut (generic benchmark)",
+    ),
     # "18 days out" verbatim — appeared in 127 emails across incompatible asset classes
-    (r"\b18\s+days?\s+out\b",              "recycled_stat",        "18 days out (verbatim claim — use asset-specific horizon)"),
+    (
+        r"\b18\s+days?\s+out\b",
+        "recycled_stat",
+        "18 days out (verbatim claim — use asset-specific horizon)",
+    ),
     # ── Template-language fingerprints (R6) ──────────────────────────────────
     # "time-based maintenance" as a phrase (appeared in 35% of corpus — use "calendar-based PM"
     # or asset-specific language; "time-based maintenance" is a textbook SDR template marker)
-    (r"\btime-based\s+maintenance\s+schedules?\b",
-                                           "template_fingerprint", "time-based maintenance schedules (template phrase)"),
+    (
+        r"\btime-based\s+maintenance\s+schedules?\b",
+        "template_fingerprint",
+        "time-based maintenance schedules (template phrase)",
+    ),
     # ── Unverified precision metrics ─────────────────────────────────────────
-    (r"\b87\s*%\s*confidence\b",           "unverified_metric",    "87% confidence"),
-
+    (r"\b87\s*%\s*confidence\b", "unverified_metric", "87% confidence"),
     # ── Unsourced company-specific events ────────────────────────────────────
     # Catches "your recent acquisition/merger/expansion/partnership/announcement"
     # when those events were not in the sourced research data.
-    (r"\byour\s+recent\s+(acquisition|merger|expansion|partnership|announcement|launch|investment|funding|ipo|recall|audit|inspection)\b",
-                                           "unsourced_company_event", "your recent [event] — not in sourced research"),
+    (
+        r"\byour\s+recent\s+(acquisition|merger|expansion|partnership|announcement|launch|investment|funding|ipo|recall|audit|inspection)\b",
+        "unsourced_company_event",
+        "your recent [event] — not in sourced research",
+    ),
     # Catches "since you (recently|just) [verb]ed"
-    (r"\bsince\s+you\s+(recently|just)\s+\w+(ed|d)\b",
-                                           "unsourced_company_event", "since you recently/just [verb]ed"),
+    (
+        r"\bsince\s+you\s+(recently|just)\s+\w+(ed|d)\b",
+        "unsourced_company_event",
+        "since you recently/just [verb]ed",
+    ),
     # Catches "I saw that [Company] recently [verb]"
-    (r"\bi\s+saw\s+that\b",               "unsourced_company_event", "I saw that [Company] — implies unverified web knowledge"),
+    (
+        r"\bi\s+saw\s+that\b",
+        "unsourced_company_event",
+        "I saw that [Company] — implies unverified web knowledge",
+    ),
     # Catches "I noticed that [Company]" as opener (implies general web scraping, not sourced data)
-    (r"\bi\s+noticed\s+that\b",           "unsourced_company_event", "I noticed that — use specific hook from research instead"),
+    (
+        r"\bi\s+noticed\s+that\b",
+        "unsourced_company_event",
+        "I noticed that — use specific hook from research instead",
+    ),
     # Catches "I read that [Company]" / "I read about [Company]"
-    (r"\bi\s+read\s+(that|about)\b",      "unsourced_company_event", "I read that/about — unverified source reference"),
+    (
+        r"\bi\s+read\s+(that|about)\b",
+        "unsourced_company_event",
+        "I read that/about — unverified source reference",
+    ),
     # Catches "according to [LinkedIn/your website/Glassdoor]" — implies browsing, not sourced data
-    (r"\baccording\s+to\s+(linkedin|your\s+website|glassdoor|indeed|crunchbase|bloomberg)\b",
-                                           "unsourced_company_event", "according to [external source] — only sourced fields permitted"),
+    (
+        r"\baccording\s+to\s+(linkedin|your\s+website|glassdoor|indeed|crunchbase|bloomberg)\b",
+        "unsourced_company_event",
+        "according to [external source] — only sourced fields permitted",
+    ),
 ]
 
 
@@ -249,14 +350,10 @@ def _check_draft_integrity(
     # are the single biggest reply-rate suppressor in the corpus.
     notes = personalization_notes or ""
     if not _URL_RE.search(notes):
-        violations.append(
-            "missing_hook_source:no_url_in_personalization_notes"
-        )
+        violations.append("missing_hook_source:no_url_in_personalization_notes")
     for gp in _GENERIC_HOOK_PATTERNS:
         if gp.search(body):
-            violations.append(
-                f"generic_hook:{gp.pattern!r}"
-            )
+            violations.append(f"generic_hook:{gp.pattern!r}")
             break
 
     return violations
@@ -266,19 +363,23 @@ def _check_draft_integrity(
 # Keys are human-readable labels; values are compiled regexes.
 _FINGERPRINT_CHECKS: dict[str, "_re.Pattern[str]"] = {
     "time_based_maintenance": _re.compile(r"\btime.based\s+maintenance\b", _re.IGNORECASE),
-    "typically_benchmark":    _re.compile(r"\btypically\b", _re.IGNORECASE),
-    "curious_cta":            _re.compile(r"\bCurious\s*[—\-–]", _re.IGNORECASE),
-    "quick_question_cta":     _re.compile(r"\bQuick\s+question\b", _re.IGNORECASE),
+    "typically_benchmark": _re.compile(r"\btypically\b", _re.IGNORECASE),
+    "curious_cta": _re.compile(r"\bCurious\s*[—\-–]", _re.IGNORECASE),
+    "quick_question_cta": _re.compile(r"\bQuick\s+question\b", _re.IGNORECASE),
     "or_is_it_something_else": _re.compile(r"\bor\s+is\s+it\s+something\s+else\b", _re.IGNORECASE),
-    "18_days_out":            _re.compile(r"\b18\s+days?\s+out\b", _re.IGNORECASE),
-    "plants_running_similar": _re.compile(r"\bplants?\s+(running|using)\s+similar\b", _re.IGNORECASE),
+    "18_days_out": _re.compile(r"\b18\s+days?\s+out\b", _re.IGNORECASE),
+    "plants_running_similar": _re.compile(
+        r"\bplants?\s+(running|using)\s+similar\b", _re.IGNORECASE
+    ),
 }
 # Maximum fraction of a batch that may carry any single fingerprint phrase.
 # >10% means the phrase is a template marker, not organic copy.
 _FINGERPRINT_MAX_RATE = 0.10
 
 
-def check_batch_fingerprints(bodies: list[str], threshold: float = _FINGERPRINT_MAX_RATE) -> dict[str, float]:
+def check_batch_fingerprints(
+    bodies: list[str], threshold: float = _FINGERPRINT_MAX_RATE
+) -> dict[str, float]:
     """Scan a list of email bodies for template-language fingerprints.
 
     Returns a dict of {label: rate} for any phrase that exceeds `threshold`.
@@ -374,14 +475,17 @@ def _build_system_prompt(sequence_step: int = 1) -> str:
         *[f"- {item}" for item in never_include],
         "",
         "## INTEGRITY CONSTRAINT (HARD RULE — NOT A PREFERENCE)",
-        g.get("integrity_rules", (
-            "NEVER fabricate client names, case studies, specific ROI numbers, or past deployments. "
-            "Do not claim 'we worked with [Company]' or 'a client reduced downtime by X%' unless "
-            "that is a published, verifiable industry benchmark. "
-            "Industry trends, trade association statistics, regulatory data, and conservative "
-            "approximations framed as estimates are acceptable. "
-            "If the sender could not defend the claim in a meeting with the prospect, remove it."
-        )),
+        g.get(
+            "integrity_rules",
+            (
+                "NEVER fabricate client names, case studies, specific ROI numbers, or past deployments. "
+                "Do not claim 'we worked with [Company]' or 'a client reduced downtime by X%' unless "
+                "that is a published, verifiable industry benchmark. "
+                "Industry trends, trade association statistics, regulatory data, and conservative "
+                "approximations framed as estimates are acceptable. "
+                "If the sender could not defend the claim in a meeting with the prospect, remove it."
+            ),
+        ),
         "",
         "SUBJECT LINE RULES:",
         subject_rules,
@@ -464,6 +568,7 @@ def _build_system_prompt(sequence_step: int = 1) -> str:
         ]
 
     return "\n".join(parts)
+
 
 OUTREACH_USER = """Generate an outreach message for this prospect.
 
@@ -667,7 +772,9 @@ class OutreachAgent(BaseAgent):
             companies = [self.db.get_company(cid) for cid in company_ids]
             companies = [c for c in companies if c is not None]
         else:
-            companies = self.db.get_companies(status="qualified", tiers=tiers, limit=limit, oec_only=True)
+            companies = self.db.get_companies(
+                status="qualified", tiers=tiers, limit=limit, oec_only=True
+            )
 
         if not companies:
             logger.warning("No companies ready for outreach.")
@@ -692,20 +799,17 @@ class OutreachAgent(BaseAgent):
 
                 suppressed, reason = is_suppressed(self.db, company_id)
                 if suppressed:
-                    logger.info(
-                        f"{company_name}: Suppressed ({reason}). Skipping."
-                    )
+                    logger.info(f"{company_name}: Suppressed ({reason}). Skipping.")
                     result.skipped += 1
                     result.add_detail(company_name, "suppressed", reason or "")
                     continue
 
                 # ICP exclusion check — skip companies explicitly excluded from pipeline
                 from backend.app.core.icp_manager import ICPManager
+
                 _icp_excluded, _icp_reason = ICPManager(self.db).is_company_excluded(company_id)
                 if _icp_excluded:
-                    logger.info(
-                        f"{company_name}: ICP excluded ({_icp_reason}). Skipping."
-                    )
+                    logger.info(f"{company_name}: ICP excluded ({_icp_reason}). Skipping.")
                     result.skipped += 1
                     result.add_detail(company_name, "icp_excluded", _icp_reason or "")
                     continue
@@ -721,7 +825,8 @@ class OutreachAgent(BaseAgent):
                         .eq("id", contact_id)
                         .limit(1)
                         .execute()
-                        .data or []
+                        .data
+                        or []
                     )
                     if not pinned:
                         result.skipped += 1
@@ -729,7 +834,11 @@ class OutreachAgent(BaseAgent):
                     valid_contacts = [pinned[0]]
                 else:
                     # Company-level send lock — prevent multi-contact collision
-                    from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
+                    from backend.app.core.channel_coordinator import (
+                        is_company_locked,
+                        has_recent_activity,
+                    )
+
                     locked, lock_reason = is_company_locked(self.db, company_id)
                     if locked:
                         logger.info(f"{company_name}: company locked — {lock_reason}")
@@ -738,6 +847,7 @@ class OutreachAgent(BaseAgent):
 
                     # Threading state gate — check before any contact work
                     from backend.app.core.threading_coordinator import ThreadingCoordinator
+
                     _tc = ThreadingCoordinator(self.db)
                     _tc_ok, _tc_reason = _tc.can_send_contact_1(company)
                     if not _tc_ok:
@@ -793,9 +903,10 @@ class OutreachAgent(BaseAgent):
                     # Sequential mode (default): enforces MIN_DAYS_BETWEEN_CONTACTS.
                     if _contact_idx > 0:
                         ws_settings = getattr(self.db, "_workspace_settings", None) or {}
-                        fb_simultaneous = str(
-                            ws_settings.get("fb_simultaneous_outreach", "false")
-                        ).lower() == "true"
+                        fb_simultaneous = (
+                            str(ws_settings.get("fb_simultaneous_outreach", "false")).lower()
+                            == "true"
+                        )
                         tier = company.get("tier") or ""
                         use_simultaneous = fb_simultaneous and tier.startswith("fb")
 
@@ -813,7 +924,7 @@ class OutreachAgent(BaseAgent):
                     if contact.get("is_outreach_eligible") is False:
                         logger.info(
                             f"{company_name}: {contact.get('full_name', '?')} — "
-                            f"is_outreach_eligible=False (tier={contact.get('contact_tier','?')}). Skipping."
+                            f"is_outreach_eligible=False (tier={contact.get('contact_tier', '?')}). Skipping."
                         )
                         continue
 
@@ -839,8 +950,14 @@ class OutreachAgent(BaseAgent):
                     # Cross-channel and cooldown checks are only for step-1 (new threads).
                     # Follow-ups continue an existing sequence — these gates don't apply.
                     if not _is_followup:
-                        from backend.app.core.channel_coordinator import can_use_channel, has_recent_activity
-                        channel_ok, channel_reason = can_use_channel(self.db, contact["id"], "email")
+                        from backend.app.core.channel_coordinator import (
+                            can_use_channel,
+                            has_recent_activity,
+                        )
+
+                        channel_ok, channel_reason = can_use_channel(
+                            self.db, contact["id"], "email"
+                        )
                         if not channel_ok:
                             logger.info(
                                 f"{company_name}: {contact.get('full_name', '?')} — email blocked ({channel_reason})"
@@ -850,18 +967,26 @@ class OutreachAgent(BaseAgent):
                         # 48-hour activity cooldown — prevent rapid-fire first touches
                         recent, activity_desc = has_recent_activity(self.db, contact["id"])
                         if recent:
-                            logger.info(f"{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}")
+                            logger.info(
+                                f"{company_name}: {contact.get('full_name', '?')}: 48h cooldown — {activity_desc}"
+                            )
                             continue
 
                     # Pre-send invariant library — hard block before any draft generation
                     from backend.app.core.pre_send_assertions import (
-                        run_pre_send_assertions, AssertionFailure, COMPANY_COOLDOWN_DAYS,
+                        run_pre_send_assertions,
+                        AssertionFailure,
+                        COMPANY_COOLDOWN_DAYS,
                     )
+
                     _guidelines = get_outreach_guidelines()
                     _sender_email = _guidelines.get("sender", {}).get("email", "")
                     try:
                         run_pre_send_assertions(
-                            self.db, contact, company, _sender_email,
+                            self.db,
+                            contact,
+                            company,
+                            _sender_email,
                             daily_cap=getattr(settings, "daily_send_limit", 125),
                             # Follow-ups continue an existing sequence — skip the
                             # "no send in past N days" gate (step 1 was sent recently by design).
@@ -882,7 +1007,9 @@ class OutreachAgent(BaseAgent):
                     value_msg = ontology.get("value_messaging", {}).get(tier, {})
 
                     # Resolve channel from step or sequence level
-                    resolved_channel = step_config.get("channel") or sequence.get("channel", "email")
+                    resolved_channel = step_config.get("channel") or sequence.get(
+                        "channel", "email"
+                    )
 
                     # Fetch prior sent messages for this contact so the model
                     # can read the full thread and avoid repeating hooks/angles.
@@ -896,14 +1023,19 @@ class OutreachAgent(BaseAgent):
                                 .not_.is_("sent_at", "null")
                                 .order("sequence_step")
                                 .execute()
-                                .data or []
+                                .data
+                                or []
                             )
                             for _pr in _prior_rows:
-                                prior_messages.append({
-                                    "step": _pr["sequence_step"],
-                                    "subject": _pr.get("subject", ""),
-                                    "body": (_pr.get("edited_body") or _pr.get("body", ""))[:600],
-                                })
+                                prior_messages.append(
+                                    {
+                                        "step": _pr["sequence_step"],
+                                        "subject": _pr.get("subject", ""),
+                                        "body": (_pr.get("edited_body") or _pr.get("body", ""))[
+                                            :600
+                                        ],
+                                    }
+                                )
                         except Exception:
                             pass
 
@@ -914,10 +1046,13 @@ class OutreachAgent(BaseAgent):
                         if not prior_messages:
                             logger.info(
                                 "outreach: skipping %s step %d — no prior sent step found in thread",
-                                company_name, sequence_step,
+                                company_name,
+                                sequence_step,
                             )
                             result.skipped += 1
-                            result.add_detail(company_name, "no_prior_step", f"step {sequence_step} skipped")
+                            result.add_detail(
+                                company_name, "no_prior_step", f"step {sequence_step} skipped"
+                            )
                             continue
 
                     # Fetch prior rejected drafts for this contact + step so the
@@ -927,7 +1062,9 @@ class OutreachAgent(BaseAgent):
                     try:
                         _rej_rows = (
                             self.db.client.table("outreach_drafts")
-                            .select("subject, body, edited_body, rejection_reason, model, created_at")
+                            .select(
+                                "subject, body, edited_body, rejection_reason, model, created_at"
+                            )
                             .eq("contact_id", contact["id"])
                             .eq("sequence_name", sequence_name)
                             .eq("sequence_step", sequence_step)
@@ -935,15 +1072,18 @@ class OutreachAgent(BaseAgent):
                             .order("created_at", desc=True)
                             .limit(3)
                             .execute()
-                            .data or []
+                            .data
+                            or []
                         )
                         for _rj in _rej_rows:
-                            prior_rejections.append({
-                                "subject": _rj.get("subject", ""),
-                                "body": (_rj.get("edited_body") or _rj.get("body", ""))[:400],
-                                "reason": _rj.get("rejection_reason") or "",
-                                "model": _rj.get("model") or "",
-                            })
+                            prior_rejections.append(
+                                {
+                                    "subject": _rj.get("subject", ""),
+                                    "body": (_rj.get("edited_body") or _rj.get("body", ""))[:400],
+                                    "reason": _rj.get("rejection_reason") or "",
+                                    "model": _rj.get("model") or "",
+                                }
+                            )
                     except Exception:
                         pass
 
@@ -963,7 +1103,8 @@ class OutreachAgent(BaseAgent):
                             .order("created_at", desc=True)
                             .limit(2)
                             .execute()
-                            .data or []
+                            .data
+                            or []
                         )
                         for _ef in _ef_rows:
                             edit_signals.append(_ef)
@@ -982,7 +1123,8 @@ class OutreachAgent(BaseAgent):
                             .order("observed_at", desc=True)
                             .limit(5)
                             .execute()
-                            .data or []
+                            .data
+                            or []
                         )
                     except Exception:
                         _sig_rows = []
@@ -1016,6 +1158,7 @@ class OutreachAgent(BaseAgent):
                     logger.info(f"{company_name} → {contact.get('full_name', 'Unknown')}...")
 
                     from backend.app.core.model_router import get_model_for_outreach
+
                     _draft_model = get_model_for_outreach(
                         sequence_step=sequence_step,
                         open_count=int(contact.get("open_count") or 0),
@@ -1053,6 +1196,7 @@ class OutreachAgent(BaseAgent):
 
                     # Create outreach draft — strip em dashes and en dashes from all text fields
                     import re as _re
+
                     def _clean(s: str) -> str:
                         s = s or ""
                         s = s.replace("—", ", ").replace("–", ", ")
@@ -1068,12 +1212,9 @@ class OutreachAgent(BaseAgent):
                     _sig_check = ["avanish mehrotra", "avi@digitillis.io"]
                     if not any(m in _body.lower() for m in _sig_check):
                         try:
-                            _sig = (
-                                get_outreach_guidelines()
-                                .get("sender", {})
-                                .get("signature" if sequence_step > 1 else "step_1_signature", "")
-                                or get_outreach_guidelines().get("sender", {}).get("signature", "")
-                            )
+                            _sig = get_outreach_guidelines().get("sender", {}).get(
+                                "signature" if sequence_step > 1 else "step_1_signature", ""
+                            ) or get_outreach_guidelines().get("sender", {}).get("signature", "")
                             if _sig:
                                 _body = _body.rstrip() + "\n\n" + _sig.strip()
                         except Exception:
@@ -1090,7 +1231,7 @@ class OutreachAgent(BaseAgent):
                         "personalization_notes": _clean(parsed.get("personalization_notes", "")),
                         "approval_status": "pending",
                         "model": _draft_model,
-                        "top_signal_id":   _top_signal["id"]   if _top_signal else None,
+                        "top_signal_id": _top_signal["id"] if _top_signal else None,
                         "top_signal_type": _top_signal.get("signal_type") if _top_signal else None,
                     }
 
@@ -1117,14 +1258,19 @@ class OutreachAgent(BaseAgent):
                         result.errors += 1
                         # Feature 3: flag contact for human review after 3+ rejections
                         self._check_rejection_rate(
-                            contact["id"], company_id, company_name,
-                            contact.get("full_name", ""), sequence_name, sequence_step,
+                            contact["id"],
+                            company_id,
+                            company_name,
+                            contact.get("full_name", ""),
+                            sequence_name,
+                            sequence_step,
                         )
                         continue
 
                     # Hard block: step-1 cold opens may never contain a URL.
                     # Reject up-front; do not push to approval queue.
                     from backend.app.core.draft_quality import is_step_1_url_violation
+
                     if is_step_1_url_violation(draft_data):
                         logger.warning(
                             "Step-1 URL violation auto-rejected for %s (%s)",
@@ -1143,7 +1289,8 @@ class OutreachAgent(BaseAgent):
                     try:
                         if _contact_idx == 0:
                             _tc.record_contact_1_sent(
-                                company_id, contact["id"],
+                                company_id,
+                                contact["id"],
                                 pqs=company.get("priority_score"),
                             )
                         else:
@@ -1154,7 +1301,11 @@ class OutreachAgent(BaseAgent):
                     # Outcome record — populate static send-time context now.
                     # Reply classification, meeting, and deal data fill in later.
                     try:
-                        _draft_id = (inserted_draft or {}).get("id") if isinstance(inserted_draft, dict) else None
+                        _draft_id = (
+                            (inserted_draft or {}).get("id")
+                            if isinstance(inserted_draft, dict)
+                            else None
+                        )
                         _active_icp = None
                         try:
                             _icp_row = (
@@ -1163,29 +1314,33 @@ class OutreachAgent(BaseAgent):
                                 .eq("is_active", True)
                                 .limit(1)
                                 .execute()
-                                .data or []
+                                .data
+                                or []
                             )
                             _active_icp = _icp_row[0]["id"] if _icp_row else None
                         except Exception:
                             pass
-                        self.db.client.table("outreach_outcomes").insert({
-                            "send_id":        _draft_id,
-                            "contact_id":     contact["id"],
-                            "company_id":     company_id,
-                            "workspace_id":   getattr(self.db, "workspace_id", None),
-                            "icp_version_id": _active_icp,
-                            "persona":        contact.get("contact_tier"),
-                            "sequence_step":  sequence_step,
-                            "pqs_at_send":    company.get("priority_score"),
-                            "ccs_at_send":    contact.get("ccs_score"),
-                            "sender_email":   _sender_email,
-                        }).execute()
+                        self.db.client.table("outreach_outcomes").insert(
+                            {
+                                "send_id": _draft_id,
+                                "contact_id": contact["id"],
+                                "company_id": company_id,
+                                "workspace_id": getattr(self.db, "workspace_id", None),
+                                "icp_version_id": _active_icp,
+                                "persona": contact.get("contact_tier"),
+                                "sequence_step": sequence_step,
+                                "pqs_at_send": company.get("priority_score"),
+                                "ccs_at_send": contact.get("ccs_score"),
+                                "sender_email": _sender_email,
+                            }
+                        ).execute()
                     except Exception as _oe:
                         logger.warning("Could not create outreach_outcome record: %s", _oe)
 
                     # A/B variant tracking — stable assignment by contact ID hash
                     try:
                         from backend.app.analytics.ab_tracker import ABTracker
+
                         _cid = contact["id"].replace("-", "")
                         ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
                         ABTracker(self.db).record_send(
@@ -1199,7 +1354,7 @@ class OutreachAgent(BaseAgent):
 
                     logger.info(
                         f"{company_name} → {contact.get('full_name', 'Unknown')}: Draft created. "
-                        f"Subject: \"{parsed.get('subject', '')[:50]}\""
+                        f'Subject: "{parsed.get("subject", "")[:50]}"'
                     )
 
                     result.processed += 1
@@ -1217,13 +1372,17 @@ class OutreachAgent(BaseAgent):
                 result.errors += 1
                 result.add_detail(company_name, "error", f"JSON parse error: {str(e)[:100]}")
                 if self._monitor:
-                    self._monitor.log_error(str(e), company_id=company_id, error_type="parse_error", exc=e)
+                    self._monitor.log_error(
+                        str(e), company_id=company_id, error_type="parse_error", exc=e
+                    )
             except Exception as e:
                 logger.error(f"Error generating outreach for {company_name}: {e}", exc_info=True)
                 result.errors += 1
                 result.add_detail(company_name, "error", str(e)[:200])
                 if self._monitor:
-                    self._monitor.log_error(str(e), company_id=company_id, error_type="outreach_error", exc=e)
+                    self._monitor.log_error(
+                        str(e), company_id=company_id, error_type="outreach_error", exc=e
+                    )
 
         return result
 
@@ -1285,10 +1444,7 @@ class OutreachAgent(BaseAgent):
 
         # Filter contacts with email addresses, excluding wrong personas.
         # Do NOT fall back to wrong-persona contacts — return None so callers skip.
-        emailable = [
-            c for c in contacts
-            if c.get("email") and not _is_wrong_persona(c)
-        ]
+        emailable = [c for c in contacts if c.get("email") and not _is_wrong_persona(c)]
         if not emailable:
             return None
 
@@ -1341,34 +1497,41 @@ class OutreachAgent(BaseAgent):
                 .like("subject", "⚠️ High rejection rate%")
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             if existing:
                 return
 
-            self.db.insert_interaction({
-                "company_id": company_id,
-                "contact_id": contact_id,
-                "type": "note",
-                "channel": "internal",
-                "subject": f"⚠️ High rejection rate — {rejection_count} drafts rejected for {contact_name}",
-                "body": (
-                    f"{rejection_count} drafts have been rejected for {contact_name} at {company_name} "
-                    f"(sequence={sequence_name}, step={sequence_step}). "
-                    "Possible causes: insufficient research intelligence, wrong persona, or a bad-fit contact. "
-                    "Review manually before generating more drafts."
-                ),
-                "source": "system",
-                "metadata": {
-                    "rejection_count": rejection_count,
-                    "sequence_name": sequence_name,
-                    "sequence_step": sequence_step,
-                    "flag_type": "high_rejection_rate",
-                },
-            })
+            self.db.insert_interaction(
+                {
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "type": "note",
+                    "channel": "internal",
+                    "subject": f"⚠️ High rejection rate — {rejection_count} drafts rejected for {contact_name}",
+                    "body": (
+                        f"{rejection_count} drafts have been rejected for {contact_name} at {company_name} "
+                        f"(sequence={sequence_name}, step={sequence_step}). "
+                        "Possible causes: insufficient research intelligence, wrong persona, or a bad-fit contact. "
+                        "Review manually before generating more drafts."
+                    ),
+                    "source": "system",
+                    "metadata": {
+                        "rejection_count": rejection_count,
+                        "sequence_name": sequence_name,
+                        "sequence_step": sequence_step,
+                        "flag_type": "high_rejection_rate",
+                    },
+                }
+            )
             logger.warning(
                 "High rejection rate flag: %s / %s — %d rejections on %s step %d",
-                company_name, contact_name, rejection_count, sequence_name, sequence_step,
+                company_name,
+                contact_name,
+                rejection_count,
+                sequence_name,
+                sequence_step,
             )
         except Exception as exc:
             logger.debug("_check_rejection_rate failed: %s", exc)
@@ -1409,21 +1572,27 @@ class OutreachAgent(BaseAgent):
         # Merge in research intelligence (often richer than company record)
         if research:
             ri = research.get("research_intelligence", {}) or {}
-            existing = research.get("existing_solutions", []) or ri.get("existing_solutions", []) or []
+            existing = (
+                research.get("existing_solutions", []) or ri.get("existing_solutions", []) or []
+            )
             if not awareness_level or awareness_level == "unaware":
-                awareness_level = research.get("awareness_level", "") or ri.get("awareness_level", "") or "unaware"
+                awareness_level = (
+                    research.get("awareness_level", "")
+                    or ri.get("awareness_level", "")
+                    or "unaware"
+                )
             if not research_summary:
                 research_summary = research.get("summary", "") or ri.get("summary", "")
             # Merge pain points
-            for p in (ri.get("pain_points", []) or research.get("pain_points", []) or []):
+            for p in ri.get("pain_points", []) or research.get("pain_points", []) or []:
                 if p and p not in pain_signals:
                     pain_signals.append(p)
             # Merge personalization hooks
-            for h in (ri.get("personalization_hooks", []) or []):
+            for h in ri.get("personalization_hooks", []) or []:
                 if h and h not in hooks:
                     hooks.append(h)
             # Merge known systems into tech stack
-            for s in (ri.get("known_systems", []) or research.get("known_systems", []) or []):
+            for s in ri.get("known_systems", []) or research.get("known_systems", []) or []:
                 if s and s not in tech_stack:
                     tech_stack.append(s)
             # Merge products/services into profile
@@ -1440,7 +1609,9 @@ class OutreachAgent(BaseAgent):
             # Generating a draft without grounding produces generic templated output that
             # fails the verifiable-hook contract (R4) and is unlikely to reply.
             # Return a sentinel that the caller treats as a skip signal.
-            raise _NoResearchError(f"company {company.get('id')} has no research intelligence — skip draft")
+            raise _NoResearchError(
+                f"company {company.get('id')} has no research intelligence — skip draft"
+            )
 
         # Format step instructions
         instructions = step_config.get("instructions", {})
@@ -1477,13 +1648,15 @@ class OutreachAgent(BaseAgent):
                     .order("observed_at", desc=True)
                     .limit(5)
                     .execute()
-                    .data or []
+                    .data
+                    or []
                 )
             except Exception:
                 _sig_rows = []
         company_signals_text = (
             "\n".join(f"- [{s['signal_type']}] {s.get('signal_text', '')}" for s in _sig_rows)
-            if _sig_rows else "None available"
+            if _sig_rows
+            else "None available"
         )
 
         # Build prior thread block — full text of every previously sent email
@@ -1563,10 +1736,12 @@ class OutreachAgent(BaseAgent):
                 "too_long": "email is too long",
             }
             for i, rj in enumerate(prior_rejections, 1):
-                part = f"Draft #{i}:\n  Subject: {rj['subject']}\n  Body excerpt: {rj['body'][:300]}"
+                part = (
+                    f"Draft #{i}:\n  Subject: {rj['subject']}\n  Body excerpt: {rj['body'][:300]}"
+                )
                 reason = rj.get("reason", "").strip()
                 if reason.startswith("auto_rejected|"):
-                    reason = reason[len("auto_rejected|"):]
+                    reason = reason[len("auto_rejected|") :]
                 if reason:
                     readable = " | ".join(
                         _tag_map.get(t.split(":")[0], t) for t in reason.split(" | ")
@@ -1578,17 +1753,25 @@ class OutreachAgent(BaseAgent):
                 # Extract opening sentence for angle dedup
                 body_text = rj.get("body", "")
                 first_line = next(
-                    (l.strip() for l in body_text.splitlines() if l.strip() and not l.strip().startswith("Hi ")),
-                    ""
+                    (
+                        l.strip()
+                        for l in body_text.splitlines()
+                        if l.strip() and not l.strip().startswith("Hi ")
+                    ),
+                    "",
                 )
                 if first_line:
                     _used_openers.append(f'  - "{first_line[:120]}"')
 
             angle_block = (
-                "\nOpening angles already tried (DO NOT reuse these hooks or angles):\n"
-                + "\n".join(_used_openers)
-                + "\n"
-            ) if _used_openers else ""
+                (
+                    "\nOpening angles already tried (DO NOT reuse these hooks or angles):\n"
+                    + "\n".join(_used_openers)
+                    + "\n"
+                )
+                if _used_openers
+                else ""
+            )
 
             prior_rejection_block = (
                 "\n\n🚫 PRIOR REJECTED DRAFT(S) FOR THIS CONTACT + STEP:\n"
@@ -1614,11 +1797,17 @@ class OutreachAgent(BaseAgent):
                 orig_w = es.get("original_word_count") or 0
                 edit_w = es.get("edited_word_count") or 0
                 if es.get("shortened") and orig_w and edit_w:
-                    _sig_lines.append(f"- Reviewer shortened the draft from ~{orig_w} to ~{edit_w} words. Keep it concise.")
+                    _sig_lines.append(
+                        f"- Reviewer shortened the draft from ~{orig_w} to ~{edit_w} words. Keep it concise."
+                    )
                 if es.get("opener_changed"):
-                    _sig_lines.append("- Reviewer changed the opening sentence. Lead with something more specific or direct.")
+                    _sig_lines.append(
+                        "- Reviewer changed the opening sentence. Lead with something more specific or direct."
+                    )
                 if es.get("proof_point_removed"):
-                    _sig_lines.append("- Reviewer removed a proof point/statistic. Do not include stats that can't be fully verified.")
+                    _sig_lines.append(
+                        "- Reviewer removed a proof point/statistic. Do not include stats that can't be fully verified."
+                    )
             if _sig_lines:
                 edit_signal_block = (
                     "\n\n📝 REVIEWER STYLE PREFERENCES (from prior edited drafts for this contact):\n"
@@ -1644,9 +1833,13 @@ class OutreachAgent(BaseAgent):
             research_summary=research_summary,
             personalization_hooks="\n".join(f"- {h}" for h in hooks) if hooks else "None available",
             technology_stack=", ".join(tech_stack) if tech_stack else "Not identified",
-            pain_signals="\n".join(f"- {p}" for p in pain_signals) if pain_signals else "Not identified",
+            pain_signals="\n".join(f"- {p}" for p in pain_signals)
+            if pain_signals
+            else "Not identified",
             company_signals=company_signals_text,
-            manufacturing_profile=json.dumps(mfg_profile, indent=2) if mfg_profile else "Not profiled",
+            manufacturing_profile=json.dumps(mfg_profile, indent=2)
+            if mfg_profile
+            else "Not profiled",
             existing_solutions=", ".join(existing) if existing else "None identified",
             value_messaging=value_text or "No tier-specific messaging available",
             awareness_level=awareness_level or "unaware",

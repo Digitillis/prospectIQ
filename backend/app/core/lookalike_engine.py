@@ -24,19 +24,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _ADJACENT_CLUSTERS: dict[str, set[str]] = {
-    "machinery":  {"metals", "auto", "process"},
-    "auto":       {"machinery", "metals"},
-    "chemicals":  {"process", "fb"},
-    "metals":     {"machinery", "auto"},
-    "process":    {"chemicals", "fb", "machinery"},
-    "fb":         {"process", "chemicals"},
-    "other":      set(),
+    "machinery": {"metals", "auto", "process"},
+    "auto": {"machinery", "metals"},
+    "chemicals": {"process", "fb"},
+    "metals": {"machinery", "auto"},
+    "process": {"chemicals", "fb", "machinery"},
+    "fb": {"process", "chemicals"},
+    "other": set(),
 }
 
 
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
 
 class SeedProfile(BaseModel):
     seed_company_ids: list[str]
@@ -84,6 +85,7 @@ class LookalikeRunSummary(BaseModel):
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class LookalikeEngine:
     """Scores companies for similarity against a seed cohort."""
@@ -236,7 +238,9 @@ class LookalikeEngine:
             factors.append("Matching revenue range")
 
         # 6. Technology overlap (+2 per match, max +10)
-        company_techs = {str(t).strip().lower() for t in (company.get("technology_stack") or []) if t}
+        company_techs = {
+            str(t).strip().lower() for t in (company.get("technology_stack") or []) if t
+        }
         seed_techs = {t.lower() for t in seed.top_technologies}
         overlap = company_techs & seed_techs
         tech_pts = min(10.0, len(overlap) * 2.0)
@@ -295,20 +299,22 @@ class LookalikeEngine:
 
         matches: list[LookalikeMatch] = []
         for sim_score, factors, row in top:
-            matches.append(LookalikeMatch(
-                company_id=row["id"],
-                company_name=row.get("name") or "",
-                domain=row.get("domain"),
-                cluster=row.get("campaign_cluster"),
-                tranche=row.get("tranche"),
-                employee_count=row.get("employee_count"),
-                revenue_range=row.get("revenue_range"),
-                similarity_score=sim_score,
-                matching_factors=factors,
-                pqs_total=float(row.get("pqs_total") or 0),
-                status=row.get("status") or "discovered",
-                has_contact=row["id"] in companies_with_contacts,
-            ))
+            matches.append(
+                LookalikeMatch(
+                    company_id=row["id"],
+                    company_name=row.get("name") or "",
+                    domain=row.get("domain"),
+                    cluster=row.get("campaign_cluster"),
+                    tranche=row.get("tranche"),
+                    employee_count=row.get("employee_count"),
+                    revenue_range=row.get("revenue_range"),
+                    similarity_score=sim_score,
+                    matching_factors=factors,
+                    pqs_total=float(row.get("pqs_total") or 0),
+                    status=row.get("status") or "discovered",
+                    has_contact=row["id"] in companies_with_contacts,
+                )
+            )
 
         return LookalikeResult(
             seed_profile=seed,
@@ -328,10 +334,17 @@ class LookalikeEngine:
     ) -> list[str]:
         """Return IDs of companies with high engagement status, to use as seed."""
         high_value_statuses = [
-            "replied", "interested", "demo_booked", "customer",
+            "replied",
+            "interested",
+            "demo_booked",
+            "customer",
             # Also map to CompanyStatus equivalents present in the DB
-            "engaged", "meeting_scheduled", "pilot_discussion",
-            "pilot_signed", "active_pilot", "converted",
+            "engaged",
+            "meeting_scheduled",
+            "pilot_discussion",
+            "pilot_signed",
+            "active_pilot",
+            "converted",
         ]
 
         result = (
@@ -379,14 +392,16 @@ class LookalikeEngine:
         for r in rows:
             profile = r.get("seed_profile") or {}
             matches = r.get("matches") or []
-            summaries.append({
-                "id": r["id"],
-                "created_at": r["created_at"],
-                "match_count": len(matches),
-                "seed_count": profile.get("seed_company_count", 0),
-                "dominant_cluster": profile.get("dominant_cluster", ""),
-                "dominant_tranche": profile.get("dominant_tranche", ""),
-            })
+            summaries.append(
+                {
+                    "id": r["id"],
+                    "created_at": r["created_at"],
+                    "match_count": len(matches),
+                    "seed_count": profile.get("seed_company_count", 0),
+                    "dominant_cluster": profile.get("dominant_cluster", ""),
+                    "dominant_tranche": profile.get("dominant_tranche", ""),
+                }
+            )
         return summaries
 
     def get_run(self, run_id: str, workspace_id: str | None = None) -> dict | None:
@@ -434,7 +449,8 @@ class LookalikeEngine:
                 .eq("id", source_company_id)
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
         except Exception as exc:
             logger.warning("boost_similar_companies: source lookup failed: %s", exc)
@@ -444,7 +460,7 @@ class LookalikeEngine:
             return 0
         src = src_rows[0]
 
-        naics = (src.get("naics_code") or "")
+        naics = src.get("naics_code") or ""
         naics_prefix = naics[:3] if naics else ""
         sub_sector = src.get("sub_sector") or ""
         tier = src.get("tier") or ""
@@ -491,7 +507,8 @@ class LookalikeEngine:
                 .select("target_company_id")
                 .gte("boosted_at", recent_cutoff)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             recent_ids = {r["target_company_id"] for r in recent_rows if r.get("target_company_id")}
         except Exception:
@@ -511,21 +528,25 @@ class LookalikeEngine:
             if new_total <= current:
                 continue
             try:
-                self.db.client.table("companies").update({
-                    "pqs_total": new_total,
-                }).eq("id", cid).execute()
+                self.db.client.table("companies").update(
+                    {
+                        "pqs_total": new_total,
+                    }
+                ).eq("id", cid).execute()
                 boosted += 1
                 # Best-effort audit row — non-fatal if table doesn't exist
                 try:
-                    self.db.client.table("lookalike_boosts").insert({
-                        "source_company_id": source_company_id,
-                        "target_company_id": cid,
-                        "boost_pts": boost_pts,
-                        "old_pqs": current,
-                        "new_pqs": new_total,
-                        "boosted_at": now_iso,
-                        "workspace_id": self.workspace_id,
-                    }).execute()
+                    self.db.client.table("lookalike_boosts").insert(
+                        {
+                            "source_company_id": source_company_id,
+                            "target_company_id": cid,
+                            "boost_pts": boost_pts,
+                            "old_pqs": current,
+                            "new_pqs": new_total,
+                            "boosted_at": now_iso,
+                            "workspace_id": self.workspace_id,
+                        }
+                    ).execute()
                 except Exception:
                     pass
             except Exception as exc:
@@ -534,6 +555,8 @@ class LookalikeEngine:
         if boosted > 0:
             logger.info(
                 "Look-alike boost: %d companies +%d PQS from source %s",
-                boosted, boost_pts, source_company_id,
+                boosted,
+                boost_pts,
+                source_company_id,
             )
         return boosted

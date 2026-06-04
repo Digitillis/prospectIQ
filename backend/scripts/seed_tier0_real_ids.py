@@ -36,18 +36,34 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Michael", "title": "Director of Operations",
-             "apollo_id": "6896eafe82027e00018310a3",
-             "persona_type": "director_ops", "is_decision_maker": True},
-            {"first_name": "Lu", "title": "Director of Operations",
-             "apollo_id": "646f46e8908eae0001e4e12c",
-             "persona_type": "director_ops", "is_decision_maker": True},
-            {"first_name": "David", "title": "Director of Operations",
-             "apollo_id": "5f0a34a4ff5ad500019da5d4",
-             "persona_type": "director_ops", "is_decision_maker": True},
-            {"first_name": "Chad", "title": "Director of Operations",
-             "apollo_id": "57d50949a6da98536ee0f61d",
-             "persona_type": "director_ops", "is_decision_maker": True},
+            {
+                "first_name": "Michael",
+                "title": "Director of Operations",
+                "apollo_id": "6896eafe82027e00018310a3",
+                "persona_type": "director_ops",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Lu",
+                "title": "Director of Operations",
+                "apollo_id": "646f46e8908eae0001e4e12c",
+                "persona_type": "director_ops",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "David",
+                "title": "Director of Operations",
+                "apollo_id": "5f0a34a4ff5ad500019da5d4",
+                "persona_type": "director_ops",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Chad",
+                "title": "Director of Operations",
+                "apollo_id": "57d50949a6da98536ee0f61d",
+                "persona_type": "director_ops",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -59,15 +75,27 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Chris", "title": "Vice President of Engineering",
-             "apollo_id": "5d5f457df6512573f1246913",
-             "persona_type": "vp_eng", "is_decision_maker": True},
-            {"first_name": "Dale", "title": "VP Engineering",
-             "apollo_id": "58bdab66f651251183c42c06",
-             "persona_type": "vp_eng", "is_decision_maker": True},
-            {"first_name": "Raphael", "title": "VP Operations - Machining",
-             "apollo_id": "671121fd8bc9070001162507",
-             "persona_type": "vp_ops", "is_decision_maker": True},
+            {
+                "first_name": "Chris",
+                "title": "Vice President of Engineering",
+                "apollo_id": "5d5f457df6512573f1246913",
+                "persona_type": "vp_eng",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Dale",
+                "title": "VP Engineering",
+                "apollo_id": "58bdab66f651251183c42c06",
+                "persona_type": "vp_eng",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Raphael",
+                "title": "VP Operations - Machining",
+                "apollo_id": "671121fd8bc9070001162507",
+                "persona_type": "vp_ops",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -79,12 +107,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Robert", "title": "VP of Manufacturing",
-             "apollo_id": "60fedd6eb727d10001f5dbd4",
-             "persona_type": "vp_mfg", "is_decision_maker": True},
-            {"first_name": "Keith", "title": "GM / Director of Manufacturing",
-             "apollo_id": "60d1bc709d6a6800012cdc65",
-             "persona_type": "plant_manager", "is_decision_maker": True},
+            {
+                "first_name": "Robert",
+                "title": "VP of Manufacturing",
+                "apollo_id": "60fedd6eb727d10001f5dbd4",
+                "persona_type": "vp_mfg",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Keith",
+                "title": "GM / Director of Manufacturing",
+                "apollo_id": "60d1bc709d6a6800012cdc65",
+                "persona_type": "plant_manager",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -96,9 +132,13 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Brandon", "title": "Director of Manufacturing",
-             "apollo_id": "5d60211af651258f69fc5b91",
-             "persona_type": "director_mfg", "is_decision_maker": True},
+            {
+                "first_name": "Brandon",
+                "title": "Director of Manufacturing",
+                "apollo_id": "5d60211af651258f69fc5b91",
+                "persona_type": "director_mfg",
+                "is_decision_maker": True,
+            },
             # Anthony (Dir. Engineering) — not resolved via MCP, skip
         ],
     },
@@ -111,12 +151,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Troy", "title": "VP of Quality and Engineering",
-             "apollo_id": "66f646fb39affd00012a090e",
-             "persona_type": "vp_quality", "is_decision_maker": True},
-            {"first_name": "Philip", "title": "Director of Manufacturing",
-             "apollo_id": "5acd4de0a6da98d9ac911481",
-             "persona_type": "director_mfg", "is_decision_maker": True},
+            {
+                "first_name": "Troy",
+                "title": "VP of Quality and Engineering",
+                "apollo_id": "66f646fb39affd00012a090e",
+                "persona_type": "vp_quality",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Philip",
+                "title": "Director of Manufacturing",
+                "apollo_id": "5acd4de0a6da98d9ac911481",
+                "persona_type": "director_mfg",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -128,12 +176,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Peyton", "title": "Vice President of Engineering and Manufacturing",
-             "apollo_id": "65bdaf60d0010f00018deb2c",
-             "persona_type": "vp_eng", "is_decision_maker": True},
-            {"first_name": "Robert", "title": "VP, Engineering, Quality and Reliability, Finance, and Business Mgmt",
-             "apollo_id": "618c8fb61bc345000107526b",
-             "persona_type": "vp_eng", "is_decision_maker": True},
+            {
+                "first_name": "Peyton",
+                "title": "Vice President of Engineering and Manufacturing",
+                "apollo_id": "65bdaf60d0010f00018deb2c",
+                "persona_type": "vp_eng",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Robert",
+                "title": "VP, Engineering, Quality and Reliability, Finance, and Business Mgmt",
+                "apollo_id": "618c8fb61bc345000107526b",
+                "persona_type": "vp_eng",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -145,12 +201,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Jeff", "title": "VP Engineering",
-             "apollo_id": "631662601394b50001ff35ed",
-             "persona_type": "vp_eng", "is_decision_maker": True},
-            {"first_name": "Joel", "title": "Director of Operations",
-             "apollo_id": "57e1c33fa6da9856ff1c957a",
-             "persona_type": "director_ops", "is_decision_maker": True},
+            {
+                "first_name": "Jeff",
+                "title": "VP Engineering",
+                "apollo_id": "631662601394b50001ff35ed",
+                "persona_type": "vp_eng",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Joel",
+                "title": "Director of Operations",
+                "apollo_id": "57e1c33fa6da9856ff1c957a",
+                "persona_type": "director_ops",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -162,12 +226,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "John", "title": "VP Manufacturing Operations",
-             "apollo_id": "5f9de737d4b98400dd89dc6f",
-             "persona_type": "vp_mfg", "is_decision_maker": True},
-            {"first_name": "Todd", "title": "VP Quality and Productivity",
-             "apollo_id": "5f4ca5614ac64100017c77ef",
-             "persona_type": "vp_quality", "is_decision_maker": True},
+            {
+                "first_name": "John",
+                "title": "VP Manufacturing Operations",
+                "apollo_id": "5f9de737d4b98400dd89dc6f",
+                "persona_type": "vp_mfg",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Todd",
+                "title": "VP Quality and Productivity",
+                "apollo_id": "5f4ca5614ac64100017c77ef",
+                "persona_type": "vp_quality",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -179,12 +251,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Mike", "title": "Vice President of Manufacturing",
-             "apollo_id": "60e5b4a9f58d86000145e41f",
-             "persona_type": "vp_mfg", "is_decision_maker": True},
-            {"first_name": "Timothy", "title": "Director of Manufacturing",
-             "apollo_id": "54a515347468692abfcf857b",
-             "persona_type": "director_mfg", "is_decision_maker": True},
+            {
+                "first_name": "Mike",
+                "title": "Vice President of Manufacturing",
+                "apollo_id": "60e5b4a9f58d86000145e41f",
+                "persona_type": "vp_mfg",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Timothy",
+                "title": "Director of Manufacturing",
+                "apollo_id": "54a515347468692abfcf857b",
+                "persona_type": "director_mfg",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -196,12 +276,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Chris", "title": "Director of Manufacturing Engineering",
-             "apollo_id": "54a4a2c174686938ac255657",
-             "persona_type": "director_mfg", "is_decision_maker": True},
-            {"first_name": "Steve", "title": "Vice President of Engineering",
-             "apollo_id": "60948620689f3b000115aaa8",
-             "persona_type": "vp_eng", "is_decision_maker": True},
+            {
+                "first_name": "Chris",
+                "title": "Director of Manufacturing Engineering",
+                "apollo_id": "54a4a2c174686938ac255657",
+                "persona_type": "director_mfg",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Steve",
+                "title": "Vice President of Engineering",
+                "apollo_id": "60948620689f3b000115aaa8",
+                "persona_type": "vp_eng",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -213,12 +301,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Ron", "title": "Vice President of Quality and Engineering",
-             "apollo_id": "66f3d63ddd5d050001e4fe2e",
-             "persona_type": "vp_quality", "is_decision_maker": True},
-            {"first_name": "Ben", "title": "Vice President of Manufacturing",
-             "apollo_id": "6198897ce409f000012aac18",
-             "persona_type": "vp_mfg", "is_decision_maker": True},
+            {
+                "first_name": "Ron",
+                "title": "Vice President of Quality and Engineering",
+                "apollo_id": "66f3d63ddd5d050001e4fe2e",
+                "persona_type": "vp_quality",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Ben",
+                "title": "Vice President of Manufacturing",
+                "apollo_id": "6198897ce409f000012aac18",
+                "persona_type": "vp_mfg",
+                "is_decision_maker": True,
+            },
         ],
     },
     {
@@ -230,12 +326,20 @@ MFG_TIER0_DATA = [
             "campaign_name": "tier0-mfg-pdm-roi",
         },
         "contacts": [
-            {"first_name": "Richard", "title": "Vice President Operations",
-             "apollo_id": "673c1d1915d7560001c7e80d",
-             "persona_type": "vp_ops", "is_decision_maker": True},
-            {"first_name": "Mark", "title": "Director of Operations",
-             "apollo_id": "57da3c02a6da984ab7c28627",
-             "persona_type": "director_ops", "is_decision_maker": True},
+            {
+                "first_name": "Richard",
+                "title": "Vice President Operations",
+                "apollo_id": "673c1d1915d7560001c7e80d",
+                "persona_type": "vp_ops",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Mark",
+                "title": "Director of Operations",
+                "apollo_id": "57da3c02a6da984ab7c28627",
+                "persona_type": "director_ops",
+                "is_decision_maker": True,
+            },
         ],
     },
     # Companies where no contacts were resolved via Apollo MCP:
@@ -261,9 +365,13 @@ FB_TIER0_DATA = [
             "campaign_name": "tier0-fb-fsma",
         },
         "contacts": [
-            {"first_name": "David", "title": "Director Food Safety and Quality",
-             "apollo_id": "54c1a7ce7468697af7c70032",
-             "persona_type": "director_food_safety", "is_decision_maker": True},
+            {
+                "first_name": "David",
+                "title": "Director Food Safety and Quality",
+                "apollo_id": "54c1a7ce7468697af7c70032",
+                "persona_type": "director_food_safety",
+                "is_decision_maker": True,
+            },
             # Devin (Sr Dir. QA&FS), Dale, Nicholas, Jose — not resolved via MCP
             # These will need enrichment via Apollo UI or credits
         ],
@@ -277,9 +385,13 @@ FB_TIER0_DATA = [
             "campaign_name": "tier0-fb-fsma",
         },
         "contacts": [
-            {"first_name": "Barbara", "title": "Director of Food Safety and Quality",
-             "apollo_id": "54ec24477468694311474658",
-             "persona_type": "director_food_safety", "is_decision_maker": True},
+            {
+                "first_name": "Barbara",
+                "title": "Director of Food Safety and Quality",
+                "apollo_id": "54ec24477468694311474658",
+                "persona_type": "director_food_safety",
+                "is_decision_maker": True,
+            },
             # Paul (VP Operational Excellence), Brody (VP Operations) — not resolved
         ],
     },
@@ -292,12 +404,20 @@ FB_TIER0_DATA = [
             "campaign_name": "tier0-fb-fsma",
         },
         "contacts": [
-            {"first_name": "Shawn", "title": "VP of Operations and Logistics",
-             "apollo_id": "66f68832e89e940001143500",
-             "persona_type": "vp_ops", "is_decision_maker": True},
-            {"first_name": "Jessica", "title": "Director of Category Strategy- Food Safety and Quality",
-             "apollo_id": "5f5b4783a2ae060001ef5dd6",
-             "persona_type": "director_food_safety", "is_decision_maker": True},
+            {
+                "first_name": "Shawn",
+                "title": "VP of Operations and Logistics",
+                "apollo_id": "66f68832e89e940001143500",
+                "persona_type": "vp_ops",
+                "is_decision_maker": True,
+            },
+            {
+                "first_name": "Jessica",
+                "title": "Director of Category Strategy- Food Safety and Quality",
+                "apollo_id": "5f5b4783a2ae060001ef5dd6",
+                "persona_type": "director_food_safety",
+                "is_decision_maker": True,
+            },
             # Brian (Dir. Ops West) — not resolved
         ],
     },
@@ -310,9 +430,13 @@ FB_TIER0_DATA = [
             "campaign_name": "tier0-fb-fsma",
         },
         "contacts": [
-            {"first_name": "Eric", "title": "Corporate Director of Food Safety & Quality",
-             "apollo_id": "64c1cd007ada6f000145408e",
-             "persona_type": "director_food_safety", "is_decision_maker": True},
+            {
+                "first_name": "Eric",
+                "title": "Corporate Director of Food Safety & Quality",
+                "apollo_id": "64c1cd007ada6f000145408e",
+                "persona_type": "director_food_safety",
+                "is_decision_maker": True,
+            },
             # Gabriel (VP Operations) — not resolved
         ],
     },
@@ -325,9 +449,13 @@ FB_TIER0_DATA = [
             "campaign_name": "tier0-fb-fsma",
         },
         "contacts": [
-            {"first_name": "Kerry", "title": "Director of Food Safety",
-             "apollo_id": "5b0d1a64a3ae618258bd704e",
-             "persona_type": "director_food_safety", "is_decision_maker": True},
+            {
+                "first_name": "Kerry",
+                "title": "Director of Food Safety",
+                "apollo_id": "5b0d1a64a3ae618258bd704e",
+                "persona_type": "director_food_safety",
+                "is_decision_maker": True,
+            },
             # Andy (VP Quality & Food Safety) — not resolved
         ],
     },
@@ -345,13 +473,13 @@ FB_TIER0_DATA = [
     # Their partial IDs from PROSPECT_LIST_FB.md are real - use Apollo UI to look up by name.
 ]
 
-ALL_DATA = [("MFG", row) for row in MFG_TIER0_DATA] + \
-           [("F&B", row) for row in FB_TIER0_DATA]
+ALL_DATA = [("MFG", row) for row in MFG_TIER0_DATA] + [("F&B", row) for row in FB_TIER0_DATA]
 
 
 # ---------------------------------------------------------------------------
 # Insertion logic
 # ---------------------------------------------------------------------------
+
 
 def _get_or_create_company(db: Database, co_data: dict, dry_run: bool) -> dict | None:
     existing = db.get_companies(search=co_data["name"], limit=5)
@@ -369,8 +497,7 @@ def _get_or_create_company(db: Database, co_data: dict, dry_run: bool) -> dict |
     return row
 
 
-def _get_or_create_contact(db: Database, company_id: str, contact: dict,
-                            dry_run: bool) -> bool:
+def _get_or_create_contact(db: Database, company_id: str, contact: dict, dry_run: bool) -> bool:
     existing = db.get_contact_by_apollo_id(contact["apollo_id"])
     if existing:
         print(f"      ↩  {contact['first_name']} ({contact['apollo_id'][:8]}...) already exists")
@@ -419,7 +546,7 @@ def run_seed(dry_run: bool = False) -> None:
             if inserted or dry_run:
                 total_contacts += 1
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     prefix = "[DRY-RUN] " if dry_run else ""
     print(f"  {prefix}Seeding complete")
     print(f"  Companies processed : {total_companies}")

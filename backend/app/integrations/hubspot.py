@@ -13,7 +13,7 @@ Usage:
     from backend.app.integrations.hubspot import HubSpotSync
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     hs = HubSpotSync(api_key="...", portal_id="12345")
     result = hs.sync_all(db)
 """
@@ -107,8 +107,7 @@ class HubSpotSync:
                     "annualrevenue": _revenue_to_int(c.get("revenue_range")),
                     "hs_lead_status": _STAGE_MAP.get(c.get("status", ""), "lead"),
                     "description": (
-                        f"ProspectIQ tier: {c.get('tier', 'N/A')} | "
-                        f"PQS: {c.get('pqs_total', 0)}"
+                        f"ProspectIQ tier: {c.get('tier', 'N/A')} | PQS: {c.get('pqs_total', 0)}"
                     ),
                 }
                 self._upsert_company(props, domain=c.get("domain"))
@@ -165,14 +164,19 @@ class HubSpotSync:
         """Create/update HubSpot Deals for companies at engaged+ stages."""
         result = (
             db._filter_ws(
-                db.client.table("companies").select(
-                    "id, name, tier, status, pqs_total, updated_at"
-                )
+                db.client.table("companies").select("id, name, tier, status, pqs_total, updated_at")
             )
-            .in_("status", [
-                "engaged", "meeting_scheduled", "pilot_discussion",
-                "pilot_signed", "active_pilot", "converted",
-            ])
+            .in_(
+                "status",
+                [
+                    "engaged",
+                    "meeting_scheduled",
+                    "pilot_discussion",
+                    "pilot_signed",
+                    "active_pilot",
+                    "converted",
+                ],
+            )
             .limit(limit)
             .execute()
         )
@@ -211,9 +215,7 @@ class HubSpotSync:
         """Upsert a HubSpot Company by domain."""
         if domain:
             # Search for existing company by domain
-            existing_id = self._search_object(
-                "companies", "domain", domain
-            )
+            existing_id = self._search_object("companies", "domain", domain)
             if existing_id:
                 self._update_object("companies", existing_id, props)
                 return
@@ -240,7 +242,9 @@ class HubSpotSync:
         """Search for a CRM object by a property value. Returns HS ID or None."""
         url = f"{_BASE}/crm/v3/objects/{object_type}/search"
         body = {
-            "filterGroups": [{"filters": [{"propertyName": prop, "operator": "EQ", "value": value}]}],
+            "filterGroups": [
+                {"filters": [{"propertyName": prop, "operator": "EQ", "value": value}]}
+            ],
             "properties": [prop],
             "limit": 1,
         }
@@ -267,11 +271,13 @@ class HubSpotSync:
 # Helpers
 # ------------------------------------------------------------------
 
+
 def _revenue_to_int(revenue_range: str | None) -> str:
     """Parse '100M-400M' style strings to an integer string HubSpot expects."""
     if not revenue_range:
         return ""
     import re
+
     # Extract first number (e.g. '100' from '100M-400M')
     match = re.search(r"(\d+)", revenue_range)
     if not match:
@@ -288,10 +294,10 @@ def _revenue_to_int(revenue_range: str | None) -> str:
 def _tier_to_deal_amount(tier: str) -> int:
     """Map Digitillis tier to estimated pilot deal value (USD)."""
     tier_amounts = {
-        "1": 50_000,   # T1: $100M–$400M — entry pilot
+        "1": 50_000,  # T1: $100M–$400M — entry pilot
         "mfg1": 50_000,
         "mfg2": 50_000,
-        "2": 80_000,   # T2: $400M–$1B — full pilot
+        "2": 80_000,  # T2: $400M–$1B — full pilot
         "mfg3": 80_000,
         "3": 150_000,  # T3: $1B–$2B — enterprise
         "mfg4": 150_000,
@@ -304,6 +310,7 @@ def _tier_to_deal_amount(tier: str) -> int:
 def _estimate_close_date(status: str) -> str:
     """Return ISO close date estimate based on deal stage."""
     from datetime import datetime, timedelta
+
     days_to_close = {
         "engaged": 90,
         "meeting_scheduled": 75,

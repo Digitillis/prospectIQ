@@ -35,6 +35,7 @@ router = APIRouter(prefix="/api/auth", tags=["signup"])
 # Models
 # ---------------------------------------------------------------------------
 
+
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
@@ -61,6 +62,7 @@ class SignupRequest(BaseModel):
 # Route
 # ---------------------------------------------------------------------------
 
+
 @router.post("/signup", status_code=201)
 async def signup(body: SignupRequest) -> dict[str, Any]:
     """Create a new workspace and Supabase auth user.
@@ -80,19 +82,25 @@ async def signup(body: SignupRequest) -> dict[str, Any]:
     # 1. Create the Supabase auth user via Admin API
     # ------------------------------------------------------------------
     try:
-        user_response = client.auth.admin.create_user({
-            "email": email,
-            "password": body.password,
-            "email_confirm": True,  # Skip confirmation email — user can log in immediately
-            "user_metadata": {
-                "workspace_id": workspace_id,
-                "full_name": body.full_name or "",
-            },
-        })
+        user_response = client.auth.admin.create_user(
+            {
+                "email": email,
+                "password": body.password,
+                "email_confirm": True,  # Skip confirmation email — user can log in immediately
+                "user_metadata": {
+                    "workspace_id": workspace_id,
+                    "full_name": body.full_name or "",
+                },
+            }
+        )
     except Exception as exc:
         err_str = str(exc).lower()
         # Supabase raises when the email is already registered
-        if "already registered" in err_str or "already been registered" in err_str or "duplicate" in err_str:
+        if (
+            "already registered" in err_str
+            or "already been registered" in err_str
+            or "duplicate" in err_str
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An account with this email already exists. Sign in instead.",
@@ -121,20 +129,22 @@ async def signup(body: SignupRequest) -> dict[str, Any]:
     # 2. Create the workspace row
     # ------------------------------------------------------------------
     try:
-        client.table("workspaces").insert({
-            "id": workspace_id,
-            "name": workspace_name,
-            "owner_email": email,
-            "tier": "starter",
-            "subscription_status": "active",
-            "seats_limit": 1,
-            "settings": {
-                "onboarding_complete": False,
-                "onboarding_step": 0,
-                "auto_approve_pqs_threshold": 70,
-                "monthly_api_budget_usd": 200,
-            },
-        }).execute()
+        client.table("workspaces").insert(
+            {
+                "id": workspace_id,
+                "name": workspace_name,
+                "owner_email": email,
+                "tier": "starter",
+                "subscription_status": "active",
+                "seats_limit": 1,
+                "settings": {
+                    "onboarding_complete": False,
+                    "onboarding_step": 0,
+                    "auto_approve_pqs_threshold": 70,
+                    "monthly_api_budget_usd": 200,
+                },
+            }
+        ).execute()
     except Exception as exc:
         logger.error("Failed to create workspace for user %s: %s", user_id, exc)
         # Best-effort cleanup: delete the Supabase user so the email isn't stuck
@@ -151,14 +161,16 @@ async def signup(body: SignupRequest) -> dict[str, Any]:
     # 3. Create the owner workspace_members row
     # ------------------------------------------------------------------
     try:
-        client.table("workspace_members").insert({
-            "workspace_id": workspace_id,
-            "user_id": user_id,
-            "email": email,
-            "role": "owner",
-            "status": "active",
-            "invited_by": None,
-        }).execute()
+        client.table("workspace_members").insert(
+            {
+                "workspace_id": workspace_id,
+                "user_id": user_id,
+                "email": email,
+                "role": "owner",
+                "status": "active",
+                "invited_by": None,
+            }
+        ).execute()
     except Exception as exc:
         logger.error("Failed to create workspace_members for user %s: %s", user_id, exc)
         # Non-fatal — workspace exists; user can still log in and be associated later
@@ -168,6 +180,7 @@ async def signup(body: SignupRequest) -> dict[str, Any]:
     # ------------------------------------------------------------------
     try:
         from backend.app.core.notifications import notify_welcome
+
         await notify_welcome(
             user_email=email,
             workspace_name=workspace_name,

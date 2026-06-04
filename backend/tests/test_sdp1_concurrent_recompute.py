@@ -35,11 +35,17 @@ def test_recompute_proceeds_when_lock_acquired():
     db.workspace_id = "ws-1"
 
     # Mock _load_state to return empty state (no contacts)
-    with patch("backend.app.core.send_scheduler._try_acquire_advisory_lock", return_value=True), \
-         patch("backend.app.core.send_scheduler._release_advisory_lock"), \
-         patch("backend.app.core.send_scheduler._load_state", return_value=([], {}, ["avi@digitillis.io"], 270)):
-
-        db.client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+    with (
+        patch("backend.app.core.send_scheduler._try_acquire_advisory_lock", return_value=True),
+        patch("backend.app.core.send_scheduler._release_advisory_lock"),
+        patch(
+            "backend.app.core.send_scheduler._load_state",
+            return_value=([], {}, ["avi@digitillis.io"], 270),
+        ),
+    ):
+        db.client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[]
+        )
 
         result = recompute_and_persist(db, "ws-1")
 
@@ -60,11 +66,17 @@ def test_recompute_releases_lock_after_completion():
     def mock_release(db_arg, key):
         release_called.append(key)
 
-    with patch("backend.app.core.send_scheduler._try_acquire_advisory_lock", return_value=True), \
-         patch("backend.app.core.send_scheduler._release_advisory_lock", side_effect=mock_release), \
-         patch("backend.app.core.send_scheduler._load_state", return_value=([], {}, ["avi@digitillis.io"], 270)):
-
-        db.client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+    with (
+        patch("backend.app.core.send_scheduler._try_acquire_advisory_lock", return_value=True),
+        patch("backend.app.core.send_scheduler._release_advisory_lock", side_effect=mock_release),
+        patch(
+            "backend.app.core.send_scheduler._load_state",
+            return_value=([], {}, ["avi@digitillis.io"], 270),
+        ),
+    ):
+        db.client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[]
+        )
 
         recompute_and_persist(db, "ws-1")
 
@@ -102,12 +114,17 @@ def test_enqueue_releases_lock_after_completion():
         release_called.append(key)
 
     # Return empty schedule rows
-    db.client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(data=[])
-    db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[{}])
+    db.client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+    db.client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[{}]
+    )
 
-    with patch("backend.app.core.send_scheduler._try_acquire_advisory_lock", return_value=True), \
-         patch("backend.app.core.send_scheduler._release_advisory_lock", side_effect=mock_release):
-
+    with (
+        patch("backend.app.core.send_scheduler._try_acquire_advisory_lock", return_value=True),
+        patch("backend.app.core.send_scheduler._release_advisory_lock", side_effect=mock_release),
+    ):
         enqueue_todays_schedule(db, "ws-1", today=today)
 
     assert len(release_called) >= 1, "Advisory lock must be released after enqueue"

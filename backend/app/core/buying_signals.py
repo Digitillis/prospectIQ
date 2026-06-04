@@ -135,19 +135,21 @@ class BuyingSignalDetector(BaseAgent):
 
                 # Log detection
                 signal_names = [s["name"] for s in detected]
-                self.db.insert_interaction({
-                    "company_id": company_id,
-                    "type": "note",
-                    "channel": "other",
-                    "subject": f"Buying signal detected: {', '.join(signal_names)}",
-                    "body": "\n".join(s["description"] for s in detected),
-                    "source": "system",
-                    "metadata": {
-                        "signal_names": signal_names,
-                        "pqs_bump": strongest["pqs_bump"],
-                        "severity": strongest["severity"],
-                    },
-                })
+                self.db.insert_interaction(
+                    {
+                        "company_id": company_id,
+                        "type": "note",
+                        "channel": "other",
+                        "subject": f"Buying signal detected: {', '.join(signal_names)}",
+                        "body": "\n".join(s["description"] for s in detected),
+                        "source": "system",
+                        "metadata": {
+                            "signal_names": signal_names,
+                            "pqs_bump": strongest["pqs_bump"],
+                            "severity": strongest["severity"],
+                        },
+                    }
+                )
 
                 severity = strongest["severity"]
                 if severity == "hot":
@@ -171,9 +173,9 @@ class BuyingSignalDetector(BaseAgent):
         if hot_alerts:
             try:
                 from backend.app.utils.notifications import notify_slack
+
                 alert_text = "\n".join(
-                    f"• *{name}*: {', '.join(signals)}"
-                    for name, signals in hot_alerts
+                    f"• *{name}*: {', '.join(signals)}" for name, signals in hot_alerts
                 )
                 notify_slack(
                     f"*Buying signals detected!* {len(hot_alerts)} hot prospect(s):\n{alert_text}\n\n"
@@ -195,9 +197,7 @@ class BuyingSignalDetector(BaseAgent):
         now = datetime.now(timezone.utc)
 
         for signal in _SIGNALS:
-            window_start = (
-                now - timedelta(days=signal["window_days"])
-            ).isoformat()
+            window_start = (now - timedelta(days=signal["window_days"])).isoformat()
 
             interactions = (
                 self.db.client.table("interactions")
@@ -222,9 +222,7 @@ class BuyingSignalDetector(BaseAgent):
                 if len(interactions) >= signal["min_count"]:
                     # For "open_after_silence", check that there was a silence period
                     if signal.get("silence_days"):
-                        silence_start = (
-                            now - timedelta(days=signal["silence_days"])
-                        ).isoformat()
+                        silence_start = (now - timedelta(days=signal["silence_days"])).isoformat()
                         silence_end = window_start  # before the current window
 
                         silence_period = (

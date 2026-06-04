@@ -39,6 +39,7 @@ def _from_address() -> str:
 # Core send helper
 # ---------------------------------------------------------------------------
 
+
 async def send_email(to: str, subject: str, html_body: str) -> bool:
     """POST an email to the Resend API.
 
@@ -90,14 +91,10 @@ async def send_email(to: str, subject: str, html_body: str) -> bool:
             f"body={exc.response.text[:300]!r} subject={subject!r} to={to!r}"
         )
     except httpx.RequestError as exc:
-        logger.error(
-            f"Network error sending email via Resend: {exc} "
-            f"subject={subject!r} to={to!r}"
-        )
+        logger.error(f"Network error sending email via Resend: {exc} subject={subject!r} to={to!r}")
     except Exception as exc:
         logger.error(
-            f"Unexpected error in send_email: {exc} "
-            f"subject={subject!r} to={to!r}",
+            f"Unexpected error in send_email: {exc} subject={subject!r} to={to!r}",
             exc_info=True,
         )
 
@@ -107,6 +104,7 @@ async def send_email(to: str, subject: str, html_body: str) -> bool:
 # ---------------------------------------------------------------------------
 # HTML helpers
 # ---------------------------------------------------------------------------
+
 
 def _base_template(title: str, body_html: str) -> str:
     """Wrap content in a simple, clean HTML shell with inline styles."""
@@ -162,17 +160,11 @@ def _base_template(title: str, body_html: str) -> str:
 
 
 def _heading(text: str) -> str:
-    return (
-        f'<h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#0f172a;">'
-        f"{text}</h2>"
-    )
+    return f'<h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#0f172a;">{text}</h2>'
 
 
 def _paragraph(text: str) -> str:
-    return (
-        f'<p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">'
-        f"{text}</p>"
-    )
+    return f'<p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">{text}</p>'
 
 
 def _badge(text: str, color: str = "#3b82f6") -> str:
@@ -211,6 +203,7 @@ def _cta_button(text: str, href: str = "https://prospectiq.ai") -> str:
 # Notification functions
 # ---------------------------------------------------------------------------
 
+
 async def notify_hot_prospect(
     company_name: str,
     pqs_score: int,
@@ -229,17 +222,22 @@ async def notify_hot_prospect(
         True if the email was accepted by Resend, False otherwise.
     """
     score_color = "#16a34a" if pqs_score >= 85 else "#d97706"
-    hooks_html = "".join(
-        f'<li style="margin:4px 0;font-size:14px;color:#334155;">{hook}</li>'
-        for hook in personalization_hooks
-    ) or '<li style="color:#94a3b8;font-size:14px;">No signals recorded</li>'
+    hooks_html = (
+        "".join(
+            f'<li style="margin:4px 0;font-size:14px;color:#334155;">{hook}</li>'
+            for hook in personalization_hooks
+        )
+        or '<li style="color:#94a3b8;font-size:14px;">No signals recorded</li>'
+    )
 
     body = f"""
     {_heading(f"Hot prospect detected: {company_name}")}
-    {_paragraph(
-        f"{company_name} scored <strong>{pqs_score} / 100</strong> on the Prospect Quality Score "
-        f"(hot threshold: 70+). Time to personalise your outreach."
-    )}
+    {
+        _paragraph(
+            f"{company_name} scored <strong>{pqs_score} / 100</strong> on the Prospect Quality Score "
+            f"(hot threshold: 70+). Time to personalise your outreach."
+        )
+    }
     <p style="margin:0 0 8px;">
       {_badge(f"PQS {pqs_score}", color=score_color)}
     </p>
@@ -285,16 +283,16 @@ async def notify_reply_received(
 
     signal_html = ""
     if signal_context:
-        signal_html = _paragraph(
-            f"<strong>Signal context:</strong> {signal_context}"
-        )
+        signal_html = _paragraph(f"<strong>Signal context:</strong> {signal_context}")
 
     body = f"""
     {_heading(f"Reply from {contact_name}")}
-    {_paragraph(
-        f"<strong>{contact_name}</strong> at <strong>{company_name}</strong> "
-        f"just replied to your outreach."
-    )}
+    {
+        _paragraph(
+            f"<strong>{contact_name}</strong> at <strong>{company_name}</strong> "
+            f"just replied to your outreach."
+        )
+    }
     {signal_html}
     <div style="background:#f8fafc;border-left:4px solid #3b82f6;
                 padding:16px 20px;border-radius:0 6px 6px 0;margin:20px 0;">
@@ -329,14 +327,18 @@ async def notify_draft_ready_for_approval(
     """
     body = f"""
     {_heading(f"{count} drafts awaiting your approval")}
-    {_paragraph(
-        f"You have <strong>{count} outreach draft{'s' if count != 1 else ''}</strong> "
-        f"queued up in ProspectIQ that need a quick review before they go out."
-    )}
-    {_paragraph(
-        "Review and approve them now to keep your pipeline moving — "
-        "approved drafts are sent on schedule."
-    )}
+    {
+        _paragraph(
+            f"You have <strong>{count} outreach draft{'s' if count != 1 else ''}</strong> "
+            f"queued up in ProspectIQ that need a quick review before they go out."
+        )
+    }
+    {
+        _paragraph(
+            "Review and approve them now to keep your pipeline moving — "
+            "approved drafts are sent on schedule."
+        )
+    }
     <table width="100%" cellpadding="0" cellspacing="0"
            style="margin:20px 0;border-radius:6px;overflow:hidden;
                   border:1px solid #e2e8f0;">
@@ -373,21 +375,27 @@ async def notify_workspace_invite(
     """
     body = f"""
     {_heading(f"You've been invited to {workspace_name}")}
-    {_paragraph(
-        f"<strong>{inviter_email}</strong> has invited you to join "
-        f"<strong>{workspace_name}</strong> on ProspectIQ."
-    )}
-    {_paragraph(
-        "ProspectIQ is an AI-powered B2B prospecting platform that researches, "
-        "qualifies, and drafts personalised outreach for your sales pipeline."
-    )}
+    {
+        _paragraph(
+            f"<strong>{inviter_email}</strong> has invited you to join "
+            f"<strong>{workspace_name}</strong> on ProspectIQ."
+        )
+    }
+    {
+        _paragraph(
+            "ProspectIQ is an AI-powered B2B prospecting platform that researches, "
+            "qualifies, and drafts personalised outreach for your sales pipeline."
+        )
+    }
     {_cta_button("Accept invitation", href=invite_url)}
-    {_paragraph(
-        '<span style="font-size:13px;color:#94a3b8;">'
-        "This invitation link expires in 7 days. "
-        "If you weren't expecting this, you can safely ignore this email."
-        "</span>"
-    )}
+    {
+        _paragraph(
+            '<span style="font-size:13px;color:#94a3b8;">'
+            "This invitation link expires in 7 days. "
+            "If you weren't expecting this, you can safely ignore this email."
+            "</span>"
+        )
+    }
     """
 
     return await send_email(
@@ -416,11 +424,13 @@ async def notify_welcome(
 
     body = f"""
     {_heading(f"Welcome to ProspectIQ, {first_name}!")}
-    {_paragraph(
-        f"Your workspace <strong>{workspace_name}</strong> is ready. "
-        f"ProspectIQ will research, qualify, and draft personalised outreach "
-        f"for your manufacturing sales pipeline — automatically."
-    )}
+    {
+        _paragraph(
+            f"Your workspace <strong>{workspace_name}</strong> is ready. "
+            f"ProspectIQ will research, qualify, and draft personalised outreach "
+            f"for your manufacturing sales pipeline — automatically."
+        )
+    }
     <h3 style="margin:24px 0 8px;font-size:15px;font-weight:600;color:#0f172a;">
       Get started in 3 steps
     </h3>
@@ -435,10 +445,12 @@ async def notify_welcome(
         <strong>Review &amp; approve drafts</strong> — send personalised emails with one click
       </li>
     </ol>
-    {_paragraph(
-        "Questions? Reply to this email or reach us at "
-        '<a href="mailto:avi@digitillis.com" style="color:#3b82f6;">avi@digitillis.com</a>.'
-    )}
+    {
+        _paragraph(
+            "Questions? Reply to this email or reach us at "
+            '<a href="mailto:avi@digitillis.com" style="color:#3b82f6;">avi@digitillis.com</a>.'
+        )
+    }
     {_cta_button("Open your dashboard")}
     """
 
@@ -468,9 +480,7 @@ async def notify_pipeline_health(
     Returns:
         True if the email was accepted by Resend, False otherwise.
     """
-    qualification_rate = (
-        round(qualified / total_companies * 100) if total_companies else 0
-    )
+    qualification_rate = round(qualified / total_companies * 100) if total_companies else 0
     hot_rate = round(hot_prospects / qualified * 100) if qualified else 0
 
     body = f"""
@@ -483,14 +493,18 @@ async def notify_pipeline_health(
       <tbody>
         {_stat_row("Total companies tracked", f"{total_companies:,}")}
         {_stat_row("Qualified (ICP match)", f"{qualified:,} &nbsp;({qualification_rate}%)")}
-        {_stat_row("Hot prospects (PQS 70+)", f"{hot_prospects:,} &nbsp;({hot_rate}% of qualified)")}
+        {
+        _stat_row("Hot prospects (PQS 70+)", f"{hot_prospects:,} &nbsp;({hot_rate}% of qualified)")
+    }
         {_stat_row("Outreach this week", f"{weekly_outreach:,} emails")}
       </tbody>
     </table>
 
-    {_paragraph(
-        "Keep the momentum going — review your hot prospects and approve any pending drafts."
-    )}
+    {
+        _paragraph(
+            "Keep the momentum going — review your hot prospects and approve any pending drafts."
+        )
+    }
     {_cta_button("Open ProspectIQ dashboard")}
     """
 

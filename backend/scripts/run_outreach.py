@@ -19,7 +19,9 @@ app = typer.Typer(help="Run the ProspectIQ Outreach Agent.")
 
 @app.command()
 def main(
-    company_ids: Optional[list[str]] = typer.Option(None, "--company-ids", help="Specific company IDs for outreach (repeatable)."),
+    company_ids: Optional[list[str]] = typer.Option(
+        None, "--company-ids", help="Specific company IDs for outreach (repeatable)."
+    ),
     sequence: str = typer.Option("initial_outreach", "--sequence", help="Outreach sequence name."),
     step: int = typer.Option(1, "--step", help="Step number within the sequence."),
     limit: int = typer.Option(20, "--limit", help="Max companies to generate outreach for."),

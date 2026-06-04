@@ -1,0 +1,33 @@
+capability: draft-personalization
+name: Draft Generation & Personalization
+type: AI_model
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 3.69, red_block: true, red_block_dim: trust_governance, findings_count: 18 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Two independently material themes warrant a deep dive: (1) tenant isolation — the personalization engine and core DB read/write paths bypass workspace scoping entirely and the outreach/voice-of-prospect routers lack membership enforcement, a latent cross-tenant data breach the moment a second worksp
+verdict: Strong integrity discipline on the primary CLI path is undermined by a parallel API path with no integrity sweep, an LLM-only (unverified) source-URL contract, and verified tenant-isolation gaps in th
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Core DB reads/writes bypass workspace scoping; PersonalizationEngine/Batch run with workspace_id=Non"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Outreach and voice-of-prospect routers lack require_workspace_member; /intelligence and /score-draft"}
+  - {rank: 3, severity: High, status: not_attempted, tag: VERIFIED, title: "Dual generation paths with asymmetric integrity: the API path has no integrity sweep"}
+  - {rank: 4, severity: High, status: not_attempted, tag: VERIFIED, title: "Verifiable-hook source-URL contract is LLM-compliance-only — no liveness or support check"}
+  - {rank: 5, severity: High, status: not_attempted, tag: VERIFIED, title: "Fabricated first-person customer-outcome statistics live and importable in content_engine.py"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "Eight bare except Exception blocks in primary path swallow context-loading failures silently"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "No retry/backoff/timeout on any Claude API call in the generation pipeline"}
+  - {rank: 8, severity: High, status: not_attempted, tag: INFERRED, title: "PersonalizationEngine overwrites valid hooks with empty list on Claude failure, then 7-day cooldown "}
+  - {rank: 9, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Confidence and readiness scores are field-presence counts mislabeled as predictive"}
+  - {rank: 10, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Draft quality score is Claude self-evaluating its own output with no ground truth"}
+  - {rank: 11, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Integrity rules auto-reject the exact benchmark stats the prompt injects"}
+  - {rank: 12, severity: Medium, status: not_attempted, tag: VERIFIED, title: "offer_context.yaml benchmark citations injected into every draft are never verified"}
+  - {rank: 13, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Voice-of-Prospect demo metrics are fabricated and only weakly labeled"}
+  - {rank: 14, severity: Medium, status: not_attempted, tag: INFERRED, title: "Sentry receives unscrubbed company intelligence and contact PII via exc_info logging"}
+  - {rank: 15, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Persona classification forked across three implementations with divergent keyword sets"}
+  - {rank: 16, severity: Medium, status: not_attempted, tag: VERIFIED, title: "ContextPacketBuilder (duplicate-claim prevention) is shadow-mode and unwired"}
+  - {rank: 17, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Sibling-email dedup in insert_outreach_draft scans contacts across all workspaces"}
+  - {rank: 18, severity: Low, status: not_attempted, tag: VERIFIED, title: "A/B variant is a deterministic, permanent UUID-hash partition, not an adaptive experiment"}
+approval: null

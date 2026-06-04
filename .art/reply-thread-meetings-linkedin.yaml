@@ -1,0 +1,39 @@
+capability: reply-thread-meetings-linkedin
+name: Reply, Thread, Meetings & LinkedIn
+type: workflow
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 2.53, red_block: true, red_block_dim: trust_governance, findings_count: 23 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Three independent Critical defects are confirmed at source-line level and each is independently ship-blocking (compliance crash, governance-contract violation, multi-tenant data-write leakage). A deep dive should (1) confirm whether outreach_outcomes/contacts/companies tables have RLS or rely solely
+verdict: Not ready: a verified runtime crash leaves opt-out requests in active sequences (CAN-SPAM/CASL exposure), the documented advisory scope-freeze is unenforced and silently mutates accounts, and an uncal
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Unsubscribe/negative replies crash at runtime; opt-outs stay in active sequences (CAN-SPAM/CASL)"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Documented 'advisory-only' scope freeze is unenforced; classifier silently mutates accounts"}
+  - {rank: 3, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Double LLM classification with conflicting taxonomies and non-deterministic last-writer state"}
+  - {rank: 4, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Cross-workspace cache poisoning: reply_classifications keyed by reply-text hash with no workspace_id"}
+  - {rank: 5, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Service-role writes bypass RLS; contact/company/outcome updates lack workspace_id scoping"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "Gmail API intake ingests ALL inbound inbox mail as prospect replies (no Re:/in-reply-to filter)"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Uncalibrated Haiku self-confidence (>=0.85) auto-confirms irreversible unsubscribe/bounce/OOO"}
+  - {rank: 8, severity: High, status: not_attempted, tag: VERIFIED, title: "Unipile webhook signature check is timing-unsafe and unauthenticated when secret unset"}
+  - {rank: 9, severity: High, status: not_attempted, tag: VERIFIED, title: "Silent Haiku failure (confidence=0.0/intent=other) is cached, permanently poisoning that reply hash"}
+  - {rank: 10, severity: High, status: not_attempted, tag: VERIFIED, title: "Lookalike +10 PQS boost is a blind, unbounded, workspace-unsafe heuristic"}
+  - {rank: 11, severity: High, status: not_attempted, tag: VERIFIED, title: "IMAP crash-replay reprocesses replies with full duplicate side-effects"}
+  - {rank: 12, severity: High, status: not_attempted, tag: VERIFIED, title: "No ground-truth labels, confusion matrix, or offline eval for any classifier; no attribution trail"}
+  - {rank: 13, severity: High, status: not_attempted, tag: VERIFIED, title: "Multi-thread coordinated-outreach disclosure injected into emails with no consent; freeze is comment"}
+  - {rank: 14, severity: Medium, status: not_attempted, tag: VERIFIED, title: "ThreadCoordinator instantiates anthropic.Anthropic() with no api_key; silent fallback draft"}
+  - {rank: 15, severity: Medium, status: not_attempted, tag: VERIFIED, title: "A/B variant assignment is a fixed UUID-parity partition treating both arms identically"}
+  - {rank: 16, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Strategy-hint keyword heuristic primes the LLM before classification; mismatches are invisible"}
+  - {rank: 17, severity: Medium, status: not_attempted, tag: VERIFIED, title: "PostMeetingAgent truncates transcripts at 8000 chars and uses the generic 'research' model"}
+  - {rank: 18, severity: Medium, status: not_attempted, tag: VERIFIED, title: "HITL queue records hardcoded classification_confidence=0.85 regardless of actual output"}
+  - {rank: 19, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Business-day spacing uses int(total_days*5/7) approximation; minimum gap can be violated"}
+  - {rank: 20, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Prospect PII flows to Slack and untruncated thread_messages with no retention/erasure controls"}
+  - {rank: 21, severity: Medium, status: not_attempted, tag: VERIFIED, title: "LinkedIn rate limiter read-modify-write race can over-send past the 20/day cap"}
+  - {rank: 22, severity: Low, status: not_attempted, tag: VERIFIED, title: "LinkedIn personalization uses stale prior-research data with no staleness flag"}
+  - {rank: 23, severity: Low, status: not_attempted, tag: VERIFIED, title: "LinkedIn drafts logged as '(auto-approved)' while inserted with approval_status='pending'"}
+approval: null
+track1_bleeding: D1  # in remediation handoff Part D (reply-opt-out-crash)

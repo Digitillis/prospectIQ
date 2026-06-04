@@ -7,7 +7,7 @@ Usage:
     from backend.app.analytics.reports import CampaignReporter
     from backend.app.core.database import Database
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     reporter = CampaignReporter(db)
     print(reporter.generate_weekly_report())
 """
@@ -66,8 +66,15 @@ class CampaignReporter:
         lines.append("")
         lines.append("FUNNEL OVERVIEW (last 7 days)")
         lines.append("-" * 40)
-        for stage in ["discovered", "enriched", "sequenced", "touch_1_sent",
-                      "replied", "demo_scheduled", "closed_won"]:
+        for stage in [
+            "discovered",
+            "enriched",
+            "sequenced",
+            "touch_1_sent",
+            "replied",
+            "demo_scheduled",
+            "closed_won",
+        ]:
             count = funnel.get(stage, 0)
             label = stage.replace("_", " ").title()
             lines.append(f"  {label:<25} {count:>6}")
@@ -84,9 +91,18 @@ class CampaignReporter:
         lines.append("")
         lines.append("PIPELINE TOTALS (last 30 days)")
         lines.append("-" * 40)
-        for stage in ["sequenced", "touch_1_sent", "touch_2_sent", "touch_3_sent",
-                      "touch_4_sent", "touch_5_sent", "replied", "demo_scheduled",
-                      "closed_won", "dnc"]:
+        for stage in [
+            "sequenced",
+            "touch_1_sent",
+            "touch_2_sent",
+            "touch_3_sent",
+            "touch_4_sent",
+            "touch_5_sent",
+            "replied",
+            "demo_scheduled",
+            "closed_won",
+            "dnc",
+        ]:
             count = funnel_30.get(stage, 0)
             if count > 0:
                 label = stage.replace("_", " ").title()
@@ -200,15 +216,16 @@ class CampaignReporter:
         try:
             rows = (
                 self.db._filter_ws(
-                    self.db.client.table("contacts")
-                    .select(
+                    self.db.client.table("contacts").select(
                         "company_id, outreach_state, open_count, click_count, "
                         "reply_sentiment, "
                         "companies(id, name, domain, tier, campaign_name, "
                         "intent_score, outreach_active)"
                     )
                 )
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
 
             # Fetch active intent signals counts per company
@@ -217,7 +234,9 @@ class CampaignReporter:
                     self.db.client.table("company_intent_signals").select("company_id")
                 )
                 .eq("is_active", True)
-                .execute().data or []
+                .execute()
+                .data
+                or []
             )
         except Exception as exc:
             logger.error(f"get_hot_accounts_report failed: {exc}")

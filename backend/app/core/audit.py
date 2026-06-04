@@ -106,7 +106,9 @@ def log_audit_event(
 
     except Exception as exc:
         # Audit failures must never crash the calling operation
-        logger.warning("audit log write failed (action=%s workspace=%s): %s", action, workspace_id, exc)
+        logger.warning(
+            "audit log write failed (action=%s workspace=%s): %s", action, workspace_id, exc
+        )
 
 
 def log_audit_event_from_ctx(
@@ -123,6 +125,7 @@ def log_audit_event_from_ctx(
     """
     try:
         from backend.app.core.workspace import get_current_workspace
+
         ctx = get_current_workspace()
         if ctx:
             log_audit_event(

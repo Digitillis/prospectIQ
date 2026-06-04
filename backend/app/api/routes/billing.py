@@ -38,6 +38,7 @@ from billing_core.tier_plans import TIER_PLANS as _PIQ_PLANS, TIER_ORDER
 # (ProspectIQ uses companies_per_month; SDK uses resource_limits dict)
 # ---------------------------------------------------------------------------
 
+
 def _to_sdk_plans(plans: dict) -> dict[str, SdkTierPlan]:
     result: dict[str, SdkTierPlan] = {}
     for tier, p in plans.items():
@@ -66,6 +67,7 @@ TIER_PLANS = _to_sdk_plans(_PIQ_PLANS)
 # Platform-specific dependency injectors
 # ---------------------------------------------------------------------------
 
+
 def _get_adapter(request: Request) -> SupabaseBillingAdapter:  # noqa: ARG001
     return SupabaseBillingAdapter(get_supabase_client())
 
@@ -81,6 +83,7 @@ def _get_workspace_id(request: Request) -> str:  # noqa: ARG001
 # ---------------------------------------------------------------------------
 # Settings from environment
 # ---------------------------------------------------------------------------
+
 
 def _build_settings() -> BillingSettings:
     return BillingSettings(

@@ -136,18 +136,79 @@ CLUSTER_CONTEXT: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _PERSONA_TITLE_MAP: list[tuple[list[str], str]] = [
-    (["chief executive", "ceo", "president", "chief operating", "coo", "chief financial", "cfo",
-      "chief technology", "cto", "chief digital", "chief manufacturing", "svp", "evp"], "executive"),
-    (["vp operations", "vp of operations", "vice president operations", "vp manufacturing",
-      "vice president manufacturing", "vp supply chain", "vice president supply", "director of operations",
-      "operations director", "vp ops", "director operations"], "vp_ops"),
-    (["plant manager", "plant director", "facility manager", "site manager", "production manager",
-      "operations manager", "manufacturing manager", "site director"], "plant_manager"),
-    (["reliability engineer", "maintenance engineer", "process engineer", "manufacturing engineer",
-      "controls engineer", "automation engineer", "quality engineer", "industrial engineer",
-      "engineer"], "engineer"),
-    (["procurement", "purchasing", "supply chain manager", "supply chain director",
-      "sourcing manager", "category manager", "vendor manager"], "procurement"),
+    (
+        [
+            "chief executive",
+            "ceo",
+            "president",
+            "chief operating",
+            "coo",
+            "chief financial",
+            "cfo",
+            "chief technology",
+            "cto",
+            "chief digital",
+            "chief manufacturing",
+            "svp",
+            "evp",
+        ],
+        "executive",
+    ),
+    (
+        [
+            "vp operations",
+            "vp of operations",
+            "vice president operations",
+            "vp manufacturing",
+            "vice president manufacturing",
+            "vp supply chain",
+            "vice president supply",
+            "director of operations",
+            "operations director",
+            "vp ops",
+            "director operations",
+        ],
+        "vp_ops",
+    ),
+    (
+        [
+            "plant manager",
+            "plant director",
+            "facility manager",
+            "site manager",
+            "production manager",
+            "operations manager",
+            "manufacturing manager",
+            "site director",
+        ],
+        "plant_manager",
+    ),
+    (
+        [
+            "reliability engineer",
+            "maintenance engineer",
+            "process engineer",
+            "manufacturing engineer",
+            "controls engineer",
+            "automation engineer",
+            "quality engineer",
+            "industrial engineer",
+            "engineer",
+        ],
+        "engineer",
+    ),
+    (
+        [
+            "procurement",
+            "purchasing",
+            "supply chain manager",
+            "supply chain director",
+            "sourcing manager",
+            "category manager",
+            "vendor manager",
+        ],
+        "procurement",
+    ),
 ]
 
 _SENIORITY_EXEC = {"c_suite", "founder", "vp", "director", "partner", "owner"}
@@ -176,6 +237,7 @@ def _infer_persona(title: str | None, seniority: str | None) -> str:
 # ---------------------------------------------------------------------------
 # OutreachAgent
 # ---------------------------------------------------------------------------
+
 
 class OutreachAgent(BaseAgent):
     """Generate hyper-personalized outreach drafts using full research context."""
@@ -217,6 +279,7 @@ class OutreachAgent(BaseAgent):
             raise RuntimeError("ANTHROPIC_API_KEY not set — cannot generate drafts")
 
         import anthropic
+
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
         # Load company
@@ -232,16 +295,28 @@ class OutreachAgent(BaseAgent):
 
         # Check for existing non-rejected draft (unless force_regenerate)
         if not force_regenerate:
-            existing_drafts = self.db.client.table("outreach_drafts").select(
-                "id, approval_status"
-            ).eq("company_id", company_id).eq("contact_id", contact_id).eq(
-                "sequence_name", "initial_outreach"
-            ).neq("approval_status", "rejected").limit(1).execute().data
+            existing_drafts = (
+                self.db.client.table("outreach_drafts")
+                .select("id, approval_status")
+                .eq("company_id", company_id)
+                .eq("contact_id", contact_id)
+                .eq("sequence_name", "initial_outreach")
+                .neq("approval_status", "rejected")
+                .limit(1)
+                .execute()
+                .data
+            )
             if existing_drafts:
                 existing_id = existing_drafts[0]["id"]
-                full = self.db.client.table("outreach_drafts").select(
-                    "*, companies(name, tier, pqs_total), contacts(full_name, title, email)"
-                ).eq("id", existing_id).execute().data
+                full = (
+                    self.db.client.table("outreach_drafts")
+                    .select(
+                        "*, companies(name, tier, pqs_total), contacts(full_name, title, email)"
+                    )
+                    .eq("id", existing_id)
+                    .execute()
+                    .data
+                )
                 return full[0] if full else existing_drafts[0]
 
         # Resolve research context
@@ -274,7 +349,9 @@ class OutreachAgent(BaseAgent):
 
         # Build rich context payload
         trigger_events: list[dict] = research_summary.get("trigger_events", [])
-        equipment_profile = research_summary.get("equipment_profile") or research_summary.get("equipment_types", [])
+        equipment_profile = research_summary.get("equipment_profile") or research_summary.get(
+            "equipment_types", []
+        )
         company_description = research_summary.get("company_description", "")
         maintenance_approach = research_summary.get("maintenance_approach", "")
         iot_maturity = research_summary.get("iot_maturity", "")
@@ -320,6 +397,7 @@ class OutreachAgent(BaseAgent):
 
         # Step-aware model routing: Sonnet for step-1 cold opens, Haiku for follow-ups.
         from backend.app.core.model_router import get_model
+
         _step_num = _step_to_int(sequence_step)
         _draft_model = get_model("outreach_step1" if _step_num <= 1 else "outreach_step2plus")
 
@@ -345,15 +423,18 @@ class OutreachAgent(BaseAgent):
         subject, body, personalization_notes = _parse_draft_output(raw_output)
 
         # Final personalization_notes: combine parsed notes with metadata
-        full_notes = json.dumps({
-            "parsed_notes": personalization_notes,
-            "persona_type": persona_type,
-            "cluster": campaign_cluster,
-            "hooks_used": top_hooks,
-            "pains_used": top_pains,
-            "triggers_count": len(trigger_events),
-            "confidence_score": confidence,
-        }, separators=(",", ":"))
+        full_notes = json.dumps(
+            {
+                "parsed_notes": personalization_notes,
+                "persona_type": persona_type,
+                "cluster": campaign_cluster,
+                "hooks_used": top_hooks,
+                "pains_used": top_pains,
+                "triggers_count": len(trigger_events),
+                "confidence_score": confidence,
+            },
+            separators=(",", ":"),
+        )
 
         # Save to DB
         draft_data = {
@@ -371,12 +452,14 @@ class OutreachAgent(BaseAgent):
         # Hard block: step-1 cold opens may never contain a URL.
         # Reject the draft up-front instead of pushing it into the approval queue.
         from backend.app.core.draft_quality import is_step_1_url_violation
+
         if is_step_1_url_violation(draft_data):
             draft_data["approval_status"] = "rejected"
             draft_data["rejection_reason"] = "url_in_step_1"
             self.logger.warning(
                 "Step-1 URL violation auto-rejected: company_id=%s contact_id=%s",
-                company_id, contact_id,
+                company_id,
+                contact_id,
             )
 
         created = self.db.insert_outreach_draft(draft_data)
@@ -461,13 +544,20 @@ class OutreachAgent(BaseAgent):
             raise RuntimeError("ANTHROPIC_API_KEY not set")
 
         import anthropic
+
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
         # Load draft
-        draft_rows = self.db.client.table("outreach_drafts").select(
-            "*, companies(name, tier, campaign_cluster, personalization_hooks, pain_signals), "
-            "contacts(full_name, title, persona_type, seniority)"
-        ).eq("id", draft_id).execute().data
+        draft_rows = (
+            self.db.client.table("outreach_drafts")
+            .select(
+                "*, companies(name, tier, campaign_cluster, personalization_hooks, pain_signals), "
+                "contacts(full_name, title, persona_type, seniority)"
+            )
+            .eq("id", draft_id)
+            .execute()
+            .data
+        )
 
         if not draft_rows:
             raise ValueError(f"Draft not found: {draft_id}")
@@ -488,6 +578,7 @@ class OutreachAgent(BaseAgent):
         )
 
         from backend.app.core.model_router import get_model
+
         _score_model = get_model("draft_score")
 
         response = client.messages.create(
@@ -524,6 +615,7 @@ class OutreachAgent(BaseAgent):
 # Prompt builders
 # ---------------------------------------------------------------------------
 
+
 def _build_generation_prompt(
     contact_first: str,
     contact_title: str,
@@ -545,7 +637,9 @@ def _build_generation_prompt(
     """Build the Claude user prompt for draft generation."""
     lines: list[str] = []
 
-    lines.append(f"Write a cold outreach email to {contact_first}, {contact_title} at {company_name}.")
+    lines.append(
+        f"Write a cold outreach email to {contact_first}, {contact_title} at {company_name}."
+    )
     if company_location:
         lines.append(f"Company location: {company_location}.")
     lines.append("")
@@ -730,6 +824,7 @@ def _sequence_step_guidance(step: str) -> str:
 # Output parsers
 # ---------------------------------------------------------------------------
 
+
 def _parse_draft_output(raw: str) -> tuple[str, str, str]:
     """Parse SUBJECT / BODY / PERSONALIZATION_NOTES from Claude output.
 
@@ -748,12 +843,12 @@ def _parse_draft_output(raw: str) -> tuple[str, str, str]:
         stripped = line.strip()
         if stripped.upper().startswith("SUBJECT:"):
             current_section = "subject"
-            subject = stripped[len("SUBJECT:"):].strip()
+            subject = stripped[len("SUBJECT:") :].strip()
         elif stripped.upper().startswith("BODY:"):
             current_section = "body"
         elif stripped.upper().startswith("PERSONALIZATION_NOTES:"):
             current_section = "notes"
-            rest = stripped[len("PERSONALIZATION_NOTES:"):].strip()
+            rest = stripped[len("PERSONALIZATION_NOTES:") :].strip()
             if rest:
                 notes_lines.append(rest)
         else:
@@ -820,6 +915,7 @@ def _parse_quality_scores(raw: str) -> tuple[dict[str, int], float, list[str]]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _compute_confidence(
     hooks: list[str],

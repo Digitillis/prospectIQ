@@ -1,0 +1,33 @@
+capability: crm-sync
+name: CRM Sync
+type: feature
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 2.65, red_block: true, red_block_dim: economic_defensibility, findings_count: 18 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Multiple independent Critical defects (auth, fabricated economics, blocking DoS) with zero test coverage mean a rebuild, not a patch. A deep dive should decide whether CRM Sync stays a demo-only capability or is re-architected (auth dependency, async httpx client + retry/backoff, external-ID dedup, 
+verdict: Demo-grade CRM push masquerading as production sync: unauthenticated endpoints, fabricated pipeline dollars/dates written as authoritative CRM fields, and an event-loop-blocking synchronous-httpx impl
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Eight CRM sync endpoints have zero authentication"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Deal Amount is fabricated from a static tier lookup, written as authoritative CRM pipeline value"}
+  - {rank: 3, severity: Critical, status: not_attempted, tag: VERIFIED, title: "CloseDate recomputed as utcnow()+N on every sync, silently overwriting manual edits"}
+  - {rank: 4, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Synchronous httpx inside async handlers blocks the event loop (DoS)"}
+  - {rank: 5, severity: High, status: not_attempted, tag: VERIFIED, title: "Per-item exceptions swallowed; broken integrations report HTTP 200 success"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "No retry/backoff against HubSpot rate limits; full sync silently drops records"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Service-role Supabase key bypasses RLS; isolation is one _filter_ws call deep"}
+  - {rank: 8, severity: High, status: not_attempted, tag: VERIFIED, title: "Wrong SOQL escape function: backslash-quote instead of doubled-quote"}
+  - {rank: 9, severity: High, status: not_attempted, tag: VERIFIED, title: "AnnualRevenue parses only the first number of a range, systematically undervaluing"}
+  - {rank: 10, severity: High, status: not_attempted, tag: VERIFIED, title: "Deal/Opportunity dedup by name string; rename creates duplicates, domain-null company always creates"}
+  - {rank: 11, severity: High, status: not_attempted, tag: VERIFIED, title: "No concurrency guard; simultaneous syncs race search-then-create into duplicates"}
+  - {rank: 12, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Raw exception strings leaked to callers in 500 bodies"}
+  - {rank: 13, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Hard row caps silently truncate with no ordering or notification"}
+  - {rank: 14, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Contacts pushed orphaned — no company/account association"}
+  - {rank: 15, severity: Medium, status: not_attempted, tag: VERIFIED, title: "HubSpot stage values are portal-default strings that fail silently when customized"}
+  - {rank: 16, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Zero test coverage for the entire CRM sync capability"}
+  - {rank: 17, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Salesforce optional dependency and password-flow auth fail only at runtime"}
+  - {rank: 18, severity: Low, status: not_attempted, tag: VERIFIED, title: "PII in logs and non-standard property silent drop"}
+approval: null

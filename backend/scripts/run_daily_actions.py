@@ -34,6 +34,7 @@ def main(
         console.print("[cyan]Polling Instantly for new events...[/cyan]")
         try:
             from backend.app.agents.engagement import EngagementAgent
+
             agent = EngagementAgent()
             poll_result = agent.execute(action="poll_events")
             console.print(f"  [dim]Poll complete: {poll_result.summary()}[/dim]")
@@ -43,7 +44,7 @@ def main(
 
     console.print("\n[bold blue]{'='*60}[/bold blue]")
     console.print("[bold blue]ProspectIQ — Daily Actions[/bold blue]")
-    console.print(f"[bold blue]{'='*60}[/bold blue]\n")
+    console.print(f"[bold blue]{'=' * 60}[/bold blue]\n")
 
     # 1. Pending approvals
     pending = db.get_pending_drafts(limit=100)
@@ -55,8 +56,16 @@ def main(
         table.add_column("Subject")
         table.add_column("Sequence")
         for draft in pending[:20]:
-            company_name = draft.get("companies", {}).get("name", "Unknown") if draft.get("companies") else "Unknown"
-            contact_name = draft.get("contacts", {}).get("full_name", "Unknown") if draft.get("contacts") else "Unknown"
+            company_name = (
+                draft.get("companies", {}).get("name", "Unknown")
+                if draft.get("companies")
+                else "Unknown"
+            )
+            contact_name = (
+                draft.get("contacts", {}).get("full_name", "Unknown")
+                if draft.get("contacts")
+                else "Unknown"
+            )
             table.add_row(
                 company_name,
                 contact_name,
@@ -80,8 +89,16 @@ def main(
         table.add_column("Action Type")
         table.add_column("Due")
         for seq in due_sequences[:20]:
-            company_name = seq.get("companies", {}).get("name", "Unknown") if seq.get("companies") else "Unknown"
-            contact_name = seq.get("contacts", {}).get("full_name", "Unknown") if seq.get("contacts") else "Unknown"
+            company_name = (
+                seq.get("companies", {}).get("name", "Unknown")
+                if seq.get("companies")
+                else "Unknown"
+            )
+            contact_name = (
+                seq.get("contacts", {}).get("full_name", "Unknown")
+                if seq.get("contacts")
+                else "Unknown"
+            )
             table.add_row(
                 company_name,
                 contact_name,
@@ -96,10 +113,13 @@ def main(
     console.print("[cyan]Scanning for buying signals...[/cyan]")
     try:
         from backend.app.core.buying_signals import BuyingSignalDetector
+
         detector = BuyingSignalDetector()
         signal_result = detector.execute()
         if signal_result.processed > 0:
-            console.print(f"  [bold red]Detected {signal_result.processed} buying signal(s)![/bold red]")
+            console.print(
+                f"  [bold red]Detected {signal_result.processed} buying signal(s)![/bold red]"
+            )
         else:
             console.print("  No new buying signals detected.")
     except Exception as e:
@@ -110,10 +130,13 @@ def main(
     console.print("[cyan]Checking re-engagement candidates...[/cyan]")
     try:
         from backend.app.agents.reengagement import ReengagementAgent
+
         reeng = ReengagementAgent()
         reeng_result = reeng.execute(limit=10)
         if reeng_result.processed > 0:
-            console.print(f"  [green]{reeng_result.processed} prospect(s) re-queued for warm follow-up.[/green]")
+            console.print(
+                f"  [green]{reeng_result.processed} prospect(s) re-queued for warm follow-up.[/green]"
+            )
         else:
             console.print("  No prospects ready for re-engagement.")
     except Exception as e:
@@ -148,6 +171,7 @@ def main(
         console.print("[cyan]Today's Send Queue (priority order):[/cyan]")
         try:
             from backend.app.core.queue_manager import QueueManager
+
             qm = QueueManager()
             contacts_to_send = qm.get_send_queue(limit=20)
             if contacts_to_send:
@@ -159,13 +183,13 @@ def main(
         console.print()
 
     # Summary
-    console.print(f"\n[bold green]{'-'*60}[/bold green]")
+    console.print(f"\n[bold green]{'-' * 60}[/bold green]")
     console.print(
         f"[bold green]Summary: {len(pending)} approvals | "
         f"{len(due_sequences)} follow-ups | "
         f"{len(hot_companies)} hot prospects[/bold green]"
     )
-    console.print(f"[bold green]{'-'*60}[/bold green]\n")
+    console.print(f"[bold green]{'-' * 60}[/bold green]\n")
 
 
 if __name__ == "__main__":

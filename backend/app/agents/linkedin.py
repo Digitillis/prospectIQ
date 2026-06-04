@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # Config loader (graceful fallback if YAML doesn't exist yet)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def get_linkedin_messages_guidelines() -> dict:
     """Load LinkedIn messages guidelines from config YAML.
 
@@ -35,6 +36,7 @@ def get_linkedin_messages_guidelines() -> dict:
     """
     try:
         from backend.app.core.config import load_yaml_config
+
         return load_yaml_config("linkedin_messages_guidelines.yaml")
     except FileNotFoundError:
         return {}
@@ -44,6 +46,7 @@ def get_linkedin_messages_guidelines() -> dict:
 # System prompt builder
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _build_system_prompt(guidelines: dict) -> str:
     """Build the LinkedIn system prompt from guidelines YAML (or sensible defaults)."""
     sender = guidelines.get("sender", {})
@@ -51,23 +54,35 @@ def _build_system_prompt(guidelines: dict) -> str:
     sender_title = sender.get("title", "")
     sender_company = sender.get("company", "the company")
 
-    voice = guidelines.get("voice_and_tone", (
-        "Direct, human, expert-to-operator. No filler. No buzzwords. "
-        "Sounds like a real person, not a sales bot."
-    ))
-    never = guidelines.get("never_include", [
-        "We help companies like yours",
-        "I came across your profile",
-        "Hope this message finds you well",
-        "I wanted to reach out",
-        "Revolutionary / game-changing / cutting-edge",
-    ])
+    voice = guidelines.get(
+        "voice_and_tone",
+        (
+            "Direct, human, expert-to-operator. No filler. No buzzwords. "
+            "Sounds like a real person, not a sales bot."
+        ),
+    )
+    never = guidelines.get(
+        "never_include",
+        [
+            "We help companies like yours",
+            "I came across your profile",
+            "Hope this message finds you well",
+            "I wanted to reach out",
+            "Revolutionary / game-changing / cutting-edge",
+        ],
+    )
     banned_phrases = guidelines.get("banned_phrases", [])
-    facts = guidelines.get("product_facts", guidelines.get("digitillis_facts", [
-        "The product is purpose-built for the target industry",
-        "Helps predict operational failures before they happen",
-        "Reduces unplanned downtime and improves operational efficiency",
-    ]))
+    facts = guidelines.get(
+        "product_facts",
+        guidelines.get(
+            "digitillis_facts",
+            [
+                "The product is purpose-built for the target industry",
+                "Helps predict operational failures before they happen",
+                "Reduces unplanned downtime and improves operational efficiency",
+            ],
+        ),
+    )
 
     parts = [
         f"You are writing LinkedIn messages on behalf of {sender_name}, "
@@ -226,6 +241,7 @@ Output ONLY valid JSON. No markdown, no explanation."""
 # Agent
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class LinkedInAgent(BaseAgent):
     """Generate personalized LinkedIn messages using Claude."""
 
@@ -297,7 +313,11 @@ class LinkedInAgent(BaseAgent):
                     continue
 
                 # Company-level send lock — prevent multi-contact collision
-                from backend.app.core.channel_coordinator import is_company_locked, has_recent_activity
+                from backend.app.core.channel_coordinator import (
+                    is_company_locked,
+                    has_recent_activity,
+                )
+
                 locked, lock_reason = is_company_locked(self.db, company_id)
                 if locked:
                     console.print(f"  [dim]{company_name}: company locked — {lock_reason}[/dim]")
@@ -312,8 +332,7 @@ class LinkedInAgent(BaseAgent):
                 # In dm_only mode, restrict to contacts with an accepted connection
                 if mode == "dm_only":
                     contacts = [
-                        c for c in contacts
-                        if c.get("linkedin_status") == "connection_accepted"
+                        c for c in contacts if c.get("linkedin_status") == "connection_accepted"
                     ]
 
                 if not contacts:
@@ -356,7 +375,9 @@ class LinkedInAgent(BaseAgent):
                     # 48-hour activity cooldown — prevent rapid-fire touches
                     recent, activity_desc = has_recent_activity(self.db, contact_id)
                     if recent:
-                        console.print(f"  [dim]{company_name}: {contact_name}: 48h cooldown — {activity_desc}[/dim]")
+                        console.print(
+                            f"  [dim]{company_name}: {contact_name}: 48h cooldown — {activity_desc}[/dim]"
+                        )
                         result.skipped += 1
                         continue
 
@@ -491,29 +512,33 @@ class LinkedInAgent(BaseAgent):
         value_msg = ontology.get("value_messaging", {}).get(str(tier), {})
         if not value_msg:
             # Try without tier prefix if not found
-            value_msg = ontology.get("value_messaging", {}).get(tier.replace("fb_", "").replace("mfg_", ""), {})
+            value_msg = ontology.get("value_messaging", {}).get(
+                tier.replace("fb_", "").replace("mfg_", ""), {}
+            )
 
         if vertical == "food_beverage":
-            pains = value_msg.get("primary_pains", [
-                "FSMA compliance burden and audit preparation",
-                "Unplanned downtime on filling, mixing, and packaging lines",
-                "Manual HACCP monitoring processes",
-                "Food safety traceability requirements",
-            ])
-            context = (
-                "Vertical: Food & Beverage\n"
-                "Key pain areas: " + ", ".join(pains[:3])
+            pains = value_msg.get(
+                "primary_pains",
+                [
+                    "FSMA compliance burden and audit preparation",
+                    "Unplanned downtime on filling, mixing, and packaging lines",
+                    "Manual HACCP monitoring processes",
+                    "Food safety traceability requirements",
+                ],
             )
+            context = "Vertical: Food & Beverage\nKey pain areas: " + ", ".join(pains[:3])
         else:
-            pains = value_msg.get("primary_pains", [
-                "Unplanned equipment downtime and reactive maintenance",
-                "OEE improvements and bottleneck detection",
-                "Quality defect root cause analysis",
-                "Energy consumption optimization",
-            ])
-            context = (
-                "Vertical: Discrete / Process Manufacturing\n"
-                "Key pain areas: " + ", ".join(pains[:3])
+            pains = value_msg.get(
+                "primary_pains",
+                [
+                    "Unplanned equipment downtime and reactive maintenance",
+                    "OEE improvements and bottleneck detection",
+                    "Quality defect root cause analysis",
+                    "Energy consumption optimization",
+                ],
+            )
+            context = "Vertical: Discrete / Process Manufacturing\nKey pain areas: " + ", ".join(
+                pains[:3]
             )
 
         return context
@@ -581,12 +606,17 @@ class LinkedInAgent(BaseAgent):
             contact_name=contact.get("full_name") or contact.get("first_name", "Unknown"),
             contact_title=contact.get("title", "Unknown"),
             vertical=vertical_label,
-            research_summary=research_summary or "No research available — use company industry and contact title to infer specific challenges",
+            research_summary=research_summary
+            or "No research available — use company industry and contact title to infer specific challenges",
             personalization_hooks=(
-                "\n".join(f"- {h}" for h in hooks) if hooks else "None available — infer from company sub-sector and contact role"
+                "\n".join(f"- {h}" for h in hooks)
+                if hooks
+                else "None available — infer from company sub-sector and contact role"
             ),
             pain_signals=(
-                "\n".join(f"- {p}" for p in pain_signals) if pain_signals else "Not identified — infer from industry and company size"
+                "\n".join(f"- {p}" for p in pain_signals)
+                if pain_signals
+                else "Not identified — infer from industry and company size"
             ),
             manufacturing_profile=(
                 json.dumps(mfg_profile, indent=2) if mfg_profile else "Not profiled"

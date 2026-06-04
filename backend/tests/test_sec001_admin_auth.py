@@ -15,6 +15,7 @@ from unittest.mock import patch
 def _make_client_no_auth():
     """Return a TestClient with no auth override (anonymous caller)."""
     from backend.app.api.main import app
+
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -24,7 +25,12 @@ def _make_client_authed():
     from backend.app.core.auth import get_current_user
 
     async def _stub_user(request=None):
-        return {"user_id": "test-user", "email": "test@example.com", "workspace_id": "ws-1", "auth_method": "bearer"}
+        return {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "workspace_id": "ws-1",
+            "auth_method": "bearer",
+        }
 
     app.dependency_overrides[get_current_user] = _stub_user
     client = TestClient(app, raise_server_exceptions=False)
@@ -45,6 +51,7 @@ ADMIN_ENDPOINTS = [
 def test_admin_endpoint_no_auth_returns_401(method, path):
     """Anonymous callers must receive 401/403 on every admin endpoint."""
     from backend.app.api.main import app
+
     with TestClient(app, raise_server_exceptions=False) as client:
         resp = getattr(client, method.lower())(path)
         assert resp.status_code in (401, 403), (
@@ -58,7 +65,12 @@ def test_send_config_authed_ok():
     from backend.app.core.auth import get_current_user
 
     async def _stub(request=None):
-        return {"user_id": "u1", "email": "a@b.com", "workspace_id": "ws-1", "auth_method": "bearer"}
+        return {
+            "user_id": "u1",
+            "email": "a@b.com",
+            "workspace_id": "ws-1",
+            "auth_method": "bearer",
+        }
 
     app.dependency_overrides[get_current_user] = _stub
     try:

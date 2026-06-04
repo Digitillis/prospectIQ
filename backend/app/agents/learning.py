@@ -122,7 +122,9 @@ class LearningAgent(BaseAgent):
         result = AgentResult()
         settings = get_settings()
 
-        console.print(f"[cyan]Analyzing outreach performance for the last {period_days} days...[/cyan]")
+        console.print(
+            f"[cyan]Analyzing outreach performance for the last {period_days} days...[/cyan]"
+        )
 
         # Fetch learning outcomes
         try:
@@ -138,12 +140,11 @@ class LearningAgent(BaseAgent):
         cutoff = datetime.now(timezone.utc) - timedelta(days=period_days)
         cutoff_str = cutoff.isoformat()
 
-        outcomes = [
-            o for o in all_outcomes
-            if o.get("created_at", "") >= cutoff_str
-        ]
+        outcomes = [o for o in all_outcomes if o.get("created_at", "") >= cutoff_str]
 
-        console.print(f"  Found {len(outcomes)} outcomes in the last {period_days} days (of {len(all_outcomes)} total).")
+        console.print(
+            f"  Found {len(outcomes)} outcomes in the last {period_days} days (of {len(all_outcomes)} total)."
+        )
 
         if len(outcomes) < 20:
             console.print(
@@ -214,7 +215,9 @@ class LearningAgent(BaseAgent):
                     f"\n  [dim]Tip: Run with auto_apply=True to write "
                     f"{len(adjustments)} scoring adjustment(s) to config/scoring.yaml[/dim]"
                 )
-            refinements = [r for r in analysis.get("icp_refinements", []) if r.get("priority") == "high"]
+            refinements = [
+                r for r in analysis.get("icp_refinements", []) if r.get("priority") == "high"
+            ]
             if refinements:
                 console.print(
                     f"\n  [dim]Tip: Run with auto_apply=True to write "
@@ -247,15 +250,33 @@ class LearningAgent(BaseAgent):
             "total_replied": 0,
             "positive_replies": 0,
             "meetings_booked": 0,
-            "by_sub_sector": defaultdict(lambda: {
-                "sent": 0, "opened": 0, "replied": 0, "positive": 0, "meetings": 0,
-            }),
-            "by_persona": defaultdict(lambda: {
-                "sent": 0, "opened": 0, "replied": 0, "positive": 0, "meetings": 0,
-            }),
-            "by_pqs_range": defaultdict(lambda: {
-                "sent": 0, "opened": 0, "replied": 0, "positive": 0, "meetings": 0,
-            }),
+            "by_sub_sector": defaultdict(
+                lambda: {
+                    "sent": 0,
+                    "opened": 0,
+                    "replied": 0,
+                    "positive": 0,
+                    "meetings": 0,
+                }
+            ),
+            "by_persona": defaultdict(
+                lambda: {
+                    "sent": 0,
+                    "opened": 0,
+                    "replied": 0,
+                    "positive": 0,
+                    "meetings": 0,
+                }
+            ),
+            "by_pqs_range": defaultdict(
+                lambda: {
+                    "sent": 0,
+                    "opened": 0,
+                    "replied": 0,
+                    "positive": 0,
+                    "meetings": 0,
+                }
+            ),
             "by_classification": defaultdict(int),
         }
 
@@ -434,9 +455,19 @@ class LearningAgent(BaseAgent):
 
         table.add_row("Total Outcomes", str(stats["total"]), "")
         table.add_row("Sent", str(stats["total_sent"]), "")
-        table.add_row("Opened", str(stats["total_opened"]), f"{stats['total_opened'] / total_sent * 100:.1f}%")
-        table.add_row("Replied", str(stats["total_replied"]), f"{stats['total_replied'] / total_sent * 100:.1f}%")
-        table.add_row("Positive Replies", str(stats["positive_replies"]), f"{stats['positive_replies'] / total_sent * 100:.1f}%")
+        table.add_row(
+            "Opened", str(stats["total_opened"]), f"{stats['total_opened'] / total_sent * 100:.1f}%"
+        )
+        table.add_row(
+            "Replied",
+            str(stats["total_replied"]),
+            f"{stats['total_replied'] / total_sent * 100:.1f}%",
+        )
+        table.add_row(
+            "Positive Replies",
+            str(stats["positive_replies"]),
+            f"{stats['positive_replies'] / total_sent * 100:.1f}%",
+        )
         table.add_row("Meetings Booked", str(stats["meetings_booked"]), "")
 
         console.print(table)
@@ -452,13 +483,19 @@ class LearningAgent(BaseAgent):
             sector_table.add_column("Positive", justify="right")
             sector_table.add_column("Meetings", justify="right")
 
-            for sector, data in sorted(stats["by_sub_sector"].items(), key=lambda x: x[1]["replied"], reverse=True):
+            for sector, data in sorted(
+                stats["by_sub_sector"].items(), key=lambda x: x[1]["replied"], reverse=True
+            ):
                 sent = data["sent"]
                 rate = f"{data['replied'] / sent * 100:.1f}%" if sent > 0 else "N/A"
                 sector_table.add_row(
-                    sector, str(sent), str(data["opened"]),
-                    str(data["replied"]), rate,
-                    str(data["positive"]), str(data["meetings"]),
+                    sector,
+                    str(sent),
+                    str(data["opened"]),
+                    str(data["replied"]),
+                    rate,
+                    str(data["positive"]),
+                    str(data["meetings"]),
                 )
 
             console.print(sector_table)
@@ -473,12 +510,18 @@ class LearningAgent(BaseAgent):
             persona_table.add_column("Reply Rate", justify="right", style="green")
             persona_table.add_column("Positive", justify="right")
 
-            for persona, data in sorted(stats["by_persona"].items(), key=lambda x: x[1]["replied"], reverse=True):
+            for persona, data in sorted(
+                stats["by_persona"].items(), key=lambda x: x[1]["replied"], reverse=True
+            ):
                 sent = data["sent"]
                 rate = f"{data['replied'] / sent * 100:.1f}%" if sent > 0 else "N/A"
                 persona_table.add_row(
-                    persona, str(sent), str(data["opened"]),
-                    str(data["replied"]), rate, str(data["positive"]),
+                    persona,
+                    str(sent),
+                    str(data["opened"]),
+                    str(data["replied"]),
+                    rate,
+                    str(data["positive"]),
                 )
 
             console.print(persona_table)
@@ -496,7 +539,11 @@ class LearningAgent(BaseAgent):
                 sent = data["sent"]
                 rate = f"{data['replied'] / sent * 100:.1f}%" if sent > 0 else "N/A"
                 pqs_table.add_row(
-                    pqs_range, str(sent), str(data["replied"]), rate, str(data["positive"]),
+                    pqs_range,
+                    str(sent),
+                    str(data["replied"]),
+                    rate,
+                    str(data["positive"]),
                 )
 
             console.print(pqs_table)
@@ -515,7 +562,11 @@ class LearningAgent(BaseAgent):
 
             for i, insight in enumerate(insights, 1):
                 impact = insight.get("impact", "medium")
-                impact_style = {"high": "[bold red]HIGH[/bold red]", "medium": "[yellow]MED[/yellow]", "low": "[dim]LOW[/dim]"}.get(impact, impact)
+                impact_style = {
+                    "high": "[bold red]HIGH[/bold red]",
+                    "medium": "[yellow]MED[/yellow]",
+                    "low": "[dim]LOW[/dim]",
+                }.get(impact, impact)
                 insights_table.add_row(
                     str(i),
                     impact_style,
@@ -576,7 +627,11 @@ class LearningAgent(BaseAgent):
 
             for ref in refinements:
                 priority = ref.get("priority", "medium")
-                priority_style = {"high": "[bold red]HIGH[/bold red]", "medium": "[yellow]MED[/yellow]", "low": "[dim]LOW[/dim]"}.get(priority, priority)
+                priority_style = {
+                    "high": "[bold red]HIGH[/bold red]",
+                    "medium": "[yellow]MED[/yellow]",
+                    "low": "[dim]LOW[/dim]",
+                }.get(priority, priority)
                 icp_table.add_row(
                     priority_style,
                     ref.get("refinement", ""),
@@ -615,9 +670,7 @@ class LearningAgent(BaseAgent):
         # Pull events for this workspace
         try:
             ws_id = getattr(self.db, "workspace_id", None)
-            q = self.db.client.table("ab_test_events").select(
-                "sequence_id, variant, event_type"
-            )
+            q = self.db.client.table("ab_test_events").select("sequence_id, variant, event_type")
             if ws_id:
                 q = q.eq("workspace_id", ws_id)
             rows = q.execute().data or []
@@ -636,10 +689,13 @@ class LearningAgent(BaseAgent):
             if variant not in ("a", "b"):
                 continue
             event = row.get("event_type") or ""
-            bucket = by_seq.setdefault(seq_id, {
-                "a": {"sent": 0, "opened": 0, "replied": 0},
-                "b": {"sent": 0, "opened": 0, "replied": 0},
-            })
+            bucket = by_seq.setdefault(
+                seq_id,
+                {
+                    "a": {"sent": 0, "opened": 0, "replied": 0},
+                    "b": {"sent": 0, "opened": 0, "replied": 0},
+                },
+            )
             if event in bucket[variant]:
                 bucket[variant][event] += 1
 
@@ -656,8 +712,16 @@ class LearningAgent(BaseAgent):
 
             seq_record = {
                 "sequence_id": seq_id,
-                "a": {**a, "open_rate": round(a_open_rate, 2), "reply_rate": round(a_reply_rate, 2)},
-                "b": {**b, "open_rate": round(b_open_rate, 2), "reply_rate": round(b_reply_rate, 2)},
+                "a": {
+                    **a,
+                    "open_rate": round(a_open_rate, 2),
+                    "reply_rate": round(a_reply_rate, 2),
+                },
+                "b": {
+                    **b,
+                    "open_rate": round(b_open_rate, 2),
+                    "reply_rate": round(b_reply_rate, 2),
+                },
                 "winner": None,
             }
 
@@ -666,7 +730,10 @@ class LearningAgent(BaseAgent):
                 winner = None
                 try:
                     from backend.app.analytics.ab_tracker import ABTracker
-                    winner = ABTracker(self.db).get_winning_variant(seq_id, min_sends=min_sends_per_variant * 2)
+
+                    winner = ABTracker(self.db).get_winning_variant(
+                        seq_id, min_sends=min_sends_per_variant * 2
+                    )
                 except Exception:
                     pass
 
@@ -728,11 +795,7 @@ class LearningAgent(BaseAgent):
         if not ws_id:
             return
         ws_rows = (
-            self.db.client.table("workspaces")
-            .select("settings")
-            .eq("id", ws_id)
-            .limit(1)
-            .execute()
+            self.db.client.table("workspaces").select("settings").eq("id", ws_id).limit(1).execute()
         ).data
         if not ws_rows:
             return
@@ -763,8 +826,7 @@ class LearningAgent(BaseAgent):
             Number of refinements written.
         """
         refinements = [
-            r for r in analysis.get("icp_refinements", [])
-            if r.get("priority") == "high"
+            r for r in analysis.get("icp_refinements", []) if r.get("priority") == "high"
         ]
         if not refinements:
             return 0
@@ -784,13 +846,15 @@ class LearningAgent(BaseAgent):
 
         existing = config.get("learning_refinements") or []
         for r in refinements:
-            existing.append({
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "refinement": r.get("refinement", ""),
-                "evidence": r.get("evidence", ""),
-                "priority": r.get("priority", "high"),
-                "source": "learning_agent",
-            })
+            existing.append(
+                {
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "refinement": r.get("refinement", ""),
+                    "evidence": r.get("evidence", ""),
+                    "priority": r.get("priority", "high"),
+                    "source": "learning_agent",
+                }
+            )
             console.print(f"    [magenta]ICP note: {r.get('refinement', '')[:80]}[/magenta]")
 
         config["learning_refinements"] = existing
@@ -802,6 +866,7 @@ class LearningAgent(BaseAgent):
 
         # Clear cache so next run picks up any downstream changes
         from backend.app.core.config import get_icp_config
+
         get_icp_config.cache_clear()
 
         return len(refinements)
@@ -847,11 +912,10 @@ class LearningAgent(BaseAgent):
             # Only apply point-value changes (safe, reversible)
             # Parse suggestions like "increase to 7 points" or "reduce to 3 points"
             import re
+
             point_match = re.search(r"(\d+)\s*(?:points?|pts?)", change.lower())
             if not point_match:
-                logger.info(
-                    f"Skipping non-numeric adjustment: {dimension}/{signal}: {change}"
-                )
+                logger.info(f"Skipping non-numeric adjustment: {dimension}/{signal}: {change}")
                 continue
 
             new_points = int(point_match.group(1))
@@ -885,12 +949,11 @@ class LearningAgent(BaseAgent):
             with open(scoring_path, "w") as f:
                 yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-            console.print(
-                f"\n  [dim]Backup saved to {backup_path.name}[/dim]"
-            )
+            console.print(f"\n  [dim]Backup saved to {backup_path.name}[/dim]")
 
             # Clear the lru_cache so next scoring run picks up changes
             from backend.app.core.config import get_scoring_config
+
             get_scoring_config.cache_clear()
 
         return applied

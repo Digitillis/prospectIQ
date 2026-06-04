@@ -52,9 +52,7 @@ def _format_thread(events: list[dict]) -> str:
             body_preview = body[:300] + ("..." if len(body) > 300 else "")
         else:
             body_preview = "(no body)"
-        lines.append(
-            f"[{dt}] {direction.upper()} via {channel} — {event_type}\n  {body_preview}"
-        )
+        lines.append(f"[{dt}] {direction.upper()} via {channel} — {event_type}\n  {body_preview}")
     return "\n\n".join(lines)
 
 
@@ -228,9 +226,7 @@ async def analyze_inbound_event(
     )
     pain_signals_raw = company.get("pain_signals") or []
     pain_signals = (
-        ", ".join(pain_signals_raw)
-        if isinstance(pain_signals_raw, list)
-        else str(pain_signals_raw)
+        ", ".join(pain_signals_raw) if isinstance(pain_signals_raw, list) else str(pain_signals_raw)
     ) or "(none identified)"
     personalization_hooks_raw = company.get("personalization_hooks") or []
     hooks = (

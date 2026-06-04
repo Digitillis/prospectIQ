@@ -1,0 +1,32 @@
+capability: hitl-approvals
+name: HITL / Approvals / Review
+type: workflow
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 3, red_block: true, red_block_dim: trust_governance, findings_count: 17 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Two independent Critical clusters confirmed against source: (1) unauthenticated HITL/action-queue routers with cross-tenant writes to global DNC and company/contact records, and (2) the entire approval-gate set (attestation, dual-review, daily cap, audit identity) is non-functional pending an unrun 
+verdict: A human-in-the-loop control surface whose advertised guardrails (attestation, dual-review, daily cap, auto-approval-disabled, hash integrity) are each bypassable or unenforced in code, sitting on unau
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "HITL and action-queue routers have no authentication; allow unauthenticated cross-tenant and irrever"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Attestation checklist is defined but never enforced as a gate"}
+  - {rank: 3, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Entire approval control set silently degrades because reviewer-columns migration is unrun"}
+  - {rank: 4, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Reviewer identity fails open to empty string on auth error, bypassing cap and dual-review"}
+  - {rank: 5, severity: Critical, status: not_attempted, tag: VERIFIED, title: "'Auto-approval permanently disabled' claim is false — sampled-QA cron is live and bypasses every gat"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "force=true bypasses quality gate, daily cap, and tier-1 dual-review at member role"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Reviewer identity (approved_by) never atomically recorded at approval time"}
+  - {rank: 8, severity: High, status: not_attempted, tag: VERIFIED, title: "Content-hash manifest integrity is not wired to the API approval path"}
+  - {rank: 9, severity: High, status: not_attempted, tag: VERIFIED, title: "Tier-1 dual-review bypassable via PATCH /edit setting status='edited'"}
+  - {rank: 10, severity: High, status: not_attempted, tag: VERIFIED, title: "review_manifest.py hardcodes workspace_id and approved_by"}
+  - {rank: 11, severity: High, status: not_attempted, tag: VERIFIED, title: "Quality score and classification confidence are uncalibrated heuristics presented as data-derived"}
+  - {rank: 12, severity: High, status: not_attempted, tag: VERIFIED, title: "research_intelligence and send_assertions read without workspace_id filter"}
+  - {rank: 13, severity: Medium, status: not_attempted, tag: VERIFIED, title: "TOCTOU race lets two reviewers both pass tier-1 dual-review and corrupt attribution"}
+  - {rank: 14, severity: Medium, status: not_attempted, tag: VERIFIED, title: "suggest-response LLM endpoint is unauthed, untimed, uncached, and unrate-limited"}
+  - {rank: 15, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Internal exception detail leaked in HTTP error bodies on unauthenticated HITL routes"}
+  - {rank: 16, severity: Medium, status: not_attempted, tag: VERIFIED, title: "test-send accepts arbitrary recipient with no validation, leaking deal intelligence"}
+  - {rank: 17, severity: Low, status: not_attempted, tag: VERIFIED, title: "outreach_edit_feedback collected but has no downstream learning effect"}
+approval: null

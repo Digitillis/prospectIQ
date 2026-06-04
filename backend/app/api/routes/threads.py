@@ -35,9 +35,12 @@ def get_db() -> Database:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class ConfirmClassificationRequest(BaseModel):
     message_id: str
-    classification: str  # interested|objection|referral|soft_no|out_of_office|unsubscribe|bounce|other
+    classification: (
+        str  # interested|objection|referral|soft_no|out_of_office|unsubscribe|bounce|other
+    )
     override: bool = False  # True when user overrides AI classification
 
 
@@ -58,6 +61,7 @@ class EditDraftRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _safe_thread_query(db: Database, **filters) -> list[dict]:
     """Query campaign_threads gracefully — returns [] if table does not exist."""
@@ -150,6 +154,7 @@ def _enrich_thread(thread: dict, db: Database) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/")
 async def list_threads(
     status: Optional[str] = Query(None, description="Filter: active|paused|closed|all"),
@@ -235,12 +240,8 @@ async def get_thread(thread_id: str):
     thread["messages"] = messages
     thread["pending_draft"] = pending_draft
     thread["research"] = research
-    thread["needs_action"] = (
-        thread["status"] == "paused"
-        or any(
-            m.get("direction") == "inbound" and not m.get("classification")
-            for m in messages
-        )
+    thread["needs_action"] = thread["status"] == "paused" or any(
+        m.get("direction") == "inbound" and not m.get("classification") for m in messages
     )
 
     return {"data": thread}
@@ -257,11 +258,7 @@ async def confirm_classification(thread_id: str, body: ConfirmClassificationRequ
     # Verify thread exists
     try:
         t_result = (
-            db.client.table("campaign_threads")
-            .select("*")
-            .eq("id", thread_id)
-            .limit(1)
-            .execute()
+            db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
         )
         if not t_result.data:
             raise HTTPException(status_code=404, detail="Thread not found")
@@ -273,10 +270,12 @@ async def confirm_classification(thread_id: str, body: ConfirmClassificationRequ
 
     # Update message classification
     try:
-        db.client.table("thread_messages").update({
-            "classification": body.classification,
-            "classification_confirmed_by": "user_override" if body.override else "user",
-        }).eq("id", body.message_id).execute()
+        db.client.table("thread_messages").update(
+            {
+                "classification": body.classification,
+                "classification_confirmed_by": "user_override" if body.override else "user",
+            }
+        ).eq("id", body.message_id).execute()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to update classification: {exc}")
 
@@ -289,16 +288,20 @@ async def confirm_classification(thread_id: str, body: ConfirmClassificationRequ
     }
     if body.classification in status_map:
         try:
-            db.client.table("companies").update({
-                "status": status_map[body.classification]
-            }).eq("id", company_id).execute()
+            db.client.table("companies").update({"status": status_map[body.classification]}).eq(
+                "id", company_id
+            ).execute()
         except Exception:
             pass
 
     if body.classification == "unsubscribe":
         try:
-            db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq("id", thread_id).execute()
-            db.client.table("contacts").update({"outreach_state": "unsubscribed"}).eq("id", thread["contact_id"]).execute()
+            db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq(
+                "id", thread_id
+            ).execute()
+            db.client.table("contacts").update({"outreach_state": "unsubscribed"}).eq(
+                "id", thread["contact_id"]
+            ).execute()
         except Exception:
             pass
 
@@ -307,17 +310,32 @@ async def confirm_classification(thread_id: str, body: ConfirmClassificationRequ
     if body.classification in ("interested", "objection", "referral", "soft_no", "other"):
         try:
             from backend.app.agents.thread import ThreadAgent
-            agent = ThreadAgent()
+
+            agent = ThreadAgent(workspace_id=get_workspace_id())
 
             # Get the inbound message
-            msg_result = db.client.table("thread_messages").select("*").eq("id", body.message_id).limit(1).execute()
+            msg_result = (
+                db.client.table("thread_messages")
+                .select("*")
+                .eq("id", body.message_id)
+                .limit(1)
+                .execute()
+            )
             msg = msg_result.data[0] if msg_result.data else {}
 
             # Build a classification result to pass to draft_next_message
-            company_result = db.client.table("companies").select("*").eq("id", company_id).limit(1).execute()
+            company_result = (
+                db.client.table("companies").select("*").eq("id", company_id).limit(1).execute()
+            )
             company = company_result.data[0] if company_result.data else {}
 
-            contacts_result = db.client.table("contacts").select("*").eq("id", thread["contact_id"]).limit(1).execute()
+            contacts_result = (
+                db.client.table("contacts")
+                .select("*")
+                .eq("id", thread["contact_id"])
+                .limit(1)
+                .execute()
+            )
             contact = contacts_result.data[0] if contacts_result.data else {}
 
             classification_result = {
@@ -353,7 +371,9 @@ async def send_draft(thread_id: str, body: SendDraftRequest):
 
     # Verify thread
     try:
-        t_result = db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        t_result = (
+            db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        )
         if not t_result.data:
             raise HTTPException(status_code=404, detail="Thread not found")
         thread = t_result.data[0]
@@ -365,19 +385,23 @@ async def send_draft(thread_id: str, body: SendDraftRequest):
     # Update draft if body was edited
     if body.edited_body:
         try:
-            db.client.table("outreach_drafts").update({
-                "body": body.edited_body,
-                "edited_body": body.edited_body,
-                "approval_status": "edited",
-            }).eq("id", body.draft_id).execute()
+            db.client.table("outreach_drafts").update(
+                {
+                    "body": body.edited_body,
+                    "edited_body": body.edited_body,
+                    "approval_status": "edited",
+                }
+            ).eq("id", body.draft_id).execute()
         except Exception as exc:
             logger.warning(f"Could not save edited body: {exc}")
 
     # Approve the draft
     try:
-        db.client.table("outreach_drafts").update({
-            "approval_status": "approved",
-        }).eq("id", body.draft_id).execute()
+        db.client.table("outreach_drafts").update(
+            {
+                "approval_status": "approved",
+            }
+        ).eq("id", body.draft_id).execute()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to approve draft: {exc}")
 
@@ -385,10 +409,12 @@ async def send_draft(thread_id: str, body: SendDraftRequest):
     sent = False
     try:
         from backend.app.core.config import get_settings
+
         settings = get_settings()
         if settings.send_enabled:
             from backend.app.agents.engagement import EngagementAgent
-            agent = EngagementAgent()
+
+            agent = EngagementAgent(workspace_id=get_workspace_id())
             agent.run(action="send_approved")
             sent = True
     except Exception as exc:
@@ -396,10 +422,17 @@ async def send_draft(thread_id: str, body: SendDraftRequest):
 
     # Record outbound message in the thread
     try:
-        draft_result = db.client.table("outreach_drafts").select("*").eq("id", body.draft_id).limit(1).execute()
+        draft_result = (
+            db.client.table("outreach_drafts")
+            .select("*")
+            .eq("id", body.draft_id)
+            .limit(1)
+            .execute()
+        )
         if draft_result.data:
             draft = draft_result.data[0]
             from backend.app.core.thread_manager import ThreadManager
+
             tm = ThreadManager(db)
             tm.add_outbound_message(
                 thread_id=thread_id,
@@ -413,7 +446,8 @@ async def send_draft(thread_id: str, body: SendDraftRequest):
         logger.warning(f"Could not record outbound in thread: {exc}")
 
     return {
-        "message": "Draft approved" + (" and sent via Resend" if sent else " — queued for next scheduler run"),
+        "message": "Draft approved"
+        + (" and sent via Resend" if sent else " — queued for next scheduler run"),
         "sent_immediately": sent,
         "draft_id": body.draft_id,
     }
@@ -425,7 +459,9 @@ async def regenerate_draft(thread_id: str, body: RegenerateRequest):
     db = get_db()
 
     try:
-        t_result = db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        t_result = (
+            db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        )
         if not t_result.data:
             raise HTTPException(status_code=404, detail="Thread not found")
         thread = t_result.data[0]
@@ -456,12 +492,25 @@ async def regenerate_draft(thread_id: str, body: RegenerateRequest):
 
     try:
         from backend.app.agents.thread import ThreadAgent
-        agent = ThreadAgent()
 
-        company_result = db.client.table("companies").select("*").eq("id", thread["company_id"]).limit(1).execute()
+        agent = ThreadAgent(workspace_id=get_workspace_id())
+
+        company_result = (
+            db.client.table("companies")
+            .select("*")
+            .eq("id", thread["company_id"])
+            .limit(1)
+            .execute()
+        )
         company = company_result.data[0] if company_result.data else {}
 
-        contact_result = db.client.table("contacts").select("*").eq("id", thread["contact_id"]).limit(1).execute()
+        contact_result = (
+            db.client.table("contacts")
+            .select("*")
+            .eq("id", thread["contact_id"])
+            .limit(1)
+            .execute()
+        )
         contact = contact_result.data[0] if contact_result.data else {}
 
         classification_result = {

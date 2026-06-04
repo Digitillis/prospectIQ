@@ -42,7 +42,9 @@ def _load_step_delays() -> dict[int, int]:
 
 
 def main() -> None:
-    console.print("[bold cyan]Backfilling engagement_sequences for sent Step-1 contacts...[/bold cyan]")
+    console.print(
+        "[bold cyan]Backfilling engagement_sequences for sent Step-1 contacts...[/bold cyan]"
+    )
 
     settings = get_settings()
     db = create_client(settings.supabase_url, settings.supabase_service_key)
@@ -51,7 +53,9 @@ def main() -> None:
     step_delays = _load_step_delays()
     total_steps = max(step_delays.keys())
     step2_delay = step_delays.get(2, 5)
-    console.print(f"Sequence: {SEQUENCE_NAME} | {total_steps} steps | Step 2 delay: {step2_delay} days")
+    console.print(
+        f"Sequence: {SEQUENCE_NAME} | {total_steps} steps | Step 2 delay: {step2_delay} days"
+    )
 
     # Fetch all sent step-1 drafts
     result = (
@@ -94,7 +98,11 @@ def main() -> None:
             if existing.data:
                 skipped += 1
                 table.add_row(
-                    contact_id[:8], company_id[:8], sent_at_str[:10], "—", "[yellow]skipped[/yellow]"
+                    contact_id[:8],
+                    company_id[:8],
+                    sent_at_str[:10],
+                    "—",
+                    "[yellow]skipped[/yellow]",
                 )
                 continue
 
@@ -102,22 +110,28 @@ def main() -> None:
             sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
             next_action_at = (sent_at + timedelta(days=step2_delay)).isoformat()
 
-            db.table("engagement_sequences").insert({
-                "company_id": company_id,
-                "contact_id": contact_id,
-                "sequence_name": SEQUENCE_NAME,
-                "current_step": 1,
-                "total_steps": total_steps,
-                "status": "active",
-                "next_action_at": next_action_at,
-                "next_action_type": "generate_draft",
-                "workspace_id": ws_id,
-            }).execute()
+            db.table("engagement_sequences").insert(
+                {
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "sequence_name": SEQUENCE_NAME,
+                    "current_step": 1,
+                    "total_steps": total_steps,
+                    "status": "active",
+                    "next_action_at": next_action_at,
+                    "next_action_type": "generate_draft",
+                    "workspace_id": ws_id,
+                }
+            ).execute()
 
             enrolled += 1
             step2_due = (sent_at + timedelta(days=step2_delay)).strftime("%b %d")
             table.add_row(
-                contact_id[:8], company_id[:8], sent_at_str[:10], step2_due, "[green]enrolled[/green]"
+                contact_id[:8],
+                company_id[:8],
+                sent_at_str[:10],
+                step2_due,
+                "[green]enrolled[/green]",
             )
 
         except Exception as e:

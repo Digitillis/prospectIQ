@@ -124,6 +124,7 @@ class PersonalizationBatch:
             tags = row.get("custom_tags") or {}
             if isinstance(tags, str):
                 import json
+
                 try:
                     tags = json.loads(tags)
                 except Exception:

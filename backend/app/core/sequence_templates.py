@@ -34,7 +34,6 @@ _DEFAULT_TOUCH_SCHEDULE = [1, 4, 8, 13, 19, 26]
 # Each key is (vertical_bucket, persona_type).
 # ---------------------------------------------------------------------------
 SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
-
     # -----------------------------------------------------------------------
     # F&B — Operations personas (messaging: equipment uptime, NOT FSMA)
     # VP Quality / Director Quality are de-prioritised in F&B targeting.
@@ -60,7 +59,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "ops",
     },
-
     ("fb", "director_quality_food_safety"): {
         "name": "F&B Director Quality — Equipment Reliability (ops angle)",
         "touches": 6,
@@ -80,7 +78,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "ops",
     },
-
     # -----------------------------------------------------------------------
     # F&B — Operations
     # -----------------------------------------------------------------------
@@ -102,7 +99,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "ops",
     },
-
     ("fb", "plant_manager"): {
         "name": "F&B Plant Manager — Floor-Level Reliability",
         "touches": 6,
@@ -121,7 +117,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "ops",
     },
-
     ("fb", "maintenance_leader"): {
         "name": "F&B Maintenance Leader — PdM Pilot",
         "touches": 6,
@@ -142,7 +137,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "pdm_tech",
     },
-
     ("fb", "director_ops"): {
         "name": "F&B Director Ops — Cost & Throughput",
         "touches": 6,
@@ -161,7 +155,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "ops",
     },
-
     # -----------------------------------------------------------------------
     # Manufacturing — Operations
     # -----------------------------------------------------------------------
@@ -183,7 +176,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "pdm",
     },
-
     ("mfg", "plant_manager"): {
         "name": "Mfg Plant Manager — Floor Reliability",
         "touches": 6,
@@ -202,7 +194,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "pdm",
     },
-
     ("mfg", "director_ops"): {
         "name": "Mfg Director Ops — Cost Reduction",
         "touches": 6,
@@ -221,7 +212,6 @@ SEQUENCE_TEMPLATES: dict[tuple[str, str], dict] = {
         "from_name": "the sender",
         "signature_variant": "pdm",
     },
-
     # -----------------------------------------------------------------------
     # Manufacturing — Maintenance / Reliability
     # -----------------------------------------------------------------------
@@ -353,11 +343,13 @@ class SequenceTemplateManager:
         """
         output = []
         for (vertical, persona_type), tmpl in SEQUENCE_TEMPLATES.items():
-            output.append({
-                "vertical": vertical,
-                "persona_type": persona_type,
-                **tmpl,
-            })
+            output.append(
+                {
+                    "vertical": vertical,
+                    "persona_type": persona_type,
+                    **tmpl,
+                }
+            )
         return output
 
 

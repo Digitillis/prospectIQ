@@ -24,6 +24,7 @@ ATTEMPT_ID = str(uuid.uuid4())
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_queue_row(draft_id: str = DRAFT_ID, retry_count: int = 0) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -74,8 +75,20 @@ def _make_agent_with_db(draft_rows, claim_rows=None, rollback_rows=None):
         chain = MagicMock()
 
         # Make all filter methods chainable
-        for attr in ("select", "eq", "neq", "in_", "is_", "not_", "lt", "gte",
-                     "limit", "order", "update", "delete"):
+        for attr in (
+            "select",
+            "eq",
+            "neq",
+            "in_",
+            "is_",
+            "not_",
+            "lt",
+            "gte",
+            "limit",
+            "order",
+            "update",
+            "delete",
+        ):
             getattr(chain, attr).return_value = chain
 
         if name == "outreach_drafts":
@@ -131,6 +144,7 @@ def _make_agent_with_db(draft_rows, claim_rows=None, rollback_rows=None):
 # TestAlreadyDeliveredAtFetch: sent_at set at draft fetch time
 # ---------------------------------------------------------------------------
 
+
 class TestAlreadyDeliveredAtFetch:
     def test_returns_already_delivered_when_sent_at_set_at_fetch(self):
         """dispatch_queued_draft returns ALREADY_DELIVERED if draft.sent_at is set at fetch."""
@@ -177,6 +191,7 @@ class TestAlreadyDeliveredAtFetch:
 # TestPreSendClaimFailsZeroRows: sent_at set between fetch and claim
 # ---------------------------------------------------------------------------
 
+
 class TestPreSendClaimReturnsZeroRows:
     def _setup_agent_with_zero_claim(self):
         """Draft fetched with sent_at=None; pre-send claim returns 0 rows."""
@@ -190,23 +205,37 @@ class TestPreSendClaimReturnsZeroRows:
 
         # Wire enough mocks to pass assertions gate
         from backend.app.core.config import Settings
+
         settings_mock = MagicMock(spec=Settings)
         settings_mock.resend_api_key = "re_test_key"
         settings_mock.default_workspace_id = WORKSPACE_ID
 
-        with patch("backend.app.agents.engagement.get_settings", return_value=settings_mock), \
-             patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"), \
-             patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
-             patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
-             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"):
-            agent._load_send_config = MagicMock(return_value={
-                "daily_limit": 125, "batch_size": 1,
-                "send_enabled": True, "min_gap_seconds": 0,
-            })
-            agent._get_sender_config = MagicMock(return_value=(
-                [], "reply@test.com", "from@test.com", "Test Sender <from@test.com>"
-            ))
-            agent._pick_sender_from_config = MagicMock(return_value=("from@test.com", "Test <from@test.com>"))
+        with (
+            patch("backend.app.agents.engagement.get_settings", return_value=settings_mock),
+            patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"),
+            patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)),
+            patch(
+                "backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)
+            ),
+            patch(
+                "backend.app.core.sequence_router.get_campaign_id_for_company",
+                return_value="camp_test",
+            ),
+        ):
+            agent._load_send_config = MagicMock(
+                return_value={
+                    "daily_limit": 125,
+                    "batch_size": 1,
+                    "send_enabled": True,
+                    "min_gap_seconds": 0,
+                }
+            )
+            agent._get_sender_config = MagicMock(
+                return_value=([], "reply@test.com", "from@test.com", "Test Sender <from@test.com>")
+            )
+            agent._pick_sender_from_config = MagicMock(
+                return_value=("from@test.com", "Test <from@test.com>")
+            )
 
             return agent
 
@@ -221,23 +250,36 @@ class TestPreSendClaimReturnsZeroRows:
         settings_mock = MagicMock(spec=Settings)
         settings_mock.resend_api_key = "re_test_key"
         settings_mock.default_workspace_id = WORKSPACE_ID
-        agent._load_send_config = MagicMock(return_value={
-            "daily_limit": 125, "batch_size": 1,
-            "send_enabled": True, "min_gap_seconds": 0,
-        })
-        agent._get_sender_config = MagicMock(return_value=(
-            [], "reply@test.com", "from@test.com", "Test Sender <from@test.com>"
-        ))
-        agent._pick_sender_from_config = MagicMock(return_value=("from@test.com", "Test <from@test.com>"))
+        agent._load_send_config = MagicMock(
+            return_value={
+                "daily_limit": 125,
+                "batch_size": 1,
+                "send_enabled": True,
+                "min_gap_seconds": 0,
+            }
+        )
+        agent._get_sender_config = MagicMock(
+            return_value=([], "reply@test.com", "from@test.com", "Test Sender <from@test.com>")
+        )
+        agent._pick_sender_from_config = MagicMock(
+            return_value=("from@test.com", "Test <from@test.com>")
+        )
 
         queue_row = _make_queue_row()
-        with patch("backend.app.agents.engagement.get_settings", return_value=settings_mock), \
-             patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"), \
-             patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
-             patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
-             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"), \
-             patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"), \
-             patch("resend.Emails.send") as mock_send:
+        with (
+            patch("backend.app.agents.engagement.get_settings", return_value=settings_mock),
+            patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"),
+            patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)),
+            patch(
+                "backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)
+            ),
+            patch(
+                "backend.app.core.sequence_router.get_campaign_id_for_company",
+                return_value="camp_test",
+            ),
+            patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"),
+            patch("resend.Emails.send") as mock_send,
+        ):
             outcome = agent.dispatch_queued_draft(
                 queue_row=queue_row,
                 attempt_number=2,
@@ -252,6 +294,7 @@ class TestPreSendClaimReturnsZeroRows:
 # ---------------------------------------------------------------------------
 # TestRollbackOnResendFailure
 # ---------------------------------------------------------------------------
+
 
 class TestRollbackOnResendFailure:
     def _build_agent(self, resend_exc):
@@ -280,6 +323,7 @@ class TestRollbackOnResendFailure:
 
                 # update: track calls; first call (claim) returns 1 row; second call (rollback) returns 1 row
                 call_count = [0]
+
                 def update_side(payload):
                     update_calls.append(payload)
                     call_count[0] += 1
@@ -292,6 +336,7 @@ class TestRollbackOnResendFailure:
                     upd_result.data = [{"id": DRAFT_ID}]
                     upd_chain.execute.return_value = upd_result
                     return upd_chain
+
                 tbl.update.side_effect = update_side
 
             elif name in ("contacts", "companies"):
@@ -324,14 +369,20 @@ class TestRollbackOnResendFailure:
         settings_mock = MagicMock(spec=Settings)
         settings_mock.resend_api_key = "re_test_key"
         settings_mock.default_workspace_id = WORKSPACE_ID
-        agent._load_send_config = MagicMock(return_value={
-            "daily_limit": 125, "batch_size": 1,
-            "send_enabled": True, "min_gap_seconds": 0,
-        })
-        agent._get_sender_config = MagicMock(return_value=(
-            [], "reply@test.com", "from@test.com", "Test Sender <from@test.com>"
-        ))
-        agent._pick_sender_from_config = MagicMock(return_value=("from@test.com", "Test <from@test.com>"))
+        agent._load_send_config = MagicMock(
+            return_value={
+                "daily_limit": 125,
+                "batch_size": 1,
+                "send_enabled": True,
+                "min_gap_seconds": 0,
+            }
+        )
+        agent._get_sender_config = MagicMock(
+            return_value=([], "reply@test.com", "from@test.com", "Test Sender <from@test.com>")
+        )
+        agent._pick_sender_from_config = MagicMock(
+            return_value=("from@test.com", "Test <from@test.com>")
+        )
 
         return agent, update_calls, settings_mock
 
@@ -340,13 +391,20 @@ class TestRollbackOnResendFailure:
         agent, update_calls, settings_mock = self._build_agent(Exception("503 Service Unavailable"))
 
         queue_row = _make_queue_row()
-        with patch("backend.app.agents.engagement.get_settings", return_value=settings_mock), \
-             patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"), \
-             patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
-             patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
-             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"), \
-             patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"), \
-             patch("resend.Emails.send", side_effect=Exception("503 Service Unavailable")):
+        with (
+            patch("backend.app.agents.engagement.get_settings", return_value=settings_mock),
+            patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"),
+            patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)),
+            patch(
+                "backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)
+            ),
+            patch(
+                "backend.app.core.sequence_router.get_campaign_id_for_company",
+                return_value="camp_test",
+            ),
+            patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"),
+            patch("resend.Emails.send", side_effect=Exception("503 Service Unavailable")),
+        ):
             outcome = agent.dispatch_queued_draft(
                 queue_row=queue_row,
                 attempt_number=1,
@@ -361,16 +419,25 @@ class TestRollbackOnResendFailure:
 
     def test_permanent_failure_rolls_back_sent_at(self):
         """4xx Resend failure → sent_at rolled back to None → PERMANENTLY_FAILED returned."""
-        agent, update_calls, settings_mock = self._build_agent(Exception("422 Unprocessable Entity"))
+        agent, update_calls, settings_mock = self._build_agent(
+            Exception("422 Unprocessable Entity")
+        )
 
         queue_row = _make_queue_row()
-        with patch("backend.app.agents.engagement.get_settings", return_value=settings_mock), \
-             patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"), \
-             patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)), \
-             patch("backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)), \
-             patch("backend.app.core.sequence_router.get_campaign_id_for_company", return_value="camp_test"), \
-             patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"), \
-             patch("resend.Emails.send", side_effect=Exception("422 Unprocessable Entity")):
+        with (
+            patch("backend.app.agents.engagement.get_settings", return_value=settings_mock),
+            patch("backend.app.core.credential_store.get_credential", return_value="re_test_key"),
+            patch("backend.app.core.suppression.is_suppressed", return_value=(False, None)),
+            patch(
+                "backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)
+            ),
+            patch(
+                "backend.app.core.sequence_router.get_campaign_id_for_company",
+                return_value="camp_test",
+            ),
+            patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"),
+            patch("resend.Emails.send", side_effect=Exception("422 Unprocessable Entity")),
+        ):
             outcome = agent.dispatch_queued_draft(
                 queue_row=queue_row,
                 attempt_number=1,
@@ -386,9 +453,11 @@ class TestRollbackOnResendFailure:
 # TestAlreadyDeliveredDrainInDispatchWorkspace
 # ---------------------------------------------------------------------------
 
+
 class TestAlreadyDeliveredDrainInDispatchWorkspace:
     def _make_db_client(self, queue_rows, send_attempt_id=ATTEMPT_ID):
         from backend.tests.test_pr_g_dispatch import _mock_db_client, _make_chain
+
         client = MagicMock()
 
         rpc_result = MagicMock()
@@ -479,7 +548,9 @@ class TestAlreadyDeliveredDrainInDispatchWorkspace:
         with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
             dispatch_workspace(client, WORKSPACE_ID)
 
-        dispatch_failed_calls = [c for c in update_calls if c.get("approval_status") == "dispatch_failed"]
+        dispatch_failed_calls = [
+            c for c in update_calls if c.get("approval_status") == "dispatch_failed"
+        ]
         assert len(dispatch_failed_calls) == 0, (
             f"dispatch_failed was set on ALREADY_DELIVERED: {dispatch_failed_calls}"
         )
@@ -488,6 +559,7 @@ class TestAlreadyDeliveredDrainInDispatchWorkspace:
 # ---------------------------------------------------------------------------
 # TestBatchResultCounters
 # ---------------------------------------------------------------------------
+
 
 class TestBatchResultCounters:
     def test_batch_result_has_already_delivered_drained_field(self):

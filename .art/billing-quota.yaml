@@ -1,0 +1,31 @@
+capability: billing-quota
+name: Billing & Quota
+type: system
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 3.85, red_block: true, red_block_dim: technical_integrity, findings_count: 15 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  Three independent failure-open paths (webhook swallow-to-200, quota bare-except-returns-0, signature/handler error handling) plus a hard TypeError on subscription.deleted in the asyncpg adapter mean revenue state can silently desync from Stripe with no alarm. A deep dive should design idempotency + 
+verdict: A functional Stripe billing happy-path undermined by verified failure-open defects: webhook errors silently return 200, the asyncpg cancellation path crashes, annual billing is accepted-then-ignored, 
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "Webhook handler swallows all exceptions and returns HTTP 200"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "asyncpg apply_subscription_canceled crashes with TypeError on every subscription.deleted (Digitillis"}
+  - {rank: 3, severity: High, status: not_attempted, tag: VERIFIED, title: "Annual billing accepted then silently ignored — always charges monthly"}
+  - {rank: 4, severity: High, status: not_attempted, tag: VERIFIED, title: "Quota tier table out of sync with plan definitions — wrong caps for api and phantom 'professional'"}
+  - {rank: 5, severity: High, status: not_attempted, tag: VERIFIED, title: "Quota and usage queries fail open silently on any DB error"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "No webhook idempotency / deduplication"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Billing routes have no auth/role dependency"}
+  - {rank: 8, severity: High, status: not_attempted, tag: INFERRED, title: "Tenant scope can be driven by user_metadata.workspace_id fallback"}
+  - {rank: 9, severity: Medium, status: not_attempted, tag: VERIFIED, title: "create_and_send_invoice permanently overwrites the Stripe customer email"}
+  - {rank: 10, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Two divergent BillingDbAdapter abstract bases"}
+  - {rank: 11, severity: Medium, status: not_attempted, tag: VERIFIED, title: "stripe.api_key set as a module-level global per request"}
+  - {rank: 12, severity: Medium, status: not_attempted, tag: VERIFIED, title: "contacts/outreach limits are undocumented heuristics; outreach quota never enforced"}
+  - {rank: 13, severity: Low, status: not_attempted, tag: VERIFIED, title: "Synchronous Supabase quota count blocks the async event loop"}
+  - {rank: 14, severity: Low, status: not_attempted, tag: VERIFIED, title: "STRIPE_WEBHOOK_SECRET defaults to empty string, deferring failure to first webhook"}
+  - {rank: 15, severity: Low, status: not_attempted, tag: VERIFIED, title: "asyncpg cancellation ignores passed seats_limit and hardcodes get_plan('starter')"}
+approval: null
+track1_bleeding: D3+D4  # in remediation handoff Part D (webhook-swallow + asyncpg-TypeError)

@@ -44,7 +44,11 @@ class ThreadingCoordinator:
         """Get or create threading state for a company."""
         workspace_id = getattr(self._db, "workspace_id", None)
         try:
-            q = self._db.client.table("company_outreach_state").select("*").eq("company_id", company_id)
+            q = (
+                self._db.client.table("company_outreach_state")
+                .select("*")
+                .eq("company_id", company_id)
+            )
             if workspace_id:
                 q = q.eq("workspace_id", workspace_id)
             rows = q.limit(1).execute().data or []
@@ -74,8 +78,7 @@ class ThreadingCoordinator:
 
         if current in ("paused", "closed_won", "closed_lost", "excluded"):
             return False, f"company state is {current}"
-        if current in ("contact_1_sent", "contact_1_engaged",
-                       "contact_2_queued", "contact_2_sent"):
+        if current in ("contact_1_sent", "contact_1_engaged", "contact_2_queued", "contact_2_sent"):
             return False, f"contact_1 already sent (state={current})"
         return True, "ok"
 
@@ -105,7 +108,10 @@ class ThreadingCoordinator:
                 sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
                 bdays = _business_days_since(sent_at)
                 if bdays < MIN_DAYS_BETWEEN_CONTACTS:
-                    return False, f"only {bdays} business days since contact_1 (min={MIN_DAYS_BETWEEN_CONTACTS})"
+                    return (
+                        False,
+                        f"only {bdays} business days since contact_1 (min={MIN_DAYS_BETWEEN_CONTACTS})",
+                    )
             except (ValueError, TypeError):
                 pass
 
@@ -116,20 +122,27 @@ class ThreadingCoordinator:
 
     # F&B Contact 2 slot: plant_manager (our confirmed C3) is primary.
     # VP Quality / Regulatory fall back if no plant_manager is enriched yet.
-    _FB_CONTACT_2_PERSONAS = frozenset({
-        "plant_manager",
-        "vp_food_safety", "regulatory_affairs_director",
-        "vp_quality_food_safety", "director_quality_food_safety",
-        "compliance_manager_fb",
-    })
+    _FB_CONTACT_2_PERSONAS = frozenset(
+        {
+            "plant_manager",
+            "vp_food_safety",
+            "regulatory_affairs_director",
+            "vp_quality_food_safety",
+            "director_quality_food_safety",
+            "compliance_manager_fb",
+        }
+    )
     # F&B Contact 1 slot: economic buyer (VP Ops, COO, Director Ops)
-    _FB_CONTACT_1_PERSONAS = frozenset({
-        "vp_ops", "coo", "director_ops", "vp_supply_chain",
-    })
+    _FB_CONTACT_1_PERSONAS = frozenset(
+        {
+            "vp_ops",
+            "coo",
+            "director_ops",
+            "vp_supply_chain",
+        }
+    )
 
-    def can_send_contact_2_fb_simultaneous(
-        self, company: dict
-    ) -> tuple[bool, str]:
+    def can_send_contact_2_fb_simultaneous(self, company: dict) -> tuple[bool, str]:
         """Gate check for F&B simultaneous dual-touch (Contact 2 sent same week as Contact 1).
 
         Bypasses the 5-business-day wait that sequential threading requires, but
@@ -143,8 +156,7 @@ class ThreadingCoordinator:
 
         if current in ("paused", "closed_won", "closed_lost", "excluded"):
             return False, f"company state is {current}"
-        if current in ("contact_1_sent", "contact_1_engaged",
-                       "contact_2_queued", "contact_2_sent"):
+        if current in ("contact_1_sent", "contact_1_engaged", "contact_2_queued", "contact_2_sent"):
             return False, f"contacts already in flight (state={current})"
 
         pqs = company.get("priority_score") or 0
@@ -173,26 +185,29 @@ class ThreadingCoordinator:
             return None, None
 
         contact_1 = next(
-            (c for c in eligible_contacts
-             if c.get("persona_type") in self._FB_CONTACT_1_PERSONAS),
+            (c for c in eligible_contacts if c.get("persona_type") in self._FB_CONTACT_1_PERSONAS),
             None,
         )
         contact_2 = next(
-            (c for c in eligible_contacts
-             if c.get("persona_type") in self._FB_CONTACT_2_PERSONAS),
+            (c for c in eligible_contacts if c.get("persona_type") in self._FB_CONTACT_2_PERSONAS),
             None,
         )
         c1_id = contact_1["id"] if contact_1 else None
         c2_id = contact_2["id"] if contact_2 else None
         logger.debug(
             "F&B simultaneous assign: company=%s tier=%s c1=%s(%s) c2=%s(%s)",
-            company.get("id"), tier,
-            (contact_1 or {}).get("persona_type"), c1_id,
-            (contact_2 or {}).get("persona_type"), c2_id,
+            company.get("id"),
+            tier,
+            (contact_1 or {}).get("persona_type"),
+            c1_id,
+            (contact_2 or {}).get("persona_type"),
+            c2_id,
         )
         return c1_id, c2_id
 
-    def record_contact_1_sent(self, company_id: str, contact_id: str, pqs: float | None = None) -> None:
+    def record_contact_1_sent(
+        self, company_id: str, contact_id: str, pqs: float | None = None
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         update: dict = {
             "state": "contact_1_sent",
@@ -206,12 +221,15 @@ class ThreadingCoordinator:
 
     def record_contact_2_sent(self, company_id: str, contact_id: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        self._update_state(company_id, {
-            "state": "contact_2_sent",
-            "contact_2_id": contact_id,
-            "contact_2_sent_at": now,
-            "updated_at": now,
-        })
+        self._update_state(
+            company_id,
+            {
+                "state": "contact_2_sent",
+                "contact_2_id": contact_id,
+                "contact_2_sent_at": now,
+                "updated_at": now,
+            },
+        )
 
     def record_reply(self, company_id: str, contact_id: str) -> None:
         """A contact replied — move company to engaged/paused based on thread position."""
@@ -220,35 +238,48 @@ class ThreadingCoordinator:
         now = datetime.now(timezone.utc).isoformat()
 
         new_state = "contact_1_engaged" if current in ("contact_1_sent",) else "paused"
-        self._update_state(company_id, {
-            "state": new_state,
-            "last_reply_at": now,
-            "last_reply_contact_id": contact_id,
-            "updated_at": now,
-        })
+        self._update_state(
+            company_id,
+            {
+                "state": new_state,
+                "last_reply_at": now,
+                "last_reply_contact_id": contact_id,
+                "updated_at": now,
+            },
+        )
         logger.info("Company %s moved to %s after reply from %s", company_id, new_state, contact_id)
 
     def pause(self, company_id: str, reason: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        self._update_state(company_id, {
-            "state": "paused",
-            "paused_reason": reason,
-            "paused_at": now,
-            "updated_at": now,
-        })
+        self._update_state(
+            company_id,
+            {
+                "state": "paused",
+                "paused_reason": reason,
+                "paused_at": now,
+                "updated_at": now,
+            },
+        )
 
     def close(self, company_id: str, outcome: str) -> None:
         """outcome: 'won' or 'lost'"""
         state = "closed_won" if outcome == "won" else "closed_lost"
-        self._update_state(company_id, {
-            "state": state,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        self._update_state(
+            company_id,
+            {
+                "state": state,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
     def _update_state(self, company_id: str, data: dict) -> None:
         workspace_id = getattr(self._db, "workspace_id", None)
         try:
-            q = self._db.client.table("company_outreach_state").update(data).eq("company_id", company_id)
+            q = (
+                self._db.client.table("company_outreach_state")
+                .update(data)
+                .eq("company_id", company_id)
+            )
             if workspace_id:
                 q = q.eq("workspace_id", workspace_id)
             q.execute()

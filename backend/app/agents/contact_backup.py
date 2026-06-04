@@ -67,7 +67,9 @@ class ContactBackupAgent(BaseAgent):
         ) or []
 
         if not contacts_raw:
-            console.print(f"[yellow]Contact backup: no contacts found for workspace {workspace_id}.[/yellow]")
+            console.print(
+                f"[yellow]Contact backup: no contacts found for workspace {workspace_id}.[/yellow]"
+            )
             result.add_detail("backup", "skipped", "No contacts found")
             return result
 
@@ -113,7 +115,9 @@ class ContactBackupAgent(BaseAgent):
                 f"{outfile.name} ({size_kb} KB)[/green]"
             )
             result.processed = len(records)
-            result.add_detail("backup", "complete", f"{outfile.name} — {len(records)} contacts, {size_kb} KB")
+            result.add_detail(
+                "backup", "complete", f"{outfile.name} — {len(records)} contacts, {size_kb} KB"
+            )
         except OSError as e:
             logger.error("Failed to write backup file %s: %s", outfile, e)
             result.errors += 1
@@ -135,7 +139,9 @@ class ContactBackupAgent(BaseAgent):
                 pass  # Non-matching filename or permission error — skip
 
         if pruned:
-            console.print(f"[dim]Contact backup: pruned {pruned} file(s) older than {RETENTION_WEEKS} weeks.[/dim]")
+            console.print(
+                f"[dim]Contact backup: pruned {pruned} file(s) older than {RETENTION_WEEKS} weeks.[/dim]"
+            )
             result.add_detail("backup", "pruned", f"{pruned} old files removed")
 
         return result

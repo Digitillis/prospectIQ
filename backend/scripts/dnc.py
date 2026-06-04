@@ -33,8 +33,11 @@ def main() -> None:
     add_p = sub.add_parser("add", help="Add an entry to the DNC list")
     add_p.add_argument("--email", help="Exact email to block")
     add_p.add_argument("--domain", help="Domain to block (all @domain.com)")
-    add_p.add_argument("--reason", default="unsubscribed",
-                       choices=["unsubscribed", "bounced", "competitor", "legal", "manual"])
+    add_p.add_argument(
+        "--reason",
+        default="unsubscribed",
+        choices=["unsubscribed", "bounced", "competitor", "legal", "manual"],
+    )
     add_p.add_argument("--notes", default="", help="Optional notes")
 
     # remove

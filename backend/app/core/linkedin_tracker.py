@@ -16,7 +16,7 @@ Usage:
     from backend.app.core.database import Database
     from backend.app.core.linkedin_tracker import LinkedInTracker
 
-    db = Database()
+    db = Database(workspace_id="ws_xxx")
     tracker = LinkedInTracker(db)
 
     # Log that we viewed a prospect's profile
@@ -169,9 +169,7 @@ class LinkedInTracker:
             engagement_type=engagement_type,
         )
         result = self._insert(row)
-        logger.info(
-            f"[li] post_engagement ({engagement_type}) logged for company {company_id[:8]}"
-        )
+        logger.info(f"[li] post_engagement ({engagement_type}) logged for company {company_id[:8]}")
 
         # Fire intent signal so the company's score is updated immediately
         self._fire_intent_signal(
@@ -298,6 +296,7 @@ class LinkedInTracker:
         """Fire an IntentEngine linkedin_activity signal (best-effort)."""
         try:
             from backend.app.core.intent_engine import IntentEngine
+
             engine = IntentEngine(self.db)
             engine.log_linkedin_activity(
                 company_id=company_id,
@@ -305,6 +304,4 @@ class LinkedInTracker:
                 detail=detail,
             )
         except Exception as exc:
-            logger.warning(
-                f"[li] Could not fire intent signal for company {company_id[:8]}: {exc}"
-            )
+            logger.warning(f"[li] Could not fire intent signal for company {company_id[:8]}: {exc}")

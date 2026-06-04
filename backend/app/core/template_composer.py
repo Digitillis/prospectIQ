@@ -116,7 +116,7 @@ class TemplateComposer:
         variant_labels = ["A", "B", "C", "D"]
 
         for i in range(n_variants):
-            theme = variant_themes[i] if i < len(variant_themes) else f"Variant {i+1}"
+            theme = variant_themes[i] if i < len(variant_themes) else f"Variant {i + 1}"
             label = variant_labels[i]
 
             try:
@@ -133,12 +133,14 @@ class TemplateComposer:
                 results.append(variant)
             except Exception as e:
                 logger.error(f"TemplateComposer: variant {label} failed: {e}")
-                results.append({
-                    "variant": label,
-                    "theme": theme,
-                    "error": str(e),
-                    "valid": False,
-                })
+                results.append(
+                    {
+                        "variant": label,
+                        "theme": theme,
+                        "error": str(e),
+                        "valid": False,
+                    }
+                )
 
         return results
 
@@ -192,8 +194,16 @@ class TemplateComposer:
         # Validate email templates
         email = variant.get("email", {})
         available_vars = {
-            "first_name", "company", "industry", "state", "persona",
-            "sub_sector", "signal", "roi_metric", "pain_point", "specific_fact",
+            "first_name",
+            "company",
+            "industry",
+            "state",
+            "persona",
+            "sub_sector",
+            "signal",
+            "roi_metric",
+            "pain_point",
+            "specific_fact",
         }
         for field in ("body_step1", "body_step2", "body_step3"):
             body = email.get(field, "")
@@ -237,4 +247,6 @@ class TemplateComposer:
                 f"Banned phrases: {', '.join(banned)}"
             )
         except Exception:
-            return "Write in a direct, expert-to-operator tone. No buzzwords. No AI-sounding language."
+            return (
+                "Write in a direct, expert-to-operator tone. No buzzwords. No AI-sounding language."
+            )

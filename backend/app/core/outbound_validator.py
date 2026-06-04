@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class OutboundValidationError(Exception):
     """Raised when a message fails a hard compliance check."""
+
     pass
 
 
@@ -41,17 +42,37 @@ _LINKEDIN_DM_LIMIT = 1900
 
 # Hard-block spam trigger words (lowercase)
 _SPAM_TRIGGERS = {
-    "free money", "100% free", "make money fast", "earn from home",
-    "guaranteed income", "no cost", "winner", "you have been selected",
-    "click here now", "limited time offer", "act now", "urgent",
-    "risk-free", "no risk", "best price", "lowest price",
-    "increase sales", "double your revenue", "triple your",
-    "buy now", "order now", "subscribe now",
+    "free money",
+    "100% free",
+    "make money fast",
+    "earn from home",
+    "guaranteed income",
+    "no cost",
+    "winner",
+    "you have been selected",
+    "click here now",
+    "limited time offer",
+    "act now",
+    "urgent",
+    "risk-free",
+    "no risk",
+    "best price",
+    "lowest price",
+    "increase sales",
+    "double your revenue",
+    "triple your",
+    "buy now",
+    "order now",
+    "subscribe now",
 }
 
 # Domain blocklist — never contact these
 _DOMAIN_BLOCKLIST = {
-    "gov", "mil", "edu", "example.com", "test.com",
+    "gov",
+    "mil",
+    "edu",
+    "example.com",
+    "test.com",
 }
 
 # Max links allowed in any outbound message
@@ -82,8 +103,7 @@ class OutboundValidator:
             raise OutboundValidationError("DM cannot be empty.")
         if len(message) > _LINKEDIN_DM_LIMIT:
             raise OutboundValidationError(
-                f"LinkedIn DM too long: {len(message)} chars "
-                f"(limit: {_LINKEDIN_DM_LIMIT})."
+                f"LinkedIn DM too long: {len(message)} chars (limit: {_LINKEDIN_DM_LIMIT})."
             )
         self._check_spam_triggers(message)
         self._check_link_count(message)
@@ -101,15 +121,15 @@ class OutboundValidator:
         if not body or not body.strip():
             raise OutboundValidationError("Email body cannot be empty.")
         if len(subject) > 200:
-            raise OutboundValidationError(f"Email subject too long: {len(subject)} chars (max 200).")
+            raise OutboundValidationError(
+                f"Email subject too long: {len(subject)} chars (max 200)."
+            )
 
         if recipient_domain:
             tld = recipient_domain.split(".")[-1].lower()
             base = recipient_domain.lower()
             if tld in _DOMAIN_BLOCKLIST or base in _DOMAIN_BLOCKLIST:
-                raise OutboundValidationError(
-                    f"Recipient domain blocked: {recipient_domain}"
-                )
+                raise OutboundValidationError(f"Recipient domain blocked: {recipient_domain}")
 
         self._check_spam_triggers(subject + " " + body)
         self._check_link_count(body)

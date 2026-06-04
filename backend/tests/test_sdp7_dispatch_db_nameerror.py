@@ -30,12 +30,13 @@ def test_dispatch_workspace_no_nameerror_on_delivered():
     mock_result.already_delivered_drained = 0
     mock_result.errors = 0
 
-    with patch("backend.app.core.config.get_settings", return_value=mock_settings), \
-         patch("backend.app.core.dispatch_scheduler.dispatch_workspace", return_value=mock_result), \
-         patch("backend.app.core.database.get_supabase_client", return_value=MagicMock()), \
-         patch("backend.app.api.main._schedule_pipeline_advance"), \
-         patch("backend.app.api.main._schedule_post_send_intent_refresh") as mock_refresh:
-
+    with (
+        patch("backend.app.core.config.get_settings", return_value=mock_settings),
+        patch("backend.app.core.dispatch_scheduler.dispatch_workspace", return_value=mock_result),
+        patch("backend.app.core.database.get_supabase_client", return_value=MagicMock()),
+        patch("backend.app.api.main._schedule_pipeline_advance"),
+        patch("backend.app.api.main._schedule_post_send_intent_refresh") as mock_refresh,
+    ):
         # Must not raise NameError
         try:
             _dispatch_workspace(ws)

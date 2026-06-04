@@ -32,6 +32,7 @@ def get_db() -> Database:
 # Request / Response models
 # ---------------------------------------------------------------------------
 
+
 class GenerateDraftRequest(BaseModel):
     company_id: str
     contact_id: str
@@ -77,6 +78,7 @@ class ScoreResponse(BaseModel):
 # POST /api/outreach/generate
 # ---------------------------------------------------------------------------
 
+
 @router.post("/generate", response_model=GenerateDraftResponse)
 async def generate_outreach_draft(body: GenerateDraftRequest):
     """Generate a hyper-personalized outreach draft for a company-contact pair.
@@ -110,6 +112,7 @@ async def generate_outreach_draft(body: GenerateDraftRequest):
 # ---------------------------------------------------------------------------
 # POST /api/outreach/generate-batch
 # ---------------------------------------------------------------------------
+
 
 @router.post("/generate-batch", response_model=GenerateBatchResponse)
 async def generate_outreach_batch(body: GenerateBatchRequest):
@@ -152,6 +155,7 @@ async def generate_outreach_batch(body: GenerateBatchRequest):
 # ---------------------------------------------------------------------------
 # GET /api/outreach/intelligence/{contact_id}
 # ---------------------------------------------------------------------------
+
 
 @router.get("/intelligence/{contact_id}", response_model=IntelligenceResponse)
 async def get_outreach_intelligence(contact_id: str):
@@ -243,6 +247,7 @@ async def get_outreach_intelligence(contact_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/outreach/score-draft/{draft_id}
 # ---------------------------------------------------------------------------
+
 
 @router.post("/score-draft/{draft_id}", response_model=ScoreResponse)
 async def score_draft(draft_id: str):

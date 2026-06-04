@@ -66,7 +66,9 @@ class MEPGrantScraper:
         for row in rows:
             result["processed"] += 1
             try:
-                company_name = row.get("company_name") or row.get("client_name") or row.get("Company") or ""
+                company_name = (
+                    row.get("company_name") or row.get("client_name") or row.get("Company") or ""
+                )
                 state = row.get("state") or row.get("State") or ""
                 mep_center = row.get("center_name") or row.get("Center") or ""
                 fiscal_year = row.get("fiscal_year") or row.get("FY") or ""
@@ -115,7 +117,10 @@ class MEPGrantScraper:
 
         logger.info(
             "MEP scraper complete: %d processed, %d matched, %d skipped, %d errors",
-            result["processed"], result["matched"], result["skipped"], result["errors"],
+            result["processed"],
+            result["matched"],
+            result["skipped"],
+            result["errors"],
         )
         return result
 
@@ -130,6 +135,7 @@ class MEPGrantScraper:
     def _fetch_csv_url(self) -> list[dict]:
         try:
             import httpx
+
             resp = httpx.get(MEP_IMPACT_CSV_URL, timeout=60, follow_redirects=True)
             if resp.status_code != 200:
                 logger.warning("MEP CSV URL returned %s — data may have moved", resp.status_code)
@@ -141,8 +147,18 @@ class MEPGrantScraper:
 
     def _match_company(self, company_name: str, state: str) -> str | None:
         name_lower = company_name.lower().strip()
-        for suffix in (" llc", " inc", " corp", " company", " co.", " ltd", " limited",
-                       " manufacturing", " industries", " group"):
+        for suffix in (
+            " llc",
+            " inc",
+            " corp",
+            " company",
+            " co.",
+            " ltd",
+            " limited",
+            " manufacturing",
+            " industries",
+            " group",
+        ):
             name_lower = name_lower.replace(suffix, "")
         name_lower = name_lower.strip(" ,.")
         if len(name_lower) < 3:
@@ -164,7 +180,8 @@ class MEPGrantScraper:
                 .ilike("name", f"%{name_lower[:40]}%")
                 .limit(5)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             hit = _best(rows)
             if hit:
@@ -176,7 +193,8 @@ class MEPGrantScraper:
                     .ilike("domain", f"%{kw}%")
                     .limit(5)
                     .execute()
-                    .data or []
+                    .data
+                    or []
                 )
                 hit = _best(rows)
                 if hit:
@@ -185,9 +203,17 @@ class MEPGrantScraper:
             logger.warning("Company match failed for %r: %s", company_name, e)
         return None
 
-    def _upsert_signal(self, company_id: str, signal_type: str, source: str,
-                       source_id: str, signal_text: str, value: dict,
-                       observed_at: str | None, source_url: str | None) -> None:
+    def _upsert_signal(
+        self,
+        company_id: str,
+        signal_type: str,
+        source: str,
+        source_id: str,
+        signal_text: str,
+        value: dict,
+        observed_at: str | None,
+        source_url: str | None,
+    ) -> None:
         workspace_id = getattr(self._db, "workspace_id", None)
         row: dict = {
             "company_id": company_id,

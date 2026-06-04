@@ -28,9 +28,7 @@ console = Console()
 
 def fetch_company_stats(db: Database, campaign_name: str | None) -> dict:
     """Aggregate company-level stats."""
-    query = db.client.table("companies").select(
-        "id, tier, status, campaign_name, domain"
-    )
+    query = db.client.table("companies").select("id, tier, status, campaign_name, domain")
     if campaign_name:
         query = query.eq("campaign_name", campaign_name)
     companies = query.execute().data
@@ -65,10 +63,12 @@ def fetch_contact_stats(db: Database, campaign_name: str | None) -> dict:
     if campaign_name:
         # Filter by campaign via company join — only fetch IDs for the specific campaign
         company_ids = [
-            c["id"] for c in db.client.table("companies")
+            c["id"]
+            for c in db.client.table("companies")
             .select("id")
             .eq("campaign_name", campaign_name)
-            .execute().data
+            .execute()
+            .data
         ]
         if not company_ids:
             return {
@@ -86,19 +86,22 @@ def fetch_contact_stats(db: Database, campaign_name: str | None) -> dict:
         contacts = []
         chunk_size = 100
         for i in range(0, len(company_ids), chunk_size):
-            chunk = company_ids[i:i + chunk_size]
+            chunk = company_ids[i : i + chunk_size]
             contacts += contacts_query.in_("company_id", chunk).execute().data
     else:
         contacts = contacts_query.execute().data
 
     total = len(contacts)
-    enriched = sum(1 for c in contacts if c.get("enrichment_status") == "enriched" or (c.get("completeness_score") or 0) >= 60)
+    enriched = sum(
+        1
+        for c in contacts
+        if c.get("enrichment_status") == "enriched" or (c.get("completeness_score") or 0) >= 60
+    )
     needs_enrichment = sum(1 for c in contacts if c.get("enrichment_status") == "needs_enrichment")
     failed = sum(1 for c in contacts if c.get("enrichment_status") == "failed")
     stale = sum(1 for c in contacts if c.get("enrichment_status") == "stale")
     ready_to_send = sum(
-        1 for c in contacts
-        if c.get("email") and (c.get("completeness_score") or 0) >= 60
+        1 for c in contacts if c.get("email") and (c.get("completeness_score") or 0) >= 60
     )
     missing_email = sum(1 for c in contacts if not c.get("email"))
     missing_phone = sum(1 for c in contacts if not c.get("phone"))
@@ -126,9 +129,12 @@ def fetch_credit_stats(db: Database, campaign_name: str | None) -> dict:
         total_credits = 0
 
     try:
-        today_result = db.client.table("apollo_credit_events").select(
-            "credits_used"
-        ).gte("created_at", date.today().isoformat()).execute()
+        today_result = (
+            db.client.table("apollo_credit_events")
+            .select("credits_used")
+            .gte("created_at", date.today().isoformat())
+            .execute()
+        )
         credits_today = sum(r.get("credits_used", 0) for r in today_result.data)
     except Exception:
         credits_today = 0
@@ -184,10 +190,16 @@ def print_dashboard(
     ready_pct = round(cs["ready_to_send"] / max(cs["total"], 1) * 100)
 
     contact_table.add_row("Total contacts", f"[bold]{cs['total']}[/bold]")
-    contact_table.add_row("Enriched", f"[green]{cs['enriched']}[/green] [dim]({enriched_pct}%)[/dim]")
-    contact_table.add_row("Ready to send", f"[green]{cs['ready_to_send']}[/green] [dim]({ready_pct}%)[/dim]")
+    contact_table.add_row(
+        "Enriched", f"[green]{cs['enriched']}[/green] [dim]({enriched_pct}%)[/dim]"
+    )
+    contact_table.add_row(
+        "Ready to send", f"[green]{cs['ready_to_send']}[/green] [dim]({ready_pct}%)[/dim]"
+    )
     contact_table.add_row("Needs enrichment", f"[yellow]{cs['needs_enrichment']}[/yellow]")
-    contact_table.add_row("Failed enrichment", f"[red]{cs['failed']}[/red]" if cs['failed'] else "0")
+    contact_table.add_row(
+        "Failed enrichment", f"[red]{cs['failed']}[/red]" if cs["failed"] else "0"
+    )
     contact_table.add_row("Stale", f"[dim]{cs['stale']}[/dim]")
     contact_table.add_row("Missing email", f"[dim]{cs['missing_email']}[/dim]")
     contact_table.add_row("Avg completeness", f"{cs['avg_score']}/100")
@@ -212,9 +224,11 @@ def print_dashboard(
             remaining = info.get("remaining", limit - sent)
             limit_reached = info.get("limit_reached", False)
             remaining_str = (
-                f"[red]{remaining}[/red]" if limit_reached else
-                f"[green]{remaining}[/green]" if remaining > 3 else
-                f"[yellow]{remaining}[/yellow]"
+                f"[red]{remaining}[/red]"
+                if limit_reached
+                else f"[green]{remaining}[/green]"
+                if remaining > 3
+                else f"[yellow]{remaining}[/yellow]"
             )
             pace_table.add_row(camp, f"{sent}/{limit}", remaining_str)
     else:
@@ -233,11 +247,15 @@ def print_dashboard(
     # Quick health indicators
     issues = []
     if company_stats["missing_domain"] > 0:
-        issues.append(f"[yellow]⚠ {company_stats['missing_domain']} companies missing domain[/yellow]")
+        issues.append(
+            f"[yellow]⚠ {company_stats['missing_domain']} companies missing domain[/yellow]"
+        )
     if contact_stats["failed"] > 0:
         issues.append(f"[red]✗ {contact_stats['failed']} contacts with failed enrichment[/red]")
     if contact_stats["needs_enrichment"] > 10:
-        issues.append(f"[yellow]⚠ {contact_stats['needs_enrichment']} contacts need enrichment[/yellow]")
+        issues.append(
+            f"[yellow]⚠ {contact_stats['needs_enrichment']} contacts need enrichment[/yellow]"
+        )
     if contact_stats["total"] > 0 and contact_stats["ready_to_send"] == 0:
         issues.append("[red]✗ Zero contacts are ready to send[/red]")
 

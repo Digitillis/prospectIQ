@@ -23,13 +23,35 @@ RATE_LIMIT_DELAY = 3.5  # seconds between requests (100 req / 5 min ≈ 1 per 3s
 # Credit-guard constants
 # ---------------------------------------------------------------------------
 
-_FREE_EMAIL_DOMAINS: frozenset[str] = frozenset({
-    "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "yahoo.ca",
-    "hotmail.com", "hotmail.co.uk", "outlook.com", "live.com", "msn.com",
-    "icloud.com", "me.com", "mac.com", "aol.com", "protonmail.com",
-    "proton.me", "pm.me", "tutanota.com", "zoho.com", "yandex.com",
-    "gmx.com", "gmx.net", "mail.com", "fastmail.com", "hey.com",
-})
+_FREE_EMAIL_DOMAINS: frozenset[str] = frozenset(
+    {
+        "gmail.com",
+        "googlemail.com",
+        "yahoo.com",
+        "yahoo.co.uk",
+        "yahoo.ca",
+        "hotmail.com",
+        "hotmail.co.uk",
+        "outlook.com",
+        "live.com",
+        "msn.com",
+        "icloud.com",
+        "me.com",
+        "mac.com",
+        "aol.com",
+        "protonmail.com",
+        "proton.me",
+        "pm.me",
+        "tutanota.com",
+        "zoho.com",
+        "yandex.com",
+        "gmx.com",
+        "gmx.net",
+        "mail.com",
+        "fastmail.com",
+        "hey.com",
+    }
+)
 _EMPTY_STREAK_WARN = 20
 
 
@@ -42,12 +64,15 @@ class ApolloClient:
 
     def __init__(self, workspace_id: str | None = None):
         from backend.app.core.credential_store import get_credential
+
         self.api_key = get_credential("apollo", "api_key", workspace_id)
         if not self.api_key:
             # Final fallback to settings
             self.api_key = get_settings().apollo_api_key
         if not self.api_key:
-            raise ValueError("Apollo API key not configured. Set APOLLO_API_KEY or add via workspace credentials.")
+            raise ValueError(
+                "Apollo API key not configured. Set APOLLO_API_KEY or add via workspace credentials."
+            )
         self.client = httpx.Client(
             base_url=APOLLO_BASE_URL,
             headers={
@@ -260,7 +285,9 @@ class ApolloClient:
         cache_key = person_id or email or linkedin_url or ""
         if cache_key and cache_key in ApolloClient._enrich_cache:
             cached = ApolloClient._enrich_cache[cache_key]
-            logger.info(f"enrich_person cache hit for key={cache_key[:20]}... matched={bool(cached)}")
+            logger.info(
+                f"enrich_person cache hit for key={cache_key[:20]}... matched={bool(cached)}"
+            )
             return cached or {}
 
         payload: dict[str, Any] = {
@@ -314,19 +341,56 @@ class ApolloClient:
             return None
 
         _STATE_ABBREVS = {
-            "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
-            "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
-            "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
-            "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
-            "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
-            "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
-            "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
-            "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
-            "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
-            "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
-            "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
-            "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
-            "wisconsin": "WI", "wyoming": "WY",
+            "alabama": "AL",
+            "alaska": "AK",
+            "arizona": "AZ",
+            "arkansas": "AR",
+            "california": "CA",
+            "colorado": "CO",
+            "connecticut": "CT",
+            "delaware": "DE",
+            "florida": "FL",
+            "georgia": "GA",
+            "hawaii": "HI",
+            "idaho": "ID",
+            "illinois": "IL",
+            "indiana": "IN",
+            "iowa": "IA",
+            "kansas": "KS",
+            "kentucky": "KY",
+            "louisiana": "LA",
+            "maine": "ME",
+            "maryland": "MD",
+            "massachusetts": "MA",
+            "michigan": "MI",
+            "minnesota": "MN",
+            "mississippi": "MS",
+            "missouri": "MO",
+            "montana": "MT",
+            "nebraska": "NE",
+            "nevada": "NV",
+            "new hampshire": "NH",
+            "new jersey": "NJ",
+            "new mexico": "NM",
+            "new york": "NY",
+            "north carolina": "NC",
+            "north dakota": "ND",
+            "ohio": "OH",
+            "oklahoma": "OK",
+            "oregon": "OR",
+            "pennsylvania": "PA",
+            "rhode island": "RI",
+            "south carolina": "SC",
+            "south dakota": "SD",
+            "tennessee": "TN",
+            "texas": "TX",
+            "utah": "UT",
+            "vermont": "VT",
+            "virginia": "VA",
+            "washington": "WA",
+            "west virginia": "WV",
+            "wisconsin": "WI",
+            "wyoming": "WY",
         }
         _VALID_ABBREVS = set(_STATE_ABBREVS.values())
 
@@ -402,7 +466,9 @@ class ApolloClient:
             "phone": None,  # Requires enrichment
             "title": person.get("title"),
             "seniority": person.get("seniority"),
-            "department": person.get("departments", [None])[0] if person.get("departments") else None,
+            "department": person.get("departments", [None])[0]
+            if person.get("departments")
+            else None,
             "headline": person.get("headline"),
             "linkedin_url": person.get("linkedin_url"),
             "twitter_url": person.get("twitter_url"),
@@ -411,8 +477,12 @@ class ApolloClient:
             "state": person.get("state"),
             "country": person.get("country"),
             # Extended Apollo fields
-            "has_email": bool(person.get("has_email")) if isinstance(person.get("has_email"), bool) else (str(person.get("has_email", "")).lower() in ("true", "1", "yes")),
-            "has_direct_phone": bool(person.get("has_direct_phone")) if isinstance(person.get("has_direct_phone"), bool) else (str(person.get("has_direct_phone", "")).lower() in ("true", "1", "yes")),
+            "has_email": bool(person.get("has_email"))
+            if isinstance(person.get("has_email"), bool)
+            else (str(person.get("has_email", "")).lower() in ("true", "1", "yes")),
+            "has_direct_phone": bool(person.get("has_direct_phone"))
+            if isinstance(person.get("has_direct_phone"), bool)
+            else (str(person.get("has_direct_phone", "")).lower() in ("true", "1", "yes")),
             "last_refreshed_at": person.get("last_refreshed_at"),
         }
 
@@ -434,9 +504,7 @@ class ApolloClient:
             self._rate_limit()
             # Pass api_key as query param — required for /auth/health to return
             # the user object with credit fields (header-only returns empty user).
-            response = self.client.get(
-                "/auth/health", params={"api_key": self.api_key}
-            )
+            response = self.client.get("/auth/health", params={"api_key": self.api_key})
             response.raise_for_status()
             data = response.json()
             user = data.get("user") or {}
@@ -447,9 +515,7 @@ class ApolloClient:
                 return {"credits_used": used, "credit_limit": limit, "credits_remaining": remaining}
             # If limit is still zero, the endpoint returned no credit data.
             # Log a warning so this is visible in Railway logs.
-            logger.warning(
-                "get_credits: /auth/health returned no credit data (user=%s)", user
-            )
+            logger.warning("get_credits: /auth/health returned no credit data (user=%s)", user)
             return {"credits_used": 0, "credit_limit": 0, "credits_remaining": 9999}
         except Exception as exc:
             logger.warning("get_credits failed: %s", exc)

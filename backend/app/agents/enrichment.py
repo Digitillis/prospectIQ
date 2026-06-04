@@ -79,10 +79,9 @@ class EnrichmentAgent(BaseAgent):
         # P1.5 — kill switch: when disabled, exit cleanly without spending
         # Apollo credits or writing any contact rows.
         from backend.app.core.limits import L
+
         if not L.enrichment_enabled:
-            logger.info(
-                {"event": "agent_disabled_via_config", "agent": "enrichment"}
-            )
+            logger.info({"event": "agent_disabled_via_config", "agent": "enrichment"})
             console.print("[yellow]enrichment: disabled via config — exiting cleanly[/yellow]")
             result.success = True
             return result
@@ -90,6 +89,7 @@ class EnrichmentAgent(BaseAgent):
         # Apollo credit guard — halt before the batch if buffer is low
         workspace_id = getattr(self.db, "workspace_id", None)
         from backend.app.core.workspace_scheduler import apollo_credits_ok
+
         if not apollo_credits_ok(workspace_id=workspace_id, min_buffer=200):
             console.print(
                 "[red]Apollo credit guard: fewer than 200 credits remaining — enrichment halted.[/red]"
@@ -128,7 +128,8 @@ class EnrichmentAgent(BaseAgent):
                     # People Match directly — no domain needed. Only skip if no
                     # apollo_id AND no domain (name search produces poor matches).
                     needs_match = [
-                        c for c in existing
+                        c
+                        for c in existing
                         if not c.get("email") and int(c.get("enrichment_attempts") or 0) < 3
                     ]
                     can_enrich = any(c.get("apollo_id") for c in needs_match)
@@ -171,11 +172,16 @@ class EnrichmentAgent(BaseAgent):
                             # Broad seniority filter only — don't filter by title
                             # (small companies may have few people in Apollo)
                             search_kwargs["person_seniorities"] = [
-                                "vp", "director", "c_suite", "owner", "manager",
+                                "vp",
+                                "director",
+                                "c_suite",
+                                "owner",
+                                "manager",
                             ]
                             resp = apollo.search_people(**search_kwargs)
                             people = resp.get("people", [])
                             from backend.app.core.contact_filter import screen_contact_at_import
+
                             for person in people[:10]:  # cap at 10 per company
                                 contact_data = ApolloClient.extract_contact_data(person)
                                 if not contact_data.get("apollo_id"):
@@ -186,24 +192,27 @@ class EnrichmentAgent(BaseAgent):
                                 )
                                 if existing:
                                     continue
-                                persona_type, is_dm = classify_persona(
-                                    contact_data.get("title")
+                                persona_type, is_dm = classify_persona(contact_data.get("title"))
+                                contact_insert = screen_contact_at_import(
+                                    {
+                                        **contact_data,
+                                        "company_id": company_id,
+                                        "persona_type": persona_type,
+                                        "is_decision_maker": is_dm,
+                                    },
+                                    db=self.db,
                                 )
-                                contact_insert = screen_contact_at_import({
-                                    **contact_data,
-                                    "company_id": company_id,
-                                    "persona_type": persona_type,
-                                    "is_decision_maker": is_dm,
-                                }, db=self.db)
                                 _inserted_c = self.db.insert_contact(contact_insert)
                                 try:
-                                    self.db.client.table("raw_contacts").insert({
-                                        "source": "apollo",
-                                        "source_record_id": contact_data.get("apollo_id"),
-                                        "payload": contact_data,
-                                        "resolved_contact_id": (_inserted_c or {}).get("id"),
-                                        "workspace_id": getattr(self.db, "workspace_id", None),
-                                    }).execute()
+                                    self.db.client.table("raw_contacts").insert(
+                                        {
+                                            "source": "apollo",
+                                            "source_record_id": contact_data.get("apollo_id"),
+                                            "payload": contact_data,
+                                            "resolved_contact_id": (_inserted_c or {}).get("id"),
+                                            "workspace_id": getattr(self.db, "workspace_id", None),
+                                        }
+                                    ).execute()
                                 except Exception:
                                     pass
                                 discovered_contacts.append(contact_insert)
@@ -211,9 +220,7 @@ class EnrichmentAgent(BaseAgent):
                                 f"  [green]{company_name}: Discovered {len(discovered_contacts)} contacts[/green]"
                             )
                         except Exception as disc_err:
-                            logger.warning(
-                                f"Auto-discovery failed for {company_name}: {disc_err}"
-                            )
+                            logger.warning(f"Auto-discovery failed for {company_name}: {disc_err}")
 
                         # Re-fetch contacts after discovery
                         contacts = self.db.get_contacts_for_company(company_id)
@@ -222,7 +229,9 @@ class EnrichmentAgent(BaseAgent):
                                 f"  [yellow]{company_name}: Still no contacts after discovery. Skipping.[/yellow]"
                             )
                             result.skipped += 1
-                            result.add_detail(company_name, "skipped", "No contacts even after discovery")
+                            result.add_detail(
+                                company_name, "skipped", "No contacts even after discovery"
+                            )
                             continue
 
                     # Note: has_email from People Search is unreliable — search often
@@ -234,6 +243,7 @@ class EnrichmentAgent(BaseAgent):
                     company_domain = company.get("domain")
                     if company_domain:
                         from backend.app.core.domain_verify import verify_domain
+
                         domain_valid, domain_reason = verify_domain(company_domain)
                         if not domain_valid:
                             console.print(
@@ -242,8 +252,7 @@ class EnrichmentAgent(BaseAgent):
                             )
                             result.skipped += 1
                             result.add_detail(
-                                company_name, "domain_invalid",
-                                f"{company_domain}: {domain_reason}"
+                                company_name, "domain_invalid", f"{company_domain}: {domain_reason}"
                             )
                             continue
 
@@ -269,20 +278,25 @@ class EnrichmentAgent(BaseAgent):
                             )
                             result.processed += 1
                             result.add_detail(
-                                company_name, "ready",
-                                f"{len(contacts_with_email)} contacts with email (best: {best_name})"
+                                company_name,
+                                "ready",
+                                f"{len(contacts_with_email)} contacts with email (best: {best_name})",
                             )
                         else:
                             console.print(
                                 f"  [dim]{company_name}: Contacts exist but none have email. Skipping.[/dim]"
                             )
                             result.skipped += 1
-                            result.add_detail(company_name, "skipped", "Contacts exist but no emails found")
+                            result.add_detail(
+                                company_name, "skipped", "Contacts exist but no emails found"
+                            )
                         continue
 
                     # Enrich each selected contact (1 credit each if Apollo returns a match)
                     for contact in contacts_to_enrich:
-                        contact_name = contact.get("full_name") or contact.get("first_name") or "Unknown"
+                        contact_name = (
+                            contact.get("full_name") or contact.get("first_name") or "Unknown"
+                        )
                         apollo_id = (contact.get("apollo_id") or "").strip()
 
                         if not apollo_id:
@@ -290,7 +304,9 @@ class EnrichmentAgent(BaseAgent):
                                 f"  [yellow]{company_name}: {contact_name} has no Apollo ID. Skipping.[/yellow]"
                             )
                             result.skipped += 1
-                            result.add_detail(company_name, "skipped", f"No Apollo ID for {contact_name}")
+                            result.add_detail(
+                                company_name, "skipped", f"No Apollo ID for {contact_name}"
+                            )
                             continue
 
                         # Basic format guard — Apollo IDs are alphanumeric hex strings.
@@ -298,16 +314,19 @@ class EnrichmentAgent(BaseAgent):
                         if len(apollo_id) < 8 or not apollo_id.replace("-", "").isalnum():
                             logger.warning(
                                 "Skipping enrichment for %s — malformed Apollo ID: %r",
-                                contact_name, apollo_id,
+                                contact_name,
+                                apollo_id,
                             )
                             result.skipped += 1
-                            result.add_detail(company_name, "skipped", f"Malformed Apollo ID for {contact_name}")
+                            result.add_detail(
+                                company_name, "skipped", f"Malformed Apollo ID for {contact_name}"
+                            )
                             continue
 
                         # Call Apollo enrichment (1 credit if matched, 0 if no match)
                         console.print(
                             f"  [dim]{company_name} → enriching {contact_name} "
-                            f"({contact.get('title', '')}, persona={contact.get('persona_type','?')})...[/dim]"
+                            f"({contact.get('title', '')}, persona={contact.get('persona_type', '?')})...[/dim]"
                         )
 
                         try:
@@ -317,7 +336,11 @@ class EnrichmentAgent(BaseAgent):
                                 reveal_phone_number=include_phone,
                             )
                         except httpx.HTTPStatusError as http_err:
-                            status_code = http_err.response.status_code if http_err.response is not None else 0
+                            status_code = (
+                                http_err.response.status_code
+                                if http_err.response is not None
+                                else 0
+                            )
                             if status_code == 422:
                                 # 422 = Apollo rejected the ID as unprocessable (expired, invalid, or
                                 # missing required fields). Retrying will always fail — exhaust the
@@ -326,11 +349,14 @@ class EnrichmentAgent(BaseAgent):
                                 logger.warning(
                                     "Apollo 422 for %s (%s) — ID %r rejected as unprocessable. "
                                     "Marking attempts exhausted.",
-                                    contact_name, company_name, apollo_id,
+                                    contact_name,
+                                    company_name,
+                                    apollo_id,
                                 )
                                 result.skipped += 1
                                 result.add_detail(
-                                    company_name, "apollo_422",
+                                    company_name,
+                                    "apollo_422",
                                     f"{contact_name}: Apollo ID {apollo_id!r} returned 422 — attempts exhausted",
                                 )
                             else:
@@ -354,7 +380,9 @@ class EnrichmentAgent(BaseAgent):
                                 f"  [yellow]{company_name}: No person data returned for {contact_name}.[/yellow]"
                             )
                             result.skipped += 1
-                            result.add_detail(company_name, "no_match", f"{contact_name}: no Apollo record")
+                            result.add_detail(
+                                company_name, "no_match", f"{contact_name}: no Apollo record"
+                            )
                             continue
 
                         # Build update payload
@@ -392,17 +420,29 @@ class EnrichmentAgent(BaseAgent):
                                 )
 
                         # Email-name consistency check (catches false-match artifacts like Dave Horton)
-                        if email and (full_name or (contact.get("first_name") and contact.get("last_name"))):
+                        if email and (
+                            full_name or (contact.get("first_name") and contact.get("last_name"))
+                        ):
                             from backend.app.core.contact_filter import check_email_name_consistency
-                            first = (update_data.get("first_name") or contact.get("first_name") or "").strip()
-                            last = (update_data.get("last_name") or contact.get("last_name") or "").strip()
-                            consistent, cons_reason = check_email_name_consistency(first, last, email)
+
+                            first = (
+                                update_data.get("first_name") or contact.get("first_name") or ""
+                            ).strip()
+                            last = (
+                                update_data.get("last_name") or contact.get("last_name") or ""
+                            ).strip()
+                            consistent, cons_reason = check_email_name_consistency(
+                                first, last, email
+                            )
                             update_data["email_name_verified"] = consistent
                             if not consistent:
                                 update_data["is_outreach_eligible"] = False
                                 logger.warning(
                                     "Email-name mismatch on enrichment: %s %s → %s (%s)",
-                                    first, last, email, cons_reason,
+                                    first,
+                                    last,
+                                    email,
+                                    cons_reason,
                                 )
                                 console.print(
                                     f"  [red]{company_name}: {contact_name} → name/email mismatch,"
@@ -414,6 +454,7 @@ class EnrichmentAgent(BaseAgent):
                             update_data["enrichment_status"] = "enriched"
                             from backend.app.core.contact_filter import compute_ccs
                             from datetime import datetime, timezone
+
                             _now = datetime.now(timezone.utc).isoformat()
                             update_data["enriched_at"] = _now
                             merged = {**contact, **update_data}
@@ -444,9 +485,8 @@ class EnrichmentAgent(BaseAgent):
                                 contact.get("first_name")
                                 or (contact.get("full_name") or "").split()[0]
                             )
-                            last = (
-                                contact.get("last_name")
-                                or " ".join((contact.get("full_name") or "").split()[1:])
+                            last = contact.get("last_name") or " ".join(
+                                (contact.get("full_name") or "").split()[1:]
                             )
                             if company_domain and first and last:
                                 try:
@@ -475,9 +515,12 @@ class EnrichmentAgent(BaseAgent):
                                     "email": zb_email,
                                     "enrichment_status": "enriched",
                                     "enrichment_source": "zerobounce",
-                                    "enrichment_attempts": int(contact.get("enrichment_attempts") or 0),
+                                    "enrichment_attempts": int(
+                                        contact.get("enrichment_attempts") or 0
+                                    ),
                                 }
                                 from datetime import datetime, timezone
+
                                 _now = datetime.now(timezone.utc).isoformat()
                                 zb_update["enriched_at"] = _now
                                 merged = {**contact, **zb_update}
@@ -490,8 +533,9 @@ class EnrichmentAgent(BaseAgent):
                                 )
                                 result.processed += 1
                                 result.add_detail(
-                                    company_name, "enriched_zb",
-                                    f"{contact_name}: {zb_email} (ZeroBounce)"
+                                    company_name,
+                                    "enriched_zb",
+                                    f"{contact_name}: {zb_email} (ZeroBounce)",
                                 )
                             else:
                                 # Both Apollo and ZeroBounce missed. Increment attempt counter.
@@ -503,8 +547,9 @@ class EnrichmentAgent(BaseAgent):
                                         f" (Apollo + ZeroBounce), marked failed.[/red]"
                                     )
                                     result.add_detail(
-                                        company_name, "enrichment_failed",
-                                        f"{contact_name}: 3 misses — giving up"
+                                        company_name,
+                                        "enrichment_failed",
+                                        f"{contact_name}: 3 misses — giving up",
                                     )
                                 else:
                                     self.db.update_contact(
@@ -515,9 +560,10 @@ class EnrichmentAgent(BaseAgent):
                                         f" (attempt {attempts}/3 — Apollo + ZeroBounce both miss).[/yellow]"
                                     )
                                     result.add_detail(
-                                        company_name, "no_email",
+                                        company_name,
+                                        "no_email",
                                         f"{contact_name}: no email in Apollo or ZeroBounce"
-                                        f" (attempt {attempts}/3)"
+                                        f" (attempt {attempts}/3)",
                                     )
                                 result.skipped += 1
 
@@ -526,10 +572,13 @@ class EnrichmentAgent(BaseAgent):
                     result.errors += 1
                     result.add_detail(company_name, "error", str(e)[:200])
                     if self._monitor:
-                        self._monitor.log_error(str(e), company_id=company_id, error_type="enrichment_error", exc=e)
+                        self._monitor.log_error(
+                            str(e), company_id=company_id, error_type="enrichment_error", exc=e
+                        )
 
         try:
             from backend.app.utils.notifications import notify_slack
+
             notify_slack(
                 f"*Enrichment complete:* {result.processed} contacts enriched, "
                 f"{result.skipped} skipped, {result.errors} errors. "
@@ -541,9 +590,7 @@ class EnrichmentAgent(BaseAgent):
 
         return result
 
-    def _select_contacts_to_enrich(
-        self, contacts: list[dict], company_tier: str
-    ) -> list[dict]:
+    def _select_contacts_to_enrich(self, contacts: list[dict], company_tier: str) -> list[dict]:
         """Return the ordered list of contacts to enrich in this cycle.
 
         F&B tier companies: returns up to 2 contacts — the best C1 (ops persona)
@@ -558,8 +605,7 @@ class EnrichmentAgent(BaseAgent):
         they don't need re-enrichment.
         """
         needs_enrichment = [
-            c for c in contacts
-            if not c.get("email") and int(c.get("enrichment_attempts") or 0) < 3
+            c for c in contacts if not c.get("email") and int(c.get("enrichment_attempts") or 0) < 3
         ]
         if not needs_enrichment:
             return []

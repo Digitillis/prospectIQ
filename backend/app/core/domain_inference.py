@@ -33,7 +33,7 @@ def _clean_domain(raw: str | None) -> str | None:
     domain = raw.strip().lower()
     for prefix in ("https://", "http://", "www."):
         if domain.startswith(prefix):
-            domain = domain[len(prefix):]
+            domain = domain[len(prefix) :]
     domain = domain.rstrip("/").split("/")[0]
     return domain if "." in domain else None
 
@@ -120,7 +120,9 @@ def infer_missing_domains(
         console.print("[green]All companies already have a domain.[/green]")
         return {"processed": 0, "found": 0, "failed": 0}
 
-    console.print(f"[cyan]{len(companies)} companies missing domain — inferring via Apollo...[/cyan]")
+    console.print(
+        f"[cyan]{len(companies)} companies missing domain — inferring via Apollo...[/cyan]"
+    )
 
     found = 0
     failed = 0

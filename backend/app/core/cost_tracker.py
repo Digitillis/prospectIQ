@@ -28,10 +28,10 @@ COST_TABLE = {
         "default": {"input": 3.00, "output": 15.00},
     },
     "apollo": {
-        "people_search": {"per_call": 0.0},          # Free — no credit cost
-        "people_match": {"per_call": 0.02850},        # 1 credit = $114/4000
-        "people_enrichment": {"per_call": 0.02850},   # same
-        "organization_enrich": {"per_call": 0.02850}, # same
+        "people_search": {"per_call": 0.0},  # Free — no credit cost
+        "people_match": {"per_call": 0.02850},  # 1 credit = $114/4000
+        "people_enrichment": {"per_call": 0.02850},  # same
+        "organization_enrich": {"per_call": 0.02850},  # same
         "default": {"per_call": 0.0},
     },
 }
@@ -91,16 +91,18 @@ def log_cost(
 
     try:
         db = Database(workspace_id=workspace_id)
-        db.log_api_cost({
-            "provider": provider,
-            "model": model,
-            "endpoint": endpoint,
-            "company_id": company_id,
-            "batch_id": batch_id,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "estimated_cost_usd": cost,
-        })
+        db.log_api_cost(
+            {
+                "provider": provider,
+                "model": model,
+                "endpoint": endpoint,
+                "company_id": company_id,
+                "batch_id": batch_id,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "estimated_cost_usd": cost,
+            }
+        )
     except Exception as e:
         # Don't let cost tracking failures break the pipeline
         logger.warning(f"Failed to log API cost: {e}")

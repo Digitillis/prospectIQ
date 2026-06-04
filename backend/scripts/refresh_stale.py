@@ -32,7 +32,9 @@ def mark_stale_contacts(db: Database, stale_days: int, dry_run: bool = False) ->
         console.print(f"[green]No contacts stale after {stale_days} days.[/green]")
         return []
 
-    console.print(f"[cyan]{len(stale)} contacts are stale (enriched > {stale_days} days ago)[/cyan]")
+    console.print(
+        f"[cyan]{len(stale)} contacts are stale (enriched > {stale_days} days ago)[/cyan]"
+    )
 
     if dry_run:
         for c in stale[:10]:
@@ -97,11 +99,22 @@ def print_stale_summary(stale: list[dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Mark stale contacts and re-enrich via Apollo")
-    parser.add_argument("--stale-days", type=int, default=90, help="Days before contact is considered stale (default: 90)")
-    parser.add_argument("--limit", type=int, default=100, help="Max contacts to re-enrich in one run (default: 100)")
+    parser.add_argument(
+        "--stale-days",
+        type=int,
+        default=90,
+        help="Days before contact is considered stale (default: 90)",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=100, help="Max contacts to re-enrich in one run (default: 100)"
+    )
     parser.add_argument("--campaign", help="Filter by campaign name")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would happen without making changes")
-    parser.add_argument("--mark-only", action="store_true", help="Mark stale but skip re-enrichment")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would happen without making changes"
+    )
+    parser.add_argument(
+        "--mark-only", action="store_true", help="Mark stale but skip re-enrichment"
+    )
     args = parser.parse_args()
 
     console.print(f"\n[bold]Stale Contact Refresh[/bold]")

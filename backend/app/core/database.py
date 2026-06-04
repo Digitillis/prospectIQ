@@ -17,6 +17,14 @@ from backend.app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+class WorkspaceRequiredError(RuntimeError):
+    """Raised when a workspace-scoped DB operation is attempted without a workspace_id.
+
+    Code that legitimately needs cross-workspace access must call self.client.table()
+    directly and carry a # INTENTIONALLY UNSCOPED comment explaining why.
+    """
+
+
 @lru_cache()
 def get_supabase_client() -> Client:
     """Get a cached Supabase client using the service role key (full access)."""
@@ -42,24 +50,24 @@ class Database:
     # Workspace helpers (internal)
     # ------------------------------------------------------------------
 
-    def _filter_ws(self, query):
-        """Apply workspace filter to a query. Fails CLOSED when workspace_id is not set.
-
-        Returning an unfiltered query when workspace_id is absent would silently leak
-        all-tenant data. Raising here makes the bug immediately visible (500 in prod,
-        logged ERROR) instead of silently crossing tenant boundaries.
-        See ADR-003 for the full rationale and RLS deferral decision.
-        """
+    @property
+    def _ws(self) -> str:
+        """Return workspace_id or raise WorkspaceRequiredError if not set."""
         if not self.workspace_id:
-            logger.error(
-                "_filter_ws: workspace_id is not set — refusing to return unfiltered query (see ADR-003)"
+            raise WorkspaceRequiredError(
+                "Database.workspace_id is required. "
+                "Construct Database(workspace_id=...) or use get_workspace_id() from context."
             )
-            raise RuntimeError(
-                "_filter_ws: workspace_id is not set. "
-                "Ensure require_workspace_member() or WorkspaceMiddleware has run before this call."
-            )
-        logger.debug("_filter_ws: applying workspace filter workspace_id=%s", self.workspace_id)
-        return query.eq("workspace_id", self.workspace_id)
+        return self.workspace_id
+
+    def _filter_ws(self, query):
+        """Apply workspace filter. Raises WorkspaceRequiredError if workspace_id is not set.
+
+        Fail-closed: an unscoped query is a programming error, not a fallback.
+        Code that legitimately needs cross-workspace access must call
+        self.client.table() directly with a # INTENTIONALLY UNSCOPED comment.
+        """
+        return query.eq("workspace_id", self._ws)
 
     def _inject_ws(self, data: dict) -> dict:
         """Add workspace_id to an insert/upsert payload when set."""
@@ -225,8 +233,14 @@ class Database:
         return results[:limit]
 
     def get_company(self, company_id: str) -> dict | None:
-        """Get a single company by ID."""
-        result = self.client.table("companies").select("*").eq("id", company_id).execute()
+        """Get a single company by ID (workspace-scoped to prevent IDOR)."""
+        result = (
+            self.client.table("companies")
+            .select("*")
+            .eq("id", company_id)
+            .eq("workspace_id", self._ws)
+            .execute()
+        )
         return result.data[0] if result.data else None
 
     def get_company_by_apollo_id(self, apollo_id: str) -> dict | None:
@@ -309,7 +323,9 @@ class Database:
             patch = {k: data[k] for k in enrichable if k in data and data[k] and not current.get(k)}
             if patch:
                 try:
-                    self.client.table("companies").update(patch).eq("id", company_id).execute()
+                    self.client.table("companies").update(patch).eq("id", company_id).eq(
+                        "workspace_id", self._ws
+                    ).execute()
                 except Exception as e:
                     logger.warning(f"insert_company patch failed for {company_id}: {e}")
             logger.debug(f"insert_company: dedup hit for '{data.get('name')}' → {company_id}")
@@ -319,8 +335,14 @@ class Database:
         return result.data[0] if result.data else {}
 
     def update_company(self, company_id: str, data: dict) -> dict:
-        """Update a company record."""
-        result = self.client.table("companies").update(data).eq("id", company_id).execute()
+        """Update a company record (workspace-scoped to prevent IDOR)."""
+        result = (
+            self.client.table("companies")
+            .update(data)
+            .eq("id", company_id)
+            .eq("workspace_id", self._ws)
+            .execute()
+        )
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -341,6 +363,8 @@ class Database:
         """
         try:
             eligible_rows = (
+                # INTENTIONALLY UNSCOPED — company_id is from a workspace-scoped companies lookup;
+                # outbound_eligible_contacts has no workspace_id column.
                 self.client.table("outbound_eligible_contacts")
                 .select("contact_id")
                 .eq("company_id", company_id)
@@ -374,10 +398,9 @@ class Database:
             )
 
     def get_contact_by_apollo_id(self, apollo_id: str) -> dict | None:
-        """Get a contact by Apollo ID (for deduplication)."""
+        """Get a contact by Apollo ID (workspace-scoped for deduplication)."""
         result = (
-            self.client.table("contacts")
-            .select("id, apollo_id")
+            self._filter_ws(self.client.table("contacts").select("id, apollo_id"))
             .eq("apollo_id", apollo_id)
             .execute()
         )
@@ -412,8 +435,14 @@ class Database:
         return result.data[0] if result.data else {}
 
     def update_contact(self, contact_id: str, data: dict) -> dict:
-        """Update a contact record."""
-        result = self.client.table("contacts").update(data).eq("id", contact_id).execute()
+        """Update a contact record (workspace-scoped to prevent IDOR)."""
+        result = (
+            self.client.table("contacts")
+            .update(data)
+            .eq("id", contact_id)
+            .eq("workspace_id", self._ws)
+            .execute()
+        )
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -421,10 +450,9 @@ class Database:
     # ------------------------------------------------------------------
 
     def get_research(self, company_id: str) -> dict | None:
-        """Get research intelligence for a company."""
+        """Get research intelligence for a company (workspace-scoped)."""
         result = (
-            self.client.table("research_intelligence")
-            .select("*")
+            self._filter_ws(self.client.table("research_intelligence").select("*"))
             .eq("company_id", company_id)
             .execute()
         )
@@ -535,8 +563,14 @@ class Database:
         return result.data[0] if result.data else {}
 
     def update_outreach_draft(self, draft_id: str, data: dict) -> dict:
-        """Update an outreach draft (approve/reject/edit)."""
-        result = self.client.table("outreach_drafts").update(data).eq("id", draft_id).execute()
+        """Update an outreach draft (workspace-scoped to prevent IDOR)."""
+        result = (
+            self.client.table("outreach_drafts")
+            .update(data)
+            .eq("id", draft_id)
+            .eq("workspace_id", self._ws)
+            .execute()
+        )
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -582,9 +616,13 @@ class Database:
         return result.data[0] if result.data else {}
 
     def update_engagement_sequence(self, sequence_id: str, data: dict) -> dict:
-        """Update an engagement sequence."""
+        """Update an engagement sequence (workspace-scoped to prevent IDOR)."""
         result = (
-            self.client.table("engagement_sequences").update(data).eq("id", sequence_id).execute()
+            self.client.table("engagement_sequences")
+            .update(data)
+            .eq("id", sequence_id)
+            .eq("workspace_id", self._ws)
+            .execute()
         )
         return result.data[0] if result.data else {}
 
@@ -801,11 +839,12 @@ class Database:
         if phone:
             data["phone"] = phone
 
-        # Fetch current contact to check persona and recompute score
+        # Fetch current contact to check persona and recompute score (workspace-scoped)
         existing = (
             self.client.table("contacts")
             .select("title, persona_type, completeness_score, companies(tier)")
             .eq("id", contact_id)
+            .eq("workspace_id", self._ws)
             .execute()
             .data
         )
@@ -841,6 +880,7 @@ class Database:
         result = (
             self.client.table("contacts")
             .update({"enrichment_status": "stale"})
+            .eq("workspace_id", self._ws)
             .eq("enrichment_status", "enriched")
             .lt("enriched_at", cutoff)
             .execute()
@@ -853,6 +893,7 @@ class Database:
 
     def log_apollo_credit(self, data: dict) -> dict:
         """Record one Apollo credit spend event."""
+        # INTENTIONALLY UNSCOPED — cross-workspace credit accounting
         result = self.client.table("apollo_credit_events").insert(data).execute()
         return result.data[0] if result.data else {}
 
@@ -862,6 +903,7 @@ class Database:
         since_days: int = 30,
     ) -> dict:
         """Summarise Apollo credit usage over the last N days."""
+        # INTENTIONALLY UNSCOPED — cross-workspace credit accounting
         from datetime import datetime, timedelta, timezone
 
         since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
@@ -886,6 +928,7 @@ class Database:
 
     def log_audit_event(self, data: dict) -> dict:
         """Record one seed/import audit event."""
+        # INTENTIONALLY UNSCOPED — cross-workspace audit log
         result = self.client.table("seed_audit_events").insert(data).execute()
         return result.data[0] if result.data else {}
 
@@ -993,7 +1036,9 @@ class Database:
         if extra_updates:
             updates.update(extra_updates)
 
-        self.client.table("contacts").update(updates).eq("id", contact_id).execute()
+        self.client.table("contacts").update(updates).eq("id", contact_id).eq(
+            "workspace_id", self._ws
+        ).execute()
 
         self.client.table("outreach_state_log").insert(
             self._inject_ws(
@@ -1062,6 +1107,7 @@ class Database:
             self.client.table("contacts")
             .select("id")
             .eq("company_id", company_id)
+            .eq("workspace_id", self._ws)
             .in_("outreach_state", active_states)
             .limit(1)
             .execute()
@@ -1086,7 +1132,7 @@ class Database:
                 "primary_contact_id": contact_id,
                 "outreach_started_at": datetime.now(timezone.utc).isoformat(),
             }
-        ).eq("id", company_id).execute()
+        ).eq("id", company_id).eq("workspace_id", self._ws).execute()
 
     # ------------------------------------------------------------------
     # API costs summary (existing method continues below)
@@ -1138,7 +1184,7 @@ class Database:
                 "intent_score_updated_at": now,
                 "last_intent_signal_at": now,
             }
-        ).eq("id", company_id).execute()
+        ).eq("id", company_id).eq("workspace_id", self._ws).execute()
 
     # ------------------------------------------------------------------
     # API costs summary (existing method continues below)

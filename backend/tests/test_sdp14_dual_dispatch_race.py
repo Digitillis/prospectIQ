@@ -28,9 +28,7 @@ def test_send_approved_drafts_is_retired():
     assert result.processed == 0, (
         f"Retired _send_approved_drafts must not send anything, but processed={result.processed}"
     )
-    assert result.errors > 0, (
-        "Retired _send_approved_drafts must report errors to signal misuse"
-    )
+    assert result.errors > 0, "Retired _send_approved_drafts must report errors to signal misuse"
     assert len(resend_calls) == 0, (
         f"Retired _send_approved_drafts called Resend {len(resend_calls)} time(s)"
     )
@@ -48,10 +46,10 @@ def test_send_approved_drafts_does_not_call_resend_even_with_send_enabled():
 
     resend_calls: list = []
 
-    with patch.dict(os.environ, {"SEND_ENABLED": "true"}), \
-         patch("resend.Emails.send", side_effect=lambda *a, **kw: resend_calls.append(True)):
+    with (
+        patch.dict(os.environ, {"SEND_ENABLED": "true"}),
+        patch("resend.Emails.send", side_effect=lambda *a, **kw: resend_calls.append(True)),
+    ):
         result = agent._send_approved_drafts(campaign_name="test", draft_ids=["d1", "d2"])
 
-    assert len(resend_calls) == 0, (
-        "Retired path must not reach Resend regardless of SEND_ENABLED"
-    )
+    assert len(resend_calls) == 0, "Retired path must not reach Resend regardless of SEND_ENABLED"

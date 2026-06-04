@@ -75,7 +75,12 @@ def _run_priority_score_update(campaign_name: str | None, dry_run: bool) -> int:
 
     qm = QueueManager(campaign_name=campaign_name)
     if dry_run:
-        contacts = qm.db.client.table("contacts").select("id").eq("enrichment_status", "enriched").execute()
+        contacts = (
+            qm.db.client.table("contacts")
+            .select("id")
+            .eq("enrichment_status", "enriched")
+            .execute()
+        )
         count = len(contacts.data or [])
         console.print(f"  [dim][DRY RUN] Would update scores for {count} contacts[/dim]")
         return count
@@ -133,8 +138,11 @@ async def _print_stalled_contacts(coordinator, days_stalled: int = 5) -> None:
         company_name = (c.get("companies") or {}).get("name", "—")
         days = c.get("days_stalled")
         days_str = (
-            f"[red]{days}[/red]" if days and days >= 7 else
-            f"[yellow]{days}[/yellow]" if days else "—"
+            f"[red]{days}[/red]"
+            if days and days >= 7
+            else f"[yellow]{days}[/yellow]"
+            if days
+            else "—"
         )
         table.add_row(
             str(i),
@@ -179,10 +187,10 @@ def _print_pipeline_summary(coordinator, campaign_name: str | None) -> None:
 
     priority_states = [
         ("replied_positive", "[bold yellow]Replied (Positive)[/bold yellow]"),
-        ("demo_scheduled",   "[bold green]Demo Scheduled[/bold green]"),
-        ("total_active",     "[cyan]Active in Sequence[/cyan]"),
-        ("nurture",          "[dim]Nurture[/dim]"),
-        ("not_interested",   "[dim]Not Interested[/dim]"),
+        ("demo_scheduled", "[bold green]Demo Scheduled[/bold green]"),
+        ("total_active", "[cyan]Active in Sequence[/cyan]"),
+        ("nurture", "[dim]Nurture[/dim]"),
+        ("not_interested", "[dim]Not Interested[/dim]"),
     ]
     shown: set[str] = set()
 
@@ -213,13 +221,15 @@ async def _async_main(args: argparse.Namespace) -> int:
     campaign = args.campaign or None
 
     now = datetime.now(timezone.utc)
-    console.print(Panel(
-        f"[bold]ProspectIQ — Daily Outreach Operations[/bold]\n"
-        f"[dim]{now.strftime('%A, %B %-d %Y at %-I:%M %p UTC')}[/dim]"
-        + (f"\n[yellow]Campaign: {campaign}[/yellow]" if campaign else "")
-        + ("\n[bold red][DRY RUN][/bold red]" if args.dry_run else ""),
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold]ProspectIQ — Daily Outreach Operations[/bold]\n"
+            f"[dim]{now.strftime('%A, %B %-d %Y at %-I:%M %p UTC')}[/dim]"
+            + (f"\n[yellow]Campaign: {campaign}[/yellow]" if campaign else "")
+            + ("\n[bold red][DRY RUN][/bold red]" if args.dry_run else ""),
+            border_style="blue",
+        )
+    )
 
     errors = 0
 

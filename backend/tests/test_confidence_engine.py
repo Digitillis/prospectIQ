@@ -19,6 +19,7 @@ from backend.app.core.confidence_engine import (
 # classify_evidence_url
 # ---------------------------------------------------------------------------
 
+
 def test_classify_sec_url() -> None:
     assert classify_evidence_url("https://www.sec.gov/cgi-bin/browse-edgar") == "sec_filing"
 
@@ -46,6 +47,7 @@ def test_classify_empty_url_returns_none() -> None:
 # ---------------------------------------------------------------------------
 # apply_evidence_cap
 # ---------------------------------------------------------------------------
+
 
 def test_apply_evidence_cap_with_evidence_passes_through() -> None:
     """Score above threshold WITH evidence — should not be capped."""

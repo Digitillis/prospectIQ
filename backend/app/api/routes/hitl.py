@@ -38,6 +38,7 @@ router = APIRouter(prefix="/api/hitl", tags=["hitl"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def get_db() -> Database:
     return Database(workspace_id=get_workspace_id())
 
@@ -56,8 +57,11 @@ def _require_workspace(db: Database) -> str:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class ActionRequest(BaseModel):
-    action: str  # continue_sequence | manual_reply | mark_converted | unsubscribe | archive | snooze
+    action: (
+        str  # continue_sequence | manual_reply | mark_converted | unsubscribe | archive | snooze
+    )
     notes: Optional[str] = None
     snooze_until: Optional[str] = None  # ISO datetime string
 
@@ -67,8 +71,12 @@ class SuggestResponseRequest(BaseModel):
 
 
 VALID_ACTIONS = {
-    "continue_sequence", "manual_reply", "mark_converted",
-    "unsubscribe", "archive", "snooze",
+    "continue_sequence",
+    "manual_reply",
+    "mark_converted",
+    "unsubscribe",
+    "archive",
+    "snooze",
 }
 
 
@@ -76,11 +84,18 @@ VALID_ACTIONS = {
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/queue")
 async def list_hitl_queue(
-    status: Optional[str] = Query(default="pending", description="pending|reviewing|actioned|snoozed"),
-    priority_max: Optional[int] = Query(default=None, description="Only items with priority <= this value"),
-    classification: Optional[str] = Query(default=None, description="Filter by classification intent"),
+    status: Optional[str] = Query(
+        default="pending", description="pending|reviewing|actioned|snoozed"
+    ),
+    priority_max: Optional[int] = Query(
+        default=None, description="Only items with priority <= this value"
+    ),
+    classification: Optional[str] = Query(
+        default=None, description="Filter by classification intent"
+    ),
     limit: int = Query(default=50, ge=1, le=200),
 ):
     """List HITL queue items sorted by priority then age.
@@ -93,7 +108,9 @@ async def list_hitl_queue(
     try:
         q = (
             db.client.table("hitl_queue")
-            .select("*, campaign_threads(id, status, current_step, company_id, contact_id, instantly_campaign_id)")
+            .select(
+                "*, campaign_threads(id, status, current_step, company_id, contact_id, instantly_campaign_id)"
+            )
             .eq("workspace_id", workspace_id)
         )
         if status:
@@ -123,7 +140,9 @@ async def list_hitl_queue(
             try:
                 msg_res = (
                     db.client.table("thread_messages")
-                    .select("id, direction, subject, body, classification, classification_confidence, summary, sent_at, extracted_entities")
+                    .select(
+                        "id, direction, subject, body, classification, classification_confidence, summary, sent_at, extracted_entities"
+                    )
                     .eq("id", item["message_id"])
                     .limit(1)
                     .execute()
@@ -138,7 +157,9 @@ async def list_hitl_queue(
             try:
                 c_res = (
                     db.client.table("companies")
-                    .select("id, name, tier, pqs_total, status, research_summary, personalization_hooks")
+                    .select(
+                        "id, name, tier, pqs_total, status, research_summary, personalization_hooks"
+                    )
                     .eq("id", company_id)
                     .limit(1)
                     .execute()
@@ -162,12 +183,14 @@ async def list_hitl_queue(
             except Exception:
                 pass
 
-        enriched.append({
-            **item,
-            "message": message,
-            "company": company,
-            "contact": contact,
-        })
+        enriched.append(
+            {
+                **item,
+                "message": message,
+                "company": company,
+                "contact": contact,
+            }
+        )
 
     return {
         "data": enriched,
@@ -205,11 +228,7 @@ async def get_hitl_detail(hitl_id: str):
     thread = None
     try:
         t_res = (
-            db.client.table("campaign_threads")
-            .select("*")
-            .eq("id", thread_id)
-            .limit(1)
-            .execute()
+            db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
         )
         thread = t_res.data[0] if t_res.data else None
     except Exception:
@@ -245,11 +264,7 @@ async def get_hitl_detail(hitl_id: str):
         if contact_id:
             try:
                 ct_res = (
-                    db.client.table("contacts")
-                    .select("*")
-                    .eq("id", contact_id)
-                    .limit(1)
-                    .execute()
+                    db.client.table("contacts").select("*").eq("id", contact_id).limit(1).execute()
                 )
                 contact = ct_res.data[0] if ct_res.data else None
             except Exception:
@@ -310,7 +325,9 @@ async def action_hitl_item(hitl_id: str, body: ActionRequest):
 
     # Fetch thread for company/contact IDs
     try:
-        t_res = db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        t_res = (
+            db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        )
         thread = t_res.data[0] if t_res.data else None
     except Exception:
         thread = None
@@ -322,7 +339,9 @@ async def action_hitl_item(hitl_id: str, body: ActionRequest):
     if body.action == "continue_sequence":
         if thread:
             try:
-                db.client.table("campaign_threads").update({"status": "active"}).eq("id", thread_id).execute()
+                db.client.table("campaign_threads").update({"status": "active"}).eq(
+                    "id", thread_id
+                ).execute()
             except Exception as exc:
                 logger.error("continue_sequence thread update failed: %s", exc)
 
@@ -330,7 +349,9 @@ async def action_hitl_item(hitl_id: str, body: ActionRequest):
         if company_id:
             try:
                 db.update_company(company_id, {"status": "converted"})
-                db.client.table("campaign_threads").update({"status": "converted"}).eq("id", thread_id).execute()
+                db.client.table("campaign_threads").update({"status": "converted"}).eq(
+                    "id", thread_id
+                ).execute()
             except Exception as exc:
                 logger.error("mark_converted failed: %s", exc)
 
@@ -349,36 +370,46 @@ async def action_hitl_item(hitl_id: str, body: ActionRequest):
                     if email:
                         db.add_to_dnc(email, reason="hitl_unsubscribe", added_by="hitl_action")
                 db.update_contact(contact_id, {"outreach_state": "unsubscribed"})
-                db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq("id", thread_id).execute()
+                db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq(
+                    "id", thread_id
+                ).execute()
             except Exception as exc:
                 logger.error("unsubscribe action failed: %s", exc)
 
     elif body.action == "archive":
         if thread:
             try:
-                db.client.table("campaign_threads").update({"status": "closed"}).eq("id", thread_id).execute()
+                db.client.table("campaign_threads").update({"status": "closed"}).eq(
+                    "id", thread_id
+                ).execute()
             except Exception as exc:
                 logger.error("archive failed: %s", exc)
 
     elif body.action == "snooze":
         if not body.snooze_until:
-            raise HTTPException(status_code=400, detail="snooze_until is required for snooze action")
+            raise HTTPException(
+                status_code=400, detail="snooze_until is required for snooze action"
+            )
         try:
-            db.client.table("hitl_queue").update({
-                "status": "snoozed",
-                "snoozed_until": body.snooze_until,
-            }).eq("id", hitl_id).execute()
+            db.client.table("hitl_queue").update(
+                {
+                    "status": "snoozed",
+                    "snoozed_until": body.snooze_until,
+                }
+            ).eq("id", hitl_id).execute()
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Snooze failed: {exc}")
 
         # Update thread message with HITL action
         if item.get("message_id"):
             try:
-                db.client.table("thread_messages").update({
-                    "hitl_action": "snooze",
-                    "hitl_notes": body.notes,
-                    "hitl_actioned_at": _now_iso(),
-                }).eq("id", item["message_id"]).execute()
+                db.client.table("thread_messages").update(
+                    {
+                        "hitl_action": "snooze",
+                        "hitl_notes": body.notes,
+                        "hitl_actioned_at": _now_iso(),
+                    }
+                ).eq("id", item["message_id"]).execute()
             except Exception:
                 pass
 
@@ -386,21 +417,25 @@ async def action_hitl_item(hitl_id: str, body: ActionRequest):
 
     # Mark queue item as actioned (for all non-snooze actions)
     try:
-        db.client.table("hitl_queue").update({
-            "status": "actioned",
-            "actioned_at": _now_iso(),
-        }).eq("id", hitl_id).execute()
+        db.client.table("hitl_queue").update(
+            {
+                "status": "actioned",
+                "actioned_at": _now_iso(),
+            }
+        ).eq("id", hitl_id).execute()
     except Exception as exc:
         logger.error("Failed to mark hitl_queue item as actioned: %s", exc)
 
     # Update thread message with HITL annotation
     if item.get("message_id"):
         try:
-            db.client.table("thread_messages").update({
-                "hitl_action": body.action,
-                "hitl_notes": body.notes,
-                "hitl_actioned_at": _now_iso(),
-            }).eq("id", item["message_id"]).execute()
+            db.client.table("thread_messages").update(
+                {
+                    "hitl_action": body.action,
+                    "hitl_notes": body.notes,
+                    "hitl_actioned_at": _now_iso(),
+                }
+            ).eq("id", item["message_id"]).execute()
         except Exception:
             pass
 
@@ -447,7 +482,7 @@ async def get_hitl_stats():
             .eq("status", "pending")
             .execute()
         )
-        for row in (clf_result.data or []):
+        for row in clf_result.data or []:
             clf = row.get("classification") or "other"
             by_classification[clf] = by_classification.get(clf, 0) + 1
 
@@ -525,7 +560,9 @@ async def suggest_hitl_response(hitl_id: str):
     research = None
 
     try:
-        t_res = db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        t_res = (
+            db.client.table("campaign_threads").select("*").eq("id", thread_id).limit(1).execute()
+        )
         thread = t_res.data[0] if t_res.data else None
     except Exception:
         pass
@@ -566,7 +603,9 @@ async def suggest_hitl_response(hitl_id: str):
     thread_history = "\n\n---\n\n".join(history_parts) or "(no messages yet)"
 
     company_name = company.get("name", "Unknown") if company else "Unknown"
-    contact_name = contact.get("full_name", contact.get("first_name", "Unknown")) if contact else "Unknown"
+    contact_name = (
+        contact.get("full_name", contact.get("first_name", "Unknown")) if contact else "Unknown"
+    )
     contact_title = contact.get("title", "Unknown") if contact else "Unknown"
 
     research_summary = ""
@@ -590,6 +629,7 @@ async def suggest_hitl_response(hitl_id: str):
     # Build system prompt from config
     try:
         from backend.app.core.config import get_offer_context, get_outreach_guidelines
+
         offer = get_offer_context()
         guidelines = get_outreach_guidelines()
         sender = guidelines.get("sender", {})
@@ -658,6 +698,7 @@ OUTPUT FORMAT (JSON):
 
     try:
         from backend.app.core.config import get_settings
+
         settings = get_settings()
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         response = client.messages.create(

@@ -1,0 +1,37 @@
+capability: lead-acq-enrichment
+name: Lead Acquisition & Enrichment
+type: capability
+tier: quick
+source_fingerprint: tbd  # run /art verify to stamp
+repo: /Users/avanish/prospectIQ
+iterations:
+  - {round: 1, stage: quick-expose, verdict: Red, composite: 3.38, red_block: true, red_block_dim: trust_governance, findings_count: 22 }
+state: ASSESSED
+deep_dive_recommended: true
+deep_dive_why: |
+  The triage already converged across four personas with VERIFIED file:line evidence, so the findings are reliable, but the remediation surface is broad and high-stakes: tenant-isolation defects (unscoped backup/lookalike/update queries, IDOR, class-level cache) need a coordinated isolation audit befo
+verdict: Lead Acquisition & Enrichment is functionally partial and governance-unsafe: a cross-tenant PII backup leak plus a broken NAICS gate, fail-open credit guard, hallucinated trigger events, and four unim
+findings:
+  - {rank: 1, severity: Critical, status: not_attempted, tag: VERIFIED, title: "contact_backup exports ALL workspaces' contacts/companies to a local file labeled with one workspace"}
+  - {rank: 2, severity: Critical, status: not_attempted, tag: VERIFIED, title: "NAICS allowlist gate is wired to a field hardcoded to None — 100% silent drop or 100% silent pass"}
+  - {rank: 3, severity: High, status: not_attempted, tag: VERIFIED, title: "Apollo credit guard and get_credits fail open on any exception"}
+  - {rank: 4, severity: High, status: not_attempted, tag: VERIFIED, title: "Trigger events are zero-retrieval Claude hallucinations presented as sourced last-12-months facts"}
+  - {rank: 5, severity: High, status: not_attempted, tag: VERIFIED, title: "Class-level Apollo enrich cache and empty-streak shared across all workspaces in-process"}
+  - {rank: 6, severity: High, status: not_attempted, tag: VERIFIED, title: "Four of seven targeting strategies are unimplemented no-ops"}
+  - {rank: 7, severity: High, status: not_attempted, tag: VERIFIED, title: "Unscoped reads/writes bypass workspace isolation (lookalike, get_company, IDOR updates)"}
+  - {rank: 8, severity: Medium, status: not_attempted, tag: VERIFIED, title: "conversion_probability is a hardcoded formula falsely labeled 'based on patterns'"}
+  - {rank: 9, severity: High, status: not_attempted, tag: VERIFIED, title: "ICP $2B/3,500-employee size gate not enforced on null-size records (confirmed leak)"}
+  - {rank: 10, severity: Medium, status: not_attempted, tag: VERIFIED, title: "ZeroBounce guessed emails (Catch-All/Unknown) written and sent without a Valid-status gate"}
+  - {rank: 11, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Contacts with missing/empty titles default to 'target' (outreach-eligible)"}
+  - {rank: 12, severity: Medium, status: not_attempted, tag: VERIFIED, title: "raw_contacts audit-trail inserts silently swallowed (except: pass)"}
+  - {rank: 13, severity: Medium, status: not_attempted, tag: VERIFIED, title: "trigger_events/trigger_score have no DB columns (migration 014 unrun) — invisible to SQL"}
+  - {rank: 14, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Apollo API key passed as plaintext query string on the credit-check call"}
+  - {rank: 15, severity: Medium, status: not_attempted, tag: VERIFIED, title: "PII (name + email) written to warning logs and Rich console"}
+  - {rank: 16, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Haiku title-classification confidence is uncalibrated; review thresholds are arbitrary"}
+  - {rank: 17, severity: Medium, status: not_attempted, tag: VERIFIED, title: "title_classifications/title_review_queue cached globally without workspace scope"}
+  - {rank: 18, severity: Medium, status: not_attempted, tag: VERIFIED, title: "Synchronous single-threaded pipeline, no retry/backoff, blocking 60s sleeps"}
+  - {rank: 19, severity: Medium, status: not_attempted, tag: INFERRED, title: "Lookalike tech-overlap scoring consumes hallucinated tech-stack labels"}
+  - {rank: 20, severity: Medium, status: not_attempted, tag: INFERRED, title: "is_manufacturer_company gate relies on freetext-industry-derived tier, not verified NAICS"}
+  - {rank: 21, severity: Low, status: not_attempted, tag: VERIFIED, title: "Empty NAICS allowlist fails open with no warning"}
+  - {rank: 22, severity: Low, status: not_attempted, tag: VERIFIED, title: "Supabase anon JWT present in repo-root .env"}
+approval: null

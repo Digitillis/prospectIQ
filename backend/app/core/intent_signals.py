@@ -30,16 +30,18 @@ logger = logging.getLogger(__name__)
 @dataclass
 class IntentSignal:
     """A single detected intent signal."""
-    signal_type: str        # e.g., "hiring_digital", "multi_open", "capex"
-    strength: str           # "strong", "moderate", "weak"
-    points: int             # 1-10
-    evidence: str           # Human-readable evidence
-    source: str             # "apollo", "engagement", "research"
+
+    signal_type: str  # e.g., "hiring_digital", "multi_open", "capex"
+    strength: str  # "strong", "moderate", "weak"
+    points: int  # 1-10
+    evidence: str  # Human-readable evidence
+    source: str  # "apollo", "engagement", "research"
 
 
 @dataclass
 class IntentReport:
     """Aggregated intent analysis for a company."""
+
     company_id: str
     company_name: str
     signals: list[IntentSignal] = field(default_factory=list)
@@ -107,36 +109,40 @@ def _check_apollo_signals(company: dict, report: IntentReport) -> None:
     growth_12m = company.get("headcount_twelve_month_growth") or 0
 
     if growth_6m > 0.15:
-        report.add_signal(IntentSignal(
-            signal_type="rapid_growth",
-            strength="strong",
-            points=7,
-            evidence=f"Headcount grew {growth_6m:.0%} in 6 months — active expansion",
-            source="apollo",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="rapid_growth",
+                strength="strong",
+                points=7,
+                evidence=f"Headcount grew {growth_6m:.0%} in 6 months — active expansion",
+                source="apollo",
+            )
+        )
     elif growth_6m > 0.05:
-        report.add_signal(IntentSignal(
-            signal_type="steady_growth",
-            strength="moderate",
-            points=3,
-            evidence=f"Headcount grew {growth_6m:.0%} in 6 months",
-            source="apollo",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="steady_growth",
+                strength="moderate",
+                points=3,
+                evidence=f"Headcount grew {growth_6m:.0%} in 6 months",
+                source="apollo",
+            )
+        )
 
     # Negative growth can also be a signal (cost-cutting → need efficiency tools)
     if growth_6m < -0.10:
-        report.add_signal(IntentSignal(
-            signal_type="workforce_reduction",
-            strength="moderate",
-            points=4,
-            evidence=f"Headcount declined {abs(growth_6m):.0%} in 6 months — may need automation",
-            source="apollo",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="workforce_reduction",
+                strength="moderate",
+                points=4,
+                evidence=f"Headcount declined {abs(growth_6m):.0%} in 6 months — may need automation",
+                source="apollo",
+            )
+        )
 
 
-def _check_engagement_velocity(
-    db: Database, company_id: str, report: IntentReport
-) -> None:
+def _check_engagement_velocity(db: Database, company_id: str, report: IntentReport) -> None:
     """Detect buying signals from engagement patterns.
 
     Multiple opens/clicks in a short window = actively evaluating.
@@ -165,41 +171,49 @@ def _check_engagement_velocity(
 
     # Multiple opens = reading carefully
     if len(opens) >= 3:
-        report.add_signal(IntentSignal(
-            signal_type="multi_open",
-            strength="strong",
-            points=8,
-            evidence=f"{len(opens)} email opens in 14 days — actively reading",
-            source="engagement",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="multi_open",
+                strength="strong",
+                points=8,
+                evidence=f"{len(opens)} email opens in 14 days — actively reading",
+                source="engagement",
+            )
+        )
     elif len(opens) >= 2:
-        report.add_signal(IntentSignal(
-            signal_type="repeat_open",
-            strength="moderate",
-            points=4,
-            evidence=f"{len(opens)} email opens in 14 days",
-            source="engagement",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="repeat_open",
+                strength="moderate",
+                points=4,
+                evidence=f"{len(opens)} email opens in 14 days",
+                source="engagement",
+            )
+        )
 
     # Any click = very high intent
     if clicks:
-        report.add_signal(IntentSignal(
-            signal_type="link_click",
-            strength="strong",
-            points=10,
-            evidence=f"{len(clicks)} link click(s) — actively exploring",
-            source="engagement",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="link_click",
+                strength="strong",
+                points=10,
+                evidence=f"{len(clicks)} link click(s) — actively exploring",
+                source="engagement",
+            )
+        )
 
     # Reply = highest possible intent (but these already change status)
     if replies:
-        report.add_signal(IntentSignal(
-            signal_type="reply",
-            strength="strong",
-            points=10,
-            evidence=f"Replied to outreach",
-            source="engagement",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="reply",
+                strength="strong",
+                points=10,
+                evidence=f"Replied to outreach",
+                source="engagement",
+            )
+        )
 
 
 def _check_research_signals(
@@ -216,60 +230,89 @@ def _check_research_signals(
     dt_status = (research.get("digital_transformation_status") or "").lower()
 
     # Active digital transformation = budget allocated
-    if any(kw in dt_status for kw in [
-        "active", "in progress", "recently launched", "implementing",
-        "invested in", "piloting", "evaluating",
-    ]):
-        report.add_signal(IntentSignal(
-            signal_type="active_digital_transformation",
-            strength="strong",
-            points=8,
-            evidence=f"Digital transformation: {dt_status[:100]}",
-            source="research",
-        ))
+    if any(
+        kw in dt_status
+        for kw in [
+            "active",
+            "in progress",
+            "recently launched",
+            "implementing",
+            "invested in",
+            "piloting",
+            "evaluating",
+        ]
+    ):
+        report.add_signal(
+            IntentSignal(
+                signal_type="active_digital_transformation",
+                strength="strong",
+                points=8,
+                evidence=f"Digital transformation: {dt_status[:100]}",
+                source="research",
+            )
+        )
 
     # Specific pain points that align with Digitillis
     high_intent_pains = {
-        "downtime", "unplanned", "reactive maintenance", "equipment failure",
-        "compliance", "fsma", "haccp", "audit", "recall",
-        "quality", "defect", "scrap",
+        "downtime",
+        "unplanned",
+        "reactive maintenance",
+        "equipment failure",
+        "compliance",
+        "fsma",
+        "haccp",
+        "audit",
+        "recall",
+        "quality",
+        "defect",
+        "scrap",
     }
-    matching_pains = [
-        p for p in pain_points
-        if any(kw in p.lower() for kw in high_intent_pains)
-    ]
+    matching_pains = [p for p in pain_points if any(kw in p.lower() for kw in high_intent_pains)]
     if matching_pains:
-        report.add_signal(IntentSignal(
-            signal_type="aligned_pain_points",
-            strength="strong" if len(matching_pains) >= 2 else "moderate",
-            points=6 if len(matching_pains) >= 2 else 3,
-            evidence=f"Pain points: {', '.join(matching_pains[:3])}",
-            source="research",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="aligned_pain_points",
+                strength="strong" if len(matching_pains) >= 2 else "moderate",
+                points=6 if len(matching_pains) >= 2 else 3,
+                evidence=f"Pain points: {', '.join(matching_pains[:3])}",
+                source="research",
+            )
+        )
 
     # IoT maturity = readiness to adopt
     iot_maturity = research.get("iot_maturity", "none")
     if iot_maturity in ("intermediate", "advanced"):
-        report.add_signal(IntentSignal(
-            signal_type="iot_ready",
-            strength="moderate",
-            points=4,
-            evidence=f"IoT maturity: {iot_maturity} — infrastructure ready for AI layer",
-            source="research",
-        ))
+        report.add_signal(
+            IntentSignal(
+                signal_type="iot_ready",
+                strength="moderate",
+                points=4,
+                evidence=f"IoT maturity: {iot_maturity} — infrastructure ready for AI layer",
+                source="research",
+            )
+        )
 
     # Funding/investment = budget available
     funding = research.get("funding_status") or ""
-    if any(kw in funding.lower() for kw in [
-        "raised", "funded", "invested", "series", "growth equity",
-    ]):
-        report.add_signal(IntentSignal(
-            signal_type="recent_funding",
-            strength="moderate",
-            points=5,
-            evidence=f"Funding: {funding[:100]}",
-            source="research",
-        ))
+    if any(
+        kw in funding.lower()
+        for kw in [
+            "raised",
+            "funded",
+            "invested",
+            "series",
+            "growth equity",
+        ]
+    ):
+        report.add_signal(
+            IntentSignal(
+                signal_type="recent_funding",
+                strength="moderate",
+                points=5,
+                evidence=f"Funding: {funding[:100]}",
+                source="research",
+            )
+        )
 
 
 def _check_hiring_signals(company: dict, report: IntentReport) -> None:
@@ -283,18 +326,29 @@ def _check_hiring_signals(company: dict, report: IntentReport) -> None:
     hooks = company.get("personalization_hooks") or []
     for hook in hooks:
         hook_lower = hook.lower()
-        if any(kw in hook_lower for kw in [
-            "hired", "appointed", "new role", "joined as",
-            "head of digital", "vp digital", "director of innovation",
-            "chief digital", "head of automation",
-        ]):
-            report.add_signal(IntentSignal(
-                signal_type="hiring_digital_role",
-                strength="strong",
-                points=7,
-                evidence=hook[:150],
-                source="research",
-            ))
+        if any(
+            kw in hook_lower
+            for kw in [
+                "hired",
+                "appointed",
+                "new role",
+                "joined as",
+                "head of digital",
+                "vp digital",
+                "director of innovation",
+                "chief digital",
+                "head of automation",
+            ]
+        ):
+            report.add_signal(
+                IntentSignal(
+                    signal_type="hiring_digital_role",
+                    strength="strong",
+                    points=7,
+                    evidence=hook[:150],
+                    source="research",
+                )
+            )
             break  # Only count once
 
 

@@ -64,20 +64,21 @@ def get_db() -> Database:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class StepDefinition(BaseModel):
     step: int
     name: str
-    channel: str = "email"          # email | linkedin
-    delay_days: int = 0             # Days after previous step fires
-    subject_template: Optional[str] = None   # e.g. "{{company_name}} — re: unplanned downtime"
+    channel: str = "email"  # email | linkedin
+    delay_days: int = 0  # Days after previous step fires
+    subject_template: Optional[str] = None  # e.g. "{{company_name}} — re: unplanned downtime"
     instructions: dict[str, Any] = {}
 
 
 class CreateSequenceRequest(BaseModel):
-    name: str                        # Unique snake_case key, e.g. "machinery_vp_ops"
-    display_name: str                # Human-readable, e.g. "Machinery VP Operations"
+    name: str  # Unique snake_case key, e.g. "machinery_vp_ops"
+    display_name: str  # Human-readable, e.g. "Machinery VP Operations"
     description: Optional[str] = None
-    channel: str = "email"          # Dominant channel for the sequence
+    channel: str = "email"  # Dominant channel for the sequence
     steps: list[StepDefinition]
 
 
@@ -90,20 +91,23 @@ class UpdateSequenceRequest(BaseModel):
 
 
 class LaunchSequenceRequest(BaseModel):
-    sequence_name: str              # Which sequence to use
-    company_ids: list[str]          # Companies to enroll
+    sequence_name: str  # Which sequence to use
+    company_ids: list[str]  # Companies to enroll
     send_immediately: bool = False  # Generate + attempt send step 1 now (requires SEND_ENABLED)
     scheduled_send_date: Optional[str] = None  # ISO date to start sending, e.g. "2026-04-05"
 
 
 class SendApprovedRequest(BaseModel):
     campaign_name: Optional[str] = None  # Instantly campaign name override
-    draft_ids: Optional[List[str]] = None  # Explicit list of draft IDs to send; omit to use scheduler selection
+    draft_ids: Optional[List[str]] = (
+        None  # Explicit list of draft IDs to send; omit to use scheduler selection
+    )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _yaml_sequences() -> dict:
     """Load built-in sequences from sequences.yaml, keyed by sequence name."""
@@ -118,8 +122,7 @@ def _db_sequences(db: Database) -> list[dict]:
     """Fetch all custom sequence definitions from Supabase."""
     try:
         result = (
-            db._filter_ws(db.client.table("campaign_sequence_definitions")
-            .select("*"))
+            db._filter_ws(db.client.table("campaign_sequence_definitions").select("*"))
             .order("created_at")
             .execute()
         )
@@ -172,6 +175,7 @@ def _merge_sequences(yaml_seqs: dict, db_seqs: list[dict]) -> list[dict]:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/")
 async def list_sequences():
     """List all sequence definitions — both built-in (YAML) and custom (DB).
@@ -203,12 +207,11 @@ async def list_active_enrollments(limit: int = 100):
     db = get_db()
     try:
         result = (
-            db._filter_ws(db.client.table("engagement_sequences")
-            .select(
-                "*, "
-                "companies(name, tier, pqs_total), "
-                "contacts(full_name, title, email)"
-            ))
+            db._filter_ws(
+                db.client.table("engagement_sequences").select(
+                    "*, companies(name, tier, pqs_total), contacts(full_name, title, email)"
+                )
+            )
             .eq("status", "active")
             .order("next_action_at")
             .limit(limit)
@@ -273,16 +276,20 @@ async def create_sequence(body: CreateSequenceRequest):
     try:
         result = (
             db.client.table("campaign_sequence_definitions")
-            .insert(db._inject_ws({
-                "name": body.name,
-                "display_name": body.display_name,
-                "description": body.description or "",
-                "channel": body.channel,
-                "steps": steps_data,
-                "is_active": True,
-                "created_at": now,
-                "updated_at": now,
-            }))
+            .insert(
+                db._inject_ws(
+                    {
+                        "name": body.name,
+                        "display_name": body.display_name,
+                        "description": body.description or "",
+                        "channel": body.channel,
+                        "steps": steps_data,
+                        "is_active": True,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+            )
             .execute()
         )
         if not result.data:
@@ -292,7 +299,7 @@ async def create_sequence(body: CreateSequenceRequest):
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
             raise HTTPException(
                 status_code=409,
-                detail=f"A sequence named '{body.name}' already exists. Use PATCH to update it."
+                detail=f"A sequence named '{body.name}' already exists. Use PATCH to update it.",
             )
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -308,15 +315,14 @@ async def update_sequence(sequence_name: str, body: UpdateSequenceRequest):
 
     # Verify it exists in DB
     existing = (
-        db._filter_ws(db.client.table("campaign_sequence_definitions")
-        .select("id"))
+        db._filter_ws(db.client.table("campaign_sequence_definitions").select("id"))
         .eq("name", sequence_name)
         .execute()
     )
     if not existing.data:
         raise HTTPException(
             status_code=404,
-            detail=f"Custom sequence '{sequence_name}' not found. Only DB-stored sequences can be updated via API."
+            detail=f"Custom sequence '{sequence_name}' not found. Only DB-stored sequences can be updated via API.",
         )
 
     update_data: dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
@@ -332,13 +338,15 @@ async def update_sequence(sequence_name: str, body: UpdateSequenceRequest):
         update_data["is_active"] = body.is_active
 
     result = (
-        db._filter_ws(db.client.table("campaign_sequence_definitions")
-        .update(update_data))
+        db._filter_ws(db.client.table("campaign_sequence_definitions").update(update_data))
         .eq("name", sequence_name)
         .execute()
     )
 
-    return {"data": result.data[0] if result.data else None, "message": f"Sequence '{sequence_name}' updated"}
+    return {
+        "data": result.data[0] if result.data else None,
+        "message": f"Sequence '{sequence_name}' updated",
+    }
 
 
 @router.delete("/{sequence_name}")
@@ -351,18 +359,16 @@ async def delete_sequence(sequence_name: str):
     db = get_db()
 
     existing = (
-        db._filter_ws(db.client.table("campaign_sequence_definitions")
-        .select("id"))
+        db._filter_ws(db.client.table("campaign_sequence_definitions").select("id"))
         .eq("name", sequence_name)
         .execute()
     )
     if not existing.data:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Custom sequence '{sequence_name}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Custom sequence '{sequence_name}' not found.")
 
-    db._filter_ws(db.client.table("campaign_sequence_definitions").delete()).eq("name", sequence_name).execute()
+    db._filter_ws(db.client.table("campaign_sequence_definitions").delete()).eq(
+        "name", sequence_name
+    ).execute()
     return {"message": f"Sequence '{sequence_name}' deleted"}
 
 
@@ -398,14 +404,11 @@ async def launch_sequence(body: LaunchSequenceRequest):
     if not seq_def:
         raise HTTPException(
             status_code=404,
-            detail=f"Sequence '{body.sequence_name}' not found. Check GET /api/sequences/ for available sequences."
+            detail=f"Sequence '{body.sequence_name}' not found. Check GET /api/sequences/ for available sequences.",
         )
 
     if not seq_def.get("is_active"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Sequence '{body.sequence_name}' is inactive."
-        )
+        raise HTTPException(status_code=400, detail=f"Sequence '{body.sequence_name}' is inactive.")
 
     from backend.app.agents.outreach import OutreachAgent
 
@@ -415,7 +418,7 @@ async def launch_sequence(body: LaunchSequenceRequest):
     for company_id in body.company_ids:
         try:
             # Generate Step 1 draft
-            outreach = OutreachAgent()
+            outreach = OutreachAgent(workspace_id=get_workspace_id())
             result = outreach.run(
                 company_ids=[company_id],
                 sequence_name=body.sequence_name,
@@ -424,7 +427,9 @@ async def launch_sequence(body: LaunchSequenceRequest):
             if result.processed > 0:
                 launched.append(company_id)
             else:
-                errors.append({"company_id": company_id, "reason": "Outreach agent produced no draft"})
+                errors.append(
+                    {"company_id": company_id, "reason": "Outreach agent produced no draft"}
+                )
         except Exception as e:
             errors.append({"company_id": company_id, "reason": str(e)[:200]})
 
@@ -432,7 +437,8 @@ async def launch_sequence(body: LaunchSequenceRequest):
     send_status = "staged_for_approval"
     if body.send_immediately and settings.send_enabled:
         from backend.app.agents.engagement import EngagementAgent
-        eng = EngagementAgent()
+
+        eng = EngagementAgent(workspace_id=get_workspace_id())
         eng.run(action="send_approved")
         send_status = "sent_to_instantly"
     elif body.send_immediately and not settings.send_enabled:
@@ -497,16 +503,20 @@ async def save_custom_template(body: SaveTemplateRequest):
     try:
         result = (
             db.client.table("campaign_sequence_definitions")
-            .insert(db._inject_ws({
-                "name": body.name,
-                "display_name": body.display_name,
-                "description": body.description or "",
-                "channel": body.channel,
-                "steps": steps_data,
-                "is_active": True,
-                "created_at": now,
-                "updated_at": now,
-            }))
+            .insert(
+                db._inject_ws(
+                    {
+                        "name": body.name,
+                        "display_name": body.display_name,
+                        "description": body.description or "",
+                        "channel": body.channel,
+                        "steps": steps_data,
+                        "is_active": True,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+            )
             .execute()
         )
         if not result.data:
@@ -515,8 +525,10 @@ async def save_custom_template(body: SaveTemplateRequest):
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
             from fastapi import HTTPException
+
             raise HTTPException(status_code=409, detail=f"Template '{body.name}' already exists.")
         from fastapi import HTTPException
+
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -529,13 +541,15 @@ async def get_routing_config():
     rows = []
     for (cluster, persona), env_var in CLUSTER_SEQUENCE_MAP.items():
         campaign_id = os.environ.get(env_var, "").strip()
-        rows.append({
-            "cluster": cluster,
-            "persona": persona or "general",
-            "env_var": env_var,
-            "campaign_id": campaign_id or None,
-            "linked": bool(campaign_id),
-        })
+        rows.append(
+            {
+                "cluster": cluster,
+                "persona": persona or "general",
+                "env_var": env_var,
+                "campaign_id": campaign_id or None,
+                "linked": bool(campaign_id),
+            }
+        )
 
     # Deduplicate by env_var (multiple persona keys map to same env var)
     seen = set()
@@ -578,7 +592,11 @@ async def update_routing_config(body: RoutingUpdateRequest):
 
     if not env_var:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail=f"No routing entry for cluster={body.cluster}, persona={body.persona}")
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"No routing entry for cluster={body.cluster}, persona={body.persona}",
+        )
 
     os.environ[env_var] = body.campaign_id
 
@@ -609,6 +627,7 @@ async def provision_instantly_campaigns(body: ProvisionRequest = ProvisionReques
     settings = get_settings()
     if not settings.instantly_api_key:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail="INSTANTLY_API_KEY not configured")
 
     results = []
@@ -617,32 +636,38 @@ async def provision_instantly_campaigns(body: ProvisionRequest = ProvisionReques
             continue
         current_id = os.environ.get(env_var, "").strip()
         if current_id:
-            results.append({
-                "cluster": cluster,
-                "persona": persona,
-                "env_var": env_var,
-                "status": "already_linked",
-                "campaign_id": current_id,
-            })
+            results.append(
+                {
+                    "cluster": cluster,
+                    "persona": persona,
+                    "env_var": env_var,
+                    "status": "already_linked",
+                    "campaign_id": current_id,
+                }
+            )
             continue
 
         if body.dry_run:
-            results.append({
-                "cluster": cluster,
-                "persona": persona,
-                "env_var": env_var,
-                "status": "would_provision",
-                "campaign_id": None,
-            })
+            results.append(
+                {
+                    "cluster": cluster,
+                    "persona": persona,
+                    "env_var": env_var,
+                    "status": "would_provision",
+                    "campaign_id": None,
+                }
+            )
         else:
-            results.append({
-                "cluster": cluster,
-                "persona": persona,
-                "env_var": env_var,
-                "status": "not_configured",
-                "campaign_id": None,
-                "action_needed": f"Set {env_var} in your .env file to an Instantly campaign ID",
-            })
+            results.append(
+                {
+                    "cluster": cluster,
+                    "persona": persona,
+                    "env_var": env_var,
+                    "status": "not_configured",
+                    "campaign_id": None,
+                    "action_needed": f"Set {env_var} in your .env file to an Instantly campaign ID",
+                }
+            )
 
     return {
         "results": results,
@@ -670,11 +695,12 @@ async def trigger_send_approved(body: SendApprovedRequest = SendApprovedRequest(
             detail=(
                 "SEND_ENABLED is false. Mailbox warm-up is not complete. "
                 "Set SEND_ENABLED=true in .env (and restart the server) when ready to send."
-            )
+            ),
         )
 
     from backend.app.agents.engagement import EngagementAgent
-    agent = EngagementAgent()
+
+    agent = EngagementAgent(workspace_id=get_workspace_id())
     result = agent.run(
         action="send_approved",
         campaign_name=body.campaign_name,
@@ -699,8 +725,7 @@ async def get_send_status():
     # Count approved but unsent drafts
     try:
         approved = (
-            db._filter_ws(db.client.table("outreach_drafts")
-            .select("id", count="exact"))
+            db._filter_ws(db.client.table("outreach_drafts").select("id", count="exact"))
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
             .execute()
@@ -708,8 +733,7 @@ async def get_send_status():
         approved_count = approved.count or 0
 
         edited = (
-            db._filter_ws(db.client.table("outreach_drafts")
-            .select("id", count="exact"))
+            db._filter_ws(db.client.table("outreach_drafts").select("id", count="exact"))
             .eq("approval_status", "edited")
             .is_("sent_at", "null")
             .execute()
@@ -717,8 +741,7 @@ async def get_send_status():
         edited_count = edited.count or 0
 
         sent = (
-            db._filter_ws(db.client.table("outreach_drafts")
-            .select("id", count="exact"))
+            db._filter_ws(db.client.table("outreach_drafts").select("id", count="exact"))
             .not_.is_("sent_at", "null")
             .execute()
         )
@@ -738,7 +761,8 @@ async def get_send_status():
             "poll_instantly": "every 6 hours",
         },
         "action_needed": (
-            None if settings.send_enabled
+            None
+            if settings.send_enabled
             else "Set SEND_ENABLED=true in .env and restart server when mailbox warm-up completes"
         ),
     }
@@ -753,7 +777,7 @@ async def get_send_status():
 
 class SequenceStepV2(BaseModel):
     step_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    step_type: str                        # email | wait | condition | linkedin | task
+    step_type: str  # email | wait | condition | linkedin | task
     step_order: int
 
     # Email
@@ -768,8 +792,8 @@ class SequenceStepV2(BaseModel):
     # Condition branch
     condition_type: Optional[str] = None  # if_opened | if_replied | if_clicked | if_pqs_above
     condition_value: Optional[Any] = None
-    branch_yes: Optional[str] = None      # step_id
-    branch_no: Optional[str] = None       # step_id
+    branch_yes: Optional[str] = None  # step_id
+    branch_no: Optional[str] = None  # step_id
 
     # Task
     task_description: Optional[str] = None
@@ -808,9 +832,13 @@ def _validate_sequence_steps(steps: List[SequenceStepV2]) -> List[str]:
     for step in steps:
         if step.step_type == "condition":
             if step.branch_yes and step.branch_yes not in step_ids:
-                errors.append(f"Condition step (order {step.step_order}) branch_yes points to unknown step_id.")
+                errors.append(
+                    f"Condition step (order {step.step_order}) branch_yes points to unknown step_id."
+                )
             if step.branch_no and step.branch_no not in step_ids:
-                errors.append(f"Condition step (order {step.step_order}) branch_no points to unknown step_id.")
+                errors.append(
+                    f"Condition step (order {step.step_order}) branch_no points to unknown step_id."
+                )
     return errors
 
 
@@ -853,19 +881,23 @@ async def create_sequence_v2(body: SequenceDefinitionV2Body):
     try:
         result = (
             db.client.table("campaign_sequence_definitions_v2")
-            .insert(db._inject_ws({
-                "id": str(uuid.uuid4()),
-                "name": body.name,
-                "description": body.description or "",
-                "cluster": body.cluster,
-                "persona": body.persona,
-                "steps": steps_data,
-                "is_template": body.is_template,
-                "tags": body.tags,
-                "is_active": True,
-                "created_at": now,
-                "updated_at": now,
-            }))
+            .insert(
+                db._inject_ws(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": body.name,
+                        "description": body.description or "",
+                        "cluster": body.cluster,
+                        "persona": body.persona,
+                        "steps": steps_data,
+                        "is_template": body.is_template,
+                        "tags": body.tags,
+                        "is_active": True,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+            )
             .execute()
         )
         if not result.data:
@@ -875,7 +907,9 @@ async def create_sequence_v2(body: SequenceDefinitionV2Body):
         raise
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-            raise HTTPException(status_code=409, detail=f"Sequence named '{body.name}' already exists.")
+            raise HTTPException(
+                status_code=409, detail=f"Sequence named '{body.name}' already exists."
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -932,7 +966,10 @@ async def update_sequence_v2(sequence_id: str, body: SequenceDefinitionV2Body):
             .eq("id", sequence_id)
             .execute()
         )
-        return {"data": result.data[0] if result.data else None, "message": f"Sequence '{sequence_id}' updated"}
+        return {
+            "data": result.data[0] if result.data else None,
+            "message": f"Sequence '{sequence_id}' updated",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -950,8 +987,9 @@ async def delete_sequence_v2(sequence_id: str):
         raise HTTPException(status_code=404, detail=f"Sequence '{sequence_id}' not found.")
 
     db._filter_ws(
-        db.client.table("campaign_sequence_definitions_v2")
-        .update({"is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
+        db.client.table("campaign_sequence_definitions_v2").update(
+            {"is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()}
+        )
     ).eq("id", sequence_id).execute()
 
     return {"message": f"Sequence '{sequence_id}' deactivated"}
@@ -976,19 +1014,23 @@ async def duplicate_sequence_v2(sequence_id: str):
     try:
         result = (
             db.client.table("campaign_sequence_definitions_v2")
-            .insert(db._inject_ws({
-                "id": new_id,
-                "name": f"{source['name']}_copy_{new_id[:6]}",
-                "description": source.get("description", ""),
-                "cluster": source.get("cluster"),
-                "persona": source.get("persona"),
-                "steps": source.get("steps", []),
-                "is_template": source.get("is_template", False),
-                "tags": source.get("tags", []),
-                "is_active": True,
-                "created_at": now,
-                "updated_at": now,
-            }))
+            .insert(
+                db._inject_ws(
+                    {
+                        "id": new_id,
+                        "name": f"{source['name']}_copy_{new_id[:6]}",
+                        "description": source.get("description", ""),
+                        "cluster": source.get("cluster"),
+                        "persona": source.get("persona"),
+                        "steps": source.get("steps", []),
+                        "is_template": source.get("is_template", False),
+                        "tags": source.get("tags", []),
+                        "is_active": True,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+            )
             .execute()
         )
         if not result.data:
@@ -1014,19 +1056,27 @@ async def preview_sequence_v2(sequence_id: str, body: SequencePreviewRequest):
     seq = seq_result.data[0]
 
     try:
-        contact_result = db._filter_ws(db.client.table("contacts").select("*")).eq("id", body.contact_id).execute()
+        contact_result = (
+            db._filter_ws(db.client.table("contacts").select("*"))
+            .eq("id", body.contact_id)
+            .execute()
+        )
         contact = contact_result.data[0] if contact_result.data else {}
     except Exception:
         contact = {}
 
     try:
-        company_result = db._filter_ws(db.client.table("companies").select("*")).eq("id", body.company_id).execute()
+        company_result = (
+            db._filter_ws(db.client.table("companies").select("*"))
+            .eq("id", body.company_id)
+            .execute()
+        )
         company = company_result.data[0] if company_result.data else {}
     except Exception:
         company = {}
 
     rendered_steps = []
-    for step in (seq.get("steps") or []):
+    for step in seq.get("steps") or []:
         rendered: dict[str, Any] = {
             "step_id": step.get("step_id"),
             "step_type": step.get("step_type"),
@@ -1034,7 +1084,9 @@ async def preview_sequence_v2(sequence_id: str, body: SequencePreviewRequest):
         }
         stype = step.get("step_type")
         if stype == "email":
-            rendered["subject"] = _render_template(step.get("subject_template") or "", contact, company)
+            rendered["subject"] = _render_template(
+                step.get("subject_template") or "", contact, company
+            )
             rendered["body"] = _render_template(step.get("body_template") or "", contact, company)
         elif stype == "wait":
             rendered["wait_days"] = step.get("wait_days")
@@ -1042,7 +1094,9 @@ async def preview_sequence_v2(sequence_id: str, body: SequencePreviewRequest):
         elif stype == "condition":
             rendered["condition_type"] = step.get("condition_type")
         elif stype == "task":
-            rendered["task_description"] = _render_template(step.get("task_description") or "", contact, company)
+            rendered["task_description"] = _render_template(
+                step.get("task_description") or "", contact, company
+            )
         elif stype == "linkedin":
             rendered["body"] = _render_template(step.get("body_template") or "", contact, company)
         rendered_steps.append(rendered)
@@ -1083,8 +1137,7 @@ async def patch_enrollment(enrollment_id: str, body: EnrollmentPatchRequest):
         raise HTTPException(status_code=404, detail=f"Enrollment '{enrollment_id}' not found.")
     now = datetime.now(timezone.utc).isoformat()
     db._filter_ws(
-        db.client.table("engagement_sequences")
-        .update({"status": body.status, "updated_at": now})
+        db.client.table("engagement_sequences").update({"status": body.status, "updated_at": now})
     ).eq("id", enrollment_id).execute()
     return {"message": f"Enrollment {enrollment_id} set to '{body.status}'", "status": body.status}
 
@@ -1095,7 +1148,9 @@ async def get_sequence_stats_v2(sequence_id: str):
     db = get_db()
     try:
         enroll_result = (
-            db._filter_ws(db.client.table("engagement_sequences").select("id,status", count="exact"))
+            db._filter_ws(
+                db.client.table("engagement_sequences").select("id,status", count="exact")
+            )
             .eq("sequence_name", sequence_id)
             .execute()
         )
@@ -1123,6 +1178,7 @@ async def get_sequence_stats_v2(sequence_id: str):
 # Timeline — GET /api/sequences/v2/timeline
 # ---------------------------------------------------------------------------
 
+
 @v2_router.get("/timeline")
 async def get_sequence_timeline():
     """Return all active/paused/completed enrollment rows with per-step due dates.
@@ -1133,15 +1189,12 @@ async def get_sequence_timeline():
     db = get_db()
 
     # Fetch all enrollments for this workspace
-    enroll_result = (
-        db._filter_ws(
-            db.client.table("engagement_sequences").select(
-                "id, company_id, contact_id, sequence_name, current_step, total_steps, "
-                "status, next_action_at, next_action_type, created_at"
-            )
+    enroll_result = db._filter_ws(
+        db.client.table("engagement_sequences").select(
+            "id, company_id, contact_id, sequence_name, current_step, total_steps, "
+            "status, next_action_at, next_action_type, created_at"
         )
-        .execute()
-    )
+    ).execute()
     enrollments = enroll_result.data or []
     if not enrollments:
         return {"data": [], "total": 0}
@@ -1153,10 +1206,7 @@ async def get_sequence_timeline():
     companies_map: dict[str, dict] = {}
     if company_ids:
         comp_result = (
-            db.client.table("companies")
-            .select("id, name")
-            .in_("id", company_ids)
-            .execute()
+            db.client.table("companies").select("id, name").in_("id", company_ids).execute()
         )
         companies_map = {c["id"]: c for c in (comp_result.data or [])}
 
@@ -1175,15 +1225,13 @@ async def get_sequence_timeline():
     step1_map: dict[str, str] = {}  # contact_id -> sent_at
     if contact_ids:
         drafts_result = (
-            db._filter_ws(
-                db.client.table("outreach_drafts").select("contact_id, sent_at")
-            )
+            db._filter_ws(db.client.table("outreach_drafts").select("contact_id, sent_at"))
             .eq("sequence_step", 1)
             .not_.is_("sent_at", "null")
             .in_("contact_id", contact_ids)
             .execute()
         )
-        for d in (drafts_result.data or []):
+        for d in drafts_result.data or []:
             if d["contact_id"] not in step1_map:
                 step1_map[d["contact_id"]] = d["sent_at"]
 
@@ -1199,7 +1247,7 @@ async def get_sequence_timeline():
                 .order("created_at", desc=True)
                 .execute()
             )
-            for msg in (thread_result.data or []):
+            for msg in thread_result.data or []:
                 cid = msg.get("contact_id")
                 if cid and cid not in reply_map:
                     reply_map[cid] = msg
@@ -1208,6 +1256,7 @@ async def get_sequence_timeline():
 
     # Load sequence step delays from YAML to compute per-step due dates
     from backend.app.core.config import get_sequences_config
+
     sequences_config = get_sequences_config()
     step_delays_by_seq: dict[str, dict[int, int]] = {}
     for seq_name, seq_def in sequences_config.get("sequences", {}).items():
@@ -1242,26 +1291,28 @@ async def get_sequence_timeline():
             except Exception:
                 pass
 
-        rows.append({
-            "enrollment_id": e["id"],
-            "company_id": company_id,
-            "company_name": company.get("name"),
-            "contact_id": contact_id,
-            "contact_name": contact.get("full_name"),
-            "contact_email": contact.get("email"),
-            "persona_type": contact.get("persona_type"),
-            "sequence_name": seq_name,
-            "current_step": e.get("current_step"),
-            "total_steps": total_steps,
-            "status": e.get("status"),
-            "next_action_at": e.get("next_action_at"),
-            "next_action_type": e.get("next_action_type"),
-            "step1_sent_at": step1_sent_at,
-            **step_due_dates,
-            "reply_received": reply is not None,
-            "reply_intent": reply.get("classification") if reply else None,
-            "reply_body_preview": (reply.get("body", "")[:120] if reply else None),
-        })
+        rows.append(
+            {
+                "enrollment_id": e["id"],
+                "company_id": company_id,
+                "company_name": company.get("name"),
+                "contact_id": contact_id,
+                "contact_name": contact.get("full_name"),
+                "contact_email": contact.get("email"),
+                "persona_type": contact.get("persona_type"),
+                "sequence_name": seq_name,
+                "current_step": e.get("current_step"),
+                "total_steps": total_steps,
+                "status": e.get("status"),
+                "next_action_at": e.get("next_action_at"),
+                "next_action_type": e.get("next_action_type"),
+                "step1_sent_at": step1_sent_at,
+                **step_due_dates,
+                "reply_received": reply is not None,
+                "reply_intent": reply.get("classification") if reply else None,
+                "reply_body_preview": (reply.get("body", "")[:120] if reply else None),
+            }
+        )
 
     return {"data": rows, "total": len(rows)}
 
@@ -1269,6 +1320,7 @@ async def get_sequence_timeline():
 # ---------------------------------------------------------------------------
 # Log Reply — POST /api/sequences/v2/contacts/{contact_id}/reply
 # ---------------------------------------------------------------------------
+
 
 class LogReplyRequest(BaseModel):
     body: str
@@ -1293,14 +1345,22 @@ async def log_reply(contact_id: str, body: LogReplyRequest):
     # Upsert interaction record
     try:
         db._filter_ws(
-            db.client.table("interactions").insert(db._inject_ws({
-                "contact_id": contact_id,
-                "type": "email_replied",
-                "body": body.body,
-                "source": "manual",
-                "metadata": {"direction": "inbound", "intent": body.intent, "notes": body.notes},
-                "created_at": now,
-            }))
+            db.client.table("interactions").insert(
+                db._inject_ws(
+                    {
+                        "contact_id": contact_id,
+                        "type": "email_replied",
+                        "body": body.body,
+                        "source": "manual",
+                        "metadata": {
+                            "direction": "inbound",
+                            "intent": body.intent,
+                            "notes": body.notes,
+                        },
+                        "created_at": now,
+                    }
+                )
+            )
         ).execute()
     except Exception as e:
         logger.warning(f"log_reply: failed to insert interaction: {e}")
@@ -1310,9 +1370,7 @@ async def log_reply(contact_id: str, body: LogReplyRequest):
     thread_id: str | None = None
     try:
         thread_result = (
-            db._filter_ws(
-                db.client.table("campaign_threads").select("id")
-            )
+            db._filter_ws(db.client.table("campaign_threads").select("id"))
             .eq("contact_id", contact_id)
             .limit(1)
             .execute()
@@ -1324,33 +1382,37 @@ async def log_reply(contact_id: str, body: LogReplyRequest):
 
     if thread_id:
         try:
-            db.client.table("thread_messages").insert({
-                "thread_id": thread_id,
-                "contact_id": contact_id,
-                "direction": "inbound",
-                "body": body.body,
-                "classification": body.intent,
-                "source": "manual",
-                "created_at": now,
-            }).execute()
+            db.client.table("thread_messages").insert(
+                {
+                    "thread_id": thread_id,
+                    "contact_id": contact_id,
+                    "direction": "inbound",
+                    "body": body.body,
+                    "classification": body.intent,
+                    "source": "manual",
+                    "created_at": now,
+                }
+            ).execute()
         except Exception as e:
             logger.warning(f"log_reply: failed to insert thread_messages: {e}")
 
         # Update campaign_threads status
         try:
-            db.client.table("campaign_threads").update({
-                "status": "replied",
-                "last_replied_at": now,
-            }).eq("id", thread_id).execute()
+            db.client.table("campaign_threads").update(
+                {
+                    "status": "replied",
+                    "last_replied_at": now,
+                }
+            ).eq("id", thread_id).execute()
         except Exception as e:
             logger.warning(f"log_reply: failed to update campaign_threads: {e}")
 
     # Update engagement_sequences based on intent
     enrollment_id = body.sequence_enrollment_id
     try:
-        query = db._filter_ws(
-            db.client.table("engagement_sequences").select("id, status")
-        ).eq("contact_id", contact_id)
+        query = db._filter_ws(db.client.table("engagement_sequences").select("id, status")).eq(
+            "contact_id", contact_id
+        )
         if enrollment_id:
             query = query.eq("id", enrollment_id)
         enroll_result = query.limit(1).execute()
@@ -1359,18 +1421,23 @@ async def log_reply(contact_id: str, body: LogReplyRequest):
         if enrollment:
             eid = enrollment["id"]
             if body.intent in ("not_interested", "unsubscribe"):
-                db.client.table("engagement_sequences").update({
-                    "status": "paused",
-                    "updated_at": now,
-                }).eq("id", eid).execute()
+                db.client.table("engagement_sequences").update(
+                    {
+                        "status": "paused",
+                        "updated_at": now,
+                    }
+                ).eq("id", eid).execute()
                 new_status = "paused"
             elif body.intent == "interested":
                 from datetime import timedelta
+
                 next_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-                db.client.table("engagement_sequences").update({
-                    "next_action_at": next_at,
-                    "updated_at": now,
-                }).eq("id", eid).execute()
+                db.client.table("engagement_sequences").update(
+                    {
+                        "next_action_at": next_at,
+                        "updated_at": now,
+                    }
+                ).eq("id", eid).execute()
                 new_status = "active (expedited)"
             else:
                 new_status = enrollment["status"]
@@ -1394,6 +1461,7 @@ async def log_reply(contact_id: str, body: LogReplyRequest):
 # ---------------------------------------------------------------------------
 # Reschedule Step — PATCH /api/sequences/v2/enrollments/{enrollment_id}/schedule
 # ---------------------------------------------------------------------------
+
 
 class RescheduleStepRequest(BaseModel):
     step: int
@@ -1431,13 +1499,13 @@ async def reschedule_step(enrollment_id: str, body: RescheduleStepRequest):
     if body.step < current_step:
         raise HTTPException(
             status_code=400,
-            detail=f"Step {body.step} has already been sent (current step is {current_step}). Cannot reschedule past steps."
+            detail=f"Step {body.step} has already been sent (current step is {current_step}). Cannot reschedule past steps.",
         )
 
     if body.step != current_step + 1 and body.step != current_step:
         raise HTTPException(
             status_code=400,
-            detail=f"Can only reschedule the next pending step. Current step: {current_step}, requested: {body.step}."
+            detail=f"Can only reschedule the next pending step. Current step: {current_step}, requested: {body.step}.",
         )
 
     try:
@@ -1445,10 +1513,12 @@ async def reschedule_step(enrollment_id: str, body: RescheduleStepRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid date format: {body.new_date}")
 
-    db.client.table("engagement_sequences").update({
-        "next_action_at": new_dt.isoformat(),
-        "updated_at": now,
-    }).eq("id", enrollment_id).execute()
+    db.client.table("engagement_sequences").update(
+        {
+            "next_action_at": new_dt.isoformat(),
+            "updated_at": now,
+        }
+    ).eq("id", enrollment_id).execute()
 
     return {
         "message": f"Step {body.step} rescheduled",
@@ -1461,6 +1531,7 @@ async def reschedule_step(enrollment_id: str, body: RescheduleStepRequest):
 # ---------------------------------------------------------------------------
 # Email Engagement Dashboard
 # ---------------------------------------------------------------------------
+
 
 @v2_router.get("/email-engagement")
 async def get_email_engagement(limit: int = 200, offset: int = 0):
@@ -1490,9 +1561,7 @@ async def get_email_engagement(limit: int = 200, offset: int = 0):
 
     # Count total
     count_result = (
-        db._filter_ws(
-            db.client.table("outreach_drafts").select("id", count="exact")
-        )
+        db._filter_ws(db.client.table("outreach_drafts").select("id", count="exact"))
         .not_.is_("sent_at", "null")
         .execute()
     )
@@ -1530,12 +1599,20 @@ async def get_email_engagement(limit: int = 200, offset: int = 0):
             db.client.table("interactions")
             .select("contact_id, type, created_at, metadata")
             .in_("contact_id", contact_ids)
-            .in_("type", ["email_opened", "email_clicked", "email_bounced",
-                          "email_delivered", "email_complained"])
+            .in_(
+                "type",
+                [
+                    "email_opened",
+                    "email_clicked",
+                    "email_bounced",
+                    "email_delivered",
+                    "email_complained",
+                ],
+            )
             .order("created_at", desc=False)
             .execute()
         )
-        for ev in (events_result.data or []):
+        for ev in events_result.data or []:
             cid = ev["contact_id"]
             if cid not in engagement_map:
                 engagement_map[cid] = []
@@ -1554,8 +1631,7 @@ async def get_email_engagement(limit: int = 200, offset: int = 0):
         complained = any(e["type"] == "email_complained" for e in events)
         delivered = any(e["type"] == "email_delivered" for e in events)
         last_open_at = next(
-            (e["created_at"] for e in reversed(events) if e["type"] == "email_opened"),
-            None
+            (e["created_at"] for e in reversed(events) if e["type"] == "email_opened"), None
         )
 
         # Derive display status
@@ -1574,26 +1650,28 @@ async def get_email_engagement(limit: int = 200, offset: int = 0):
         else:
             display_status = "sent"
 
-        rows.append({
-            "draft_id": d["id"],
-            "contact_id": cid,
-            "contact_name": contact.get("full_name") or "—",
-            "contact_email": contact.get("email") or "—",
-            "persona_type": contact.get("persona_type"),
-            "company_id": d.get("company_id"),
-            "company_name": company.get("name") or "—",
-            "industry": company.get("industry"),
-            "sequence_step": d.get("sequence_step", 1),
-            "subject": d.get("subject"),
-            "sent_at": d["sent_at"],
-            "resend_status": d.get("resend_status"),
-            "resend_message_id": d.get("resend_message_id"),
-            "display_status": display_status,
-            "opens": opens,
-            "clicks": clicks,
-            "bounced": bounced,
-            "complained": complained,
-            "last_open_at": last_open_at,
-        })
+        rows.append(
+            {
+                "draft_id": d["id"],
+                "contact_id": cid,
+                "contact_name": contact.get("full_name") or "—",
+                "contact_email": contact.get("email") or "—",
+                "persona_type": contact.get("persona_type"),
+                "company_id": d.get("company_id"),
+                "company_name": company.get("name") or "—",
+                "industry": company.get("industry"),
+                "sequence_step": d.get("sequence_step", 1),
+                "subject": d.get("subject"),
+                "sent_at": d["sent_at"],
+                "resend_status": d.get("resend_status"),
+                "resend_message_id": d.get("resend_message_id"),
+                "display_status": display_status,
+                "opens": opens,
+                "clicks": clicks,
+                "bounced": bounced,
+                "complained": complained,
+                "last_open_at": last_open_at,
+            }
+        )
 
     return {"data": rows, "total": total}

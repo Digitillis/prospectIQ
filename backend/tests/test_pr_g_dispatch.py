@@ -21,6 +21,7 @@ ATTEMPT_ID = str(uuid.uuid4())
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_queue_row(
     draft_id: str = DRAFT_ID,
     retry_count: int = 0,
@@ -55,17 +56,33 @@ def _make_draft(sent_at: str | None = None) -> dict:
         "edited_body": None,
         "sent_at": sent_at,
         "companies": {"name": "Acme Corp", "tier": "standard", "campaign_cluster": None},
-        "contacts": {"full_name": "Jane Doe", "email": "jane@acme.com",
-                     "first_name": "Jane", "last_name": "Doe",
-                     "company_id": str(uuid.uuid4()), "persona_type": "ops"},
+        "contacts": {
+            "full_name": "Jane Doe",
+            "email": "jane@acme.com",
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "company_id": str(uuid.uuid4()),
+            "persona_type": "ops",
+        },
     }
 
 
 def _make_chain(*extra_attrs):
     """Return a MagicMock where common filter methods return self (chainable)."""
     m = MagicMock()
-    for attr in ("select", "eq", "neq", "in_", "is_", "not_", "lt", "gte", "order",
-                  "limit", "not_.is_"):
+    for attr in (
+        "select",
+        "eq",
+        "neq",
+        "in_",
+        "is_",
+        "not_",
+        "lt",
+        "gte",
+        "order",
+        "limit",
+        "not_.is_",
+    ):
         try:
             parts = attr.split(".")
             obj = m
@@ -127,6 +144,7 @@ def _mock_db_client(claimed_rows=None, send_attempt_id=ATTEMPT_ID):
 # TestQueueClaim
 # ---------------------------------------------------------------------------
 
+
 class TestQueueClaim:
     def test_claim_calls_rpc_with_correct_params(self):
         """dispatch_workspace calls claim_outbound_queue_batch RPC."""
@@ -173,9 +191,11 @@ class TestQueueClaim:
 # TestDispatchSuccess
 # ---------------------------------------------------------------------------
 
+
 class TestDispatchSuccess:
     def _setup(self):
         from backend.app.agents.engagement import QueueDispatchOutcome
+
         queue_row = _make_queue_row()
         client = _mock_db_client(claimed_rows=[queue_row])
 
@@ -232,6 +252,7 @@ class TestDispatchSuccess:
 # TestTransientFailure
 # ---------------------------------------------------------------------------
 
+
 class TestTransientFailure:
     def test_transient_failure_schedules_retry(self):
         """5xx path: send_attempts FAILED, retry_count+1, next_retry_at set, lock released."""
@@ -281,9 +302,9 @@ class TestTransientFailure:
         """_backoff_for returns correct delays per retry index."""
         from backend.app.core.dispatch_scheduler import _backoff_for
 
-        assert _backoff_for(0) == 300    # 5 min
-        assert _backoff_for(1) == 900    # 15 min
-        assert _backoff_for(2) == 3600   # 1 h
+        assert _backoff_for(0) == 300  # 5 min
+        assert _backoff_for(1) == 900  # 15 min
+        assert _backoff_for(2) == 3600  # 1 h
         assert _backoff_for(3) == 14400  # 4 h
         assert _backoff_for(99) == 14400  # clamped
 
@@ -291,6 +312,7 @@ class TestTransientFailure:
 # ---------------------------------------------------------------------------
 # TestPermanentFailure
 # ---------------------------------------------------------------------------
+
 
 class TestPermanentFailure:
     def test_permanent_failure_deletes_queue_row_and_marks_draft(self):
@@ -321,6 +343,7 @@ class TestPermanentFailure:
 # TestMaxRetries
 # ---------------------------------------------------------------------------
 
+
 class TestMaxRetries:
     def test_transient_failure_at_max_retries_becomes_permanent(self):
         """At retry_count == max_retries - 1, transient failure → permanently failed."""
@@ -349,6 +372,7 @@ class TestMaxRetries:
 # ---------------------------------------------------------------------------
 # TestStaleLockReclaim
 # ---------------------------------------------------------------------------
+
 
 class TestStaleLockReclaim:
     def test_reclaim_returns_count_of_cleared_rows(self):
@@ -415,6 +439,7 @@ class TestStaleLockReclaim:
 # TestAssertionFailure
 # ---------------------------------------------------------------------------
 
+
 class TestAssertionFailure:
     def test_assertion_failure_releases_lock_no_retry_at(self):
         """ASSERTION_FAILED: lock released, next_retry_at NOT set."""
@@ -443,6 +468,7 @@ class TestAssertionFailure:
 # ---------------------------------------------------------------------------
 # TestSendAttemptInvariant
 # ---------------------------------------------------------------------------
+
 
 class TestSendAttemptInvariant:
     def test_send_attempt_insert_failure_releases_lock_and_skips(self):
@@ -475,38 +501,45 @@ class TestSendAttemptInvariant:
 # TestResendErrorClassification
 # ---------------------------------------------------------------------------
 
+
 class TestResendErrorClassification:
     def test_429_classified_as_transient(self):
         from backend.app.agents.engagement import _classify_resend_error
+
         status, code = _classify_resend_error(Exception("429 Too Many Requests"))
         assert status == "TRANSIENT_FAILED"
         assert "429" in code
 
     def test_503_classified_as_transient(self):
         from backend.app.agents.engagement import _classify_resend_error
+
         status, code = _classify_resend_error(Exception("503 Service Unavailable"))
         assert status == "TRANSIENT_FAILED"
         assert "503" in code
 
     def test_network_error_classified_as_transient(self):
         from backend.app.agents.engagement import _classify_resend_error
+
         status, code = _classify_resend_error(Exception("connection timeout"))
         assert status == "TRANSIENT_FAILED"
         assert code == "network_error"
 
     def test_422_classified_as_permanent(self):
         from backend.app.agents.engagement import _classify_resend_error
+
         status, code = _classify_resend_error(Exception("422 Unprocessable Entity"))
         assert status == "PERMANENTLY_FAILED"
         assert "422" in code
 
     def test_400_classified_as_permanent(self):
         from backend.app.agents.engagement import _classify_resend_error
+
         status, code = _classify_resend_error(Exception("400 Bad Request"))
         assert status == "PERMANENTLY_FAILED"
 
     def test_unknown_error_classified_as_permanent(self):
         from backend.app.agents.engagement import _classify_resend_error
+
         status, code = _classify_resend_error(Exception("something unexpected"))
         assert status == "PERMANENTLY_FAILED"
         assert code == "unknown_client_error"
@@ -516,9 +549,11 @@ class TestResendErrorClassification:
 # TestQueueDispatchOutcome dataclass
 # ---------------------------------------------------------------------------
 
+
 class TestQueueDispatchOutcome:
     def test_outcome_fields(self):
         from backend.app.agents.engagement import QueueDispatchOutcome
+
         o = QueueDispatchOutcome(
             status="DELIVERED",
             provider_message_id="msg_123",
@@ -530,6 +565,7 @@ class TestQueueDispatchOutcome:
 
     def test_outcome_failure_fields(self):
         from backend.app.agents.engagement import QueueDispatchOutcome
+
         o = QueueDispatchOutcome(
             status="TRANSIENT_FAILED",
             failure_code="503_server_error",

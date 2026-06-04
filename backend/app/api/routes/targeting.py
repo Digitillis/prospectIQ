@@ -25,6 +25,7 @@ def get_db() -> Database:
 
 class TargetingStrategy(str, Enum):
     """Different strategies for identifying high-value prospects."""
+
     HIGH_PQS = "high_pqs"  # High PQS score (60+)
     QUICK_WINS = "quick_wins"  # Ready to contact (researched + decent PQS)
     WARM_LEADS = "warm_leads"  # Recent engagement + PQS
@@ -36,6 +37,7 @@ class TargetingStrategy(str, Enum):
 
 class ProspectScore(BaseModel):
     """Comprehensive scoring for a prospect."""
+
     company_id: int
     company_name: str
     pqs_score: int
@@ -53,6 +55,7 @@ class ProspectScore(BaseModel):
 
 class TargetingRecommendation(BaseModel):
     """Top prospects matching a targeting strategy."""
+
     strategy: str
     total_count: int
     prospects: list[ProspectScore]
@@ -61,6 +64,7 @@ class TargetingRecommendation(BaseModel):
 
 class ProspectFilterRequest(BaseModel):
     """Advanced filtering for prospect discovery."""
+
     min_pqs: int = Field(default=0, ge=0, le=100)
     max_pqs: int = Field(default=100, ge=0, le=100)
     status: Optional[str] = None
@@ -78,7 +82,7 @@ class ProspectFilterRequest(BaseModel):
 @router.get("/smart-targets", response_model=TargetingRecommendation)
 async def get_smart_targets(
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
     strategy: TargetingStrategy = Query(TargetingStrategy.HIGH_PQS),
     limit: int = Query(20, ge=1, le=100),
 ):
@@ -103,7 +107,7 @@ async def get_smart_targets(
         strategy=strategy.value,
         total_count=len(prospects),
         prospects=prospects,
-        description=strategy_descriptions.get(strategy.value, "")
+        description=strategy_descriptions.get(strategy.value, ""),
     )
 
 
@@ -111,16 +115,20 @@ async def get_smart_targets(
 async def search_prospects(
     filters: ProspectFilterRequest,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Search and filter prospects with advanced criteria."""
     workspace_id = get_workspace_id()
     if not workspace_id:
         raise HTTPException(status_code=401, detail="No workspace context")
 
-    query = db.client.table("companies").select(
-        "id, name, domain, status, pqs_total, pqs_firmographic, pqs_technographic, tier, research_summary"
-    ).eq("workspace_id", workspace_id)
+    query = (
+        db.client.table("companies")
+        .select(
+            "id, name, domain, status, pqs_total, pqs_firmographic, pqs_technographic, tier, research_summary"
+        )
+        .eq("workspace_id", workspace_id)
+    )
 
     # Apply PQS range filter
     if filters.min_pqs > 0:
@@ -138,7 +146,9 @@ async def search_prospects(
 
     # Apply recent activity filter
     if filters.recent_activity_days > 0:
-        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=filters.recent_activity_days)).isoformat()
+        cutoff_date = (
+            datetime.now(timezone.utc) - timedelta(days=filters.recent_activity_days)
+        ).isoformat()
         query = query.gte("updated_at", cutoff_date)
 
     # Execute search
@@ -185,17 +195,19 @@ async def search_prospects(
         )
         contact_count = contact_result.count or 0
 
-        enriched.append({
-            "id": company_id,
-            "name": company["name"],
-            "domain": company["domain"],
-            "status": company["status"],
-            "pqs_total": company["pqs_total"],
-            "tier": company["tier"],
-            "has_open_deal": has_deal,
-            "has_scheduled_meeting": has_meeting,
-            "contact_count": contact_count,
-        })
+        enriched.append(
+            {
+                "id": company_id,
+                "name": company["name"],
+                "domain": company["domain"],
+                "status": company["status"],
+                "pqs_total": company["pqs_total"],
+                "tier": company["tier"],
+                "has_open_deal": has_deal,
+                "has_scheduled_meeting": has_meeting,
+                "contact_count": contact_count,
+            }
+        )
 
     return {
         "total": len(enriched),
@@ -208,7 +220,7 @@ async def search_prospects(
 async def get_prospect_score(
     company_id: int,
     db: Database = Depends(get_db),
-    user = Depends(require_workspace_member),
+    user=Depends(require_workspace_member),
 ):
     """Get comprehensive scoring for a specific prospect."""
     workspace_id = get_workspace_id()
@@ -285,7 +297,10 @@ async def get_prospect_score(
             "technographic": company["pqs_technographic"],
         },
         contact_count=contact_count,
-        recent_activity=(datetime.fromisoformat(company["updated_at"]) > datetime.now(timezone.utc) - timedelta(days=7)),
+        recent_activity=(
+            datetime.fromisoformat(company["updated_at"])
+            > datetime.now(timezone.utc) - timedelta(days=7)
+        ),
         has_open_deal=bool(deal),
         outreach_stage=company["status"],
         meeting_scheduled=bool(meeting and meeting["status"] in ["scheduled", "confirmed"]),
@@ -393,29 +408,36 @@ async def _get_prospects_for_strategy(
         )
         contact_count = contact_result.count or 0
 
-        engagement_score = _calculate_engagement_score(company, has_deal, has_meeting, contact_count)
+        engagement_score = _calculate_engagement_score(
+            company, has_deal, has_meeting, contact_count
+        )
         conversion_prob = _calculate_conversion_probability(company, has_deal, has_meeting)
         priority = _determine_priority(company["pqs_total"], conversion_prob, company["status"])
         next_action = _recommend_next_action(company["status"], has_deal, has_meeting)
 
-        prospects.append(ProspectScore(
-            company_id=company["id"],
-            company_name=company["name"],
-            pqs_score=company["pqs_total"],
-            pqs_breakdown={
-                "firmographic": company["pqs_firmographic"],
-                "technographic": company["pqs_technographic"],
-            },
-            contact_count=contact_count,
-            recent_activity=(datetime.fromisoformat(company["updated_at"]) > datetime.now(timezone.utc) - timedelta(days=7)),
-            has_open_deal=has_deal,
-            outreach_stage=company["status"],
-            meeting_scheduled=has_meeting,
-            engagement_score=engagement_score,
-            conversion_probability=conversion_prob,
-            priority=priority,
-            recommended_next_action=next_action,
-        ))
+        prospects.append(
+            ProspectScore(
+                company_id=company["id"],
+                company_name=company["name"],
+                pqs_score=company["pqs_total"],
+                pqs_breakdown={
+                    "firmographic": company["pqs_firmographic"],
+                    "technographic": company["pqs_technographic"],
+                },
+                contact_count=contact_count,
+                recent_activity=(
+                    datetime.fromisoformat(company["updated_at"])
+                    > datetime.now(timezone.utc) - timedelta(days=7)
+                ),
+                has_open_deal=has_deal,
+                outreach_stage=company["status"],
+                meeting_scheduled=has_meeting,
+                engagement_score=engagement_score,
+                conversion_probability=conversion_prob,
+                priority=priority,
+                recommended_next_action=next_action,
+            )
+        )
 
     return prospects
 

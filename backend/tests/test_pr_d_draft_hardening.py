@@ -43,8 +43,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 THREAD_ID = "t1111111-aaaa-aaaa-aaaa-111111111111"
-DRAFT_ID  = "d2222222-bbbb-bbbb-bbbb-222222222222"
-WS_ID     = "w3333333-cccc-cccc-cccc-333333333333"
+DRAFT_ID = "d2222222-bbbb-bbbb-bbbb-222222222222"
+WS_ID = "w3333333-cccc-cccc-cccc-333333333333"
 CONTACT_ID = "c4444444-dddd-dddd-dddd-444444444444"
 
 # Fields that the DB trigger blocks on a sent draft.
@@ -85,6 +85,7 @@ def _make_draft_db(sent: bool) -> MagicMock:
 def _make_app():
     from fastapi import FastAPI
     from backend.app.api.routes.threads import router
+
     app = FastAPI()
     app.include_router(router)
     return app
@@ -190,9 +191,7 @@ def test_sent_at_rollback_is_not_blocked():
     """
     update = {"sent_at": None}
     blocked = set(update.keys()) & _TRIGGER_BLOCKED_FIELDS
-    assert not blocked, (
-        f"sent_at must not be in trigger blocked fields. Got overlap: {blocked}"
-    )
+    assert not blocked, f"sent_at must not be in trigger blocked fields. Got overlap: {blocked}"
 
     db = MagicMock()
     db.client.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [
@@ -215,8 +214,7 @@ def test_unique_index_blocks_second_active_draft_for_same_slot():
     """
     db = MagicMock()
     db.client.table.return_value.insert.return_value.execute.side_effect = Exception(
-        'duplicate key value violates unique constraint '
-        '"idx_outreach_drafts_active_unique"'
+        'duplicate key value violates unique constraint "idx_outreach_drafts_active_unique"'
     )
 
     slot = {
@@ -251,13 +249,19 @@ def test_rejected_draft_can_be_replaced():
         {"id": "new-draft-uuid", "approval_status": "pending"}
     ]
 
-    result = db.client.table("outreach_drafts").insert({
-        "workspace_id": WS_ID,
-        "contact_id": CONTACT_ID,
-        "sequence_name": "mfg_ops_sequence",
-        "sequence_step": 1,
-        "approval_status": "pending",
-    }).execute()
+    result = (
+        db.client.table("outreach_drafts")
+        .insert(
+            {
+                "workspace_id": WS_ID,
+                "contact_id": CONTACT_ID,
+                "sequence_name": "mfg_ops_sequence",
+                "sequence_step": 1,
+                "approval_status": "pending",
+            }
+        )
+        .execute()
+    )
 
     assert result.data[0]["approval_status"] == "pending"
     # No exception — the rejected prior draft is outside the partial index scope

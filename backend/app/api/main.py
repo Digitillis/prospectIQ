@@ -652,10 +652,14 @@ def _run_dispatched_sweeper() -> None:
 def _run_process_due_sequences() -> None:
     """Hourly job: process engagement sequences with due follow-up actions."""
     try:
-        from backend.app.agents.engagement import EngagementAgent
+        from backend.app.core.workspace_scheduler import for_each_workspace
 
-        agent = EngagementAgent()
-        agent.run(action="process_due")
+        def _process_ws(ws: dict) -> None:
+            from backend.app.agents.engagement import EngagementAgent
+
+            EngagementAgent(workspace_id=ws["id"]).run(action="process_due")
+
+        for_each_workspace(_process_ws, "process_due")
     except Exception as e:
         logger.error(f"Scheduled process_due failed: {e}")
 
@@ -667,10 +671,14 @@ def _run_poll_instantly() -> None:
 
         if not get_settings().instantly_api_key:
             return
-        from backend.app.agents.engagement import EngagementAgent
+        from backend.app.core.workspace_scheduler import for_each_workspace
 
-        agent = EngagementAgent()
-        agent.run(action="poll_events")
+        def _poll_ws(ws: dict) -> None:
+            from backend.app.agents.engagement import EngagementAgent
+
+            EngagementAgent(workspace_id=ws["id"]).run(action="poll_events")
+
+        for_each_workspace(_poll_ws, "poll_instantly")
     except Exception as e:
         logger.error(f"Scheduled poll_instantly failed: {e}")
 
@@ -680,7 +688,7 @@ def _run_process_hitl_snoozed() -> None:
     try:
         from backend.app.core.database import Database
 
-        db = Database()
+        db = Database()  # INTENTIONALLY UNSCOPED — processes all workspaces' snooze queues; hitl_queue has no workspace filter here
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         result = (
             db.client.table("hitl_queue")
@@ -714,11 +722,15 @@ def _run_personalization_refresh() -> None:
 def _run_jit_pregenerate() -> None:
     """Every-24-hour job: pre-generate follow-up drafts due within the next 3 days."""
     try:
-        from backend.app.agents.engagement import EngagementAgent
+        from backend.app.core.workspace_scheduler import for_each_workspace
 
-        agent = EngagementAgent()
-        result = agent.run(action="jit_pregenerate")
-        logger.info(f"JIT pre-generate: {result}")
+        def _jit_ws(ws: dict) -> None:
+            from backend.app.agents.engagement import EngagementAgent
+
+            result = EngagementAgent(workspace_id=ws["id"]).run(action="jit_pregenerate")
+            logger.info(f"JIT pre-generate [{ws.get('name', ws['id'])}]: {result}")
+
+        for_each_workspace(_jit_ws, "jit_pregenerate")
     except Exception as e:
         logger.error(f"Scheduled jit_pregenerate failed: {e}")
 
@@ -1163,7 +1175,7 @@ def _run_gmail_intake_LEGACY() -> None:
         if not settings.gmail_user or not settings.gmail_app_password:
             return  # Not configured — skip silently
 
-        db = Database()
+        db = Database()  # INTENTIONALLY UNSCOPED — Gmail inbox is shared; workspace discovered per-reply from the matched outreach_draft
         processed = 0
         skipped = 0
 
@@ -2378,7 +2390,9 @@ def _run_weekly_signal_scrapers() -> None:
         from backend.app.core.database import get_supabase_client
         from backend.app.core.database import Database
 
-        db = Database()  # workspace-agnostic — scrapers match by company name across all workspaces
+        db = (
+            Database()
+        )  # INTENTIONALLY UNSCOPED — scrapers match by company name across all workspaces
 
         from backend.app.agents.signal_scrapers.fda_scraper import FDARecallScraper
         from backend.app.agents.signal_scrapers.osha_scraper import OSHACitationScraper
@@ -2750,7 +2764,7 @@ def _run_auto_action_low_priority() -> None:
         from backend.app.core.database import Database
         from datetime import datetime, timezone, timedelta
 
-        db = Database()
+        db = Database()  # INTENTIONALLY UNSCOPED — processes all workspaces' soft_no queues
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
         result = (
             db.client.table("hitl_queue")
@@ -3403,7 +3417,9 @@ async def send_trace():
     trace.append("resend_api_key=set")
 
     client = get_supabase_client()
-    db = Database()
+    db = (
+        Database()
+    )  # INTENTIONALLY UNSCOPED — send-trace is an admin diagnostic over all workspaces
 
     # Step 2: daily count
     today = date.today().isoformat()

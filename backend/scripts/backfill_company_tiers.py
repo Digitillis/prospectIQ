@@ -70,10 +70,10 @@ def _classify_company(company: dict, icp_index: dict[str, dict]) -> tuple[str | 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Backfill null company.tier values")
-    parser.add_argument("--apply", action="store_true",
-                        help="Persist changes (default is dry-run)")
-    parser.add_argument("--limit", type=int, default=10000,
-                        help="Max companies to process (default 10000)")
+    parser.add_argument("--apply", action="store_true", help="Persist changes (default is dry-run)")
+    parser.add_argument(
+        "--limit", type=int, default=10000, help="Max companies to process (default 10000)"
+    )
     args = parser.parse_args()
 
     workspace_id = os.environ.get("WORKSPACE_ID") or "00000000-0000-0000-0000-000000000001"
@@ -92,7 +92,8 @@ def main() -> int:
             .is_("tier", "null")
             .range(offset, offset + page - 1)
             .execute()
-            .data or []
+            .data
+            or []
         )
         if not chunk:
             break
@@ -101,9 +102,11 @@ def main() -> int:
             break
         offset += page
 
-    rows = rows[:args.limit]
-    print(f"\nFound {len(rows)} companies with tier IS NULL "
-          f"(workspace={db.workspace_id}, limit={args.limit})")
+    rows = rows[: args.limit]
+    print(
+        f"\nFound {len(rows)} companies with tier IS NULL "
+        f"(workspace={db.workspace_id}, limit={args.limit})"
+    )
 
     counts: dict[str, int] = {}
     updates: list[tuple[str, str | None, str]] = []
@@ -111,7 +114,7 @@ def main() -> int:
         tier, reason = _classify_company(c, icp_index)
         counts[tier or "(none)"] = counts.get(tier or "(none)", 0) + 1
         updates.append((c["id"], tier, reason))
-        print(f"  {c.get('name','?')}: tier null → {tier} ({reason}; naics={c.get('naics_code')})")
+        print(f"  {c.get('name', '?')}: tier null → {tier} ({reason}; naics={c.get('naics_code')})")
 
     print("\n== Tier assignment summary ==")
     for tier, n in sorted(counts.items(), key=lambda kv: -kv[1]):
@@ -124,11 +127,13 @@ def main() -> int:
     applied = 0
     for cid, tier, reason in updates:
         try:
-            db.client.table("companies").update({
-                "tier": tier,
-                # Stamp a backfill marker into the audit log via interactions
-                # is too heavy here — keep it simple: just write the tier.
-            }).eq("id", cid).execute()
+            db.client.table("companies").update(
+                {
+                    "tier": tier,
+                    # Stamp a backfill marker into the audit log via interactions
+                    # is too heavy here — keep it simple: just write the tier.
+                }
+            ).eq("id", cid).execute()
             applied += 1
         except Exception as exc:
             logger.error("Failed to update company %s: %s", cid, exc)

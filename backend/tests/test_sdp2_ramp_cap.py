@@ -91,6 +91,7 @@ def test_post_campaign_start_daily_slots_not_throttled():
 
     # Count slots for the first business day scheduled
     from collections import Counter
+
     day_counts = Counter(s.scheduled_date for s in slots)
     if day_counts:
         first_day = min(day_counts)

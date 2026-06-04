@@ -24,8 +24,8 @@ console = Console()
 
 GTM_EMPLOYEE_MIN = 200
 GTM_EMPLOYEE_MAX = 2000
-GTM_REVENUE_MIN_M = 50      # $50M
-GTM_REVENUE_MAX_M = 500     # $500M
+GTM_REVENUE_MIN_M = 50  # $50M
+GTM_REVENUE_MAX_M = 500  # $500M
 
 # All valid tier names across discrete mfg, process mfg, and F&B (secondary).
 # mfg* = discrete manufacturing (primary)
@@ -33,13 +33,35 @@ GTM_REVENUE_MAX_M = 500     # $500M
 # fb* = food & beverage (secondary)
 VALID_TIER_NAMES = {
     # Discrete manufacturing (primary)
-    "mfg1", "mfg2", "mfg3", "mfg4", "mfg5", "mfg6", "mfg7", "mfg8",
+    "mfg1",
+    "mfg2",
+    "mfg3",
+    "mfg4",
+    "mfg5",
+    "mfg6",
+    "mfg7",
+    "mfg8",
     # Process manufacturing (primary)
-    "pmfg1", "pmfg2", "pmfg3", "pmfg4", "pmfg5", "pmfg6", "pmfg7", "pmfg8",
+    "pmfg1",
+    "pmfg2",
+    "pmfg3",
+    "pmfg4",
+    "pmfg5",
+    "pmfg6",
+    "pmfg7",
+    "pmfg8",
     # Food & Beverage (secondary)
-    "fb1", "fb2", "fb3", "fb4",
+    "fb1",
+    "fb2",
+    "fb3",
+    "fb4",
     # Legacy names (keep for backward compat)
-    "1a", "1b", "2", "3", "4", "5",
+    "1a",
+    "1b",
+    "2",
+    "3",
+    "4",
+    "5",
 }
 
 REQUIRED_TOP_KEYS = {"company_filters", "contact_filters", "discovery"}
@@ -116,8 +138,7 @@ def validate_icp(icp: dict[str, Any], strict: bool = True) -> ValidationResult:
         if apollo_ranges:
             # Verify at least one range covers the GTM window
             covers_gtm = any(
-                _range_covers(r_str, GTM_EMPLOYEE_MIN, GTM_EMPLOYEE_MAX)
-                for r_str in apollo_ranges
+                _range_covers(r_str, GTM_EMPLOYEE_MIN, GTM_EMPLOYEE_MAX) for r_str in apollo_ranges
             )
             if not covers_gtm:
                 r.warn(
@@ -199,7 +220,9 @@ def validate_and_exit_on_error(icp: dict[str, Any], strict: bool = True) -> None
         for w in result.warnings:
             console.print(f"[yellow]⚠  ICP WARNING: {w}[/yellow]")
     if not result.ok:
-        console.print("\n[bold red]❌ ICP CONFIG ERRORS — fix icp.yaml before running discovery:[/bold red]")
+        console.print(
+            "\n[bold red]❌ ICP CONFIG ERRORS — fix icp.yaml before running discovery:[/bold red]"
+        )
         for e in result.errors:
             console.print(f"[red]   • {e}[/red]")
         sys.exit(1)
@@ -229,6 +252,7 @@ def print_validation_report(result: ValidationResult) -> None:
 
 if __name__ == "__main__":
     from backend.app.core.config import get_icp_config
+
     console.print("[cyan]Validating icp.yaml...[/cyan]\n")
     icp_cfg = get_icp_config()
     vr = validate_icp(icp_cfg, strict=True)

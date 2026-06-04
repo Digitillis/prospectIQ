@@ -82,7 +82,9 @@ class PostSendAuditAgent(BaseAgent):
 
         contacts_raw = (
             self.db.client.table("contacts")
-            .select("id,first_name,last_name,full_name,email,title,status,contact_tier,email_name_verified")
+            .select(
+                "id,first_name,last_name,full_name,email,title,status,contact_tier,email_name_verified"
+            )
             .in_("id", contact_ids)
             .execute()
             .data
@@ -110,7 +112,10 @@ class PostSendAuditAgent(BaseAgent):
             contact = contacts.get(contact_id, {})
             company = companies.get(company_id, {})
             company_name = company.get("name", "Unknown")
-            contact_name = contact.get("full_name") or f"{contact.get('first_name','')} {contact.get('last_name','')}".strip()
+            contact_name = (
+                contact.get("full_name")
+                or f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
+            )
             email = contact.get("email")
             title = contact.get("title", "")
 
@@ -118,79 +123,91 @@ class PostSendAuditAgent(BaseAgent):
 
             # Check 1: Null email
             if not email:
-                findings.append({
-                    "severity": "critical",
-                    "type": "null_email",
-                    "company": company_name,
-                    "contact": contact_name,
-                    "detail": "Email sent but contact has no email address on record",
-                    "draft_id": draft["id"],
-                })
+                findings.append(
+                    {
+                        "severity": "critical",
+                        "type": "null_email",
+                        "company": company_name,
+                        "contact": contact_name,
+                        "detail": "Email sent but contact has no email address on record",
+                        "draft_id": draft["id"],
+                    }
+                )
                 continue
 
             # Check 2: Email-name consistency
             tier_verified = contact.get("email_name_verified")
             if tier_verified is False:
                 # Already flagged — escalate
-                findings.append({
-                    "severity": "critical",
-                    "type": "email_name_mismatch_flagged",
-                    "company": company_name,
-                    "contact": contact_name,
-                    "email": email,
-                    "detail": "Contact has email_name_verified=False — email belongs to a different person",
-                    "draft_id": draft["id"],
-                })
+                findings.append(
+                    {
+                        "severity": "critical",
+                        "type": "email_name_mismatch_flagged",
+                        "company": company_name,
+                        "contact": contact_name,
+                        "email": email,
+                        "detail": "Contact has email_name_verified=False — email belongs to a different person",
+                        "draft_id": draft["id"],
+                    }
+                )
             elif tier_verified is None:
                 # Not yet checked — run the check now
                 first = contact.get("first_name") or ""
                 last = contact.get("last_name") or ""
                 consistent, reason = check_email_name_consistency(first, last, email)
                 if not consistent:
-                    findings.append({
-                        "severity": "critical",
-                        "type": "email_name_mismatch_detected",
-                        "company": company_name,
-                        "contact": contact_name,
-                        "email": email,
-                        "detail": f"Name-email inconsistency detected post-send: {reason}",
-                        "draft_id": draft["id"],
-                    })
+                    findings.append(
+                        {
+                            "severity": "critical",
+                            "type": "email_name_mismatch_detected",
+                            "company": company_name,
+                            "contact": contact_name,
+                            "email": email,
+                            "detail": f"Name-email inconsistency detected post-send: {reason}",
+                            "draft_id": draft["id"],
+                        }
+                    )
                     # Write back so future sends catch it at import time
                     try:
-                        self.db.client.table("contacts").update({
-                            "email_name_verified": False,
-                            "is_outreach_eligible": False,
-                        }).eq("id", contact_id).execute()
+                        self.db.client.table("contacts").update(
+                            {
+                                "email_name_verified": False,
+                                "is_outreach_eligible": False,
+                            }
+                        ).eq("id", contact_id).execute()
                     except Exception as e:
                         logger.warning("Could not update contact %s: %s", contact_id, e)
 
             # Check 3: Wrong job function
             tier = contact.get("contact_tier") or classify_contact_tier(title)
             if tier == "excluded":
-                findings.append({
-                    "severity": "high",
-                    "type": "wrong_function",
-                    "company": company_name,
-                    "contact": contact_name,
-                    "email": email,
-                    "title": title,
-                    "detail": f"Contact has wrong job function (tier=excluded): {title}",
-                    "draft_id": draft["id"],
-                })
+                findings.append(
+                    {
+                        "severity": "high",
+                        "type": "wrong_function",
+                        "company": company_name,
+                        "contact": contact_name,
+                        "email": email,
+                        "title": title,
+                        "detail": f"Contact has wrong job function (tier=excluded): {title}",
+                        "draft_id": draft["id"],
+                    }
+                )
 
         # Check 4: Over-threading (too many contacts hit at same company)
         for cid, names in sends_per_company.items():
             if len(names) > MAX_THREADS_PER_COMPANY:
                 company_name = companies.get(cid, {}).get("name", "Unknown")
-                findings.append({
-                    "severity": "warning",
-                    "type": "over_threading",
-                    "company": company_name,
-                    "contact": ", ".join(names),
-                    "detail": f"{len(names)} contacts reached at same company in {days} days (max={MAX_THREADS_PER_COMPANY})",
-                    "draft_id": None,
-                })
+                findings.append(
+                    {
+                        "severity": "warning",
+                        "type": "over_threading",
+                        "company": company_name,
+                        "contact": ", ".join(names),
+                        "detail": f"{len(names)} contacts reached at same company in {days} days (max={MAX_THREADS_PER_COMPANY})",
+                        "draft_id": None,
+                    }
+                )
 
         result.processed = len(drafts)
 
@@ -199,10 +216,12 @@ class PostSendAuditAgent(BaseAgent):
         high = [f for f in findings if f["severity"] == "high"]
         warnings = [f for f in findings if f["severity"] == "warning"]
 
-        console.print(f"\n[bold]Audit complete:[/bold] {len(drafts)} sends | "
-                      f"[red]{len(critical)} critical[/red] | "
-                      f"[yellow]{len(high)} high[/yellow] | "
-                      f"[dim]{len(warnings)} warnings[/dim]")
+        console.print(
+            f"\n[bold]Audit complete:[/bold] {len(drafts)} sends | "
+            f"[red]{len(critical)} critical[/red] | "
+            f"[yellow]{len(high)} high[/yellow] | "
+            f"[dim]{len(warnings)} warnings[/dim]"
+        )
 
         if findings:
             table = Table(title=f"Audit Findings — past {days} days", show_lines=True)
@@ -227,9 +246,12 @@ class PostSendAuditAgent(BaseAgent):
             # Slack digest
             try:
                 from backend.app.utils.notifications import notify_slack
+
                 lines = [f"*Post-Send Audit — past {days} days:* {len(drafts)} sends scanned"]
                 if critical:
-                    lines.append(f":red_circle: *{len(critical)} CRITICAL* — email went to wrong person or null email")
+                    lines.append(
+                        f":red_circle: *{len(critical)} CRITICAL* — email went to wrong person or null email"
+                    )
                     for f in critical[:5]:
                         lines.append(f"  • {f['company']} / {f['contact']}: {f['detail']}")
                 if high:
@@ -293,7 +315,8 @@ class PostSendAuditAgent(BaseAgent):
                 .gte("approved_at", since)
                 .limit(500)
                 .execute()
-                .data or []
+                .data
+                or []
             )
         except Exception as exc:
             logger.warning("audit_approvals: approved-drafts query failed: %s", exc)
@@ -340,27 +363,29 @@ class PostSendAuditAgent(BaseAgent):
             if att_missing:
                 attestation_defects += 1
 
-            findings_out.append({
-                "draft_id": row.get("id"),
-                "company_id": row.get("company_id"),
-                "contact_id": row.get("contact_id"),
-                "approved_by": row.get("approved_by"),
-                "approved_at": row.get("approved_at"),
-                "reviewed_at": row.get("reviewed_at"),
-                "sequence_step": row.get("sequence_step"),
-                "benchmark_verdict": analysis.verdict,
-                "benchmark_findings": [
-                    {
-                        "layer": f.layer,
-                        "rule": f.rule,
-                        "verdict": f.verdict,
-                        "excerpt": f.excerpt,
-                        "evidence_id": f.evidence_id,
-                    }
-                    for f in analysis.findings
-                ],
-                "attestation_missing_keys": att_missing,
-            })
+            findings_out.append(
+                {
+                    "draft_id": row.get("id"),
+                    "company_id": row.get("company_id"),
+                    "contact_id": row.get("contact_id"),
+                    "approved_by": row.get("approved_by"),
+                    "approved_at": row.get("approved_at"),
+                    "reviewed_at": row.get("reviewed_at"),
+                    "sequence_step": row.get("sequence_step"),
+                    "benchmark_verdict": analysis.verdict,
+                    "benchmark_findings": [
+                        {
+                            "layer": f.layer,
+                            "rule": f.rule,
+                            "verdict": f.verdict,
+                            "excerpt": f.excerpt,
+                            "evidence_id": f.evidence_id,
+                        }
+                        for f in analysis.findings
+                    ],
+                    "attestation_missing_keys": att_missing,
+                }
+            )
 
         # Post-send rejections in the same window — bounces, complaints,
         # hard fails recorded in interactions.
@@ -373,7 +398,8 @@ class PostSendAuditAgent(BaseAgent):
                 .gte("created_at", since)
                 .limit(1000)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             post_send_rejections = len(ev)
         except Exception as exc:
@@ -394,8 +420,10 @@ class PostSendAuditAgent(BaseAgent):
     @staticmethod
     def _write_audit_report(report: dict, export_dir: Path | None = None) -> Path:
         """Write `report` to data/exports/approval_audit_<date>.json."""
-        target_dir = Path(export_dir) if export_dir else (
-            Path(__file__).resolve().parents[3] / "data" / "exports"
+        target_dir = (
+            Path(export_dir)
+            if export_dir
+            else (Path(__file__).resolve().parents[3] / "data" / "exports")
         )
         target_dir.mkdir(parents=True, exist_ok=True)
         out_path = target_dir / f"approval_audit_{report['date']}.json"

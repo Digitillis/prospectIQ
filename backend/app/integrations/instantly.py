@@ -245,9 +245,7 @@ class InstantlyClient:
             "website": lead.get("website", ""),
         }
         if lead.get("personalization"):
-            normalised["custom_variables"] = {
-                "personalization": lead["personalization"]
-            }
+            normalised["custom_variables"] = {"personalization": lead["personalization"]}
 
         # Simple retry loop (3 attempts, 2 s backoff) around add_leads_to_campaign
         import time as _time
@@ -271,9 +269,7 @@ class InstantlyClient:
                         "Retrying in 2 s…"
                     )
                     _time.sleep(2)
-        raise RuntimeError(
-            f"add_lead_to_campaign failed after 3 attempts"
-        ) from last_exc
+        raise RuntimeError(f"add_lead_to_campaign failed after 3 attempts") from last_exc
 
     def remove_lead_from_campaign(self, campaign_id: str, email: str) -> bool:
         """Remove / pause a lead from an Instantly campaign.
@@ -350,10 +346,7 @@ class InstantlyClient:
             List of lead dicts with activity fields (is_opened, is_replied,
             is_bounced, is_clicked, etc.).
         """
-        logger.info(
-            f"Listing leads for campaign {campaign_id} "
-            f"(limit={limit}, skip={skip})"
-        )
+        logger.info(f"Listing leads for campaign {campaign_id} (limit={limit}, skip={skip})")
         result = self._get(
             "/leads",
             params={
@@ -445,7 +438,11 @@ class InstantlyClient:
             params["campaign_id"] = campaign_id
         try:
             result = self._get("/emails", params=params)
-            items = result.get("items") or result.get("emails") or (result if isinstance(result, list) else [])
+            items = (
+                result.get("items")
+                or result.get("emails")
+                or (result if isinstance(result, list) else [])
+            )
             return items[0] if items else None
         except Exception as exc:
             logger.warning(f"get_email_by_lead failed for {lead_email}: {exc}")
@@ -459,7 +456,11 @@ class InstantlyClient:
         """
         try:
             result = self._get("/accounts")
-            return result.get("items", result.get("accounts", [])) if isinstance(result, dict) else result
+            return (
+                result.get("items", result.get("accounts", []))
+                if isinstance(result, dict)
+                else result
+            )
         except Exception as exc:
             logger.warning(f"list_sending_accounts failed: {exc}")
             return []

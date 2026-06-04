@@ -83,9 +83,7 @@ class TitleClassifier:
         self._db = db
         self._settings = settings
 
-    def classify(
-        self, title: str | None, industry: str | None = None
-    ) -> tuple[str, float, str]:
+    def classify(self, title: str | None, industry: str | None = None) -> tuple[str, float, str]:
         """Classify a job title into tier, returning (tier, confidence, source).
 
         source: 'deterministic', 'human_override', 'haiku', 'haiku_cache', 'fallback'
@@ -103,16 +101,28 @@ class TitleClassifier:
 
         # Pass 1: deterministic classifier (fast, free)
         from backend.app.core.contact_filter import classify_contact_tier
+
         tier_p1 = classify_contact_tier(title)
 
         # Deterministic classifier is confident on clear cases — skip Haiku
         if tier_p1 in ("target", "excluded"):
             # Only send to Haiku if title contains signals suggesting it might be wrong
             # (e.g., "Director of Business Development" — excluded but C-level + BD is borderline)
-            has_ambiguity = any(sig in title.lower() for sig in (
-                "business development", "lean", "continuous improvement", "ehs",
-                "logistics", "supply chain", "r&d", "research", "technology", "it "
-            ))
+            has_ambiguity = any(
+                sig in title.lower()
+                for sig in (
+                    "business development",
+                    "lean",
+                    "continuous improvement",
+                    "ehs",
+                    "logistics",
+                    "supply chain",
+                    "r&d",
+                    "research",
+                    "technology",
+                    "it ",
+                )
+            )
             if not has_ambiguity:
                 return tier_p1, 0.95, "deterministic"
 
@@ -128,11 +138,15 @@ class TitleClassifier:
             confidence = haiku_result.get("confidence", 0.5)
 
             if self._db:
-                self._cache_haiku_result(title, industry, tier, confidence, haiku_result.get("reasoning", ""))
+                self._cache_haiku_result(
+                    title, industry, tier, confidence, haiku_result.get("reasoning", "")
+                )
 
                 # Pass 3: queue for human review if low confidence
                 if confidence < LOW_CONFIDENCE_THRESHOLD:
-                    self._queue_for_review(title, industry, tier, confidence, haiku_result.get("reasoning", ""))
+                    self._queue_for_review(
+                        title, industry, tier, confidence, haiku_result.get("reasoning", "")
+                    )
 
             return tier, confidence, "haiku"
 
@@ -149,7 +163,8 @@ class TitleClassifier:
                 .eq("source", "human")
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             return rows[0] if rows else None
         except Exception:
@@ -165,7 +180,8 @@ class TitleClassifier:
                 .neq("source", "human")
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             return rows[0] if rows else None
         except Exception:
@@ -174,9 +190,11 @@ class TitleClassifier:
     def _call_haiku(self, title: str, industry: str | None) -> dict | None:
         try:
             import anthropic
+
             settings = self._settings
             if not settings:
                 from backend.app.core.config import get_settings
+
                 settings = get_settings()
             client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             prompt = _CLASSIFICATION_PROMPT.format(
@@ -198,33 +216,40 @@ class TitleClassifier:
             logger.warning("Haiku title classification failed for %r: %s", title, e)
             return None
 
-    def _cache_haiku_result(self, title: str, industry: str | None,
-                             tier: str, confidence: float, reasoning: str) -> None:
+    def _cache_haiku_result(
+        self, title: str, industry: str | None, tier: str, confidence: float, reasoning: str
+    ) -> None:
         key = _cache_key(title, industry or "")
         try:
-            self._db.client.table("title_classifications").upsert({
-                "cache_key": key,
-                "title": title[:255],
-                "industry": industry or "",
-                "tier": tier,
-                "confidence": confidence,
-                "reasoning": reasoning,
-                "source": "haiku",
-            }, on_conflict="cache_key").execute()
+            self._db.client.table("title_classifications").upsert(
+                {
+                    "cache_key": key,
+                    "title": title[:255],
+                    "industry": industry or "",
+                    "tier": tier,
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                    "source": "haiku",
+                },
+                on_conflict="cache_key",
+            ).execute()
         except Exception as e:
             logger.warning("Could not cache Haiku result: %s", e)
 
-    def _queue_for_review(self, title: str, industry: str | None,
-                           tier: str, confidence: float, reasoning: str) -> None:
+    def _queue_for_review(
+        self, title: str, industry: str | None, tier: str, confidence: float, reasoning: str
+    ) -> None:
         try:
-            self._db.client.table("title_review_queue").insert({
-                "title": title[:255],
-                "industry": industry or "",
-                "haiku_tier": tier,
-                "haiku_confidence": confidence,
-                "haiku_reasoning": reasoning,
-                "status": "pending",
-            }).execute()
+            self._db.client.table("title_review_queue").insert(
+                {
+                    "title": title[:255],
+                    "industry": industry or "",
+                    "haiku_tier": tier,
+                    "haiku_confidence": confidence,
+                    "haiku_reasoning": reasoning,
+                    "status": "pending",
+                }
+            ).execute()
         except Exception as e:
             logger.warning("Could not queue title for review: %s", e)
 

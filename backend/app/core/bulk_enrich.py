@@ -27,7 +27,7 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 APOLLO_BULK_MATCH_URL = "https://api.apollo.io/v1/people/bulk_match"
-BATCH_SIZE = 10      # Apollo limit per call
+BATCH_SIZE = 10  # Apollo limit per call
 RATE_LIMIT_SLEEP = 1.5  # seconds between API calls
 
 
@@ -101,9 +101,13 @@ class BulkEnrichmentJob:
 
         console.print(f"[cyan]Found {len(contacts)} contact(s) to enrich.[/cyan]")
         if dry_run:
-            console.print("[yellow][DRY-RUN] Would call Apollo bulk_match. No API calls will be made.[/yellow]")
+            console.print(
+                "[yellow][DRY-RUN] Would call Apollo bulk_match. No API calls will be made.[/yellow]"
+            )
             for c in contacts:
-                name = f"{c.get('first_name', '')} {c.get('last_name', '')}".strip() or c.get("apollo_id", "?")
+                name = f"{c.get('first_name', '')} {c.get('last_name', '')}".strip() or c.get(
+                    "apollo_id", "?"
+                )
                 console.print(f"  → {name} ({c.get('apollo_id', 'no-id')[:12]}...)")
             run.processed = len(contacts)
             return run
@@ -113,9 +117,11 @@ class BulkEnrichmentJob:
             return run
 
         # 2. Chunk into batches of BATCH_SIZE
-        batches = [contacts[i:i + BATCH_SIZE] for i in range(0, len(contacts), BATCH_SIZE)]
+        batches = [contacts[i : i + BATCH_SIZE] for i in range(0, len(contacts), BATCH_SIZE)]
 
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
             task = progress.add_task(f"Enriching {len(contacts)} contacts...", total=len(batches))
 
             for batch in batches:
@@ -134,24 +140,30 @@ class BulkEnrichmentJob:
                             source="apollo_bulk",
                         )
                         # Log credit event
-                        self.db.log_apollo_credit({
-                            "operation": "people_bulk_match",
-                            "credits_used": 1,
-                            "contact_id": result.contact_id,
-                            "campaign_name": self.campaign_name,
-                            "response_status": "success",
-                        })
+                        self.db.log_apollo_credit(
+                            {
+                                "operation": "people_bulk_match",
+                                "credits_used": 1,
+                                "contact_id": result.contact_id,
+                                "campaign_name": self.campaign_name,
+                                "response_status": "success",
+                            }
+                        )
                     else:
                         run.failed += 1
-                        self.db.mark_contact_enrichment_failed(result.contact_id, result.error or "")
-                        self.db.log_apollo_credit({
-                            "operation": "people_bulk_match",
-                            "credits_used": 1,
-                            "contact_id": result.contact_id,
-                            "campaign_name": self.campaign_name,
-                            "response_status": "no_match" if not result.error else "failed",
-                            "notes": result.error,
-                        })
+                        self.db.mark_contact_enrichment_failed(
+                            result.contact_id, result.error or ""
+                        )
+                        self.db.log_apollo_credit(
+                            {
+                                "operation": "people_bulk_match",
+                                "credits_used": 1,
+                                "contact_id": result.contact_id,
+                                "campaign_name": self.campaign_name,
+                                "response_status": "no_match" if not result.error else "failed",
+                                "notes": result.error,
+                            }
+                        )
 
                 progress.advance(task)
                 time.sleep(RATE_LIMIT_SLEEP)
@@ -181,19 +193,23 @@ class BulkEnrichmentJob:
                 last = c.get("last_name", "")
                 title = c.get("title", "")
                 if first or last:
-                    match_items.append({
-                        "first_name": first,
-                        "last_name": last,
-                        "title": title,
-                    })
+                    match_items.append(
+                        {
+                            "first_name": first,
+                            "last_name": last,
+                            "title": title,
+                        }
+                    )
                 else:
-                    results.append(EnrichmentResult(
-                        contact_id=c["id"],
-                        apollo_id=apollo_id or "",
-                        name=c.get("full_name", "?"),
-                        matched=False,
-                        error="No apollo_id and no name — cannot match",
-                    ))
+                    results.append(
+                        EnrichmentResult(
+                            contact_id=c["id"],
+                            apollo_id=apollo_id or "",
+                            name=c.get("full_name", "?"),
+                            matched=False,
+                            error="No apollo_id and no name — cannot match",
+                        )
+                    )
                     continue
 
         if not match_items:
@@ -214,46 +230,58 @@ class BulkEnrichmentJob:
             matches = data.get("people", []) or []
 
             # Map results back to contacts by index position
-            for i, c in enumerate(contacts[:len(match_items)]):
+            for i, c in enumerate(contacts[: len(match_items)]):
                 person = matches[i] if i < len(matches) else None
                 name = f"{c.get('first_name', '')} {c.get('last_name', '')}".strip()
                 if person and person.get("email"):
-                    results.append(EnrichmentResult(
-                        contact_id=c["id"],
-                        apollo_id=c.get("apollo_id", ""),
-                        name=name,
-                        matched=True,
-                        email=person.get("email"),
-                        phone=person.get("phone_numbers", [{}])[0].get("sanitized_number") if person.get("phone_numbers") else None,
-                    ))
+                    results.append(
+                        EnrichmentResult(
+                            contact_id=c["id"],
+                            apollo_id=c.get("apollo_id", ""),
+                            name=name,
+                            matched=True,
+                            email=person.get("email"),
+                            phone=person.get("phone_numbers", [{}])[0].get("sanitized_number")
+                            if person.get("phone_numbers")
+                            else None,
+                        )
+                    )
                 else:
-                    results.append(EnrichmentResult(
-                        contact_id=c["id"],
-                        apollo_id=c.get("apollo_id", ""),
-                        name=name,
-                        matched=False,
-                        error="No email returned by Apollo",
-                    ))
+                    results.append(
+                        EnrichmentResult(
+                            contact_id=c["id"],
+                            apollo_id=c.get("apollo_id", ""),
+                            name=name,
+                            matched=False,
+                            error="No email returned by Apollo",
+                        )
+                    )
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Apollo bulk_match HTTP error: {e.response.status_code} — {e.response.text[:200]}")
+            logger.error(
+                f"Apollo bulk_match HTTP error: {e.response.status_code} — {e.response.text[:200]}"
+            )
             for c in contacts:
-                results.append(EnrichmentResult(
-                    contact_id=c["id"],
-                    apollo_id=c.get("apollo_id", ""),
-                    name=c.get("full_name", "?"),
-                    matched=False,
-                    error=f"HTTP {e.response.status_code}",
-                ))
+                results.append(
+                    EnrichmentResult(
+                        contact_id=c["id"],
+                        apollo_id=c.get("apollo_id", ""),
+                        name=c.get("full_name", "?"),
+                        matched=False,
+                        error=f"HTTP {e.response.status_code}",
+                    )
+                )
         except Exception as e:
             logger.error(f"Apollo bulk_match error: {e}")
             for c in contacts:
-                results.append(EnrichmentResult(
-                    contact_id=c["id"],
-                    apollo_id=c.get("apollo_id", ""),
-                    name=c.get("full_name", "?"),
-                    matched=False,
-                    error=str(e)[:200],
-                ))
+                results.append(
+                    EnrichmentResult(
+                        contact_id=c["id"],
+                        apollo_id=c.get("apollo_id", ""),
+                        name=c.get("full_name", "?"),
+                        matched=False,
+                        error=str(e)[:200],
+                    )
+                )
 
         return results

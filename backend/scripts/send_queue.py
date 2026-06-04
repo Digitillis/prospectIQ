@@ -23,10 +23,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="ProspectIQ send priority queue")
     parser.add_argument("--campaign", help="Filter by campaign name")
     parser.add_argument("--limit", type=int, default=20, help="Max contacts to show (default: 20)")
-    parser.add_argument("--min-score", type=int, default=40,
-                        help="Min completeness score to include (default: 40)")
-    parser.add_argument("--update-scores", action="store_true",
-                        help="Recompute and persist priority scores before showing queue")
+    parser.add_argument(
+        "--min-score", type=int, default=40, help="Min completeness score to include (default: 40)"
+    )
+    parser.add_argument(
+        "--update-scores",
+        action="store_true",
+        help="Recompute and persist priority scores before showing queue",
+    )
     args = parser.parse_args()
 
     qm = QueueManager(campaign_name=args.campaign)
@@ -36,8 +40,10 @@ def main() -> None:
         updated = qm.update_priority_scores()
         console.print(f"  [dim]Updated {updated} contacts[/dim]\n")
 
-    console.print(f"\n[bold]Today's Send Queue[/bold]"
-                  + (f" — [cyan]{args.campaign}[/cyan]" if args.campaign else ""))
+    console.print(
+        f"\n[bold]Today's Send Queue[/bold]"
+        + (f" — [cyan]{args.campaign}[/cyan]" if args.campaign else "")
+    )
 
     contacts = qm.get_send_queue(limit=args.limit, min_completeness=args.min_score)
 

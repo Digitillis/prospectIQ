@@ -193,7 +193,9 @@ class _Limits:
     # -- Notifications --------------------------------------------------------
     @property
     def workspace_owner_email(self) -> str:
-        return str(_load().get("notifications", {}).get("workspace_owner_email", "avi@digitillis.com"))
+        return str(
+            _load().get("notifications", {}).get("workspace_owner_email", "avi@digitillis.com")
+        )
 
     @property
     def reply_sla_hours(self) -> int:

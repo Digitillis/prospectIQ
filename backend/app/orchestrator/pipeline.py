@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 class Pipeline:
     """Orchestrate agent execution in pipeline order."""
 
-    def __init__(self, batch_prefix: str | None = None):
+    def __init__(self, workspace_id: str, batch_prefix: str | None = None):
+        self.workspace_id = workspace_id
         self.batch_prefix = batch_prefix or f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.results: dict[str, AgentResult] = {}
 
@@ -94,7 +95,9 @@ class Pipeline:
         """Run discovery agent."""
         from backend.app.agents.discovery import DiscoveryAgent
 
-        agent = DiscoveryAgent(batch_id=f"{self.batch_prefix}_discovery")
+        agent = DiscoveryAgent(
+            batch_id=f"{self.batch_prefix}_discovery", workspace_id=self.workspace_id
+        )
         result = agent.execute(**kwargs)
         self.results["discovery"] = result
         return result
@@ -103,7 +106,9 @@ class Pipeline:
         """Run research agent."""
         from backend.app.agents.research import ResearchAgent
 
-        agent = ResearchAgent(batch_id=f"{self.batch_prefix}_research")
+        agent = ResearchAgent(
+            batch_id=f"{self.batch_prefix}_research", workspace_id=self.workspace_id
+        )
         result = agent.execute(**kwargs)
         self.results["research"] = result
         return result
@@ -112,7 +117,9 @@ class Pipeline:
         """Run qualification agent."""
         from backend.app.agents.qualification import QualificationAgent
 
-        agent = QualificationAgent(batch_id=f"{self.batch_prefix}_qualification")
+        agent = QualificationAgent(
+            batch_id=f"{self.batch_prefix}_qualification", workspace_id=self.workspace_id
+        )
         result = agent.execute(**kwargs)
         self.results["qualification"] = result
         return result
@@ -121,7 +128,9 @@ class Pipeline:
         """Run enrichment agent."""
         from backend.app.agents.enrichment import EnrichmentAgent
 
-        agent = EnrichmentAgent(batch_id=f"{self.batch_prefix}_enrichment")
+        agent = EnrichmentAgent(
+            batch_id=f"{self.batch_prefix}_enrichment", workspace_id=self.workspace_id
+        )
         result = agent.execute(**kwargs)
         self.results["enrichment"] = result
         return result
@@ -130,7 +139,9 @@ class Pipeline:
         """Run outreach agent."""
         from backend.app.agents.outreach import OutreachAgent
 
-        agent = OutreachAgent(batch_id=f"{self.batch_prefix}_outreach")
+        agent = OutreachAgent(
+            batch_id=f"{self.batch_prefix}_outreach", workspace_id=self.workspace_id
+        )
         result = agent.execute(**kwargs)
         self.results["outreach"] = result
         return result
@@ -139,7 +150,9 @@ class Pipeline:
         """Run learning agent to analyze engagement outcomes and refine scoring."""
         from backend.app.agents.learning import LearningAgent
 
-        agent = LearningAgent(batch_id=f"{self.batch_prefix}_learning")
+        agent = LearningAgent(
+            batch_id=f"{self.batch_prefix}_learning", workspace_id=self.workspace_id
+        )
         result = agent.execute(**kwargs)
         self.results["learning"] = result
         return result

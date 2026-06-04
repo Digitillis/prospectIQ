@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 # Enums (matching database enums)
 # ============================================================
 
+
 class EnrichmentStatus(str, Enum):
     NEEDS_ENRICHMENT = "needs_enrichment"
     PENDING = "pending"
@@ -72,8 +73,10 @@ class InteractionType(str, Enum):
 # Company Models
 # ============================================================
 
+
 class CompanyCreate(BaseModel):
     """Data required to create a new company from Apollo discovery."""
+
     apollo_id: Optional[str] = None
     name: str
     domain: Optional[str] = None
@@ -102,6 +105,7 @@ class CompanyCreate(BaseModel):
 
 class CompanyUpdate(BaseModel):
     """Fields that can be updated on a company."""
+
     research_summary: Optional[str] = None
     technology_stack: Optional[list] = None
     pain_signals: Optional[list] = None
@@ -121,8 +125,10 @@ class CompanyUpdate(BaseModel):
 # Contact Models
 # ============================================================
 
+
 class ContactCreate(BaseModel):
     """Data required to create a new contact."""
+
     company_id: str
     apollo_id: Optional[str] = None
     first_name: Optional[str] = None
@@ -162,8 +168,10 @@ class ContactCreate(BaseModel):
 # Enrichment & Credit Models
 # ============================================================
 
+
 class ApolloEnrichmentJob(BaseModel):
     """Batch of contacts queued for Apollo bulk match enrichment."""
+
     contact_ids: list[str]
     campaign_name: Optional[str] = None
     batch_id: Optional[str] = None
@@ -172,29 +180,32 @@ class ApolloEnrichmentJob(BaseModel):
 
 class ApolloCreditEvent(BaseModel):
     """One Apollo API credit spend event."""
-    operation: str          # people_match | people_bulk_match | org_enrich | people_search
+
+    operation: str  # people_match | people_bulk_match | org_enrich | people_search
     credits_used: int = 1
     contact_id: Optional[str] = None
     company_id: Optional[str] = None
     batch_id: Optional[str] = None
     campaign_name: Optional[str] = None
-    response_status: str = "success"   # success | failed | no_match
+    response_status: str = "success"  # success | failed | no_match
     notes: Optional[str] = None
 
 
 class SeedAuditEvent(BaseModel):
     """One record from an idempotent seed / import script."""
+
     script_name: str
-    entity_type: str        # company | contact
+    entity_type: str  # company | contact
     entity_id: Optional[str] = None
     entity_name: Optional[str] = None
-    action: str             # created | skipped | updated | deleted | failed
+    action: str  # created | skipped | updated | deleted | failed
     source: Optional[str] = None  # apollo_mcp | csv | manual | api
     details: Optional[str] = None
 
 
 class ReadinessCheck(BaseModel):
     """Result of a campaign readiness gate evaluation for one company."""
+
     company_id: str
     company_name: str
     campaign_name: str
@@ -210,8 +221,10 @@ class ReadinessCheck(BaseModel):
 # Research Intelligence Models
 # ============================================================
 
+
 class TriggerEvent(BaseModel):
     """A buying trigger event detected during company research."""
+
     type: str = ""  # leadership_change, ma_pe, esg_commitment, operational_incident, capex_investment, growth_signal, competitor_displacement
     description: str = ""
     date_approx: str = ""  # YYYY-QQ or YYYY-MM or 'Unknown'
@@ -220,6 +233,7 @@ class TriggerEvent(BaseModel):
 
 class ResearchResult(BaseModel):
     """Structured output from the Research Agent's Claude analysis."""
+
     company_description: str = ""
     manufacturing_type: str = "unknown"  # discrete, process, hybrid
     equipment_types: list[str] = Field(default_factory=list)
@@ -247,14 +261,18 @@ class ResearchResult(BaseModel):
 # Qualification Models
 # ============================================================
 
+
 class PQSScore(BaseModel):
     """Prospect Quality Score breakdown."""
+
     firmographic: int = 0
     technographic: int = 0
     timing: int = 0
     engagement: int = 0
     total: int = 0
-    classification: str = "unqualified"  # unqualified, research_needed, qualified, high_priority, hot_prospect
+    classification: str = (
+        "unqualified"  # unqualified, research_needed, qualified, high_priority, hot_prospect
+    )
     notes: str = ""
 
 
@@ -262,8 +280,10 @@ class PQSScore(BaseModel):
 # Outreach Models
 # ============================================================
 
+
 class OutreachDraft(BaseModel):
     """An AI-generated outreach message pending approval."""
+
     company_id: str
     contact_id: str
     channel: ChannelType = ChannelType.EMAIL
@@ -276,6 +296,7 @@ class OutreachDraft(BaseModel):
 
 class OutreachApproval(BaseModel):
     """Approval decision for an outreach draft."""
+
     draft_id: str
     status: ApprovalStatus
     edited_body: Optional[str] = None
@@ -286,8 +307,10 @@ class OutreachApproval(BaseModel):
 # Interaction Models
 # ============================================================
 
+
 class InteractionCreate(BaseModel):
     """Data for logging a new interaction."""
+
     company_id: str
     contact_id: Optional[str] = None
     type: InteractionType
@@ -303,8 +326,10 @@ class InteractionCreate(BaseModel):
 # API Cost Models
 # ============================================================
 
+
 class APICost(BaseModel):
     """Track API usage costs."""
+
     provider: str  # anthropic, perplexity, apollo, instantly
     model: Optional[str] = None
     endpoint: Optional[str] = None

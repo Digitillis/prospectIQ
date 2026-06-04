@@ -6,6 +6,7 @@ enroll real prospects into Instantly campaigns and cause double-contact.
 """
 
 import sys
+
 sys.exit(
     "DEPRECATED: ProspectIQ sends outreach via Resend (engagement.py), not Instantly. "
     "This script is disabled to prevent double-contact. "
@@ -23,6 +24,7 @@ from typing import Optional
 # Load .env before any module that reads os.environ (sequence_router, etc.)
 try:
     from dotenv import load_dotenv
+
     load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 except ImportError:
     pass
@@ -103,6 +105,7 @@ def push_contacts_to_sequences(
     instantly = None
     if not dry_run:
         from backend.app.integrations.instantly import InstantlyClient
+
         instantly = InstantlyClient()
 
     stats = {
@@ -119,13 +122,14 @@ def push_contacts_to_sequences(
     # 1. Fetch candidates: enriched, have an email, not yet sequenced
     # ------------------------------------------------------------------
     console.print(
-        f"\n[bold cyan]Fetching enriched contacts ready for sequencing "
-        f"(limit={limit})…[/bold cyan]"
+        f"\n[bold cyan]Fetching enriched contacts ready for sequencing (limit={limit})…[/bold cyan]"
     )
 
     query = (
         db.client.table("contacts")
-        .select("*, companies!contacts_company_id_fkey(id, name, domain, tier, naics_code, campaign_name, outreach_active)")
+        .select(
+            "*, companies!contacts_company_id_fkey(id, name, domain, tier, naics_code, campaign_name, outreach_active)"
+        )
         .eq("enrichment_status", "enriched")
         .not_.is_("email", "null")
         .not_.eq("email", "")
@@ -137,8 +141,7 @@ def push_contacts_to_sequences(
         # Filter via Python after fetch (Supabase join filter limitation)
         raw = query.execute().data
         contacts = [
-            c for c in raw
-            if (c.get("companies") or {}).get("campaign_name") == campaign_name
+            c for c in raw if (c.get("companies") or {}).get("campaign_name") == campaign_name
         ]
     else:
         contacts = query.execute().data
@@ -162,13 +165,15 @@ def push_contacts_to_sequences(
         if not email:
             logger.debug("Skipping %s — no email", full_name)
             stats["skipped_no_email"] += 1
-            rows.append({
-                "name": full_name,
-                "email": "—",
-                "company": company_row.get("name", "?"),
-                "status": "[yellow]skip: no email[/yellow]",
-                "sequence": "—",
-            })
+            rows.append(
+                {
+                    "name": full_name,
+                    "email": "—",
+                    "company": company_row.get("name", "?"),
+                    "status": "[yellow]skip: no email[/yellow]",
+                    "sequence": "—",
+                }
+            )
             continue
 
         # Guard: DNC check
@@ -176,29 +181,35 @@ def push_contacts_to_sequences(
         if blocked:
             logger.info("Skipping %s (%s) — DNC: %s", full_name, email, reason)
             stats["skipped_dnc"] += 1
-            rows.append({
-                "name": full_name,
-                "email": email,
-                "company": company_row.get("name", "?"),
-                "status": f"[red]skip: DNC ({reason})[/red]",
-                "sequence": "—",
-            })
+            rows.append(
+                {
+                    "name": full_name,
+                    "email": email,
+                    "company": company_row.get("name", "?"),
+                    "status": f"[red]skip: DNC ({reason})[/red]",
+                    "sequence": "—",
+                }
+            )
             continue
 
         # Guard: one active thread per company
         if company_id and db.is_company_in_active_outreach(company_id):
             logger.info(
                 "Skipping %s (%s) — company %s already has active outreach",
-                full_name, email, company_row.get("name"),
+                full_name,
+                email,
+                company_row.get("name"),
             )
             stats["skipped_active"] += 1
-            rows.append({
-                "name": full_name,
-                "email": email,
-                "company": company_row.get("name", "?"),
-                "status": "[dim]skip: company active[/dim]",
-                "sequence": "—",
-            })
+            rows.append(
+                {
+                    "name": full_name,
+                    "email": email,
+                    "company": company_row.get("name", "?"),
+                    "status": "[dim]skip: company active[/dim]",
+                    "sequence": "—",
+                }
+            )
             continue
 
         # ------------------------------------------------------------------
@@ -214,16 +225,20 @@ def push_contacts_to_sequences(
         if not campaign_id:
             logger.warning(
                 "No Instantly campaign configured for vertical=%r persona=%r — skipping %s",
-                vertical, persona_type, email,
+                vertical,
+                persona_type,
+                email,
             )
             stats["skipped_no_campaign"] += 1
-            rows.append({
-                "name": full_name,
-                "email": email,
-                "company": company_row.get("name", "?"),
-                "status": "[yellow]skip: no campaign[/yellow]",
-                "sequence": f"{vertical}/{persona_type or 'unknown'}",
-            })
+            rows.append(
+                {
+                    "name": full_name,
+                    "email": email,
+                    "company": company_row.get("name", "?"),
+                    "status": "[yellow]skip: no campaign[/yellow]",
+                    "sequence": f"{vertical}/{persona_type or 'unknown'}",
+                }
+            )
             continue
 
         # ------------------------------------------------------------------
@@ -237,13 +252,15 @@ def push_contacts_to_sequences(
                 f"({vertical}/{persona_type})"
             )
             stats["pushed"] += 1
-            rows.append({
-                "name": full_name,
-                "email": email,
-                "company": company_row.get("name", "?"),
-                "status": "[cyan]dry-run: would push[/cyan]",
-                "sequence": campaign_id,
-            })
+            rows.append(
+                {
+                    "name": full_name,
+                    "email": email,
+                    "company": company_row.get("name", "?"),
+                    "status": "[cyan]dry-run: would push[/cyan]",
+                    "sequence": campaign_id,
+                }
+            )
             continue
 
         try:
@@ -269,24 +286,28 @@ def push_contacts_to_sequences(
 
             logger.info("Pushed %s → %s (campaign %s)", email, vertical, campaign_id)
             stats["pushed"] += 1
-            rows.append({
-                "name": full_name,
-                "email": email,
-                "company": company_row.get("name", "?"),
-                "status": "[green]pushed[/green]",
-                "sequence": campaign_id,
-            })
+            rows.append(
+                {
+                    "name": full_name,
+                    "email": email,
+                    "company": company_row.get("name", "?"),
+                    "status": "[green]pushed[/green]",
+                    "sequence": campaign_id,
+                }
+            )
 
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to push %s: %s", email, exc)
             stats["errors"] += 1
-            rows.append({
-                "name": full_name,
-                "email": email,
-                "company": company_row.get("name", "?"),
-                "status": f"[red]error: {str(exc)[:60]}[/red]",
-                "sequence": campaign_id,
-            })
+            rows.append(
+                {
+                    "name": full_name,
+                    "email": email,
+                    "company": company_row.get("name", "?"),
+                    "status": f"[red]error: {str(exc)[:60]}[/red]",
+                    "sequence": campaign_id,
+                }
+            )
 
     # ------------------------------------------------------------------
     # 3. Rich summary table

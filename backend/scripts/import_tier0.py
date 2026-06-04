@@ -37,12 +37,13 @@ from backend.app.core.database import Database
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parents[3] / "digitillis-platform"
-MFG_LIST  = REPO_ROOT / "docs" / "commercial" / "gtm" / "PROSPECT_LIST_MFG.md"
-FB_LIST   = REPO_ROOT / "docs" / "commercial" / "gtm" / "PROSPECT_LIST_FB.md"
+MFG_LIST = REPO_ROOT / "docs" / "commercial" / "gtm" / "PROSPECT_LIST_MFG.md"
+FB_LIST = REPO_ROOT / "docs" / "commercial" / "gtm" / "PROSPECT_LIST_FB.md"
 
 # ---------------------------------------------------------------------------
 # Persona classification (mirrors discovery.py)
 # ---------------------------------------------------------------------------
+
 
 def classify_persona(title: str) -> tuple[str, bool]:
     """Return (persona_type, is_decision_maker) from a job title string."""
@@ -73,9 +74,13 @@ def classify_persona(title: str) -> tuple[str, bool]:
         return "director_quality", True
     if any(x in t for x in ["dir. ops", "director ops", "director operations", "dir. operations"]):
         return "director_ops", True
-    if any(x in t for x in ["dir. mfg", "director mfg", "director manufacturing", "dir. manufacturing"]):
+    if any(
+        x in t for x in ["dir. mfg", "director mfg", "director manufacturing", "dir. manufacturing"]
+    ):
         return "director_mfg", True
-    if any(x in t for x in ["dir. eng", "director eng", "director engineering", "dir. engineering"]):
+    if any(
+        x in t for x in ["dir. eng", "director eng", "director engineering", "dir. engineering"]
+    ):
         return "director_eng", True
     if "director" in t or t.startswith("dir."):
         return "director_ops", True
@@ -83,15 +88,16 @@ def classify_persona(title: str) -> tuple[str, bool]:
         return "plant_manager", True
     return "other", False
 
+
 # ---------------------------------------------------------------------------
 # Markdown parser — extracts Tier 0 table rows
 # ---------------------------------------------------------------------------
 
 # Matches a contact entry like:  Michael — Dir. Ops (6896ea...)
 _CONTACT_RE = re.compile(
-    r"([A-Z][a-zA-Z\-]+)"        # First name (capitalised)
-    r"\s*[—–-]\s*"               # dash separator
-    r"([^(]+?)"                  # title (greedy up to open paren)
+    r"([A-Z][a-zA-Z\-]+)"  # First name (capitalised)
+    r"\s*[—–-]\s*"  # dash separator
+    r"([^(]+?)"  # title (greedy up to open paren)
     r"\s*\(([a-f0-9]{4,8}\.{3})\)"  # partial Apollo ID like (6896ea...)
 )
 
@@ -137,23 +143,27 @@ def _parse_tier0_table(md_path: Path) -> list[dict]:
         # Parse individual contacts from the decision_makers cell
         contacts: list[dict] = []
         for m in _CONTACT_RE.finditer(decision_makers_cell):
-            first_name  = m.group(1).strip()
-            title       = m.group(2).strip().rstrip(",")
-            partial_id  = m.group(3).strip()  # e.g. "6896ea..."
+            first_name = m.group(1).strip()
+            title = m.group(2).strip().rstrip(",")
+            partial_id = m.group(3).strip()  # e.g. "6896ea..."
             persona, is_dm = classify_persona(title)
-            contacts.append({
-                "first_name":        first_name,
-                "title":             title,
-                "apollo_id":         partial_id,   # truncated — enrichment needed
-                "persona_type":      persona,
-                "is_decision_maker": is_dm,
-            })
+            contacts.append(
+                {
+                    "first_name": first_name,
+                    "title": title,
+                    "apollo_id": partial_id,  # truncated — enrichment needed
+                    "persona_type": persona,
+                    "is_decision_maker": is_dm,
+                }
+            )
 
-        companies.append({
-            "name":     company_name,
-            "why":      why_cell,
-            "contacts": contacts,
-        })
+        companies.append(
+            {
+                "name": company_name,
+                "why": why_cell,
+                "contacts": contacts,
+            }
+        )
 
     return companies
 
@@ -162,8 +172,10 @@ def _parse_tier0_table(md_path: Path) -> list[dict]:
 # Import logic
 # ---------------------------------------------------------------------------
 
-def _get_or_create_company(db: Database, name: str, tier: str, industry: str,
-                            campaign_name: str, notes: str, dry_run: bool) -> dict | None:
+
+def _get_or_create_company(
+    db: Database, name: str, tier: str, industry: str, campaign_name: str, notes: str, dry_run: bool
+) -> dict | None:
     """Return existing company or insert a new one.  Returns the company row."""
     # Dedup by exact name (case-insensitive search)
     existing = db.get_companies(search=name, limit=5)
@@ -173,10 +185,10 @@ def _get_or_create_company(db: Database, name: str, tier: str, industry: str,
             return row
 
     data = {
-        "name":          name,
-        "tier":          tier,
-        "industry":      industry,
-        "status":        "discovered",
+        "name": name,
+        "tier": tier,
+        "industry": industry,
+        "status": "discovered",
         "campaign_name": campaign_name,
     }
     if dry_run:
@@ -188,8 +200,9 @@ def _get_or_create_company(db: Database, name: str, tier: str, industry: str,
     return row
 
 
-def _get_or_create_contact(db: Database, company_id: str, contact: dict,
-                            dry_run: bool) -> dict | None:
+def _get_or_create_contact(
+    db: Database, company_id: str, contact: dict, dry_run: bool
+) -> dict | None:
     """Return existing contact or insert a new one."""
     partial_id = contact["apollo_id"]
 
@@ -207,18 +220,20 @@ def _get_or_create_contact(db: Database, company_id: str, contact: dict,
         return existing.data
 
     data = {
-        "company_id":        company_id,
-        "first_name":        contact["first_name"],
-        "last_name":         "",
-        "title":             contact["title"],
+        "company_id": company_id,
+        "first_name": contact["first_name"],
+        "last_name": "",
+        "title": contact["title"],
         # Truncated Apollo IDs (e.g. "6896ea...") fail the min-length constraint
         # and are useless for API calls anyway — omit and enrich later.
-        "persona_type":      contact["persona_type"],
+        "persona_type": contact["persona_type"],
         "is_decision_maker": contact["is_decision_maker"],
         # email/phone not yet known — needs enrichment via Apollo
     }
     if dry_run:
-        print(f"      [DRY-RUN] would insert: {contact['first_name']} — {contact['title']} ({partial_id})")
+        print(
+            f"      [DRY-RUN] would insert: {contact['first_name']} — {contact['title']} ({partial_id})"
+        )
         return None
 
     row = db.insert_contact(data)
@@ -236,16 +251,16 @@ def run_import(verticals: list[str], dry_run: bool) -> None:
         sources.append((FB_LIST, "fb1", "Food & Beverage", "tier0-fb-fsma"))
 
     total_companies = 0
-    total_contacts  = 0
+    total_contacts = 0
 
     for md_path, tier, industry, campaign_name in sources:
         if not md_path.exists():
             print(f"⚠️  File not found: {md_path}")
             continue
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  {md_path.name}  →  tier={tier}, industry={industry}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         companies = _parse_tier0_table(md_path)
         print(f"  Parsed {len(companies)} Tier 0 companies from markdown\n")
@@ -266,7 +281,7 @@ def run_import(verticals: list[str], dry_run: bool) -> None:
                 if result is not None or dry_run:
                     total_contacts += 1
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     prefix = "[DRY-RUN] " if dry_run else ""
     print(f"  {prefix}Done — {total_companies} companies, {total_contacts} contacts")
     if not dry_run:
@@ -281,9 +296,14 @@ def run_import(verticals: list[str], dry_run: bool) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Import Tier 0 prospects into ProspectIQ Supabase DB")
-    parser.add_argument("--dry-run", action="store_true", help="Print what would be inserted without writing")
+    parser = argparse.ArgumentParser(
+        description="Import Tier 0 prospects into ProspectIQ Supabase DB"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print what would be inserted without writing"
+    )
     parser.add_argument(
         "--vertical",
         choices=["mfg", "fb", "both"],

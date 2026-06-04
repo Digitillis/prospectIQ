@@ -24,14 +24,29 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _ECONOMIC_BUYER_KEYWORDS = (
-    "ceo", "cfo", "coo", "president", "owner", "founder",
-    "vp", "svp", "evp",
+    "ceo",
+    "cfo",
+    "coo",
+    "president",
+    "owner",
+    "founder",
+    "vp",
+    "svp",
+    "evp",
 )
 _CHAMPION_KEYWORDS = (
-    "director", "manager", "head of", "lead",
+    "director",
+    "manager",
+    "head of",
+    "lead",
 )
 _TECHNICAL_KEYWORDS = (
-    "engineer", "architect", "analyst", "developer", "cto", "cio",
+    "engineer",
+    "architect",
+    "analyst",
+    "developer",
+    "cto",
+    "cio",
 )
 
 
@@ -64,6 +79,7 @@ def _messaging_angle(role: str) -> str:
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AccountCampaign:
@@ -115,6 +131,7 @@ class AccountCampaignStatus:
 # ---------------------------------------------------------------------------
 # ThreadCoordinator
 # ---------------------------------------------------------------------------
+
 
 class ThreadCoordinator:
     """Coordinates multi-contact outreach campaigns for a single account."""
@@ -192,9 +209,7 @@ class ThreadCoordinator:
     # Role assignment
     # ------------------------------------------------------------------
 
-    async def assign_roles(
-        self, account_campaign_id: str, workspace_id: str
-    ) -> list[ThreadRole]:
+    async def assign_roles(self, account_campaign_id: str, workspace_id: str) -> list[ThreadRole]:
         """Assign role labels to threads based on contact title, persisting to DB."""
         threads = (
             self.db.client.table("account_campaign_threads")
@@ -319,16 +334,16 @@ class ThreadCoordinator:
                         .execute()
                     )
                     if last.data:
-                        sent = datetime.fromisoformat(last.data[0]["sent_at"].replace("Z", "+00:00"))
+                        sent = datetime.fromisoformat(
+                            last.data[0]["sent_at"].replace("Z", "+00:00")
+                        )
                         next_available = (sent + timedelta(hours=48)).isoformat()
                 except Exception:
                     pass
 
             # Build awareness note (only for parallel/waterfall strategies)
             awareness_note: Optional[str] = None
-            siblings = [
-                s for s in sibling_summary if s["contact_id"] != thread["contact_id"]
-            ]
+            siblings = [s for s in sibling_summary if s["contact_id"] != thread["contact_id"]]
             if siblings and strategy in ("parallel", "waterfall"):
                 sibling_names = [s["name"] for s in siblings[:2]]
                 names_str = " and ".join(sibling_names)
@@ -446,6 +461,7 @@ Return ONLY this JSON (no markdown, no extra text):
                 messages=[{"role": "user", "content": prompt}],
             )
             import json
+
             content = message.content[0].text.strip()
             parsed = json.loads(content)
             return parsed.get("subject", ""), parsed.get("body", "")
@@ -480,9 +496,7 @@ Return ONLY this JSON (no markdown, no extra text):
         """
         if not company_id or not contact_id:
             return False
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=window_hours)
-        ).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
         try:
             result = (
                 self.db.client.table("account_suppression_log")
