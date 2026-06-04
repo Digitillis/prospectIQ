@@ -67,8 +67,15 @@ def test_known_persona_scores_higher_than_unknown_persona() -> None:
 
 
 def test_company_with_no_signals_scores_lower_than_with_fda_signals() -> None:
-    """Intent score from active signals is added (capped at 15)."""
-    contact = _contact(persona_type="vp_ops")
+    """Intent score from active signals is added (capped at 15).
+
+    Uses the default (None) persona so persona points stay at the 8-point
+    baseline. The previous fixture passed persona_type='vp_ops', which live
+    ICP config weights override to 100 — saturating the 0-100 clamp so the
+    intent delta was invisible (both scores pinned at 100). The persona is
+    incidental here; this test isolates the intent contribution.
+    """
+    contact = _contact()  # default persona → 8 pts, leaves headroom for intent
 
     no_signals = _company(intent_score=0, active_signals=[])
     fda_signals = _company(
