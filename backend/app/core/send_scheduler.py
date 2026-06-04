@@ -47,11 +47,21 @@ COMPANY_COOLDOWN_DAYS: int = 14  # different contact, same company
 PER_MAILBOX_DAILY_CAP: int = 30
 
 
+# --- SDP#18 deliberate constants ---
+# CAMPAIGN_START: anchors the deliverability ramp in real calendar time. Override
+# via CAMPAIGN_START_DATE env var (ISO format: YYYY-MM-DD) when restarting a campaign
+# or running in a new environment. Hardcoded default is the June 2026 send launch.
+import os as _os
+
+_campaign_start_env = _os.environ.get("CAMPAIGN_START_DATE", "")
+CAMPAIGN_START: date = (
+    date.fromisoformat(_campaign_start_env) if _campaign_start_env else date(2026, 6, 1)
+)
+
 # Deliverability ramp by business-week since CAMPAIGN_START (NOT since each
 # recompute — otherwise a daily recompute resets the ramp and throttles every
 # day to week-1 forever). Mailboxes are already warmed, so week 1 opens at 100/day.
 # Week 2 = 150/day, week 3+ = full mailbox capacity (mailbox_count * 30).
-CAMPAIGN_START = date(2026, 6, 1)
 RAMP_SCHEDULE: list[int] = [100, 150]  # index = business-week since CAMPAIGN_START (0-based)
 
 
@@ -111,10 +121,20 @@ class Slot:
     scheduled_date: date
     sender_email: str
     slot_order: int
+    # SDP#11 ACCEPTED: per-persona send-time optimisation is not implemented.
+    # All slots for a given day are dispatched within the single 8–11am Chicago window
+    # by the dispatch_loop cron; no per-contact preferred-send-hour is assigned here.
+    # Rationale: at current send volume (270/day across 9 mailboxes) the statistical
+    # benefit of persona-level time-targeting is outweighed by the scheduling complexity.
+    # Trigger to revisit: sustained daily volume > 1,000 sends or first customer
+    # reporting meaningful open-rate delta correlated with send hour.
 
 
 def _pick_sender(email: str, sender_pool: list[str]) -> str:
     if not sender_pool:
+        # SDP#18: deliberate last-resort fallback — only reached if outreach_send_config
+        # has no sender_pool configured. Set SEND_ENABLED=false and fix the config before
+        # this ever fires in production. Override via outreach_send_config.sender_pool.
         return "avi@digitillis.io"
     idx = int(hashlib.md5(email.lower().encode()).hexdigest(), 16) % len(sender_pool)
     return sender_pool[idx]
@@ -677,10 +697,12 @@ def recompute_and_persist(
         _release_advisory_lock(db, _LOCK_KEY_RECOMPUTE)
 
 
-# Reviewer attribution for schedule-driven approval. The forward schedule is the
-# founder-approved automation: a draft reaching its scheduled day, having passed
-# every quality/eligibility/sequence gate at schedule time, is approved on the
-# founder's behalf. Overridable via outreach_send_config.default_reviewer_id.
+# --- SDP#18 deliberate constant ---
+# DEFAULT_SCHEDULE_REVIEWER_ID: Avanish Mehrotra's Supabase user UUID. Schedule-driven
+# approval credits the founder as reviewer because the forward schedule IS the approval —
+# every quality/eligibility/sequence gate was satisfied at schedule time. This is a
+# deliberate product decision, not an oversight. Overridable per workspace via
+# outreach_send_config.default_reviewer_id column.
 DEFAULT_SCHEDULE_REVIEWER_ID = "e463105c-4cdc-45e2-967d-66e3dd5728df"
 
 

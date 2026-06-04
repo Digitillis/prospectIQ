@@ -129,7 +129,69 @@ def _insert_send_attempt(
     return None
 
 
+# ---------------------------------------------------------------------------
+# Audit-record immutability — app-layer status-transition guard (SEC-013 / ADR-002)
+# ---------------------------------------------------------------------------
+
+# Legal forward transitions. DELIVERED→PERMANENTLY_FAILED is the only backward-looking
+# allowed path (bounce reconciliation: provider confirmed delivery then later bounced).
+_ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
+    "DISPATCHED": frozenset({"DELIVERED", "FAILED", "PERMANENTLY_FAILED"}),
+    "FAILED": frozenset(
+        {"DISPATCHED", "PERMANENTLY_FAILED"}
+    ),  # retry = new DISPATCHED row; explicit terminal
+    "DELIVERED": frozenset({"PERMANENTLY_FAILED"}),  # bounce reconciliation only
+    "PERMANENTLY_FAILED": frozenset(),  # terminal — no further writes
+}
+
+
+def _guard_status_transition(db_client, attempt_id: str, new_status: str) -> bool:
+    """Verify the status transition is legal. Returns True if allowed, logs ERROR and returns False if not.
+
+    Called before every _update_send_attempt that includes a 'status' field.
+    Never raises — the caller proceeds or skips based on the return value.
+    See ADR-002 for the transition table and rationale.
+    """
+    try:
+        rows = (
+            db_client.table("send_attempts")
+            .select("status")
+            .eq("id", attempt_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not rows:
+            return True  # row not found — let insert/update proceed; caller handles missing row
+        current = rows[0].get("status", "") or ""
+        if current not in _ALLOWED_TRANSITIONS:
+            # Unrecognized current status (e.g. freshly inserted row, empty string, or
+            # future status not yet in this table). Allow the transition — unknown is not terminal.
+            return True
+        allowed = _ALLOWED_TRANSITIONS[current]
+        if new_status not in allowed:
+            logger.error(
+                "dispatch.illegal_status_transition attempt_id=%s current=%s new=%s allowed=%s — write blocked (ADR-002)",
+                attempt_id,
+                current,
+                new_status,
+                sorted(allowed),
+            )
+            return False
+    except Exception as exc:
+        logger.warning(
+            "dispatch.status_guard_check_failed attempt_id=%s new_status=%s error=%s — allowing (non-blocking guard)",
+            attempt_id,
+            new_status,
+            exc,
+        )
+    return True
+
+
 def _update_send_attempt(db_client, attempt_id: str, **fields) -> None:
+    new_status = fields.get("status")
+    if new_status and not _guard_status_transition(db_client, attempt_id, new_status):
+        return  # illegal transition — blocked, already logged at ERROR
     try:
         db_client.table("send_attempts").update(fields).eq("id", attempt_id).execute()
     except Exception as exc:

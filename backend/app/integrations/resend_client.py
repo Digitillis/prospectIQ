@@ -13,11 +13,13 @@ from backend.app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+
 # Load from config — fallback to generic defaults if not set
 def _get_sender_email() -> str:
     """Get primary sender email from config."""
     try:
         from backend.app.core.config import get_outreach_guidelines
+
         guidelines = get_outreach_guidelines()
         sender = guidelines.get("sender", {})
         email = sender.get("email")
@@ -26,6 +28,7 @@ def _get_sender_email() -> str:
     except Exception:
         pass
     return "noreply@example.com"
+
 
 FOUNDER_EMAIL = _get_sender_email()  # Primary contact email for alerts
 DEFAULT_FROM_EMAIL = "notifications@example.com"  # Default transactional email
@@ -39,7 +42,9 @@ class ResendClient:
     - Daily action digests
     - System notifications
 
-    All cold outreach is handled by Instantly.ai.
+    Cold outreach emails are also sent via Resend (through EngagementAgent /
+    dispatch_queued_draft). This client handles only internal notifications.
+    Instantly.ai is used for warm-up only; it is NOT in the cold-outreach send path.
     """
 
     def __init__(self):
