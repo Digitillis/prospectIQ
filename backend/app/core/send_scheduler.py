@@ -43,7 +43,7 @@ CADENCE_DELTA: dict[int, int] = {2: 4, 3: 5, 4: 7, 5: 14}
 # --- Hard minimum gaps (business-day floor; never send sooner than this) ------
 MIN_GAP_DAYS: dict[int, int] = {2: 3, 3: 2, 4: 2, 5: 2}
 
-COMPANY_COOLDOWN_DAYS: int = 14   # different contact, same company
+COMPANY_COOLDOWN_DAYS: int = 14  # different contact, same company
 PER_MAILBOX_DAILY_CAP: int = 30
 
 
@@ -157,9 +157,9 @@ def compute_schedule(
     class Event:
         contact: Contact
         step: int
-        earliest: date          # earliest legal date (gap floor)
-        target: date            # cadence-preferred date
-        anchor: date            # the prior step's send date
+        earliest: date  # earliest legal date (gap floor)
+        target: date  # cadence-preferred date
+        anchor: date  # the prior step's send date
 
     followups: list[Event] = []
     new_starts: list[Contact] = []
@@ -176,12 +176,16 @@ def compute_schedule(
             prior = nxt - 1
             if prior not in c.sent:
                 # prior step not sent and not pending in this contact -> cannot schedule
-                warnings.append(f"{c.contact_id}: step {nxt} has no sent/scheduled prior step {prior}")
+                warnings.append(
+                    f"{c.contact_id}: step {nxt} has no sent/scheduled prior step {prior}"
+                )
                 continue
             anchor = c.sent[prior]
             earliest = _add_business_days(anchor, MIN_GAP_DAYS.get(nxt, 2))
             earliest = max(_next_business_day(earliest), start)
-            target = max(_next_business_day(anchor + timedelta(days=CADENCE_DELTA.get(nxt, 7))), earliest)
+            target = max(
+                _next_business_day(anchor + timedelta(days=CADENCE_DELTA.get(nxt, 7))), earliest
+            )
             followups.append(Event(c, nxt, earliest, target, anchor))
 
     # Stable ordering for new starts (deterministic): by contact_id
@@ -203,7 +207,7 @@ def compute_schedule(
         def company_ok(company_id: str, contact_id: str, d: date) -> bool:
             if company_id in used_companies:
                 return False
-            for (td, tc) in company_touches[company_id]:
+            for td, tc in company_touches[company_id]:
                 if tc != contact_id and abs((d - td).days) < COMPANY_COOLDOWN_DAYS:
                     return False
             return True
@@ -225,8 +229,17 @@ def compute_schedule(
             if mailbox_load[sender] >= PER_MAILBOX_DAILY_CAP:
                 continue
             # place
-            slots.append(Slot(e.contact.remaining[e.step], e.contact.contact_id,
-                              e.contact.company_id, e.step, day, sender, slot_order))
+            slots.append(
+                Slot(
+                    e.contact.remaining[e.step],
+                    e.contact.contact_id,
+                    e.contact.company_id,
+                    e.step,
+                    day,
+                    sender,
+                    slot_order,
+                )
+            )
             slot_order += 1
             placed += 1
             mailbox_load[sender] += 1
@@ -237,8 +250,12 @@ def compute_schedule(
             # enqueue next step of this contact's chain
             nstep = e.step + 1
             if nstep in e.contact.remaining:
-                earliest = max(_next_business_day(_add_business_days(day, MIN_GAP_DAYS.get(nstep, 2))), day)
-                target = max(_next_business_day(day + timedelta(days=CADENCE_DELTA.get(nstep, 7))), earliest)
+                earliest = max(
+                    _next_business_day(_add_business_days(day, MIN_GAP_DAYS.get(nstep, 2))), day
+                )
+                target = max(
+                    _next_business_day(day + timedelta(days=CADENCE_DELTA.get(nstep, 7))), earliest
+                )
                 next_events.append(Event(e.contact, nstep, earliest, target, day))
         for e in placed_events:
             pending_followups.remove(e)
@@ -256,7 +273,9 @@ def compute_schedule(
             if mailbox_load[sender] >= PER_MAILBOX_DAILY_CAP:
                 still_blocked.append(c)
                 continue
-            slots.append(Slot(c.remaining[1], c.contact_id, c.company_id, 1, day, sender, slot_order))
+            slots.append(
+                Slot(c.remaining[1], c.contact_id, c.company_id, 1, day, sender, slot_order)
+            )
             slot_order += 1
             placed += 1
             mailbox_load[sender] += 1
@@ -322,16 +341,21 @@ def validate_schedule(slots: list[Slot], sent_history: dict[str, dict[int, date]
         all_steps.update(sched)
         for step in sorted(sched):
             if step > 1 and (step - 1) not in all_steps:
-                violations.append(f"{cid}: step {step} scheduled but step {step-1} missing")
+                violations.append(f"{cid}: step {step} scheduled but step {step - 1} missing")
                 continue
             if step > 1:
                 gap_floor = MIN_GAP_DAYS.get(step, 2)
                 prior_d = all_steps[step - 1]
                 # business-day gap
-                bd = sum(1 for i in range((sched[step] - prior_d).days)
-                         if (prior_d + timedelta(days=i + 1)).weekday() < 5)
+                bd = sum(
+                    1
+                    for i in range((sched[step] - prior_d).days)
+                    if (prior_d + timedelta(days=i + 1)).weekday() < 5
+                )
                 if bd < gap_floor:
-                    violations.append(f"{cid}: step {step} only {bd} biz-days after step {step-1} (floor {gap_floor})")
+                    violations.append(
+                        f"{cid}: step {step} only {bd} biz-days after step {step - 1} (floor {gap_floor})"
+                    )
 
     return violations
 
@@ -354,15 +378,33 @@ def _load_state(db, workspace_id: str):
     """Load contacts + sent history + sender pool + mailbox cap from live DB.
     Returns (contacts, sent_history, sender_pool, full_cap)."""
     import re
-    WRONG = ('counsel', 'attorney', ' legal', 'marketing', ' sales', 'recruit', 'talent',
-             'communications', 'controller', 'treasurer', 'credit & collections',
-             'customer service', 'chief information', 'information technology',
-             'it director', '(cio)')
-    EM = re.compile(r'[—–]'); EL = re.compile(r'\.\.\.|…'); VIB = re.compile(r'vibrat', re.I)
-    URL = re.compile(r'https?://')
+
+    WRONG = (
+        "counsel",
+        "attorney",
+        " legal",
+        "marketing",
+        " sales",
+        "recruit",
+        "talent",
+        "communications",
+        "controller",
+        "treasurer",
+        "credit & collections",
+        "customer service",
+        "chief information",
+        "information technology",
+        "it director",
+        "(cio)",
+    )
+    EM = re.compile(r"[—–]")
+    EL = re.compile(r"\.\.\.|…")
+    VIB = re.compile(r"vibrat", re.I)
+    URL = re.compile(r"https?://")
 
     def page(tbl, sel, **eq):
-        out = []; off = 0
+        out = []
+        off = 0
         while True:
             q = db.client.table(tbl).select(sel)
             for k, v in eq.items():
@@ -375,78 +417,116 @@ def _load_state(db, workspace_id: str):
         return out
 
     # Sender pool + cap from outreach_send_config
-    cfg = (db.client.table("outreach_send_config").select("sender_pool, daily_limit")
-           .eq("workspace_id", workspace_id).limit(1).execute().data or [{}])[0]
+    cfg = (
+        db.client.table("outreach_send_config")
+        .select("sender_pool, daily_limit")
+        .eq("workspace_id", workspace_id)
+        .limit(1)
+        .execute()
+        .data
+        or [{}]
+    )[0]
     sender_pool = [s.get("email") for s in (cfg.get("sender_pool") or []) if s.get("email")]
     full_cap = cfg.get("daily_limit") or (len(sender_pool) * PER_MAILBOX_DAILY_CAP)
 
-    contacts_tbl = {c['id']: c for c in page('contacts',
-        'id,email,company_id,title,is_outreach_eligible,email_status,outreach_state')}
+    contacts_tbl = {
+        c["id"]: c
+        for c in page(
+            "contacts", "id,email,company_id,title,is_outreach_eligible,email_status,outreach_state"
+        )
+    }
 
     # Company cluster — dispatch hard-rejects 'other'/'watchlist'/null at send time,
     # so exclude those contacts from scheduling rather than slot drafts that will be
     # skipped. Surfaces mis-classified companies instead of silently laundering them.
-    companies_tbl = {c['id']: c for c in page('companies', 'id,campaign_cluster,status')}
-    SENDABLE_CLUSTER_BLOCK = {None, '', 'other', 'watchlist'}
+    companies_tbl = {c["id"]: c for c in page("companies", "id,campaign_cluster,status")}
+    SENDABLE_CLUSTER_BLOCK = {None, "", "other", "watchlist"}
 
     # Suppressed contacts (bounce/unsubscribe) — exclude.
     suppressed_contacts: set = set()
     try:
-        for s in page('suppression_log', 'contact_id,scope'):
-            if s.get('contact_id'):
-                suppressed_contacts.add(s['contact_id'])
+        for s in page("suppression_log", "contact_id,scope"):
+            if s.get("contact_id"):
+                suppressed_contacts.add(s["contact_id"])
     except Exception:
         pass
 
     sent_hist: dict[str, dict[int, date]] = defaultdict(dict)
-    for d in page('outreach_drafts', 'contact_id,sequence_step,sent_at'):
-        if d.get('sent_at') and d.get('contact_id'):
+    for d in page("outreach_drafts", "contact_id,sequence_step,sent_at"):
+        if d.get("sent_at") and d.get("contact_id"):
             try:
                 from datetime import datetime
-                sent_hist[d['contact_id']][d['sequence_step']] = \
-                    datetime.fromisoformat(d['sent_at'].replace('Z', '+00:00')).date()
+
+                sent_hist[d["contact_id"]][d["sequence_step"]] = datetime.fromisoformat(
+                    d["sent_at"].replace("Z", "+00:00")
+                ).date()
             except Exception:
                 pass
 
-    drafts = [d for d in page('outreach_drafts',
-              'id,contact_id,company_id,sequence_step,body,personalization_notes,approval_status,sent_at,model')
-              if d.get('model') == 'opus-via-claude-code'
-              and d.get('approval_status') == 'pending' and not d.get('sent_at')]
+    all_pending_drafts = [
+        d
+        for d in page(
+            "outreach_drafts",
+            "id,contact_id,company_id,sequence_step,body,personalization_notes,approval_status,sent_at,model",
+        )
+        if d.get("approval_status") == "pending" and not d.get("sent_at")
+    ]
+    # Model filter: accept any draft that has a model tag (i.e. was AI-generated).
+    # The old filter 'model == opus-via-claude-code' excluded all production drafts
+    # generated with claude-sonnet-* or claude-haiku-* models, producing a zero-slot
+    # schedule while logging success — a silent send blackout (D2).
+    drafts = [d for d in all_pending_drafts if d.get("model")]
+    if not drafts and all_pending_drafts:
+        logger.critical(
+            "_load_state: %d pending drafts found but ZERO passed the model filter. "
+            "Production drafts carry model tags like 'claude-sonnet-*'; check that "
+            "model is being set at draft generation time.",
+            len(all_pending_drafts),
+        )
 
     remaining: dict[str, dict[int, str]] = defaultdict(dict)
     for d in drafts:
-        c = contacts_tbl.get(d['contact_id'], {})
-        if c.get('is_outreach_eligible') is False:
+        c = contacts_tbl.get(d["contact_id"], {})
+        if c.get("is_outreach_eligible") is False:
             continue
-        if c.get('email_status') != 'verified':
+        if c.get("email_status") != "verified":
             continue
-        if any(w in (c.get('title') or '').lower() for w in WRONG):
+        if any(w in (c.get("title") or "").lower() for w in WRONG):
             continue
-        if c.get('outreach_state') == 'paused':
+        if c.get("outreach_state") == "paused":
             continue  # genuine-reply paused contacts excluded
-        if d['contact_id'] in suppressed_contacts:
+        if d["contact_id"] in suppressed_contacts:
             continue  # bounce/unsubscribe suppressed
-        co = companies_tbl.get(c.get('company_id'), {})
-        if (co.get('campaign_cluster') in SENDABLE_CLUSTER_BLOCK
-                or co.get('status') in ('paused', 'disqualified')):
+        co = companies_tbl.get(c.get("company_id"), {})
+        if co.get("campaign_cluster") in SENDABLE_CLUSTER_BLOCK or co.get("status") in (
+            "paused",
+            "disqualified",
+        ):
             continue  # dispatch would reject these — do not schedule
-        b = d.get('body', '') or ''; n = d.get('personalization_notes', '') or ''
+        b = d.get("body", "") or ""
+        n = d.get("personalization_notes", "") or ""
         if EM.search(b) or EL.search(b) or VIB.search(b) or not URL.search(n):
             continue
-        remaining[d['contact_id']][d['sequence_step']] = d['id']
+        remaining[d["contact_id"]][d["sequence_step"]] = d["id"]
 
     contacts = []
     for cid, steps in remaining.items():
         c = contacts_tbl.get(cid, {})
-        contacts.append(Contact(
-            contact_id=cid, company_id=c.get('company_id') or 'unknown',
-            email=c.get('email') or '', remaining=steps,
-            sent=dict(sent_hist.get(cid, {}))))
+        contacts.append(
+            Contact(
+                contact_id=cid,
+                company_id=c.get("company_id") or "unknown",
+                email=c.get("email") or "",
+                remaining=steps,
+                sent=dict(sent_hist.get(cid, {})),
+            )
+        )
     return contacts, sent_hist, sender_pool, int(full_cap)
 
 
-def recompute_and_persist(db, workspace_id: str, *, start_date: Optional[date] = None,
-                          new_start_soft_cap: int = 80) -> dict:
+def recompute_and_persist(
+    db, workspace_id: str, *, start_date: Optional[date] = None, new_start_soft_cap: int = 80
+) -> dict:
     """Rebuild the forward schedule from live state and persist it.
 
     Idempotent: deletes existing 'scheduled' (future, not-yet-enqueued) rows and
@@ -465,41 +545,66 @@ def recompute_and_persist(db, workspace_id: str, *, start_date: Optional[date] =
         sender_pool = ["avi@digitillis.io"]
 
     slots, warnings = compute_schedule(
-        contacts, sender_pool=sender_pool, start_date=start_date,
-        full_cap=full_cap, new_start_soft_cap=new_start_soft_cap)
-    violations = validate_schedule(slots, {c.contact_id: dict(sent_hist.get(c.contact_id, {}))
-                                           for c in contacts})
+        contacts,
+        sender_pool=sender_pool,
+        start_date=start_date,
+        full_cap=full_cap,
+        new_start_soft_cap=new_start_soft_cap,
+    )
+    violations = validate_schedule(
+        slots, {c.contact_id: dict(sent_hist.get(c.contact_id, {})) for c in contacts}
+    )
     if violations:
         # Do not persist a schedule that fails its own self-check.
         logger.error("recompute_and_persist ABORTED — %d constraint violations", len(violations))
-        return {"persisted": False, "violations": violations[:20],
-                "slots": len(slots), "warnings": len(warnings)}
+        return {
+            "persisted": False,
+            "violations": violations[:20],
+            "slots": len(slots),
+            "warnings": len(warnings),
+        }
 
     run_id = str(uuid.uuid4())
     # Clear existing not-yet-enqueued schedule rows for this workspace.
-    db.client.table("send_schedule").delete() \
-        .eq("workspace_id", workspace_id).eq("status", "scheduled").execute()
+    db.client.table("send_schedule").delete().eq("workspace_id", workspace_id).eq(
+        "status", "scheduled"
+    ).execute()
 
-    rows = [{
-        "draft_id": s.draft_id, "contact_id": s.contact_id, "company_id": s.company_id,
-        "workspace_id": workspace_id, "sequence_step": s.sequence_step,
-        "scheduled_date": s.scheduled_date.isoformat(), "sender_email": s.sender_email,
-        "slot_order": s.slot_order, "status": "scheduled", "schedule_run_id": run_id,
-    } for s in slots]
+    rows = [
+        {
+            "draft_id": s.draft_id,
+            "contact_id": s.contact_id,
+            "company_id": s.company_id,
+            "workspace_id": workspace_id,
+            "sequence_step": s.sequence_step,
+            "scheduled_date": s.scheduled_date.isoformat(),
+            "sender_email": s.sender_email,
+            "slot_order": s.slot_order,
+            "status": "scheduled",
+            "schedule_run_id": run_id,
+        }
+        for s in slots
+    ]
     # batch insert (chunks of 500)
     inserted = 0
     for i in range(0, len(rows), 500):
-        chunk = rows[i:i + 500]
+        chunk = rows[i : i + 500]
         try:
             db.client.table("send_schedule").upsert(chunk, on_conflict="draft_id").execute()
             inserted += len(chunk)
         except Exception as exc:
             logger.error("send_schedule insert chunk failed: %s", exc)
 
-    return {"persisted": True, "run_id": run_id, "slots": inserted,
-            "contacts": len(contacts), "warnings": len(warnings),
-            "unscheduled_warnings": warnings[:20], "full_cap": full_cap,
-            "start_date": start_date.isoformat()}
+    return {
+        "persisted": True,
+        "run_id": run_id,
+        "slots": inserted,
+        "contacts": len(contacts),
+        "warnings": len(warnings),
+        "unscheduled_warnings": warnings[:20],
+        "full_cap": full_cap,
+        "start_date": start_date.isoformat(),
+    }
 
 
 # Reviewer attribution for schedule-driven approval. The forward schedule is the
@@ -509,48 +614,78 @@ def recompute_and_persist(db, workspace_id: str, *, start_date: Optional[date] =
 DEFAULT_SCHEDULE_REVIEWER_ID = "e463105c-4cdc-45e2-967d-66e3dd5728df"
 
 
-def enqueue_todays_schedule(db, workspace_id: str, *, today: Optional[date] = None,
-                            reviewer_id: Optional[str] = None) -> dict:
+def enqueue_todays_schedule(
+    db, workspace_id: str, *, today: Optional[date] = None, reviewer_id: Optional[str] = None
+) -> dict:
     """Move today's scheduled slots into outbound_queue, in slot order, approving
     each draft on enqueue (scheduling IS the approval — every gate was satisfied at
     schedule time). The existing dispatch_loop then drains the queue and sends.
     This is the only daily send-time action — no selection logic."""
     from datetime import datetime, timezone
+
     if today is None:
         today = datetime.now(timezone.utc).date()
     if reviewer_id is None:
         try:
-            cfg = (db.client.table("outreach_send_config").select("default_reviewer_id")
-                   .eq("workspace_id", workspace_id).limit(1).execute().data or [{}])[0]
+            cfg = (
+                db.client.table("outreach_send_config")
+                .select("default_reviewer_id")
+                .eq("workspace_id", workspace_id)
+                .limit(1)
+                .execute()
+                .data
+                or [{}]
+            )[0]
             reviewer_id = cfg.get("default_reviewer_id") or DEFAULT_SCHEDULE_REVIEWER_ID
         except Exception:
             reviewer_id = DEFAULT_SCHEDULE_REVIEWER_ID
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    due = (db.client.table("send_schedule").select("id,draft_id,sequence_step,slot_order")
-           .eq("workspace_id", workspace_id).eq("status", "scheduled")
-           .eq("scheduled_date", today.isoformat())
-           .order("slot_order").execute().data or [])
+    due = (
+        db.client.table("send_schedule")
+        .select("id,draft_id,sequence_step,slot_order")
+        .eq("workspace_id", workspace_id)
+        .eq("status", "scheduled")
+        .eq("scheduled_date", today.isoformat())
+        .order("slot_order")
+        .execute()
+        .data
+        or []
+    )
     enqueued = 0
     for r in due:
         priority = max(1, 6 - r["sequence_step"])
         try:
             # Approve the draft (satisfies approval_requires_reviewer) — only if not
             # already sent. Scheduling is the approval gate.
-            db.client.table("outreach_drafts").update({
-                "approval_status": "approved", "approved_by": reviewer_id,
-                "reviewed_at": now_iso, "approved_at": now_iso,
-            }).eq("id", r["draft_id"]).is_("sent_at", "null").execute()
-            db.client.table("outbound_queue").insert({
-                "draft_id": r["draft_id"], "workspace_id": workspace_id,
-                "priority": priority, "retry_count": 0,
-            }).execute()
-            db.client.table("send_schedule").update({"status": "enqueued"}).eq("id", r["id"]).execute()
+            db.client.table("outreach_drafts").update(
+                {
+                    "approval_status": "approved",
+                    "approved_by": reviewer_id,
+                    "reviewed_at": now_iso,
+                    "approved_at": now_iso,
+                }
+            ).eq("id", r["draft_id"]).is_("sent_at", "null").execute()
+            db.client.table("outbound_queue").insert(
+                {
+                    "draft_id": r["draft_id"],
+                    "workspace_id": workspace_id,
+                    "priority": priority,
+                    "retry_count": 0,
+                }
+            ).execute()
+            db.client.table("send_schedule").update({"status": "enqueued"}).eq(
+                "id", r["id"]
+            ).execute()
             enqueued += 1
         except Exception as exc:
             logger.error("enqueue_todays_schedule draft=%s failed: %s", r["draft_id"], exc)
-    return {"date": today.isoformat(), "enqueued": enqueued, "due": len(due),
-            "reviewer_id": reviewer_id}
+    return {
+        "date": today.isoformat(),
+        "enqueued": enqueued,
+        "due": len(due),
+        "reviewer_id": reviewer_id,
+    }
 
 
 def pause_contact_on_reply(db, workspace_id: str, contact_id: str, intent: str) -> dict:
@@ -563,7 +698,14 @@ def pause_contact_on_reply(db, workspace_id: str, contact_id: str, intent: str) 
         return {"action": "no_pause", "intent": intent}
     # Pause the contact and cancel its future scheduled (not-yet-enqueued) steps.
     db.client.table("contacts").update({"outreach_state": "paused"}).eq("id", contact_id).execute()
-    cancelled = (db.client.table("send_schedule").update({"status": "paused"})
-                 .eq("workspace_id", workspace_id).eq("contact_id", contact_id)
-                 .eq("status", "scheduled").execute().data or [])
+    cancelled = (
+        db.client.table("send_schedule")
+        .update({"status": "paused"})
+        .eq("workspace_id", workspace_id)
+        .eq("contact_id", contact_id)
+        .eq("status", "scheduled")
+        .execute()
+        .data
+        or []
+    )
     return {"action": "paused", "intent": intent, "cancelled_slots": len(cancelled)}

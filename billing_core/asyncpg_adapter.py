@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Schema constants — override for your DB schema
 # ---------------------------------------------------------------------------
 
-WORKSPACE_TABLE = "tenants"          # Change to "workspaces" if needed
+WORKSPACE_TABLE = "tenants"  # Change to "workspaces" if needed
 WORKSPACE_PK = "id"
 MEMBERS_TABLE = "tenant_members"
 MEMBERS_FK = "tenant_id"
@@ -105,37 +105,51 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
 
         async with self._pool.acquire() as conn:
             try:
-                metrics.seats_used = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM {MEMBERS_TABLE} WHERE {MEMBERS_FK} = $1 "
-                    f"AND status IN ('active', 'pending')",
-                    workspace_id,
-                ) or 0
+                metrics.seats_used = (
+                    await conn.fetchval(
+                        f"SELECT COUNT(*) FROM {MEMBERS_TABLE} WHERE {MEMBERS_FK} = $1 "
+                        f"AND status IN ('active', 'pending')",
+                        workspace_id,
+                    )
+                    or 0
+                )
             except Exception:
                 pass
 
             try:
-                metrics.companies_this_month = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM {COMPANIES_TABLE} "
-                    f"WHERE {COMPANIES_FK} = $1 AND created_at >= $2",
-                    workspace_id, month_start,
-                ) or 0
+                metrics.companies_this_month = (
+                    await conn.fetchval(
+                        f"SELECT COUNT(*) FROM {COMPANIES_TABLE} "
+                        f"WHERE {COMPANIES_FK} = $1 AND created_at >= $2",
+                        workspace_id,
+                        month_start,
+                    )
+                    or 0
+                )
             except Exception:
                 pass
 
             try:
-                metrics.contacts_total = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM {CONTACTS_TABLE} WHERE {CONTACTS_FK} = $1",
-                    workspace_id,
-                ) or 0
+                metrics.contacts_total = (
+                    await conn.fetchval(
+                        f"SELECT COUNT(*) FROM {CONTACTS_TABLE} WHERE {CONTACTS_FK} = $1",
+                        workspace_id,
+                    )
+                    or 0
+                )
             except Exception:
                 pass
 
             try:
-                metrics.outreach_this_month = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM {ACTIONS_TABLE} "
-                    f"WHERE {ACTIONS_FK} = $1 AND created_at >= $2",
-                    workspace_id, month_start,
-                ) or 0
+                metrics.outreach_this_month = (
+                    await conn.fetchval(
+                        f"SELECT COUNT(*) FROM {ACTIONS_TABLE} "
+                        f"WHERE {ACTIONS_FK} = $1 AND created_at >= $2",
+                        workspace_id,
+                        month_start,
+                    )
+                    or 0
+                )
             except Exception:
                 pass
 
@@ -150,9 +164,9 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
     ) -> None:
         async with self._pool.acquire() as conn:
             await conn.execute(
-                f"UPDATE {WORKSPACE_TABLE} SET stripe_customer_id = $1 "
-                f"WHERE {WORKSPACE_PK} = $2",
-                customer_id, workspace_id,
+                f"UPDATE {WORKSPACE_TABLE} SET stripe_customer_id = $1 WHERE {WORKSPACE_PK} = $2",
+                customer_id,
+                workspace_id,
             )
 
     async def apply_checkout_completed(  # type: ignore[override]
@@ -172,7 +186,11 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
                     stripe_customer_id     = COALESCE($4, stripe_customer_id)
                 WHERE {WORKSPACE_PK} = $5
                 """,
-                tier, seats_limit, subscription_id, customer_id, workspace_id,
+                tier,
+                seats_limit,
+                subscription_id,
+                customer_id,
+                workspace_id,
             )
 
     async def apply_subscription_updated(  # type: ignore[override]
@@ -197,19 +215,24 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
                 await conn.execute(
                     f"UPDATE {WORKSPACE_TABLE} SET subscription_status = $1, "
                     f"tier = $2, seats_limit = $3 WHERE {WORKSPACE_PK} = $4",
-                    status, tier, seats_limit, workspace_id,
+                    status,
+                    tier,
+                    seats_limit,
+                    workspace_id,
                 )
             else:
                 await conn.execute(
                     f"UPDATE {WORKSPACE_TABLE} SET subscription_status = $1 "
                     f"WHERE {WORKSPACE_PK} = $2",
-                    status, workspace_id,
+                    status,
+                    workspace_id,
                 )
 
     async def apply_subscription_canceled(  # type: ignore[override]
         self,
         workspace_id: str | None,
         subscription_id: str | None,
+        free_tier_seats_limit: int | None = None,
     ) -> None:
         async with self._pool.acquire() as conn:
             if not workspace_id and subscription_id:
@@ -221,7 +244,11 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
             if not workspace_id:
                 return
 
-            starter = get_plan("starter")
+            # Use the caller-supplied free_tier_seats_limit so the adapter does not
+            # need to know about the platform's tier configuration. Fall back to
+            # get_plan("starter") only when the value is not provided (D4 fix).
+            if free_tier_seats_limit is None:
+                free_tier_seats_limit = get_plan("starter").seats_limit
             await conn.execute(
                 f"""
                 UPDATE {WORKSPACE_TABLE}
@@ -229,7 +256,8 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
                     stripe_subscription_id = NULL, seats_limit = $1
                 WHERE {WORKSPACE_PK} = $2
                 """,
-                starter.seats_limit, workspace_id,
+                free_tier_seats_limit,
+                workspace_id,
             )
 
     async def apply_invoice_paid(  # type: ignore[override]
@@ -265,7 +293,10 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
                         stripe_customer_id = COALESCE($3, stripe_customer_id)
                     WHERE {WORKSPACE_PK} = $4
                     """,
-                    tier, seats_limit, customer_id, workspace_id,
+                    tier,
+                    seats_limit,
+                    customer_id,
+                    workspace_id,
                 )
             else:
                 await conn.execute(
@@ -289,8 +320,7 @@ class AsyncpgBillingAdapter(BillingDbAdapter):
                 )
             if not workspace_id and customer_id:
                 workspace_id = await conn.fetchval(
-                    f"SELECT {WORKSPACE_PK} FROM {WORKSPACE_TABLE} "
-                    f"WHERE stripe_customer_id = $1",
+                    f"SELECT {WORKSPACE_PK} FROM {WORKSPACE_TABLE} WHERE stripe_customer_id = $1",
                     customer_id,
                 )
             if workspace_id:

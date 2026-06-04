@@ -22,13 +22,15 @@ from billing_sdk.tier_utils import get_plan
 logger = logging.getLogger(__name__)
 
 # Stripe event types handled by this dispatcher
-HANDLED_EVENTS = frozenset({
-    "checkout.session.completed",
-    "customer.subscription.updated",
-    "customer.subscription.deleted",
-    "invoice.paid",
-    "invoice.payment_failed",
-})
+HANDLED_EVENTS = frozenset(
+    {
+        "checkout.session.completed",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+        "invoice.paid",
+        "invoice.payment_failed",
+    }
+)
 
 
 async def _call(method, *args, **kwargs):
@@ -59,28 +61,32 @@ class BillingWebhookHandler:
         self._free_tier = free_tier
 
     async def dispatch(self, event: dict[str, Any]) -> str:
-        """Dispatch a parsed Stripe event.  Returns "ok" or "ignored"."""
+        """Dispatch a parsed Stripe event.  Returns "ok" or "ignored".
+
+        Transient errors (DB failures, network issues) are NOT caught here — they
+        propagate as exceptions so the router returns HTTP 500 and Stripe retries.
+        Returning HTTP 200 for a transient error permanently drops the event since
+        Stripe treats 2xx as success and will not retry (D3 fix).
+
+        Only "ignored" is returned with HTTP 200: that covers unknown event types
+        which Stripe should not retry.
+        """
         event_type: str = event.get("type", "")
         data_object: dict = event.get("data", {}).get("object", {})
 
-        try:
-            if event_type == "checkout.session.completed":
-                return await self._on_checkout_completed(data_object)
-            elif event_type == "customer.subscription.updated":
-                return await self._on_subscription_updated(data_object)
-            elif event_type == "customer.subscription.deleted":
-                return await self._on_subscription_deleted(data_object)
-            elif event_type == "invoice.paid":
-                return await self._on_invoice_paid(data_object)
-            elif event_type == "invoice.payment_failed":
-                return await self._on_invoice_payment_failed(data_object)
-            else:
-                logger.debug("Unhandled Stripe event type: %s", event_type)
-                return "ignored"
-        except Exception as exc:
-            logger.error("Webhook handler error for %s: %s", event_type, exc, exc_info=True)
-            # Return "ok" to prevent Stripe retries for handler bugs
-            return "handler_error"
+        if event_type == "checkout.session.completed":
+            return await self._on_checkout_completed(data_object)
+        elif event_type == "customer.subscription.updated":
+            return await self._on_subscription_updated(data_object)
+        elif event_type == "customer.subscription.deleted":
+            return await self._on_subscription_deleted(data_object)
+        elif event_type == "invoice.paid":
+            return await self._on_invoice_paid(data_object)
+        elif event_type == "invoice.payment_failed":
+            return await self._on_invoice_payment_failed(data_object)
+        else:
+            logger.debug("Unhandled Stripe event type: %s", event_type)
+            return "ignored"
 
     # ------------------------------------------------------------------
     # Private event handlers

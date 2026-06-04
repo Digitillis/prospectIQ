@@ -28,6 +28,7 @@ def _build_reply_system_prompt() -> str:
     """
     try:
         from backend.app.core.config import get_offer_context, get_outreach_guidelines
+
         offer = get_offer_context()
         guidelines = get_outreach_guidelines()
     except Exception:
@@ -47,8 +48,10 @@ def _build_reply_system_prompt() -> str:
     elif sender_title:
         sender_line = f"{sender_name}, {sender_title}"
 
-    caps_block = "\n".join(f"- {c}" for c in capabilities[:8]) if capabilities else (
-        "- Refer to offer_context.yaml for product capabilities"
+    caps_block = (
+        "\n".join(f"- {c}" for c in capabilities[:8])
+        if capabilities
+        else ("- Refer to offer_context.yaml for product capabilities")
     )
 
     return f"""You are a B2B sales reply classifier for {company_name}. Your job is to classify incoming prospect replies and draft appropriate responses.
@@ -79,6 +82,7 @@ If no specific strategy is given, use these defaults:
 - bounce: No response needed; flag for review.
 
 Output ONLY valid JSON. No markdown, no explanation."""
+
 
 REPLY_CLASSIFICATION_USER = """Classify this incoming reply and draft an appropriate response.
 
@@ -138,7 +142,9 @@ class ReplyAgent(BaseAgent):
         result = AgentResult()
 
         if not reply_data:
-            logger.warning("No reply_data provided. Expected dict with company_id, contact_id, subject, body, outreach_draft_id.")
+            logger.warning(
+                "No reply_data provided. Expected dict with company_id, contact_id, subject, body, outreach_draft_id."
+            )
             result.success = False
             result.errors = 1
             result.add_detail("N/A", "error", "No reply_data provided")
@@ -177,7 +183,9 @@ class ReplyAgent(BaseAgent):
             contacts = self.db.get_contacts_for_company(company_id)
             contact = next((c for c in contacts if c.get("id") == contact_id), None)
             if not contact:
-                logger.warning(f"{company_name}: Contact {contact_id} not found. Proceeding with limited context.")
+                logger.warning(
+                    f"{company_name}: Contact {contact_id} not found. Proceeding with limited context."
+                )
                 contact = {"full_name": "Unknown", "title": "Unknown"}
 
             # Get original outreach draft
@@ -188,8 +196,14 @@ class ReplyAgent(BaseAgent):
                 .execute()
             )
             original_draft = draft_result.data[0] if draft_result.data else None
-            original_subject = original_draft.get("subject", reply_subject) if original_draft else reply_subject
-            original_body = original_draft.get("body", "(Original message not available)") if original_draft else "(Original message not available)"
+            original_subject = (
+                original_draft.get("subject", reply_subject) if original_draft else reply_subject
+            )
+            original_body = (
+                original_draft.get("body", "(Original message not available)")
+                if original_draft
+                else "(Original message not available)"
+            )
             # Reply-to-signal attribution: surface which signal personalised the
             # original outreach so notifications reveal what triggered the reply.
             top_signal_type = original_draft.get("top_signal_type") if original_draft else None
@@ -219,7 +233,9 @@ class ReplyAgent(BaseAgent):
             )
 
             # Call Claude Haiku for classification
-            logger.info(f"{company_name} -- Classifying reply from {contact.get('full_name', 'Unknown')}...")
+            logger.info(
+                f"{company_name} -- Classifying reply from {contact.get('full_name', 'Unknown')}..."
+            )
 
             client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             response = client.messages.create(
@@ -279,31 +295,39 @@ class ReplyAgent(BaseAgent):
                 self.db.insert_outreach_draft(draft_data)
 
                 # Update company status to engaged
-                self.db.update_company(company_id, {
-                    "status": "engaged",
-                    "priority_flag": urgency == "high",
-                })
+                self.db.update_company(
+                    company_id,
+                    {
+                        "status": "engaged",
+                        "priority_flag": urgency == "high",
+                    },
+                )
 
                 if L.notify_on_positive and L.workspace_owner_email:
                     contact_name = contact.get("full_name") or contact.get("email", "Unknown")
-                    asyncio.run(notify_reply_received(
-                        company_name=company_name,
-                        contact_name=contact_name,
-                        reply_preview=reply_body,
-                        workspace_email=L.workspace_owner_email,
-                        signal_context=top_signal_type,
-                    ))
+                    asyncio.run(
+                        notify_reply_received(
+                            company_name=company_name,
+                            contact_name=contact_name,
+                            reply_preview=reply_body,
+                            workspace_email=L.workspace_owner_email,
+                            signal_context=top_signal_type,
+                        )
+                    )
 
                 # A/B tracker — record reply event (non-blocking)
                 try:
                     from backend.app.analytics.ab_tracker import ABTracker
+
                     _cid = str(contact_id).replace("-", "")
                     ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
                     ABTracker(self.db).record_reply(contact_id=contact_id, variant=ab_variant)
                 except Exception:
                     pass  # A/B tracking is non-blocking
 
-                logger.info(f"{company_name}: POSITIVE reply -- response draft created, status -> engaged, owner notified")
+                logger.info(
+                    f"{company_name}: POSITIVE reply -- response draft created, status -> engaged, owner notified"
+                )
 
             elif classification == "question":
                 # Create a new outreach draft with the answer
@@ -322,24 +346,29 @@ class ReplyAgent(BaseAgent):
 
                 if L.notify_on_question and L.workspace_owner_email:
                     contact_name = contact.get("full_name") or contact.get("email", "Unknown")
-                    asyncio.run(notify_reply_received(
-                        company_name=company_name,
-                        contact_name=contact_name,
-                        reply_preview=reply_body,
-                        workspace_email=L.workspace_owner_email,
-                        signal_context=top_signal_type,
-                    ))
+                    asyncio.run(
+                        notify_reply_received(
+                            company_name=company_name,
+                            contact_name=contact_name,
+                            reply_preview=reply_body,
+                            workspace_email=L.workspace_owner_email,
+                            signal_context=top_signal_type,
+                        )
+                    )
 
                 # A/B tracker — record reply event (non-blocking)
                 try:
                     from backend.app.analytics.ab_tracker import ABTracker
+
                     _cid = str(contact_id).replace("-", "")
                     ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
                     ABTracker(self.db).record_reply(contact_id=contact_id, variant=ab_variant)
                 except Exception:
                     pass  # A/B tracking is non-blocking
 
-                logger.info(f"{company_name}: QUESTION reply -- answer draft created, owner notified")
+                logger.info(
+                    f"{company_name}: QUESTION reply -- answer draft created, owner notified"
+                )
 
             elif classification == "negative":
                 # Update company status to not_interested
@@ -348,7 +377,9 @@ class ReplyAgent(BaseAgent):
                 # Cancel any active engagement sequences for this company
                 self._cancel_active_sequences(company_id)
 
-                logger.warning(f"{company_name}: NEGATIVE reply -- status -> not_interested, sequences cancelled")
+                logger.warning(
+                    f"{company_name}: NEGATIVE reply -- status -> not_interested, sequences cancelled"
+                )
 
             elif classification == "out_of_office":
                 # Log but don't change status -- follow up later
@@ -361,7 +392,9 @@ class ReplyAgent(BaseAgent):
                 # Cancel active sequences
                 self._cancel_active_sequences(company_id)
 
-                logger.warning(f"{company_name}: UNSUBSCRIBE -- contact unsubscribed, sequences cancelled")
+                logger.warning(
+                    f"{company_name}: UNSUBSCRIBE -- contact unsubscribed, sequences cancelled"
+                )
 
             elif classification == "bounce":
                 # Update contact status to bounced, company status to bounced
@@ -371,44 +404,51 @@ class ReplyAgent(BaseAgent):
                 logger.warning(f"{company_name}: BOUNCE -- contact and company marked bounced")
 
             else:
-                logger.warning(f"{company_name}: Unknown classification '{classification}' -- logged for review")
+                logger.warning(
+                    f"{company_name}: Unknown classification '{classification}' -- logged for review"
+                )
 
             # Log interaction for all classifications
-            self.db.insert_interaction({
-                "company_id": company_id,
-                "contact_id": contact_id,
-                "type": "email_replied",
-                "channel": "email",
-                "subject": reply_subject,
-                "body": reply_body[:500] if reply_body else "",
-                "source": "reply_agent",
-                "metadata": {
-                    "classification": classification,
-                    "sentiment": sentiment,
-                    "urgency": urgency,
-                    "outreach_draft_id": outreach_draft_id,
-                    "notes": notes,
-                },
-            })
+            self.db.insert_interaction(
+                {
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "type": "email_replied",
+                    "channel": "email",
+                    "subject": reply_subject,
+                    "body": reply_body[:500] if reply_body else "",
+                    "source": "reply_agent",
+                    "metadata": {
+                        "classification": classification,
+                        "sentiment": sentiment,
+                        "urgency": urgency,
+                        "outreach_draft_id": outreach_draft_id,
+                        "notes": notes,
+                    },
+                }
+            )
 
             # Insert learning outcome for analytics
-            self.db.insert_learning_outcome({
-                "company_id": company_id,
-                "contact_id": contact_id,
-                "outreach_approach": "reply_response",
-                "channel": "email",
-                "outcome": f"replied_{classification}",
-                "company_tier": company.get("tier"),
-                "sub_sector": company.get("sub_sector", company.get("industry", "")),
-                "persona_type": contact.get("persona_type", ""),
-                "pqs_at_time": pqs_total,
-            })
+            self.db.insert_learning_outcome(
+                {
+                    "company_id": company_id,
+                    "contact_id": contact_id,
+                    "outreach_approach": "reply_response",
+                    "channel": "email",
+                    "outcome": f"replied_{classification}",
+                    "company_tier": company.get("tier"),
+                    "sub_sector": company.get("sub_sector", company.get("industry", "")),
+                    "persona_type": contact.get("persona_type", ""),
+                    "pqs_at_time": pqs_total,
+                }
+            )
 
             # Structured outcome classification — updates outreach_outcomes, handles
             # wrong_person and unsubscribe by blocking contact in outbound_eligible_contacts,
             # and adds not-a-fit companies to icp_exclusions.
             try:
                 from backend.app.agents.reply_classifier import ReplyClassifierAgent
+
                 ReplyClassifierAgent(self.db).classify_reply(
                     reply_text=reply_body or reply_subject or "",
                     contact_id=contact_id,
@@ -423,6 +463,7 @@ class ReplyAgent(BaseAgent):
             # Update threading state — reply moves company to engaged/paused
             try:
                 from backend.app.core.threading_coordinator import ThreadingCoordinator
+
                 ThreadingCoordinator(self.db).record_reply(company_id, contact_id)
             except Exception as _tce:
                 logger.warning("ThreadingCoordinator.record_reply failed (non-blocking): %s", _tce)
@@ -453,6 +494,34 @@ class ReplyAgent(BaseAgent):
 
         return result
 
+    def _cancel_active_sequences(self, company_id: str) -> int:
+        """Cancel all active engagement sequences for a company.
+
+        Returns:
+            Number of sequences cancelled.
+        """
+        cancelled = 0
+        try:
+            active_sequences = self.db.get_active_sequences()
+            for seq in active_sequences:
+                if seq.get("company_id") == company_id:
+                    self.db.update_engagement_sequence(
+                        seq["id"],
+                        {
+                            "status": "cancelled",
+                        },
+                    )
+                    cancelled += 1
+
+            if cancelled:
+                logger.info(f"Cancelled {cancelled} active sequences for company {company_id}")
+
+        except Exception as e:
+            logger.warning(f"Error cancelling sequences for {company_id}: {e}")
+
+        return cancelled
+
+
 def _get_reply_strategy_hint(reply_body: str) -> str:
     """Return strategy instructions from sequences.yaml based on reply content.
 
@@ -469,9 +538,16 @@ def _get_reply_strategy_hint(reply_body: str) -> str:
 
     # Detect "tell me more" pattern
     tell_more_signals = [
-        "tell me more", "more information", "more info",
-        "how does", "what does", "can you explain", "walk me through",
-        "sounds interesting", "interesting", "intrigued",
+        "tell me more",
+        "more information",
+        "more info",
+        "how does",
+        "what does",
+        "can you explain",
+        "walk me through",
+        "sounds interesting",
+        "interesting",
+        "intrigued",
     ]
     if any(s in body_lower for s in tell_more_signals):
         s = strategies.get("tell_me_more", {})
@@ -481,7 +557,9 @@ def _get_reply_strategy_hint(reply_body: str) -> str:
         return f"Strategy: tell_me_more (concise variant). {concise.get('instructions', '')}"
 
     # Detect objection patterns
-    if any(w in body_lower for w in ["already using", "already have", "current vendor", "working with"]):
+    if any(
+        w in body_lower for w in ["already using", "already have", "current vendor", "working with"]
+    ):
         obj = strategies.get("objection", {}).get("strategies", {}).get("incumbent_vendor", {})
         return f"Strategy: objection_incumbent. {obj.get('instructions', '')}"
 
@@ -489,18 +567,32 @@ def _get_reply_strategy_hint(reply_body: str) -> str:
         obj = strategies.get("objection", {}).get("strategies", {}).get("budget", {})
         return f"Strategy: objection_budget. {obj.get('instructions', '')}"
 
-    if any(w in body_lower for w in ["not right now", "bad timing", "next year", "next quarter", "q4", "q1"]):
+    if any(
+        w in body_lower
+        for w in ["not right now", "bad timing", "next year", "next quarter", "q4", "q1"]
+    ):
         obj = strategies.get("objection", {}).get("strategies", {}).get("timing", {})
         return f"Strategy: objection_timing. {obj.get('instructions', '')}"
 
-    if any(w in body_lower for w in ["not the right person", "not my area", "reach out to", "contact"]):
+    if any(
+        w in body_lower for w in ["not the right person", "not my area", "reach out to", "contact"]
+    ):
         obj = strategies.get("objection", {}).get("strategies", {}).get("not_the_right_person", {})
         return f"Strategy: objection_referral. {obj.get('instructions', '')}"
 
     # Detect positive reply
     positive_signals = [
-        "yes", "interested", "let's", "happy to", "sure", "sounds good",
-        "would love", "open to", "schedule", "calendar", "book",
+        "yes",
+        "interested",
+        "let's",
+        "happy to",
+        "sure",
+        "sounds good",
+        "would love",
+        "open to",
+        "schedule",
+        "calendar",
+        "book",
     ]
     if any(s in body_lower for s in positive_signals):
         s = strategies.get("positive_reply", {})
@@ -508,28 +600,3 @@ def _get_reply_strategy_hint(reply_body: str) -> str:
 
     # Default: use judgment
     return "Use your best judgment based on the reply content and classification."
-
-
-def _cancel_active_sequences(self, company_id: str) -> int:
-    """Cancel all active engagement sequences for a company.
-
-    Returns:
-        Number of sequences cancelled.
-    """
-    cancelled = 0
-    try:
-        active_sequences = self.db.get_active_sequences()
-        for seq in active_sequences:
-            if seq.get("company_id") == company_id:
-                self.db.update_engagement_sequence(seq["id"], {
-                    "status": "cancelled",
-                })
-                cancelled += 1
-
-        if cancelled:
-            logger.info(f"Cancelled {cancelled} active sequences for company {company_id}")
-
-    except Exception as e:
-        logger.warning(f"Error cancelling sequences for {company_id}: {e}")
-
-    return cancelled
