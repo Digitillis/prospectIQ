@@ -3288,15 +3288,75 @@ app.include_router(quality_dashboard.router)
 
 @app.get("/health")
 async def health_check():
-    """Basic health check endpoint."""
-    from backend.app.core.config import get_settings
+    """Health check that actually tests system state.
 
-    s = get_settings()
-    secret = s.resend_webhook_secret or ""
+    Each check is isolated so one failing probe never crashes the endpoint.
+    Exposes only counts and booleans — never secret values or PII. Overall
+    status is 'degraded' if the DB is unreachable (the only hard dependency).
+    """
+    from datetime import date, datetime, timezone
+
+    from backend.app.core.config import get_settings
+    from backend.app.core.database import get_supabase_client
+
+    checks: dict = {}
+
+    try:
+        client = get_supabase_client()
+    except Exception as exc:
+        return {
+            "status": "degraded",
+            "service": "prospectiq-api",
+            "checks": {"db": f"error: {str(exc)[:100]}"},
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # 1. DB connectivity
+    try:
+        client.table("workspaces").select("id").limit(1).execute()
+        checks["db"] = "ok"
+    except Exception as exc:
+        checks["db"] = f"error: {str(exc)[:100]}"
+
+    # 2. Today's schedule enqueued?
+    try:
+        today = date.today().isoformat()
+        result = (
+            client.table("send_schedule")
+            .select("status", count="exact")
+            .eq("scheduled_date", today)
+            .eq("status", "scheduled")
+            .execute()
+        )
+        still_scheduled = result.count or 0
+        checks["todays_sends"] = (
+            "ok" if still_scheduled == 0 else f"{still_scheduled} slots not yet enqueued"
+        )
+    except Exception as exc:
+        checks["todays_sends"] = f"error: {str(exc)[:100]}"
+
+    # 3. Outbound queue depth
+    try:
+        result = client.table("outbound_queue").select("id", count="exact").execute()
+        checks["queue_depth"] = result.count or 0
+    except Exception as exc:
+        checks["queue_depth"] = f"error: {str(exc)[:100]}"
+
+    # 4. Secrets configured (bool only — never expose values)
+    settings = get_settings()
+    checks["secrets"] = {
+        "resend": bool(settings.resend_api_key),
+        "resend_webhook": bool(settings.resend_webhook_secret),
+        "supabase_jwt": bool(settings.supabase_jwt_secret),
+        "anthropic": bool(settings.anthropic_api_key),
+    }
+
+    overall = "ok" if checks["db"] == "ok" else "degraded"
     return {
-        "status": "ok",
+        "status": overall,
         "service": "prospectiq-api",
-        "resend_webhook_secret_set": bool(secret),
+        "checks": checks,
+        "ts": datetime.now(timezone.utc).isoformat(),
     }
 
 

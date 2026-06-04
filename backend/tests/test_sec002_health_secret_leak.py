@@ -31,14 +31,14 @@ def test_health_does_not_leak_secret():
                 assert secret not in body, f"Secret leaked in /health response: {body}"
                 # Even a prefix of the secret must not appear
                 assert secret[:8] not in body, f"Secret prefix leaked in /health response: {body}"
-                # Boolean indicator is fine
-                assert "resend_webhook_secret_set" in body
+                # Secrets are reported as bools under checks.secrets — never the value
+                assert "checks" in body
     finally:
         _clear_settings_cache()
 
 
 def test_health_shows_secret_set_bool():
-    """GET /health reports resend_webhook_secret_set as a boolean flag only."""
+    """GET /health reports webhook-secret presence as a boolean flag only."""
     from backend.app.api.main import app
     from fastapi.testclient import TestClient
 
@@ -49,8 +49,10 @@ def test_health_shows_secret_set_bool():
             with TestClient(app, raise_server_exceptions=False) as c:
                 r = c.get("/health")
                 data = r.json()
-                assert data["resend_webhook_secret_set"] is True
-                assert "resend_webhook_secret_preview" not in data, (
+                # Bool-only secret presence under checks.secrets.resend_webhook
+                assert data["checks"]["secrets"]["resend_webhook"] is True
+                # No preview / raw value field anywhere
+                assert "resend_webhook_secret_preview" not in r.text, (
                     "resend_webhook_secret_preview must not be present in health response"
                 )
     finally:
