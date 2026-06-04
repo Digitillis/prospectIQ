@@ -30,24 +30,29 @@ logger = logging.getLogger(__name__)
 # Encryption helpers (Fernet / AES-128-CBC with HMAC-SHA256)
 # ---------------------------------------------------------------------------
 
+
 def _get_fernet():
     """Return a Fernet instance using CREDENTIAL_ENCRYPTION_KEY env var."""
     try:
         from cryptography.fernet import Fernet
     except ImportError:
         raise RuntimeError(
-            "cryptography package required for credential storage. "
-            "Run: pip install cryptography"
+            "cryptography package required for credential storage. Run: pip install cryptography"
         )
     raw = os.environ.get("CREDENTIAL_ENCRYPTION_KEY", "")
     if not raw:
         raise RuntimeError("CREDENTIAL_ENCRYPTION_KEY env var is not set")
-    # Accept raw key or base64url-encoded key
+    if len(raw) != 44:
+        raise RuntimeError(
+            "CREDENTIAL_ENCRYPTION_KEY must be exactly 44 base64url characters. "
+            'Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+        )
     try:
-        key = raw.encode() if len(raw) == 44 else base64.urlsafe_b64encode(raw.encode()[:32].ljust(32, b'\0'))
-        return Fernet(key)
+        return Fernet(raw.encode())
     except Exception:
-        raise RuntimeError("CREDENTIAL_ENCRYPTION_KEY is not a valid Fernet key (44 base64url chars)")
+        raise RuntimeError(
+            "CREDENTIAL_ENCRYPTION_KEY is not a valid Fernet key (44 base64url chars)"
+        )
 
 
 def _encrypt(plaintext: str) -> str:
@@ -63,14 +68,14 @@ def _decrypt(ciphertext: str) -> str:
 # ---------------------------------------------------------------------------
 
 _ENV_FALLBACKS: dict[tuple[str, str], str] = {
-    ("apollo",      "api_key"):       "APOLLO_API_KEY",
-    ("resend",      "api_key"):       "RESEND_API_KEY",
-    ("gmail",       "app_password"):  "GMAIL_APP_PASSWORD",
-    ("gmail",       "user"):          "GMAIL_USER",
-    ("perplexity",  "api_key"):       "PERPLEXITY_API_KEY",
-    ("anthropic",   "api_key"):       "ANTHROPIC_API_KEY",
-    ("stripe",      "secret_key"):    "STRIPE_SECRET_KEY",
-    ("stripe",      "webhook_secret"):"STRIPE_WEBHOOK_SECRET",
+    ("apollo", "api_key"): "APOLLO_API_KEY",
+    ("resend", "api_key"): "RESEND_API_KEY",
+    ("gmail", "app_password"): "GMAIL_APP_PASSWORD",
+    ("gmail", "user"): "GMAIL_USER",
+    ("perplexity", "api_key"): "PERPLEXITY_API_KEY",
+    ("anthropic", "api_key"): "ANTHROPIC_API_KEY",
+    ("stripe", "secret_key"): "STRIPE_SECRET_KEY",
+    ("stripe", "webhook_secret"): "STRIPE_WEBHOOK_SECRET",
 }
 
 
@@ -83,6 +88,7 @@ def _env_fallback(provider: str, key_name: str) -> str | None:
 # CredentialStore
 # ---------------------------------------------------------------------------
 
+
 class CredentialStore:
     """Read/write credentials for a specific workspace."""
 
@@ -91,6 +97,7 @@ class CredentialStore:
 
     def _client(self):
         from backend.app.core.database import get_supabase_client
+
         return get_supabase_client()
 
     def get(self, provider: str, key_name: str) -> str | None:
@@ -125,13 +132,16 @@ class CredentialStore:
             raise ValueError("workspace_id required to store credentials")
         ciphertext = _encrypt(plaintext)
         hint = plaintext[-4:] if len(plaintext) >= 4 else "****"
-        self._client().table("workspace_credentials").upsert({
-            "workspace_id": self.workspace_id,
-            "provider": provider,
-            "key_name": key_name,
-            "ciphertext": ciphertext,
-            "hint": hint,
-        }, on_conflict="workspace_id,provider,key_name").execute()
+        self._client().table("workspace_credentials").upsert(
+            {
+                "workspace_id": self.workspace_id,
+                "provider": provider,
+                "key_name": key_name,
+                "ciphertext": ciphertext,
+                "hint": hint,
+            },
+            on_conflict="workspace_id,provider,key_name",
+        ).execute()
 
     def delete(self, provider: str, key_name: str) -> None:
         """Remove a credential."""
@@ -163,6 +173,7 @@ class CredentialStore:
 # Module-level convenience — resolves workspace from context automatically
 # ---------------------------------------------------------------------------
 
+
 def get_credential(provider: str, key_name: str, workspace_id: str | None = None) -> str | None:
     """Return plaintext credential for the current (or given) workspace.
 
@@ -172,6 +183,7 @@ def get_credential(provider: str, key_name: str, workspace_id: str | None = None
     if workspace_id is None:
         try:
             from backend.app.core.workspace import get_workspace_id
+
             workspace_id = get_workspace_id()
         except Exception:
             pass

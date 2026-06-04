@@ -35,6 +35,7 @@ import pytest
 CONTACT_ID = "contact-prv-001"
 COMPANY_ID = "company-prv-001"
 MESSAGE_ID = "re_msg001"
+_TEST_WEBHOOK_SECRET = "test_resend_secret_prvc"
 
 
 # ---------------------------------------------------------------------------
@@ -131,8 +132,8 @@ def _common_patches(db: MagicMock):
         patch("backend.app.core.suppression.record_suppression", return_value="sup-id-1"),
         patch("backend.app.core.suppression.maybe_escalate_to_company"),
         patch(
-            "backend.app.core.config.get_settings",
-            return_value=MagicMock(resend_webhook_secret=None),
+            "backend.app.api.routes.webhooks.get_settings",
+            return_value=MagicMock(resend_webhook_secret=_TEST_WEBHOOK_SECRET),
         ),
     ]
 
@@ -160,7 +161,7 @@ def test_identical_delivered_is_deduped():
          _common_patches(db_new)[2], _common_patches(db_new)[3], \
          _common_patches(db_new)[4], _common_patches(db_new)[5]:
         client = TestClient(_make_app())
-        resp1 = client.post("/api/webhooks/resend", json=payload)
+        resp1 = client.post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     assert resp1.status_code == 200
     assert resp1.json().get("status") == "processed", f"First call: {resp1.json()}"
@@ -171,7 +172,7 @@ def test_identical_delivered_is_deduped():
          _common_patches(db_dup)[2], _common_patches(db_dup)[3], \
          _common_patches(db_dup)[4], _common_patches(db_dup)[5]:
         client2 = TestClient(_make_app())
-        resp2 = client2.post("/api/webhooks/resend", json=payload)
+        resp2 = client2.post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     assert resp2.status_code == 200
     assert resp2.json().get("status") == "deduplicated", f"Second call: {resp2.json()}"
@@ -194,14 +195,14 @@ def test_identical_bounced_is_deduped():
     patches_new = _common_patches(db_new)
     with patches_new[0], patches_new[1], patches_new[2], \
          patches_new[3], patches_new[4], patches_new[5]:
-        resp1 = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+        resp1 = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     assert resp1.json().get("status") == "processed", f"First call: {resp1.json()}"
 
     patches_dup = _common_patches(db_dup)
     with patches_dup[0], patches_dup[1], patches_dup[2], \
          patches_dup[3], patches_dup[4], patches_dup[5]:
-        resp2 = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+        resp2 = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     assert resp2.json().get("status") == "deduplicated", f"Second call: {resp2.json()}"
     assert f"resend:{bounce_id}:email.bounced" in resp2.json().get("provider_event_id", "")
@@ -223,14 +224,14 @@ def test_identical_spam_complaint_is_deduped():
     patches_new = _common_patches(db_new)
     with patches_new[0], patches_new[1], patches_new[2], \
          patches_new[3], patches_new[4], patches_new[5]:
-        resp1 = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+        resp1 = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     assert resp1.json().get("status") == "processed", f"First call: {resp1.json()}"
 
     patches_dup = _common_patches(db_dup)
     with patches_dup[0], patches_dup[1], patches_dup[2], \
          patches_dup[3], patches_dup[4], patches_dup[5]:
-        resp2 = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+        resp2 = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     assert resp2.json().get("status") == "deduplicated", f"Second call: {resp2.json()}"
     assert f"resend:{complaint_id}:email.complained" in resp2.json().get("provider_event_id", "")
@@ -253,11 +254,11 @@ def test_repeated_opens_are_not_deduped():
 
     patches1 = _common_patches(db1)
     with patches1[0], patches1[1], patches1[2], patches1[3], patches1[4], patches1[5]:
-        resp1 = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+        resp1 = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     patches2 = _common_patches(db2)
     with patches2[0], patches2[1], patches2[2], patches2[3], patches2[4], patches2[5]:
-        resp2 = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+        resp2 = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     assert resp1.json().get("status") == "processed", f"Open 1: {resp1.json()}"
     assert resp2.json().get("status") == "processed", f"Open 2: {resp2.json()}"
@@ -297,7 +298,7 @@ def test_open_without_created_at_does_not_block_later_opens():
         db = _make_db(pe_raises=False)
         patches = _common_patches(db)
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
-            resp = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+            resp = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
         assert resp.json().get("status") == "processed", (
             f"Open with payload={payload} was not processed: {resp.json()}"
@@ -323,7 +324,7 @@ def test_provider_events_insert_failure_logs_warning_and_continues(caplog):
     patches = _common_patches(db)
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.webhooks"):
-            resp = TestClient(_make_app()).post("/api/webhooks/resend", json=payload)
+            resp = TestClient(_make_app()).post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=payload)
 
     # Event must still be processed — non-unique failure must not suppress the webhook
     assert resp.json().get("status") == "processed", (

@@ -58,9 +58,13 @@ def _make_db_mock() -> MagicMock:
     return db
 
 
+_TEST_WEBHOOK_SECRET = "test_resend_secret_abc"
+
+
 def _make_settings_mock() -> MagicMock:
     s = MagicMock()
-    s.resend_webhook_secret = None
+    # Must be a non-empty string: SEC-004 made the endpoint fail-closed when unset.
+    s.resend_webhook_secret = _TEST_WEBHOOK_SECRET
     return s
 
 
@@ -87,10 +91,10 @@ def test_spam_complaint_updates_company_status():
         ),
         patch("backend.app.api.routes.webhooks._find_thread", return_value=None),
         patch("backend.app.core.suppression.record_suppression", return_value="sup-id-1"),
-        patch("backend.app.core.config.get_settings", return_value=_make_settings_mock()),
+        patch("backend.app.api.routes.webhooks.get_settings", return_value=_make_settings_mock()),
     ):
         client = TestClient(app, raise_server_exceptions=True)
-        resp = client.post("/api/webhooks/resend", json=_spam_payload())
+        resp = client.post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=_spam_payload())
 
     assert resp.status_code == 200
     body = resp.json()
@@ -120,10 +124,10 @@ def test_spam_complaint_records_company_suppression():
         patch(
             "backend.app.core.suppression.record_suppression", return_value="sup-id-1"
         ) as mock_record,
-        patch("backend.app.core.config.get_settings", return_value=_make_settings_mock()),
+        patch("backend.app.api.routes.webhooks.get_settings", return_value=_make_settings_mock()),
     ):
         client = TestClient(app)
-        client.post("/api/webhooks/resend", json=_spam_payload())
+        client.post(f"/api/webhooks/resend?secret={_TEST_WEBHOOK_SECRET}", json=_spam_payload())
 
     # Two suppression records: contact scope, then company scope
     assert mock_record.call_count == 2, (

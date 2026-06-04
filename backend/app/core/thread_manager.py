@@ -74,19 +74,16 @@ class ThreadManager:
                     sent_at=draft.get("created_at", datetime.now(timezone.utc).isoformat()),
                     outreach_draft_id=outreach_draft_id,
                 )
-                self.db.client.table("campaign_threads").update({
-                    "last_sent_at": draft.get("created_at"),
-                }).eq("id", thread["id"]).execute()
+                self.db.client.table("campaign_threads").update(
+                    {
+                        "last_sent_at": draft.get("created_at"),
+                    }
+                ).eq("id", thread["id"]).execute()
 
         return thread
 
     def get_thread(self, thread_id: str) -> dict | None:
-        result = (
-            self.db.client.table("campaign_threads")
-            .select("*")
-            .eq("id", thread_id)
-            .execute()
-        )
+        result = self.db.client.table("campaign_threads").select("*").eq("id", thread_id).execute()
         return result.data[0] if result.data else None
 
     def get_thread_by_contact(self, company_id: str, contact_id: str) -> dict | None:
@@ -103,11 +100,13 @@ class ThreadManager:
         return result.data[0] if result.data else None
 
     def pause_thread(self, thread_id: str, reason: str = "reply_received") -> None:
-        self.db.client.table("campaign_threads").update({
-            "status": "paused",
-            "paused_reason": reason,
-            "last_replied_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", thread_id).execute()
+        self.db.client.table("campaign_threads").update(
+            {
+                "status": "paused",
+                "paused_reason": reason,
+                "last_replied_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", thread_id).execute()
 
     def resume_thread(self, thread_id: str, advance_step: bool = True) -> None:
         thread = self.get_thread(thread_id)
@@ -121,9 +120,11 @@ class ThreadManager:
 
     def close_thread(self, thread_id: str, status: str = "closed") -> None:
         """status: closed | converted | unsubscribed | bounced"""
-        self.db.client.table("campaign_threads").update({
-            "status": status,
-        }).eq("id", thread_id).execute()
+        self.db.client.table("campaign_threads").update(
+            {
+                "status": status,
+            }
+        ).eq("id", thread_id).execute()
 
     # ------------------------------------------------------------------
     # Message CRUD
@@ -168,7 +169,13 @@ class ThreadManager:
             "source": source,
         }
         if raw_webhook_payload:
-            row["raw_webhook_payload"] = raw_webhook_payload
+            # Store only structural metadata, not PII (email, body, provider IDs).
+            _keep = frozenset(
+                {"event_type", "type", "campaign_id", "lead_id", "timestamp", "source"}
+            )
+            row["raw_webhook_payload"] = {
+                k: v for k, v in raw_webhook_payload.items() if k in _keep
+            }
         result = self.db.client.table("thread_messages").insert(row).execute()
 
         # Auto-pause the thread when an inbound message arrives
@@ -184,12 +191,14 @@ class ThreadManager:
         reasoning: str,
         confirmed_by: str = "user",
     ) -> None:
-        self.db.client.table("thread_messages").update({
-            "classification": classification,
-            "classification_confidence": confidence,
-            "classification_reasoning": reasoning,
-            "classification_confirmed_by": confirmed_by,
-        }).eq("id", message_id).execute()
+        self.db.client.table("thread_messages").update(
+            {
+                "classification": classification,
+                "classification_confidence": confidence,
+                "classification_reasoning": reasoning,
+                "classification_confirmed_by": confirmed_by,
+            }
+        ).eq("id", message_id).execute()
 
     def get_thread_messages(self, thread_id: str) -> list[dict]:
         """Return all messages for a thread, oldest first."""
@@ -221,11 +230,7 @@ class ThreadManager:
     def find_thread_by_email(self, email: str) -> dict | None:
         """Find active/paused thread for a contact by email address."""
         contact_result = (
-            self.db.client.table("contacts")
-            .select("id")
-            .eq("email", email)
-            .limit(1)
-            .execute()
+            self.db.client.table("contacts").select("id").eq("email", email).limit(1).execute()
         )
         if not contact_result.data:
             return None
@@ -247,10 +252,5 @@ class ThreadManager:
     # ------------------------------------------------------------------
 
     def _get_draft(self, draft_id: str) -> dict | None:
-        result = (
-            self.db.client.table("outreach_drafts")
-            .select("*")
-            .eq("id", draft_id)
-            .execute()
-        )
+        result = self.db.client.table("outreach_drafts").select("*").eq("id", draft_id).execute()
         return result.data[0] if result.data else None

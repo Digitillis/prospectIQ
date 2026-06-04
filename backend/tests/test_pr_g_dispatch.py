@@ -223,7 +223,9 @@ class TestDispatchSuccess:
 
         call_kwargs = agent_mock.dispatch_queued_draft.call_args[1]
         assert call_kwargs["attempt_number"] == 1
-        assert call_kwargs["idempotency_key"] == f"{DRAFT_ID}:1"
+        # SDP#3 fix: idempotency key is now the stable draft_id alone (not draft_id:attempt_number)
+        # so Resend's 24h dedup window covers all retries for the same draft.
+        assert call_kwargs["idempotency_key"] == DRAFT_ID
 
 
 # ---------------------------------------------------------------------------
