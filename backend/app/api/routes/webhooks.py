@@ -13,13 +13,35 @@ event_type keys that EngagementAgent uses, for backwards compatibility.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from backend.app.core.config import get_settings
+
+
+# ---------------------------------------------------------------------------
+# PII scrubber for raw webhook payloads stored in thread_messages
+# ---------------------------------------------------------------------------
+
+_PAYLOAD_KEEP_KEYS = frozenset(
+    {"event_type", "type", "campaign_id", "lead_id", "timestamp", "source"}
+)
+
+
+def _scrub_webhook_payload(payload: dict) -> dict:
+    """Return a stripped copy of `payload` keeping only non-PII metadata keys.
+
+    Stores only structural keys so the row is useful for debugging without
+    persisting recipient email, body text, or raw provider IDs.
+    """
+    return {k: v for k, v in payload.items() if k in _PAYLOAD_KEEP_KEYS}
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +51,7 @@ router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 # ---------------------------------------------------------------------------
 # Unipile (LinkedIn) webhook handler
 # ---------------------------------------------------------------------------
+
 
 @router.post("/unipile")
 async def unipile_webhook(request: Request):
@@ -73,11 +96,7 @@ async def _handle_linkedin_connection_accepted(payload: dict) -> dict:
       - profile_url or linkedin_profile_url: prospect's LinkedIn URL
       - contact_id (optional): if ProspectIQ contact_id stored in Unipile metadata
     """
-    linkedin_url: str = (
-        payload.get("linkedin_profile_url")
-        or payload.get("profile_url")
-        or ""
-    )
+    linkedin_url: str = payload.get("linkedin_profile_url") or payload.get("profile_url") or ""
 
     if not linkedin_url:
         return {"status": "ignored", "reason": "no linkedin_profile_url in payload"}
@@ -110,13 +129,16 @@ async def _handle_linkedin_connection_accepted(payload: dict) -> dict:
         contact_id = contact["id"]
 
         # Mark connection accepted
-        db.client.table("contacts").update({
-            "linkedin_accepted_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", contact_id).execute()
+        db.client.table("contacts").update(
+            {
+                "linkedin_accepted_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", contact_id).execute()
 
         logger.info(
             "Unipile: connection accepted — contact %s (%s)",
-            contact.get("full_name", contact_id), linkedin_url,
+            contact.get("full_name", contact_id),
+            linkedin_url,
         )
 
         return {
@@ -138,9 +160,7 @@ async def _handle_linkedin_message_received(payload: dict) -> dict:
     Future: full thread management for LinkedIn DMs.
     """
     linkedin_url: str = (
-        payload.get("sender_linkedin_profile_url")
-        or payload.get("profile_url")
-        or ""
+        payload.get("sender_linkedin_profile_url") or payload.get("profile_url") or ""
     )
     message_text: str = payload.get("message_text") or payload.get("body") or ""
 
@@ -167,24 +187,29 @@ async def _handle_linkedin_message_received(payload: dict) -> dict:
         contact = result.data[0]
 
         # Log the LinkedIn reply as an interaction
-        db.insert_interaction({
-            "company_id": contact["company_id"],
-            "contact_id": contact["id"],
-            "type": "linkedin_message",
-            "channel": "linkedin",
-            "body": message_text,
-            "source": "unipile_webhook",
-            "metadata": {
-                "event_type": "message_received",
-                "linkedin_url": linkedin_url,
-            },
-        })
+        db.insert_interaction(
+            {
+                "company_id": contact["company_id"],
+                "contact_id": contact["id"],
+                "type": "linkedin_message",
+                "channel": "linkedin",
+                "body": message_text,
+                "source": "unipile_webhook",
+                "metadata": {
+                    "event_type": "message_received",
+                    "linkedin_url": linkedin_url,
+                },
+            }
+        )
 
         # Mark contact as responded
         from datetime import datetime, timezone
-        db.client.table("contacts").update({
-            "linkedin_responded_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", contact["id"]).execute()
+
+        db.client.table("contacts").update(
+            {
+                "linkedin_responded_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", contact["id"]).execute()
 
         return {
             "status": "processed",
@@ -201,6 +226,7 @@ async def _handle_linkedin_message_received(payload: dict) -> dict:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -209,6 +235,7 @@ def _get_db_and_workspace():
     from backend.app.core.database import Database
     from backend.app.core.workspace import get_workspace_id
     from backend.app.core.config import get_settings
+
     ws_id = get_workspace_id() or get_settings().default_workspace_id
     return Database(workspace_id=ws_id)
 
@@ -218,11 +245,13 @@ def _get_db_and_workspace():
 # email_id for every open/click on the same message, so there is no stable
 # unique key per individual event delivery. Repeated opens/clicks are
 # legitimate and must not be collapsed.
-_RESEND_DEDUP_EVENT_TYPES: frozenset[str] = frozenset({
-    "email.delivered",
-    "email.bounced",
-    "email.complained",
-})
+_RESEND_DEDUP_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "email.delivered",
+        "email.bounced",
+        "email.complained",
+    }
+)
 
 
 def _reconcile_send_attempt_delivered(
@@ -262,7 +291,8 @@ def _reconcile_send_attempt_delivered(
         db_client.table("send_attempts").update(update).eq("id", attempt["id"]).execute()
         logger.info(
             "webhook.send_attempt_reconciled draft_id=%s status=DELIVERED attempt_id=%s",
-            draft_id, attempt["id"],
+            draft_id,
+            attempt["id"],
         )
     except Exception as exc:
         logger.debug(
@@ -298,21 +328,22 @@ def _reconcile_send_attempt_bounced(
         )
         if not rows:
             return
-        db_client.table("send_attempts").update({
-            "status": "PERMANENTLY_FAILED",
-            "failure_code": "bounce",
-            "failure_reason": "email_bounced_webhook",
-            "reconciled_at": now_iso,
-            "resolved_at": now_iso,
-        }).eq("id", rows[0]["id"]).execute()
+        db_client.table("send_attempts").update(
+            {
+                "status": "PERMANENTLY_FAILED",
+                "failure_code": "bounce",
+                "failure_reason": "email_bounced_webhook",
+                "reconciled_at": now_iso,
+                "resolved_at": now_iso,
+            }
+        ).eq("id", rows[0]["id"]).execute()
         logger.info(
             "webhook.send_attempt_reconciled draft_id=%s status=PERMANENTLY_FAILED (bounce) attempt_id=%s",
-            draft_id, rows[0]["id"],
+            draft_id,
+            rows[0]["id"],
         )
     except Exception as exc:
-        logger.debug(
-            "webhook._reconcile_send_attempt_bounced draft_id=%s error=%s", draft_id, exc
-        )
+        logger.debug("webhook._reconcile_send_attempt_bounced draft_id=%s error=%s", draft_id, exc)
 
 
 def _try_record_provider_event(
@@ -396,7 +427,9 @@ def _find_thread(db, contact_id: str, company_id: str, instantly_campaign_id: Op
         return None
 
 
-def _find_or_create_thread(db, company_id: str, contact_id: str, instantly_campaign_id: Optional[str] = None) -> dict:
+def _find_or_create_thread(
+    db, company_id: str, contact_id: str, instantly_campaign_id: Optional[str] = None
+) -> dict:
     """Find existing thread or create a new one for this company/contact pair."""
     thread = _find_thread(db, contact_id, company_id, instantly_campaign_id)
     if thread:
@@ -471,15 +504,21 @@ def _create_hitl_queue_entry(
 ) -> Optional[dict]:
     """Insert a row into hitl_queue. Returns the row or None on failure."""
     try:
-        result = db.client.table("hitl_queue").insert({
-            "thread_id": thread_id,
-            "message_id": message_id,
-            "workspace_id": workspace_id,
-            "classification": classification,
-            "classification_confidence": confidence,
-            "priority": priority,
-            "status": "pending",
-        }).execute()
+        result = (
+            db.client.table("hitl_queue")
+            .insert(
+                {
+                    "thread_id": thread_id,
+                    "message_id": message_id,
+                    "workspace_id": workspace_id,
+                    "classification": classification,
+                    "classification_confidence": confidence,
+                    "priority": priority,
+                    "status": "pending",
+                }
+            )
+            .execute()
+        )
         return result.data[0] if result.data else None
     except Exception as exc:
         logger.error("Failed to create hitl_queue entry: %s", exc)
@@ -490,6 +529,7 @@ def _create_hitl_queue_entry(
 # Event handlers
 # ---------------------------------------------------------------------------
 
+
 def _handle_email_reply(db, payload: dict) -> dict:
     """Process email.reply event — the primary HITL trigger."""
     from backend.app.core.reply_classifier import ReplyClassifier
@@ -498,7 +538,9 @@ def _handle_email_reply(db, payload: dict) -> dict:
     to_email: str = payload.get("to_email") or payload.get("to", "") or ""
     subject: str = payload.get("subject", "")
     body_text: str = payload.get("body_text") or payload.get("body", "")
-    instantly_campaign_id: Optional[str] = payload.get("campaign_id") or payload.get("instantly_campaign_id")
+    instantly_campaign_id: Optional[str] = payload.get("campaign_id") or payload.get(
+        "instantly_campaign_id"
+    )
     lead_id: Optional[str] = payload.get("lead_id")
     sent_at: str = payload.get("timestamp") or payload.get("sent_at") or _now_iso()
 
@@ -550,6 +592,7 @@ def _handle_email_reply(db, payload: dict) -> dict:
         logger.error("ReplyClassifier failed: %s", exc)
         # Fallback classification — don't drop the reply
         from backend.app.core.reply_classifier import ReplyClassification
+
         classification = ReplyClassification(
             intent="other",
             confidence=0.0,
@@ -573,7 +616,7 @@ def _handle_email_reply(db, payload: dict) -> dict:
         "summary": classification.summary,
         "next_action_suggestion": classification.next_action_suggestion,
         "source": "instantly_webhook",
-        "raw_webhook_payload": payload,
+        "raw_webhook_payload": _scrub_webhook_payload(payload),
     }
     try:
         msg_result = db.client.table("thread_messages").insert(msg_data).execute()
@@ -600,14 +643,18 @@ def _handle_email_reply(db, payload: dict) -> dict:
         # Auto-handle unsubscribe / bounce without HITL
         if classification.intent == "unsubscribe":
             try:
-                db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq("id", thread_id).execute()
+                db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq(
+                    "id", thread_id
+                ).execute()
                 db.update_contact(contact_id, {"outreach_state": "unsubscribed"})
                 db.add_to_dnc(from_email, reason="unsubscribed", added_by="instantly_webhook")
             except Exception as exc:
                 logger.error("Unsubscribe auto-action failed: %s", exc)
         elif classification.intent == "bounce":
             try:
-                db.client.table("campaign_threads").update({"status": "bounced"}).eq("id", thread_id).execute()
+                db.client.table("campaign_threads").update({"status": "bounced"}).eq(
+                    "id", thread_id
+                ).execute()
                 db.update_contact(contact_id, {"outreach_state": "bounced"})
                 db.update_company(company_id, {"status": "bounced"})
             except Exception as exc:
@@ -630,9 +677,9 @@ def _handle_email_reply(db, payload: dict) -> dict:
     # 8. Update thread status to awaiting_review if not auto-actioned
     if not classification.auto_actionable:
         try:
-            db.client.table("campaign_threads").update(
-                {"status": "awaiting_review"}
-            ).eq("id", thread_id).execute()
+            db.client.table("campaign_threads").update({"status": "awaiting_review"}).eq(
+                "id", thread_id
+            ).execute()
         except Exception:
             pass
 
@@ -666,9 +713,14 @@ def _handle_email_bounced(db, payload: dict) -> dict:
         db.add_to_dnc(from_email, reason="bounced", added_by="instantly_webhook")
 
         from backend.app.core.suppression import record_suppression, maybe_escalate_to_company
+
         sup_id = record_suppression(
-            db, scope="contact", reason="hard_bounce_contact",
-            contact_id=contact_id, company_id=company_id, email=from_email,
+            db,
+            scope="contact",
+            reason="hard_bounce_contact",
+            contact_id=contact_id,
+            company_id=company_id,
+            email=from_email,
             bounce_classification="hard",
             metadata={"source": "instantly_webhook"},
         )
@@ -676,7 +728,9 @@ def _handle_email_bounced(db, payload: dict) -> dict:
 
         thread = _find_thread(db, contact_id, company_id)
         if thread:
-            db.client.table("campaign_threads").update({"status": "bounced"}).eq("id", thread["id"]).execute()
+            db.client.table("campaign_threads").update({"status": "bounced"}).eq(
+                "id", thread["id"]
+            ).execute()
     except Exception as exc:
         logger.error("Bounce handling failed: %s", exc)
 
@@ -697,7 +751,9 @@ def _handle_email_unsubscribed(db, payload: dict) -> dict:
 
         thread = _find_thread(db, contact_id, company_id)
         if thread:
-            db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq("id", thread["id"]).execute()
+            db.client.table("campaign_threads").update({"status": "unsubscribed"}).eq(
+                "id", thread["id"]
+            ).execute()
     except Exception as exc:
         logger.error("Unsubscribe handling failed: %s", exc)
 
@@ -711,6 +767,7 @@ def _advance_warm_sequence(db, contact_id: str, days_advance: int = 2) -> None:
     Only moves the date if it would actually be sooner than the current schedule.
     """
     from datetime import datetime, timezone, timedelta
+
     try:
         now = datetime.now(timezone.utc)
         seqs = (
@@ -721,7 +778,8 @@ def _advance_warm_sequence(db, contact_id: str, days_advance: int = 2) -> None:
             .order("next_action_at")
             .limit(1)
             .execute()
-            .data or []
+            .data
+            or []
         )
         if not seqs:
             return
@@ -740,12 +798,16 @@ def _advance_warm_sequence(db, contact_id: str, days_advance: int = 2) -> None:
         floor = now + timedelta(days=1)
         new_next = max(floor, current_next - timedelta(days=days_advance))
         if new_next < current_next:
-            db.client.table("engagement_sequences").update({
-                "next_action_at": new_next.isoformat(),
-            }).eq("id", seq["id"]).execute()
+            db.client.table("engagement_sequences").update(
+                {
+                    "next_action_at": new_next.isoformat(),
+                }
+            ).eq("id", seq["id"]).execute()
             logger.info(
                 "Warm contact %s: advanced next step from %s to %s",
-                contact_id, current_next_str[:10], new_next.date()
+                contact_id,
+                current_next_str[:10],
+                new_next.date(),
             )
     except Exception as exc:
         logger.debug("sequence advance failed (non-fatal): %s", exc)
@@ -760,17 +822,22 @@ def _handle_email_opened(db, payload: dict) -> dict:
         return {"status": "ignored", "reason": "contact not found"}
 
     try:
-        contact = db.client.table("contacts").select("open_count").eq("id", contact_id).limit(1).execute()
+        contact = (
+            db.client.table("contacts").select("open_count").eq("id", contact_id).limit(1).execute()
+        )
         current = contact.data[0].get("open_count", 0) if contact.data else 0
-        db.client.table("contacts").update({
-            "open_count": (current or 0) + 1,
-        }).eq("id", contact_id).execute()
+        db.client.table("contacts").update(
+            {
+                "open_count": (current or 0) + 1,
+            }
+        ).eq("id", contact_id).execute()
     except Exception as exc:
         logger.debug("open_count update failed (column may not exist): %s", exc)
 
     # A/B tracker — record open event (non-blocking)
     try:
         from backend.app.analytics.ab_tracker import ABTracker
+
         _cid = str(contact_id).replace("-", "")
         ab_variant = "a" if int(_cid, 16) % 2 == 0 else "b"
         ABTracker(db).record_open(contact_id=contact_id, variant=ab_variant)
@@ -792,11 +859,19 @@ def _handle_email_clicked(db, payload: dict) -> dict:
         return {"status": "ignored", "reason": "contact not found"}
 
     try:
-        contact = db.client.table("contacts").select("click_count").eq("id", contact_id).limit(1).execute()
+        contact = (
+            db.client.table("contacts")
+            .select("click_count")
+            .eq("id", contact_id)
+            .limit(1)
+            .execute()
+        )
         current = contact.data[0].get("click_count", 0) if contact.data else 0
-        db.client.table("contacts").update({
-            "click_count": (current or 0) + 1,
-        }).eq("id", contact_id).execute()
+        db.client.table("contacts").update(
+            {
+                "click_count": (current or 0) + 1,
+            }
+        ).eq("id", contact_id).execute()
     except Exception as exc:
         logger.debug("click_count update failed: %s", exc)
 
@@ -809,6 +884,7 @@ def _handle_email_clicked(db, payload: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Main webhook endpoint
 # ---------------------------------------------------------------------------
+
 
 @router.post("/instantly")
 async def instantly_webhook(
@@ -831,17 +907,13 @@ async def instantly_webhook(
     """
     settings = get_settings()
 
-    if settings.webhook_secret and secret != settings.webhook_secret:
+    if settings.webhook_secret and not hmac.compare_digest(secret or "", settings.webhook_secret):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
     payload: dict[str, Any] = await request.json()
 
     # Normalise event type — Instantly uses both dot-notation and underscore styles
-    event_type: str = (
-        payload.get("event_type")
-        or payload.get("type")
-        or ""
-    ).lower().strip()
+    event_type: str = (payload.get("event_type") or payload.get("type") or "").lower().strip()
 
     if not event_type:
         return {"status": "ignored", "reason": "no event_type"}
@@ -878,6 +950,7 @@ async def instantly_webhook(
             # Unknown event — pass through to EngagementAgent for legacy handling
             try:
                 from backend.app.agents.engagement import EngagementAgent
+
                 result = EngagementAgent.process_webhook_event(event_type, payload)
             except Exception:
                 result = {"status": "ignored", "reason": f"unknown event_type: {event_type}"}
@@ -888,6 +961,7 @@ async def instantly_webhook(
             if classification in ("interested", "referral"):
                 try:
                     from backend.app.utils.notifications import notify_slack
+
                     company_id = result.get("company_id")
                     company = db.get_company(company_id) if company_id else None
                     company_name = company.get("name", "Unknown") if company else "Unknown"
@@ -912,6 +986,7 @@ async def instantly_webhook(
 # ---------------------------------------------------------------------------
 # Resend webhook — email delivery, open, click, bounce, complaint events
 # ---------------------------------------------------------------------------
+
 
 @router.post("/resend")
 async def resend_webhook(
@@ -944,15 +1019,14 @@ async def resend_webhook(
     """
     settings = get_settings()
 
-    # Shared-secret validation via query parameter.
-    # RESEND_WEBHOOK_SECRET must be set in Railway production env before activation.
-    # Without it, any caller can post webhook events — unauthenticated in production.
+    # Fail-CLOSED: refuse all requests when the secret is not configured so that
+    # a missing env var never silently opens the endpoint to unauthenticated callers.
     if not settings.resend_webhook_secret:
-        logger.warning(
-            "resend_webhook: RESEND_WEBHOOK_SECRET not configured — "
-            "accepting unauthenticated webhook. Set this env var in Railway before enabling sends."
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook endpoint not configured. Set RESEND_WEBHOOK_SECRET in Railway.",
         )
-    elif secret != settings.resend_webhook_secret:
+    if not hmac.compare_digest(secret or "", settings.resend_webhook_secret):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
     payload: dict[str, Any] = await request.json()
@@ -980,8 +1054,9 @@ async def resend_webhook(
             try:
                 r = (
                     db._filter_ws(
-                        db.client.table("outreach_drafts")
-                        .select("id, company_id, contact_id, sequence_name")
+                        db.client.table("outreach_drafts").select(
+                            "id, company_id, contact_id, sequence_name"
+                        )
                     )
                     .eq("resend_message_id", resend_message_id)
                     .limit(1)
@@ -999,7 +1074,10 @@ async def resend_webhook(
             company_id, contact_id = _lookup_company_contact(db, recipient_email)
 
         if not contact_id:
-            return {"status": "ignored", "reason": f"no contact found for {recipient_email or resend_message_id}"}
+            return {
+                "status": "ignored",
+                "reason": f"no contact found for {recipient_email or resend_message_id}",
+            }
 
         now_iso = _now_iso()
 
@@ -1023,7 +1101,7 @@ async def resend_webhook(
                 recipient_email=recipient_email or None,
                 contact_id=contact_id,
                 company_id=company_id,
-                raw_payload=payload,
+                raw_payload=_scrub_webhook_payload(payload),
                 workspace_id=db.workspace_id,
             )
             if not _is_new:
@@ -1038,9 +1116,7 @@ async def resend_webhook(
                 update = {"resend_status": "delivered"}
                 if sender_email:
                     update["sender_email"] = sender_email
-                q = db._filter_ws(
-                    db.client.table("outreach_drafts").update(update)
-                )
+                q = db._filter_ws(db.client.table("outreach_drafts").update(update))
                 if draft_row:
                     q = q.eq("id", draft_row["id"])
                 elif contact_id:
@@ -1077,12 +1153,20 @@ async def resend_webhook(
 
             # Increment signal counter on contact
             try:
-                contact_r = db.client.table("contacts").select(count_col).eq("id", contact_id).limit(1).execute()
+                contact_r = (
+                    db.client.table("contacts")
+                    .select(count_col)
+                    .eq("id", contact_id)
+                    .limit(1)
+                    .execute()
+                )
                 current = contact_r.data[0].get(count_col, 0) if contact_r.data else 0
-                db.client.table("contacts").update({
-                    count_col: (current or 0) + 1,
-                    time_col: now_iso,
-                }).eq("id", contact_id).execute()
+                db.client.table("contacts").update(
+                    {
+                        count_col: (current or 0) + 1,
+                        time_col: now_iso,
+                    }
+                ).eq("id", contact_id).execute()
             except Exception as exc:
                 logger.debug("Signal counter update failed: %s", exc)
 
@@ -1095,6 +1179,7 @@ async def resend_webhook(
                 _is_bot_event = False
                 try:
                     from backend.app.core.click_classifier import ClickClassifier
+
                     # Compute seconds between draft.sent_at and this event
                     _latency: float | None = None
                     if draft_row:
@@ -1107,18 +1192,21 @@ async def resend_webhook(
                         ).data
                         if _sent_rows and _sent_rows[0].get("sent_at"):
                             from datetime import datetime, timezone as _tz
+
                             _sent_dt = datetime.fromisoformat(
                                 _sent_rows[0]["sent_at"].replace("Z", "+00:00")
                             )
                             _event_dt = datetime.now(_tz.utc)
                             _latency = (_event_dt - _sent_dt).total_seconds()
 
-                    _classification = ClickClassifier().classify({
-                        "latency_seconds": _latency,
-                        "user_agent": data.get("user_agent"),
-                        "click_timestamp": now_iso if action == "clicked" else None,
-                    })
-                    _is_bot_event = (_classification == "bot")
+                    _classification = ClickClassifier().classify(
+                        {
+                            "latency_seconds": _latency,
+                            "user_agent": data.get("user_agent"),
+                            "click_timestamp": now_iso if action == "clicked" else None,
+                        }
+                    )
+                    _is_bot_event = _classification == "bot"
                 except Exception as _cls_exc:
                     logger.debug("Bot classification failed, defaulting to non-bot: %s", _cls_exc)
 
@@ -1128,38 +1216,48 @@ async def resend_webhook(
                     logger.info(
                         "webhook: skipping 'engaged' promotion for company=%s — "
                         "event classified as bot (latency=%.1fs)",
-                        company_id, _latency or -1,
+                        company_id,
+                        _latency or -1,
                     )
 
             # Update campaign_thread status
             try:
                 thread = _find_thread(db, contact_id, company_id)
                 if thread:
-                    db.client.table("campaign_threads").update({
-                        "status": "opened" if action == "opened" else "clicked",
-                        "last_opened_at": now_iso,
-                    }).eq("id", thread["id"]).execute()
+                    db.client.table("campaign_threads").update(
+                        {
+                            "status": "opened" if action == "opened" else "clicked",
+                            "last_opened_at": now_iso,
+                        }
+                    ).eq("id", thread["id"]).execute()
             except Exception as exc:
                 logger.debug("Thread update failed: %s", exc)
 
             # Log as an interaction
             try:
-                db.insert_interaction({
-                    "company_id": company_id,
-                    "contact_id": contact_id,
-                    "type": f"email_{action}",
-                    "channel": "email",
-                    "source": "resend_webhook",
-                    "metadata": {
-                        "resend_message_id": resend_message_id,
-                        "sender_email": sender_email,
-                        "subject": data.get("subject"),
-                    },
-                })
+                db.insert_interaction(
+                    {
+                        "company_id": company_id,
+                        "contact_id": contact_id,
+                        "type": f"email_{action}",
+                        "channel": "email",
+                        "source": "resend_webhook",
+                        "metadata": {
+                            "resend_message_id": resend_message_id,
+                            "sender_email": sender_email,
+                            "subject": data.get("subject"),
+                        },
+                    }
+                )
             except Exception:
                 pass
 
-            return {"status": "processed", "action": action, "contact_id": contact_id, "company_id": company_id}
+            return {
+                "status": "processed",
+                "action": action,
+                "contact_id": contact_id,
+                "company_id": company_id,
+            }
 
         elif event_type in ("email.bounced", "email.complained"):
             action = "bounced" if event_type == "email.bounced" else "complained"
@@ -1194,11 +1292,19 @@ async def resend_webhook(
                 # bounce does not block other contacts at the same company.
                 # Company-level escalation happens only when multiple distinct
                 # contacts at the same company have bounced (see maybe_escalate_to_company).
-                from backend.app.core.suppression import record_suppression, maybe_escalate_to_company
+                from backend.app.core.suppression import (
+                    record_suppression,
+                    maybe_escalate_to_company,
+                )
+
                 suppression_reason = "spam_complaint" if is_complaint else "hard_bounce_contact"
                 bounce_class = "complaint" if is_complaint else "hard"
-                provider_code = str(payload.get("data", {}).get("bounce", {}).get("code", "")) or None
-                provider_msg = str(payload.get("data", {}).get("bounce", {}).get("message", ""))[:500] or None
+                provider_code = (
+                    str(payload.get("data", {}).get("bounce", {}).get("code", "")) or None
+                )
+                provider_msg = (
+                    str(payload.get("data", {}).get("bounce", {}).get("message", ""))[:500] or None
+                )
                 sup_id = record_suppression(
                     db,
                     scope="contact",
@@ -1209,11 +1315,17 @@ async def resend_webhook(
                     bounce_classification=bounce_class,
                     provider_code=provider_code,
                     provider_message=provider_msg,
-                    metadata={"event_type": event_type, "draft_id": draft_row["id"] if draft_row else None},
+                    metadata={
+                        "event_type": event_type,
+                        "draft_id": draft_row["id"] if draft_row else None,
+                    },
                 )
                 logger.info(
                     "suppression: contact-scope %s recorded for contact=%s company=%s (suppression_id=%s)",
-                    suppression_reason, contact_id, company_id, sup_id,
+                    suppression_reason,
+                    contact_id,
+                    company_id,
+                    sup_id,
                 )
 
                 # Spam complaints always escalate to company scope immediately
@@ -1232,7 +1344,8 @@ async def resend_webhook(
                     db.update_company(company_id, {"status": "not_interested"})
                     logger.warning(
                         "suppression: company %s escalated to company scope (spam complaint from %s)",
-                        company_id, contact_id,
+                        company_id,
+                        contact_id,
                     )
                 elif is_bounce and company_id:
                     # Check multi-contact bounce threshold — escalates only if ≥2 distinct contacts
@@ -1249,16 +1362,20 @@ async def resend_webhook(
                     .in_("status", ["active", "paused"])
                     .execute()
                 )
-                for seq in (active_seqs.data or []):
-                    db.client.table("engagement_sequences").update({
-                        "status": "cancelled",
-                        "updated_at": now_iso,
-                    }).eq("id", seq["id"]).execute()
+                for seq in active_seqs.data or []:
+                    db.client.table("engagement_sequences").update(
+                        {
+                            "status": "cancelled",
+                            "updated_at": now_iso,
+                        }
+                    ).eq("id", seq["id"]).execute()
 
                 # Update thread
                 thread = _find_thread(db, contact_id, company_id)
                 if thread:
-                    db.client.table("campaign_threads").update({"status": action}).eq("id", thread["id"]).execute()
+                    db.client.table("campaign_threads").update({"status": action}).eq(
+                        "id", thread["id"]
+                    ).execute()
 
                 # Reconcile send_attempts lifecycle record for bounces only
                 # (not complaints — complaints don't affect send_attempts delivery status)
@@ -1281,6 +1398,7 @@ async def resend_webhook(
 # ---------------------------------------------------------------------------
 # Trigify webhook — competitor engagement signals
 # ---------------------------------------------------------------------------
+
 
 @router.post("/trigify")
 async def trigify_webhook(request: Request):
@@ -1307,7 +1425,19 @@ async def trigify_webhook(request: Request):
     }
 
     Maps to signal_weights.yaml competitor_engagement weights.
+    Requires TRIGIFY_WEBHOOK_SECRET env var. Fail-closed when unset.
     """
+    settings = get_settings()
+    trigify_secret = settings.trigify_webhook_secret or ""
+    if not trigify_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Trigify webhook endpoint not configured. Set TRIGIFY_WEBHOOK_SECRET.",
+        )
+    signature = request.headers.get("X-Trigify-Signature", "")
+    if not hmac.compare_digest(signature, trigify_secret):
+        raise HTTPException(status_code=401, detail="Invalid Trigify webhook signature")
+
     payload: dict[Any, Any] = await request.json()
 
     engagement_type = payload.get("engagement_type", "liked_competitor_post")
@@ -1324,13 +1454,20 @@ async def trigify_webhook(request: Request):
 
     logger.info(
         "Trigify: %s engagement by %s at %s with competitor %s",
-        engagement_type, actor_name, company_name, competitor_name,
+        engagement_type,
+        actor_name,
+        company_name,
+        competitor_name,
     )
 
     try:
         from backend.app.core.database import Database
         from backend.app.core.workspace import get_workspace_id
-        from backend.app.agents.signal_monitor import _upsert_intent_signal, _get_signal_weight, _recalculate_pqs_timing
+        from backend.app.agents.signal_monitor import (
+            _upsert_intent_signal,
+            _get_signal_weight,
+            _recalculate_pqs_timing,
+        )
         from backend.app.core.config import load_yaml_config
         from datetime import datetime, timezone
 
@@ -1359,7 +1496,10 @@ async def trigify_webhook(request: Request):
             company = result.data[0] if result.data else None
 
         if not company:
-            return {"status": "ignored", "reason": f"company '{company_name}' not found in ProspectIQ"}
+            return {
+                "status": "ignored",
+                "reason": f"company '{company_name}' not found in ProspectIQ",
+            }
 
         company_id = company["id"]
 
@@ -1392,26 +1532,31 @@ async def trigify_webhook(request: Request):
             ),
         }
 
-        _upsert_intent_signal(db=db, company_id=company_id, signal_type=signal_key, signal_data=signal_data)
+        _upsert_intent_signal(
+            db=db, company_id=company_id, signal_type=signal_key, signal_data=signal_data
+        )
 
         weight = _get_signal_weight(signal_config, signal_key)
         _recalculate_pqs_timing(db, company, weight)
 
         # Log interaction
-        db.insert_interaction({
-            "company_id": company_id,
-            "type": "note",
-            "channel": "linkedin",
-            "subject": f"Trigify signal: {signal_key}",
-            "body": signal_data["description"],
-            "source": "trigify_webhook",
-            "metadata": {"payload": payload},
-        })
+        db.insert_interaction(
+            {
+                "company_id": company_id,
+                "type": "note",
+                "channel": "linkedin",
+                "subject": f"Trigify signal: {signal_key}",
+                "body": signal_data["description"],
+                "source": "trigify_webhook",
+                "metadata": {"payload": _scrub_webhook_payload(payload)},
+            }
+        )
 
         # Notify Slack for high-value signals
         if engagement_type.lower() in ("commented", "shared"):
             try:
                 from backend.app.utils.notifications import notify_slack
+
                 notify_slack(
                     f"*Trigify signal: {company_name}* — employee {engagement_type} "
                     f"{competitor_name} content. +{weight} PQS timing.",
@@ -1436,6 +1581,7 @@ async def trigify_webhook(request: Request):
 # Meeting transcript webhook — Fathom / Fireflies
 # ---------------------------------------------------------------------------
 
+
 @router.post("/meeting-transcript")
 async def meeting_transcript_webhook(request: Request):
     """Receive meeting transcripts from Fathom or Fireflies.
@@ -1449,12 +1595,17 @@ async def meeting_transcript_webhook(request: Request):
     """
     settings = get_settings()
 
-    # Validate webhook secret if configured
-    webhook_secret = getattr(settings, "webhook_secret", "") or ""
-    if webhook_secret:
-        signature = request.headers.get("X-Webhook-Secret", "")
-        if signature != webhook_secret:
-            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    # Use the dedicated meeting-transcript secret (never share with Instantly/Resend).
+    # Fail-closed: refuse requests when the secret is not configured.
+    meeting_secret = settings.meeting_transcript_webhook_secret or ""
+    if not meeting_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Meeting transcript webhook not configured. Set MEETING_TRANSCRIPT_WEBHOOK_SECRET.",
+        )
+    signature = request.headers.get("X-Webhook-Secret", "")
+    if not hmac.compare_digest(signature, meeting_secret):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
     payload: dict[Any, Any] = await request.json()
 
@@ -1471,8 +1622,10 @@ async def meeting_transcript_webhook(request: Request):
     company_id: str = payload.get("company_id", "")
     contact_id: str | None = payload.get("contact_id")
     meeting_date: str | None = payload.get("meeting_date")
-    source: str = "fathom" if "fathom" in event_type else (
-        "fireflies" if "fireflies" in event_type else "manual"
+    source: str = (
+        "fathom"
+        if "fathom" in event_type
+        else ("fireflies" if "fireflies" in event_type else "manual")
     )
 
     # Fathom/Fireflies: try to match company from meeting title or attendees
@@ -1483,6 +1636,7 @@ async def meeting_transcript_webhook(request: Request):
             try:
                 from backend.app.core.database import Database
                 from backend.app.core.workspace import get_workspace_id
+
                 db = Database(workspace_id=get_workspace_id())
                 result = (
                     db.client.table("companies")
@@ -1507,6 +1661,7 @@ async def meeting_transcript_webhook(request: Request):
 
     try:
         from backend.app.agents.post_meeting import PostMeetingAgent
+
         agent = PostMeetingAgent()
         result = agent.execute(
             company_id=company_id,
@@ -1529,6 +1684,7 @@ async def meeting_transcript_webhook(request: Request):
 # ---------------------------------------------------------------------------
 # Apollo async phone webhook
 # ---------------------------------------------------------------------------
+
 
 @router.post("/apollo/phone")
 async def apollo_phone_webhook(request: Request):
@@ -1554,22 +1710,21 @@ async def apollo_phone_webhook(request: Request):
 
     try:
         from backend.app.core.database import get_supabase_client
+
         db = get_supabase_client()
         rows = (
-            db.table("contacts")
-            .select("id")
-            .eq("apollo_id", apollo_id)
-            .limit(1)
-            .execute()
-            .data or []
+            db.table("contacts").select("id").eq("apollo_id", apollo_id).limit(1).execute().data
+            or []
         )
         if not rows:
             return {"status": "not_found", "apollo_id": apollo_id}
 
         contact_id = rows[0]["id"]
-        db.table("contacts").update({
-            "phone": phone,
-        }).eq("id", contact_id).execute()
+        db.table("contacts").update(
+            {
+                "phone": phone,
+            }
+        ).eq("id", contact_id).execute()
 
         logger.info("Apollo phone webhook: updated contact %s with phone", contact_id)
         return {"status": "updated", "contact_id": contact_id}

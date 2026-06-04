@@ -22,9 +22,7 @@ def get_supabase_client() -> Client:
     """Get a cached Supabase client using the service role key (full access)."""
     settings = get_settings()
     if not settings.supabase_url or not settings.supabase_service_key:
-        raise ValueError(
-            "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env"
-        )
+        raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env")
     return create_client(settings.supabase_url, settings.supabase_service_key)
 
 
@@ -45,13 +43,23 @@ class Database:
     # ------------------------------------------------------------------
 
     def _filter_ws(self, query):
-        """Apply workspace filter to a query when workspace_id is set."""
-        if self.workspace_id:
-            logger.debug(f"_filter_ws: applying workspace filter workspace_id={self.workspace_id}")
-            query = query.eq("workspace_id", self.workspace_id)
-        else:
-            logger.warning("_filter_ws: NO workspace_id set! Returning unfiltered query!")
-        return query
+        """Apply workspace filter to a query. Fails CLOSED when workspace_id is not set.
+
+        Returning an unfiltered query when workspace_id is absent would silently leak
+        all-tenant data. Raising here makes the bug immediately visible (500 in prod,
+        logged ERROR) instead of silently crossing tenant boundaries.
+        See ADR-003 for the full rationale and RLS deferral decision.
+        """
+        if not self.workspace_id:
+            logger.error(
+                "_filter_ws: workspace_id is not set — refusing to return unfiltered query (see ADR-003)"
+            )
+            raise RuntimeError(
+                "_filter_ws: workspace_id is not set. "
+                "Ensure require_workspace_member() or WorkspaceMiddleware has run before this call."
+            )
+        logger.debug("_filter_ws: applying workspace filter workspace_id=%s", self.workspace_id)
+        return query.eq("workspace_id", self.workspace_id)
 
     def _inject_ws(self, data: dict) -> dict:
         """Add workspace_id to an insert/upsert payload when set."""
@@ -92,8 +100,12 @@ class Database:
         """
         if oec_only:
             return self._get_companies_oec_filtered(
-                status=status, tier=tier, tiers=tiers,
-                min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+                status=status,
+                tier=tier,
+                tiers=tiers,
+                min_pqs=min_pqs,
+                batch_id=batch_id,
+                limit=limit,
                 manufacturer_only=manufacturer_only,
             )
         query = self._filter_ws(self.client.table("companies").select("*"))
@@ -133,8 +145,12 @@ class Database:
         """
         if not self.workspace_id:
             return self.get_companies(
-                status=status, tier=tier, tiers=tiers,
-                min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+                status=status,
+                tier=tier,
+                tiers=tiers,
+                min_pqs=min_pqs,
+                batch_id=batch_id,
+                limit=limit,
                 manufacturer_only=manufacturer_only,
             )
 
@@ -147,7 +163,8 @@ class Database:
                 .eq("workspace_id", self.workspace_id)
                 .range(oec_offset, oec_offset + 999)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             oec_ids.update(r["company_id"] for r in page if r.get("company_id"))
             if len(page) < 1000:
@@ -155,10 +172,16 @@ class Database:
             oec_offset += 1000
 
         if not oec_ids:
-            logger.warning("_get_companies_oec_filtered: OEC table empty — falling back to standard query")
+            logger.warning(
+                "_get_companies_oec_filtered: OEC table empty — falling back to standard query"
+            )
             return self.get_companies(
-                status=status, tier=tier, tiers=tiers,
-                min_pqs=min_pqs, batch_id=batch_id, limit=limit,
+                status=status,
+                tier=tier,
+                tiers=tiers,
+                min_pqs=min_pqs,
+                batch_id=batch_id,
+                limit=limit,
                 manufacturer_only=manufacturer_only,
             )
 
@@ -187,7 +210,8 @@ class Database:
                 query.order("pqs_total", desc=True)
                 .range(fetch_offset, fetch_offset + fetch_size - 1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             for co in page:
                 if co.get("id") in oec_ids:
@@ -227,7 +251,11 @@ class Database:
 
     def get_company_by_name(self, name: str) -> dict | None:
         """Get a company by name (case-insensitive, workspace-scoped)."""
-        query = self._filter_ws(self.client.table("companies").select("id, name")).ilike("name", name).limit(1)
+        query = (
+            self._filter_ws(self.client.table("companies").select("id, name"))
+            .ilike("name", name)
+            .limit(1)
+        )
         result = query.execute()
         return result.data[0] if result.data else None
 
@@ -258,19 +286,27 @@ class Database:
             company_id = existing["id"]
             # Patch any null/missing fields on the existing record
             enrichable = [
-                "apollo_id", "domain", "website", "linkedin_url", "phone",
-                "employee_count", "revenue_range", "industry", "sub_sector",
-                "technology_stack", "pain_signals", "personalization_hooks",
-                "research_summary", "tier", "campaign_name",
-                "headcount_growth_6m", "funding_stage",
+                "apollo_id",
+                "domain",
+                "website",
+                "linkedin_url",
+                "phone",
+                "employee_count",
+                "revenue_range",
+                "industry",
+                "sub_sector",
+                "technology_stack",
+                "pain_signals",
+                "personalization_hooks",
+                "research_summary",
+                "tier",
+                "campaign_name",
+                "headcount_growth_6m",
+                "funding_stage",
             ]
             # Fetch current row to know which fields are already populated
             current = self.get_company(company_id) or {}
-            patch = {
-                k: data[k]
-                for k in enrichable
-                if k in data and data[k] and not current.get(k)
-            }
+            patch = {k: data[k] for k in enrichable if k in data and data[k] and not current.get(k)}
             if patch:
                 try:
                     self.client.table("companies").update(patch).eq("id", company_id).execute()
@@ -284,12 +320,7 @@ class Database:
 
     def update_company(self, company_id: str, data: dict) -> dict:
         """Update a company record."""
-        result = (
-            self.client.table("companies")
-            .update(data)
-            .eq("id", company_id)
-            .execute()
-        )
+        result = self.client.table("companies").update(data).eq("id", company_id).execute()
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -299,12 +330,7 @@ class Database:
     def get_contacts_for_company(self, company_id: str) -> list[dict]:
         """Get all contacts for a company."""
         query = self._filter_ws(self.client.table("contacts").select("*"))
-        result = (
-            query
-            .eq("company_id", company_id)
-            .order("is_decision_maker", desc=True)
-            .execute()
-        )
+        result = query.eq("company_id", company_id).order("is_decision_maker", desc=True).execute()
         return result.data
 
     def get_outbound_eligible_contacts_for_company(self, company_id: str) -> list[dict]:
@@ -319,7 +345,8 @@ class Database:
                 .select("contact_id")
                 .eq("company_id", company_id)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             if not eligible_rows:
                 return []
@@ -333,15 +360,17 @@ class Database:
             )
             return result.data or []
         except Exception as exc:
-            logger.warning("get_outbound_eligible_contacts_for_company fell back to contacts table: %s", exc)
+            logger.warning(
+                "get_outbound_eligible_contacts_for_company fell back to contacts table: %s", exc
+            )
             query = self._filter_ws(self.client.table("contacts").select("*"))
             return (
-                query
-                .eq("company_id", company_id)
+                query.eq("company_id", company_id)
                 .eq("is_outreach_eligible", True)
                 .order("is_decision_maker", desc=True)
                 .execute()
-                .data or []
+                .data
+                or []
             )
 
     def get_contact_by_apollo_id(self, apollo_id: str) -> dict | None:
@@ -384,9 +413,7 @@ class Database:
 
     def update_contact(self, contact_id: str, data: dict) -> dict:
         """Update a contact record."""
-        result = (
-            self.client.table("contacts").update(data).eq("id", contact_id).execute()
-        )
+        result = self.client.table("contacts").update(data).eq("id", contact_id).execute()
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -419,12 +446,12 @@ class Database:
     def get_pending_drafts(self, limit: int = 200) -> list[dict]:
         """Get outreach drafts pending approval."""
         query = self._filter_ws(
-            self.client.table("outreach_drafts")
-            .select("*, companies(name, tier, pqs_total), contacts(full_name, title, email, open_count, click_count)")
+            self.client.table("outreach_drafts").select(
+                "*, companies(name, tier, pqs_total), contacts(full_name, title, email, open_count, click_count)"
+            )
         )
         result = (
-            query
-            .eq("approval_status", "pending")
+            query.eq("approval_status", "pending")
             .is_("sent_at", "null")  # exclude already-sent ghosts regardless of approval_status
             .order("sequence_step", desc=True)
             .order("created_at", desc=True)
@@ -447,9 +474,7 @@ class Database:
 
         if company_id and contact_id and sequence_step is not None:
             existing = (
-                self._filter_ws(
-                    self.client.table("outreach_drafts").select("id, approval_status")
-                )
+                self._filter_ws(self.client.table("outreach_drafts").select("id, approval_status"))
                 .eq("company_id", company_id)
                 .eq("contact_id", contact_id)
                 .eq("sequence_step", sequence_step)
@@ -459,6 +484,7 @@ class Database:
             )
             if existing.data:
                 import logging
+
                 logging.getLogger(__name__).debug(
                     f"insert_outreach_draft: skipping duplicate for contact={contact_id} "
                     f"step={sequence_step} (existing id={existing.data[0]['id']}, "
@@ -482,10 +508,7 @@ class Database:
                 email = (contact_row.data[0].get("email") or "") if contact_row.data else ""
                 if email:
                     sibling_rows = (
-                        self.client.table("contacts")
-                        .select("id")
-                        .ilike("email", email)
-                        .execute()
+                        self.client.table("contacts").select("id").ilike("email", email).execute()
                     )
                     sibling_ids = [r["id"] for r in sibling_rows.data if r["id"] != contact_id]
                     if sibling_ids:
@@ -499,6 +522,7 @@ class Database:
                         )
                         if already_sent.data:
                             import logging as _log
+
                             _log.getLogger(__name__).info(
                                 "insert_outreach_draft: skipping step-1 draft — email %s already sent under a sibling contact",
                                 email,
@@ -512,12 +536,7 @@ class Database:
 
     def update_outreach_draft(self, draft_id: str, data: dict) -> dict:
         """Update an outreach draft (approve/reject/edit)."""
-        result = (
-            self.client.table("outreach_drafts")
-            .update(data)
-            .eq("id", draft_id)
-            .execute()
-        )
+        result = self.client.table("outreach_drafts").update(data).eq("id", draft_id).execute()
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -548,8 +567,9 @@ class Database:
     def get_active_sequences(self, due_before: str | None = None) -> list[dict]:
         """Get active engagement sequences, optionally filtered by due date."""
         query = self._filter_ws(
-            self.client.table("engagement_sequences")
-            .select("*, companies(name), contacts(full_name, email, open_count, click_count)")
+            self.client.table("engagement_sequences").select(
+                "*, companies(name), contacts(full_name, email, open_count, click_count)"
+            )
         ).eq("status", "active")
         if due_before:
             query = query.lte("next_action_at", due_before)
@@ -564,10 +584,7 @@ class Database:
     def update_engagement_sequence(self, sequence_id: str, data: dict) -> dict:
         """Update an engagement sequence."""
         result = (
-            self.client.table("engagement_sequences")
-            .update(data)
-            .eq("id", sequence_id)
-            .execute()
+            self.client.table("engagement_sequences").update(data).eq("id", sequence_id).execute()
         )
         return result.data[0] if result.data else {}
 
@@ -599,16 +616,17 @@ class Database:
         )
         return result.data
 
-    
     # ------------------------------------------------------------------
     # Action Queue
     # ------------------------------------------------------------------
 
     def get_action_queue(self, scheduled_date=None, action_type=None, status="pending", limit=100):
-        query = self._filter_ws(self.client.table("action_queue").select(
-            "*, companies(id, name, domain, tier, pqs_total, status, industry), "
-            "contacts(id, full_name, title, linkedin_url, linkedin_status, email)"
-        ))
+        query = self._filter_ws(
+            self.client.table("action_queue").select(
+                "*, companies(id, name, domain, tier, pqs_total, status, industry), "
+                "contacts(id, full_name, title, linkedin_url, linkedin_status, email)"
+            )
+        )
         if scheduled_date:
             query = query.eq("scheduled_date", scheduled_date)
         if action_type:
@@ -621,27 +639,36 @@ class Database:
         return result.data[0] if result.data else {}
 
     def insert_action_queue_batch(self, items):
-        if not items: return []
-        return self.client.table("action_queue").insert(
-            [self._inject_ws(i) for i in items]
-        ).execute().data
+        if not items:
+            return []
+        return (
+            self.client.table("action_queue")
+            .insert([self._inject_ws(i) for i in items])
+            .execute()
+            .data
+        )
 
     def update_action_queue_item(self, item_id, data):
         result = self.client.table("action_queue").update(data).eq("id", item_id).execute()
         return result.data[0] if result.data else {}
 
     def count_action_queue(self, scheduled_date, action_type=None, status=None):
-        query = self._filter_ws(
-            self.client.table("action_queue").select("id", count="exact")
-        ).eq("scheduled_date", scheduled_date)
-        if action_type: query = query.eq("action_type", action_type)
-        if status: query = query.eq("status", status)
+        query = self._filter_ws(self.client.table("action_queue").select("id", count="exact")).eq(
+            "scheduled_date", scheduled_date
+        )
+        if action_type:
+            query = query.eq("action_type", action_type)
+        if status:
+            query = query.eq("status", status)
         return query.execute().count or 0
 
     def get_queued_contact_ids(self, scheduled_date):
-        result = self._filter_ws(
-            self.client.table("action_queue").select("contact_id")
-        ).eq("scheduled_date", scheduled_date).in_("status", ["pending", "in_progress"]).execute()
+        result = (
+            self._filter_ws(self.client.table("action_queue").select("contact_id"))
+            .eq("scheduled_date", scheduled_date)
+            .in_("status", ["pending", "in_progress"])
+            .execute()
+        )
         return {r["contact_id"] for r in result.data if r.get("contact_id")}
 
     def insert_action_request(self, data):
@@ -653,20 +680,53 @@ class Database:
         return result.data[0] if result.data else {}
 
     def get_action_requests(self, limit=50):
-        return self._filter_ws(self.client.table("action_requests").select("*")).order("created_at", desc=True).limit(limit).execute().data
+        return (
+            self._filter_ws(self.client.table("action_requests").select("*"))
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+        )
 
     def get_daily_targets(self, effective_date=None):
         if effective_date:
-            ov = self._filter_ws(self.client.table("daily_targets").select("*")).eq("effective_date", effective_date).eq("is_active", True).execute().data
+            ov = (
+                self._filter_ws(self.client.table("daily_targets").select("*"))
+                .eq("effective_date", effective_date)
+                .eq("is_active", True)
+                .execute()
+                .data
+            )
             if ov:
                 ot = {r["action_type"] for r in ov}
-                df = self._filter_ws(self.client.table("daily_targets").select("*")).is_("effective_date", "null").eq("is_active", True).execute().data
+                df = (
+                    self._filter_ws(self.client.table("daily_targets").select("*"))
+                    .is_("effective_date", "null")
+                    .eq("is_active", True)
+                    .execute()
+                    .data
+                )
                 return ov + [d for d in df if d["action_type"] not in ot]
-        return self._filter_ws(self.client.table("daily_targets").select("*")).is_("effective_date", "null").eq("is_active", True).execute().data
+        return (
+            self._filter_ws(self.client.table("daily_targets").select("*"))
+            .is_("effective_date", "null")
+            .eq("is_active", True)
+            .execute()
+            .data
+        )
 
     def upsert_daily_target(self, action_type, target_count, effective_date=None):
-        data = {"action_type": action_type, "target_count": target_count, "effective_date": effective_date, "is_active": True}
-        result = self.client.table("daily_targets").upsert(self._inject_ws(data), on_conflict="action_type,effective_date,day_of_week").execute()
+        data = {
+            "action_type": action_type,
+            "target_count": target_count,
+            "effective_date": effective_date,
+            "is_active": True,
+        }
+        result = (
+            self.client.table("daily_targets")
+            .upsert(self._inject_ws(data), on_conflict="action_type,effective_date,day_of_week")
+            .execute()
+        )
         return result.data[0] if result.data else {}
 
     # ------------------------------------------------------------------
@@ -681,14 +741,17 @@ class Database:
     ) -> list[dict]:
         """Return contacts with enrichment_status = 'needs_enrichment' or 'stale'."""
         query = self._filter_ws(
-            self.client.table("contacts")
-            .select("*, companies(name, domain, tier, campaign_name)")
+            self.client.table("contacts").select("*, companies(name, domain, tier, campaign_name)")
         ).in_("enrichment_status", ["needs_enrichment", "stale"])
         if campaign_name or tier:
             # Filter via join — fetch all then filter in Python (Supabase limitation)
             rows = query.order("created_at").limit(500).execute().data
             if campaign_name:
-                rows = [r for r in rows if (r.get("companies") or {}).get("campaign_name") == campaign_name]
+                rows = [
+                    r
+                    for r in rows
+                    if (r.get("companies") or {}).get("campaign_name") == campaign_name
+                ]
             if tier:
                 rows = [r for r in rows if (r.get("companies") or {}).get("tier") == tier]
             return rows[:limit]
@@ -697,11 +760,13 @@ class Database:
     def get_stale_contacts(self, stale_days: int = 90, limit: int = 200) -> list[dict]:
         """Return enriched contacts whose enriched_at is older than stale_days."""
         from datetime import datetime, timedelta, timezone
+
         cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
         result = (
             self._filter_ws(
-                self.client.table("contacts")
-                .select("id, first_name, last_name, title, apollo_id, enriched_at, company_id")
+                self.client.table("contacts").select(
+                    "id, first_name, last_name, title, apollo_id, enriched_at, company_id"
+                )
             )
             .eq("enrichment_status", "enriched")
             .lt("enriched_at", cutoff)
@@ -737,9 +802,13 @@ class Database:
             data["phone"] = phone
 
         # Fetch current contact to check persona and recompute score
-        existing = self.client.table("contacts").select(
-            "title, persona_type, completeness_score, companies(tier)"
-        ).eq("id", contact_id).execute().data
+        existing = (
+            self.client.table("contacts")
+            .select("title, persona_type, completeness_score, companies(tier)")
+            .eq("id", contact_id)
+            .execute()
+            .data
+        )
         if existing:
             row = existing[0]
             if not row.get("persona_type"):
@@ -755,15 +824,19 @@ class Database:
     def mark_contact_enrichment_failed(self, contact_id: str, notes: str = "") -> dict:
         """Mark a contact's enrichment as permanently failed after 3 misses.
         Sets enrichment_attempts=3 so the pool selector won't re-pick this contact."""
-        return self.update_contact(contact_id, {
-            "enrichment_status": "failed",
-            "enrichment_source": None,
-            "enrichment_attempts": 3,
-        })
+        return self.update_contact(
+            contact_id,
+            {
+                "enrichment_status": "failed",
+                "enrichment_source": None,
+                "enrichment_attempts": 3,
+            },
+        )
 
     def mark_contacts_stale(self, stale_days: int = 90) -> int:
         """Flip enriched contacts older than stale_days to 'stale'. Returns count updated."""
         from datetime import datetime, timedelta, timezone
+
         cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
         result = (
             self.client.table("contacts")
@@ -790,6 +863,7 @@ class Database:
     ) -> dict:
         """Summarise Apollo credit usage over the last N days."""
         from datetime import datetime, timedelta, timezone
+
         since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
         query = (
             self.client.table("apollo_credit_events")
@@ -822,6 +896,7 @@ class Database:
     def count_sends_today(self, campaign_name: str) -> int:
         """Count emails sent today for a given campaign."""
         from datetime import date
+
         today = date.today().isoformat()
         result = (
             self.client.table("outreach_pace_log")
@@ -841,6 +916,7 @@ class Database:
     def is_contact_sent_today(self, contact_id: str) -> bool:
         """Return True if this contact has already been sent to today."""
         from datetime import date
+
         today = date.today().isoformat()
         result = (
             self.client.table("outreach_pace_log")
@@ -880,10 +956,7 @@ class Database:
 
     def count_companies_by_status(self) -> list[dict]:
         """Get company counts grouped by status."""
-        result = (
-            self._filter_ws(self.client.table("companies").select("status"))
-            .execute()
-        )
+        result = self._filter_ws(self.client.table("companies").select("status")).execute()
         counts: dict[str, int] = {}
         for row in result.data:
             status = row.get("status", "unknown")
@@ -922,14 +995,18 @@ class Database:
 
         self.client.table("contacts").update(updates).eq("id", contact_id).execute()
 
-        self.client.table("outreach_state_log").insert(self._inject_ws({
-            "contact_id": contact_id,
-            "from_state": from_state,
-            "to_state": new_state,
-            "channel": channel,
-            "instantly_event": instantly_event,
-            "metadata": metadata or {},
-        })).execute()
+        self.client.table("outreach_state_log").insert(
+            self._inject_ws(
+                {
+                    "contact_id": contact_id,
+                    "from_state": from_state,
+                    "to_state": new_state,
+                    "channel": channel,
+                    "instantly_event": instantly_event,
+                    "metadata": metadata or {},
+                }
+            )
+        ).execute()
 
     def get_contact_by_email(self, email: str) -> dict | None:
         """Look up a contact by email address.
@@ -939,8 +1016,7 @@ class Database:
         result = (
             self.client.table("contacts")
             .select(
-                "id, email, outreach_state, open_count, click_count, "
-                "company_id, priority_score"
+                "id, email, outreach_state, open_count, click_count, company_id, priority_score"
             )
             .eq("email", email)
             .limit(1)
@@ -1004,11 +1080,13 @@ class Database:
         """
         from datetime import datetime, timezone
 
-        self.client.table("companies").update({
-            "outreach_active": True,
-            "primary_contact_id": contact_id,
-            "outreach_started_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", company_id).execute()
+        self.client.table("companies").update(
+            {
+                "outreach_active": True,
+                "primary_contact_id": contact_id,
+                "outreach_started_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", company_id).execute()
 
     # ------------------------------------------------------------------
     # API costs summary (existing method continues below)
@@ -1052,12 +1130,15 @@ class Database:
     def update_company_intent_score(self, company_id: str, score: int) -> None:
         """Update the cached intent score on the company record."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
-        self.client.table("companies").update({
-            "intent_score": score,
-            "intent_score_updated_at": now,
-            "last_intent_signal_at": now,
-        }).eq("id", company_id).execute()
+        self.client.table("companies").update(
+            {
+                "intent_score": score,
+                "intent_score_updated_at": now,
+                "last_intent_signal_at": now,
+            }
+        ).eq("id", company_id).execute()
 
     # ------------------------------------------------------------------
     # API costs summary (existing method continues below)

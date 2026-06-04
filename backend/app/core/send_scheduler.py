@@ -195,10 +195,20 @@ def compute_schedule(
     # pending_followups is a mutable list we add to as chains advance
     pending_followups = followups
 
+    def _business_days_since_campaign_start(d: date) -> int:
+        """Count business days elapsed from CAMPAIGN_START to d (inclusive of start, exclusive of d)."""
+        lo, hi = (CAMPAIGN_START, d) if d >= CAMPAIGN_START else (d, CAMPAIGN_START)
+        bdays = sum(1 for i in range((hi - lo).days) if (lo + timedelta(days=i)).weekday() < 5)
+        return bdays if d >= CAMPAIGN_START else -bdays
+
     day = start
     for day_idx in range(horizon_business_days):
         day = _next_business_day(day)
-        cap = ramp_cap(day_idx, full_cap)
+        # Pass business days since CAMPAIGN_START (anchored in real calendar time),
+        # not the loop index which restarts at 0 on every recompute and would
+        # reset the ramp to week-1 caps indefinitely after the campaign starts.
+        bday_since_start = _business_days_since_campaign_start(day)
+        cap = ramp_cap(max(0, bday_since_start), full_cap)
         used_companies: set[str] = set()
         mailbox_load: dict[str, int] = defaultdict(int)
         placed = 0
@@ -366,6 +376,49 @@ def validate_schedule(slots: list[Slot], sent_history: dict[str, dict[int, date]
 # These functions touch Supabase via the project Database client. The pure
 # algorithm above stays side-effect-free for testing/dry-run.
 
+# ---------------------------------------------------------------------------
+# Postgres advisory lock — single-writer invariant (SDP#1)
+# ---------------------------------------------------------------------------
+# Fixed lock keys derived from the job names. Using the same key across all
+# Railway dynos ensures exactly one process runs recompute or enqueue at a time.
+# Format: pg_advisory_lock(key) — session-level (auto-released on disconnect).
+import hashlib as _hashlib
+
+_LOCK_KEY_RECOMPUTE: int = int(_hashlib.md5(b"prospectiq:recompute").hexdigest()[:8], 16)
+_LOCK_KEY_ENQUEUE: int = int(_hashlib.md5(b"prospectiq:enqueue").hexdigest()[:8], 16)
+
+
+def _try_acquire_advisory_lock(db, lock_key: int) -> bool:
+    """Attempt a non-blocking Postgres session advisory lock.
+
+    Returns True if the lock was acquired (this process is the single writer).
+    Returns False if another process already holds it — caller should log and return.
+    The lock is automatically released when the Postgres connection closes.
+    """
+    try:
+        result = db.client.rpc("pg_try_advisory_lock", {"key": lock_key}).execute()
+        return bool(result.data)
+    except Exception as exc:
+        # If the RPC call itself fails, log and allow the caller to proceed to
+        # avoid a stuck scheduler. The advisory lock is defence-in-depth; the
+        # idempotent schedule + atomic queue claim are the primary safety net.
+        logger.warning(
+            "advisory_lock: pg_try_advisory_lock key=%d failed: %s — proceeding without lock",
+            lock_key,
+            exc,
+        )
+        return True
+
+
+def _release_advisory_lock(db, lock_key: int) -> None:
+    try:
+        db.client.rpc("pg_advisory_unlock", {"key": lock_key}).execute()
+    except Exception as exc:
+        logger.debug(
+            "advisory_lock: pg_advisory_unlock key=%d failed (non-fatal): %s", lock_key, exc
+        )
+
+
 # Reply intents that PAUSE the sequence for human review (genuine human replies).
 # OOO / bounce / unsubscribe are NOT in here: OOO keeps the sequence running,
 # bounce + unsubscribe are handled by the existing suppression path.
@@ -531,10 +584,22 @@ def recompute_and_persist(
 
     Idempotent: deletes existing 'scheduled' (future, not-yet-enqueued) rows and
     writes a fresh plan. Already-enqueued/sent rows are left intact.
+
+    Acquires a Postgres session advisory lock before mutating state so that two
+    Railway dynos running the nightly recompute cron cannot interleave and produce
+    a corrupt (doubled) schedule. A process that cannot acquire the lock skips the
+    run and logs a warning — the schedule from the previous run remains valid.
     Returns a summary dict.
     """
     import uuid
     from datetime import datetime, timezone
+
+    if not _try_acquire_advisory_lock(db, _LOCK_KEY_RECOMPUTE):
+        logger.warning(
+            "recompute_and_persist: advisory lock held by another process — skipping (workspace=%s)",
+            workspace_id,
+        )
+        return {"persisted": False, "skipped": True, "reason": "advisory_lock_held"}
 
     if start_date is None:
         # next business day in Chicago terms (UTC date is fine at our granularity)
@@ -554,57 +619,62 @@ def recompute_and_persist(
     violations = validate_schedule(
         slots, {c.contact_id: dict(sent_hist.get(c.contact_id, {})) for c in contacts}
     )
-    if violations:
-        # Do not persist a schedule that fails its own self-check.
-        logger.error("recompute_and_persist ABORTED — %d constraint violations", len(violations))
+    try:
+        if violations:
+            # Do not persist a schedule that fails its own self-check.
+            logger.error(
+                "recompute_and_persist ABORTED — %d constraint violations", len(violations)
+            )
+            return {
+                "persisted": False,
+                "violations": violations[:20],
+                "slots": len(slots),
+                "warnings": len(warnings),
+            }
+
+        run_id = str(uuid.uuid4())
+        # Clear existing not-yet-enqueued schedule rows for this workspace.
+        db.client.table("send_schedule").delete().eq("workspace_id", workspace_id).eq(
+            "status", "scheduled"
+        ).execute()
+
+        rows = [
+            {
+                "draft_id": s.draft_id,
+                "contact_id": s.contact_id,
+                "company_id": s.company_id,
+                "workspace_id": workspace_id,
+                "sequence_step": s.sequence_step,
+                "scheduled_date": s.scheduled_date.isoformat(),
+                "sender_email": s.sender_email,
+                "slot_order": s.slot_order,
+                "status": "scheduled",
+                "schedule_run_id": run_id,
+            }
+            for s in slots
+        ]
+        # batch insert (chunks of 500)
+        inserted = 0
+        for i in range(0, len(rows), 500):
+            chunk = rows[i : i + 500]
+            try:
+                db.client.table("send_schedule").upsert(chunk, on_conflict="draft_id").execute()
+                inserted += len(chunk)
+            except Exception as exc:
+                logger.error("send_schedule insert chunk failed: %s", exc)
+
         return {
-            "persisted": False,
-            "violations": violations[:20],
-            "slots": len(slots),
+            "persisted": True,
+            "run_id": run_id,
+            "slots": inserted,
+            "contacts": len(contacts),
             "warnings": len(warnings),
+            "unscheduled_warnings": warnings[:20],
+            "full_cap": full_cap,
+            "start_date": start_date.isoformat(),
         }
-
-    run_id = str(uuid.uuid4())
-    # Clear existing not-yet-enqueued schedule rows for this workspace.
-    db.client.table("send_schedule").delete().eq("workspace_id", workspace_id).eq(
-        "status", "scheduled"
-    ).execute()
-
-    rows = [
-        {
-            "draft_id": s.draft_id,
-            "contact_id": s.contact_id,
-            "company_id": s.company_id,
-            "workspace_id": workspace_id,
-            "sequence_step": s.sequence_step,
-            "scheduled_date": s.scheduled_date.isoformat(),
-            "sender_email": s.sender_email,
-            "slot_order": s.slot_order,
-            "status": "scheduled",
-            "schedule_run_id": run_id,
-        }
-        for s in slots
-    ]
-    # batch insert (chunks of 500)
-    inserted = 0
-    for i in range(0, len(rows), 500):
-        chunk = rows[i : i + 500]
-        try:
-            db.client.table("send_schedule").upsert(chunk, on_conflict="draft_id").execute()
-            inserted += len(chunk)
-        except Exception as exc:
-            logger.error("send_schedule insert chunk failed: %s", exc)
-
-    return {
-        "persisted": True,
-        "run_id": run_id,
-        "slots": inserted,
-        "contacts": len(contacts),
-        "warnings": len(warnings),
-        "unscheduled_warnings": warnings[:20],
-        "full_cap": full_cap,
-        "start_date": start_date.isoformat(),
-    }
+    finally:
+        _release_advisory_lock(db, _LOCK_KEY_RECOMPUTE)
 
 
 # Reviewer attribution for schedule-driven approval. The forward schedule is the
@@ -620,9 +690,26 @@ def enqueue_todays_schedule(
     """Move today's scheduled slots into outbound_queue, in slot order, approving
     each draft on enqueue (scheduling IS the approval — every gate was satisfied at
     schedule time). The existing dispatch_loop then drains the queue and sends.
-    This is the only daily send-time action — no selection logic."""
+    This is the only daily send-time action — no selection logic.
+
+    Acquires a Postgres advisory lock to prevent two dynos from double-enqueuing
+    today's slots (which would result in duplicate outbound_queue rows and
+    double-sends for each draft).
+    """
     from datetime import datetime, timezone
 
+    if not _try_acquire_advisory_lock(db, _LOCK_KEY_ENQUEUE):
+        logger.warning(
+            "enqueue_todays_schedule: advisory lock held by another process — skipping (workspace=%s)",
+            workspace_id,
+        )
+        return {
+            "date": None,
+            "enqueued": 0,
+            "due": 0,
+            "skipped": True,
+            "reason": "advisory_lock_held",
+        }
     if today is None:
         today = datetime.now(timezone.utc).date()
     if reviewer_id is None:
@@ -640,52 +727,51 @@ def enqueue_todays_schedule(
         except Exception:
             reviewer_id = DEFAULT_SCHEDULE_REVIEWER_ID
 
-    now_iso = datetime.now(timezone.utc).isoformat()
-    due = (
-        db.client.table("send_schedule")
-        .select("id,draft_id,sequence_step,slot_order")
-        .eq("workspace_id", workspace_id)
-        .eq("status", "scheduled")
-        .eq("scheduled_date", today.isoformat())
-        .order("slot_order")
-        .execute()
-        .data
-        or []
-    )
-    enqueued = 0
-    for r in due:
-        priority = max(1, 6 - r["sequence_step"])
-        try:
-            # Approve the draft (satisfies approval_requires_reviewer) — only if not
-            # already sent. Scheduling is the approval gate.
-            db.client.table("outreach_drafts").update(
-                {
-                    "approval_status": "approved",
-                    "approved_by": reviewer_id,
-                    "reviewed_at": now_iso,
-                    "approved_at": now_iso,
-                }
-            ).eq("id", r["draft_id"]).is_("sent_at", "null").execute()
-            db.client.table("outbound_queue").insert(
-                {
-                    "draft_id": r["draft_id"],
-                    "workspace_id": workspace_id,
-                    "priority": priority,
-                    "retry_count": 0,
-                }
-            ).execute()
-            db.client.table("send_schedule").update({"status": "enqueued"}).eq(
-                "id", r["id"]
-            ).execute()
-            enqueued += 1
-        except Exception as exc:
-            logger.error("enqueue_todays_schedule draft=%s failed: %s", r["draft_id"], exc)
-    return {
-        "date": today.isoformat(),
-        "enqueued": enqueued,
-        "due": len(due),
-        "reviewer_id": reviewer_id,
-    }
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        due = (
+            db.client.table("send_schedule")
+            .select("id,draft_id,sequence_step,slot_order")
+            .eq("workspace_id", workspace_id)
+            .eq("status", "scheduled")
+            .eq("scheduled_date", today.isoformat())
+            .order("slot_order")
+            .execute()
+            .data
+            or []
+        )
+        enqueued = 0
+        for r in due:
+            priority = max(1, 6 - r["sequence_step"])
+            try:
+                # Use the approve_draft_and_enqueue RPC for atomic approval + queue insert.
+                # A non-transactional 3-step sequence (update + insert + update) leaves the
+                # draft approved-but-unqueued when the queue insert fails.
+                db.client.rpc(
+                    "approve_draft_and_enqueue",
+                    {
+                        "p_draft_id": r["draft_id"],
+                        "p_workspace_id": workspace_id,
+                        "p_status": "approved",
+                        "p_approved_at": now_iso,
+                        "p_edited_body": None,
+                        "p_priority": priority,
+                    },
+                ).execute()
+                db.client.table("send_schedule").update({"status": "enqueued"}).eq(
+                    "id", r["id"]
+                ).execute()
+                enqueued += 1
+            except Exception as exc:
+                logger.error("enqueue_todays_schedule draft=%s failed: %s", r["draft_id"], exc)
+        return {
+            "date": today.isoformat(),
+            "enqueued": enqueued,
+            "due": len(due),
+            "reviewer_id": reviewer_id,
+        }
+    finally:
+        _release_advisory_lock(db, _LOCK_KEY_ENQUEUE)
 
 
 def pause_contact_on_reply(db, workspace_id: str, contact_id: str, intent: str) -> dict:

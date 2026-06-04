@@ -55,6 +55,7 @@ class BatchResult:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -84,9 +85,7 @@ def _resolve_provider_message_id(db_client, draft_id: str) -> Optional[str]:
         if rows:
             return rows[0].get("resend_message_id") or None
     except Exception as exc:
-        logger.error(
-            "dispatch.resolve_provider_id FAILED draft_id=%s error=%s", draft_id, exc
-        )
+        logger.error("dispatch.resolve_provider_id FAILED draft_id=%s error=%s", draft_id, exc)
     return None
 
 
@@ -103,20 +102,29 @@ def _insert_send_attempt(
     Failure means the Resend call MUST NOT proceed.
     """
     try:
-        rows = db_client.table("send_attempts").insert({
-            "draft_id": draft_id,
-            "workspace_id": workspace_id,
-            "attempt_number": attempt_number,
-            "idempotency_key": idempotency_key,
-            "status": "DISPATCHED",
-            "dispatched_at": _now_iso(),
-        }).execute().data
+        rows = (
+            db_client.table("send_attempts")
+            .insert(
+                {
+                    "draft_id": draft_id,
+                    "workspace_id": workspace_id,
+                    "attempt_number": attempt_number,
+                    "idempotency_key": idempotency_key,
+                    "status": "DISPATCHED",
+                    "dispatched_at": _now_iso(),
+                }
+            )
+            .execute()
+            .data
+        )
         if rows:
             return rows[0]["id"]
     except Exception as exc:
         logger.error(
             "dispatch.insert_send_attempt FAILED draft_id=%s attempt=%d: %s",
-            draft_id, attempt_number, exc,
+            draft_id,
+            attempt_number,
+            exc,
         )
     return None
 
@@ -127,23 +135,25 @@ def _update_send_attempt(db_client, attempt_id: str, **fields) -> None:
     except Exception as exc:
         logger.error(
             "dispatch.update_send_attempt id=%s fields=%s error=%s",
-            attempt_id, list(fields.keys()), exc,
+            attempt_id,
+            list(fields.keys()),
+            exc,
         )
 
 
 def _release_queue_lock(db_client, queue_row_id: str) -> None:
     try:
-        db_client.table("outbound_queue").update({
-            "locked_by": None,
-            "locked_at": None,
-        }).eq("id", queue_row_id).execute()
+        db_client.table("outbound_queue").update(
+            {
+                "locked_by": None,
+                "locked_at": None,
+            }
+        ).eq("id", queue_row_id).execute()
     except Exception as exc:
         logger.error("dispatch.release_queue_lock id=%s error=%s", queue_row_id, exc)
 
 
-def _release_queue_lock_bump_retry(
-    db_client, queue_row_id: str, current_retry_count: int
-) -> None:
+def _release_queue_lock_bump_retry(db_client, queue_row_id: str, current_retry_count: int) -> None:
     """Release lock and increment retry_count after an assertion failure.
 
     attempt_number is derived as retry_count + 1. Without bumping retry_count,
@@ -153,15 +163,15 @@ def _release_queue_lock_bump_retry(
     and the row is picked up on the next scheduler tick.
     """
     try:
-        db_client.table("outbound_queue").update({
-            "locked_by": None,
-            "locked_at": None,
-            "retry_count": current_retry_count + 1,
-        }).eq("id", queue_row_id).execute()
+        db_client.table("outbound_queue").update(
+            {
+                "locked_by": None,
+                "locked_at": None,
+                "retry_count": current_retry_count + 1,
+            }
+        ).eq("id", queue_row_id).execute()
     except Exception as exc:
-        logger.error(
-            "dispatch.release_lock_bump_retry id=%s error=%s", queue_row_id, exc
-        )
+        logger.error("dispatch.release_lock_bump_retry id=%s error=%s", queue_row_id, exc)
 
 
 def _delete_queue_row(db_client, queue_row_id: str) -> None:
@@ -175,31 +185,41 @@ def _schedule_retry(db_client, queue_row: dict, new_retry_count: int) -> None:
     delay = _backoff_for(new_retry_count - 1)
     retry_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
     try:
-        db_client.table("outbound_queue").update({
-            "retry_count": new_retry_count,
-            "next_retry_at": retry_at,
-            "locked_by": None,
-            "locked_at": None,
-        }).eq("id", queue_row["id"]).execute()
+        db_client.table("outbound_queue").update(
+            {
+                "retry_count": new_retry_count,
+                "next_retry_at": retry_at,
+                "locked_by": None,
+                "locked_at": None,
+            }
+        ).eq("id", queue_row["id"]).execute()
         logger.info(
             "dispatch.retry_scheduled draft_id=%s retry_count=%d retry_at=%s",
-            queue_row["draft_id"], new_retry_count, retry_at,
+            queue_row["draft_id"],
+            new_retry_count,
+            retry_at,
         )
     except Exception as exc:
         logger.error(
             "dispatch.schedule_retry FAILED id=%s new_retry_count=%d error=%s",
-            queue_row["id"], new_retry_count, exc,
+            queue_row["id"],
+            new_retry_count,
+            exc,
         )
 
 
 def _mark_draft_dispatch_failed(db_client, draft_id: str) -> None:
     try:
-        db_client.table("outreach_drafts").update({
-            "approval_status": "dispatch_failed",
-        }).eq("id", draft_id).execute()
+        db_client.table("outreach_drafts").update(
+            {
+                "approval_status": "dispatch_failed",
+            }
+        ).eq("id", draft_id).execute()
     except Exception as exc:
         logger.error(
-            "dispatch.mark_draft_dispatch_failed draft_id=%s error=%s", draft_id, exc,
+            "dispatch.mark_draft_dispatch_failed draft_id=%s error=%s",
+            draft_id,
+            exc,
         )
 
 
@@ -207,15 +227,14 @@ def _mark_draft_dispatch_failed(db_client, draft_id: str) -> None:
 # Public: stale lock reclaim
 # ---------------------------------------------------------------------------
 
+
 def reclaim_stale_locks(db_client, workspace_id: str) -> int:
     """Clear distributed locks held longer than STALE_LOCK_MINUTES.
 
     Returns the number of rows reclaimed. Logs a warning for every reclaim
     so the count is visible in structured logs.
     """
-    stale_cutoff = (
-        datetime.now(timezone.utc) - timedelta(minutes=STALE_LOCK_MINUTES)
-    ).isoformat()
+    stale_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=STALE_LOCK_MINUTES)).isoformat()
     try:
         rows = (
             db_client.table("outbound_queue")
@@ -224,14 +243,16 @@ def reclaim_stale_locks(db_client, workspace_id: str) -> int:
             .not_.is_("locked_at", "null")
             .lt("locked_at", stale_cutoff)
             .execute()
-            .data or []
+            .data
+            or []
         )
         count = len(rows)
         if count:
             logger.warning(
-                "dispatch.stale_lock_reclaim workspace_id=%s reclaimed=%d "
-                "(locked_at < %s)",
-                workspace_id, count, stale_cutoff,
+                "dispatch.stale_lock_reclaim workspace_id=%s reclaimed=%d (locked_at < %s)",
+                workspace_id,
+                count,
+                stale_cutoff,
             )
         else:
             logger.debug(
@@ -242,7 +263,8 @@ def reclaim_stale_locks(db_client, workspace_id: str) -> int:
     except Exception as exc:
         logger.error(
             "dispatch.stale_lock_reclaim ERROR workspace_id=%s error=%s",
-            workspace_id, exc,
+            workspace_id,
+            exc,
         )
         return 0
 
@@ -250,6 +272,7 @@ def reclaim_stale_locks(db_client, workspace_id: str) -> int:
 # ---------------------------------------------------------------------------
 # Public: dispatch loop
 # ---------------------------------------------------------------------------
+
 
 def dispatch_workspace(
     db_client,
@@ -276,7 +299,8 @@ def dispatch_workspace(
         logger.debug(
             "dispatch.concurrency_limit_hit workspace_id=%s instance=%s — "
             "waiting for slot (max 3 simultaneous Supabase operations)",
-            workspace_id, instance_id,
+            workspace_id,
+            instance_id,
         )
         _DISPATCH_CONCURRENCY.acquire(blocking=True)
 
@@ -305,15 +329,24 @@ def _dispatch_workspace_inner(
     from backend.app.agents.engagement import EngagementAgent
 
     try:
-        claimed = db_client.rpc("claim_outbound_queue_batch", {
-            "p_workspace_id": workspace_id,
-            "p_instance_id": instance_id,
-            "p_batch_size": batch_size,
-        }).execute().data or []
+        claimed = (
+            db_client.rpc(
+                "claim_outbound_queue_batch",
+                {
+                    "p_workspace_id": workspace_id,
+                    "p_instance_id": instance_id,
+                    "p_batch_size": batch_size,
+                },
+            )
+            .execute()
+            .data
+            or []
+        )
     except Exception as exc:
         logger.error(
             "dispatch.claim_batch FAILED workspace_id=%s error=%s",
-            workspace_id, exc,
+            workspace_id,
+            exc,
         )
         result.errors += 1
         return result
@@ -321,13 +354,16 @@ def _dispatch_workspace_inner(
     if not claimed:
         logger.debug(
             "dispatch.claim_batch workspace_id=%s instance=%s no eligible rows",
-            workspace_id, instance_id,
+            workspace_id,
+            instance_id,
         )
         return result
 
     logger.info(
         "dispatch.claim_batch workspace_id=%s instance=%s claimed=%d",
-        workspace_id, instance_id, len(claimed),
+        workspace_id,
+        instance_id,
+        len(claimed),
     )
 
     agent = EngagementAgent(workspace_id=workspace_id)
@@ -337,7 +373,11 @@ def _dispatch_workspace_inner(
         queue_row_id = queue_row["id"]
         retry_count = queue_row.get("retry_count", 0)
         attempt_number = retry_count + 1
-        idempotency_key = f"{draft_id}:{attempt_number}"
+        # Stable idempotency key: keyed on draft_id only (not attempt_number) so
+        # Resend's 24-hour dedup window covers all retry attempts for the same draft.
+        # A per-attempt key would generate a new key on every retry, defeating dedup
+        # and emailing the prospect twice when a send times out then retries.
+        idempotency_key = draft_id
 
         result.dispatched += 1
 
@@ -371,12 +411,15 @@ def _dispatch_workspace_inner(
         except Exception as exc:
             logger.error(
                 "dispatch.dispatch_queued_draft EXCEPTION draft_id=%s error=%s",
-                draft_id, exc, exc_info=True,
+                draft_id,
+                exc,
+                exc_info=True,
             )
             new_retry_count = retry_count + 1
             if new_retry_count >= max_retries:
                 _update_send_attempt(
-                    db_client, attempt_id,
+                    db_client,
+                    attempt_id,
                     status="PERMANENTLY_FAILED",
                     failure_code="exception",
                     failure_reason=f"max_retries_exceeded: {str(exc)[:300]}",
@@ -387,7 +430,8 @@ def _dispatch_workspace_inner(
                 result.permanently_failed += 1
             else:
                 _update_send_attempt(
-                    db_client, attempt_id,
+                    db_client,
+                    attempt_id,
                     status="FAILED",
                     failure_code="exception",
                     failure_reason=str(exc)[:500],
@@ -399,7 +443,8 @@ def _dispatch_workspace_inner(
 
         if outcome.status == "DELIVERED":
             _update_send_attempt(
-                db_client, attempt_id,
+                db_client,
+                attempt_id,
                 status="DELIVERED",
                 provider_message_id=outcome.provider_message_id,
                 resolved_at=_now_iso(),
@@ -409,7 +454,8 @@ def _dispatch_workspace_inner(
 
         elif outcome.status == "ASSERTION_FAILED":
             _update_send_attempt(
-                db_client, attempt_id,
+                db_client,
+                attempt_id,
                 status="FAILED",
                 failure_code="assertion_failed",
                 failure_reason=(outcome.failure_reason or "pre-send assertion blocked")[:500],
@@ -422,7 +468,8 @@ def _dispatch_workspace_inner(
             new_retry_count = retry_count + 1
             if new_retry_count >= max_retries:
                 _update_send_attempt(
-                    db_client, attempt_id,
+                    db_client,
+                    attempt_id,
                     status="PERMANENTLY_FAILED",
                     failure_code=outcome.failure_code,
                     failure_reason=f"max_retries_exceeded: {outcome.failure_reason}",
@@ -432,12 +479,14 @@ def _dispatch_workspace_inner(
                 _delete_queue_row(db_client, queue_row_id)
                 logger.warning(
                     "dispatch.max_retries_exceeded draft_id=%s retry_count=%d",
-                    draft_id, new_retry_count,
+                    draft_id,
+                    new_retry_count,
                 )
                 result.permanently_failed += 1
             else:
                 _update_send_attempt(
-                    db_client, attempt_id,
+                    db_client,
+                    attempt_id,
                     status="FAILED",
                     failure_code=outcome.failure_code,
                     failure_reason=outcome.failure_reason,
@@ -448,7 +497,8 @@ def _dispatch_workspace_inner(
 
         elif outcome.status == "PERMANENTLY_FAILED":
             _update_send_attempt(
-                db_client, attempt_id,
+                db_client,
+                attempt_id,
                 status="PERMANENTLY_FAILED",
                 failure_code=outcome.failure_code,
                 failure_reason=outcome.failure_reason,
@@ -472,10 +522,14 @@ def _dispatch_workspace_inner(
                 logger.warning(
                     "dispatch.already_delivered_drain draft_id=%s queue_row=%s "
                     "provider_id=%s reason=%s — email was sent; draining stuck queue row",
-                    draft_id, queue_row_id, _provider_id, outcome.failure_reason,
+                    draft_id,
+                    queue_row_id,
+                    _provider_id,
+                    outcome.failure_reason,
                 )
                 _update_send_attempt(
-                    db_client, attempt_id,
+                    db_client,
+                    attempt_id,
                     status="DELIVERED",
                     provider_message_id=_provider_id,
                     failure_reason=f"already_delivered_drain: {outcome.failure_reason}",
@@ -489,10 +543,13 @@ def _dispatch_workspace_inner(
                 logger.error(
                     "dispatch.lost_send draft_id=%s queue_row=%s reason=%s — "
                     "sent_at set but resend_message_id is NULL; email was never dispatched",
-                    draft_id, queue_row_id, outcome.failure_reason,
+                    draft_id,
+                    queue_row_id,
+                    outcome.failure_reason,
                 )
                 _update_send_attempt(
-                    db_client, attempt_id,
+                    db_client,
+                    attempt_id,
                     status="FAILED",
                     failure_code="lost_send_pre_claim_crash",
                     failure_reason="sent_at_set_but_resend_never_called",

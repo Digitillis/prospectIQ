@@ -14,8 +14,7 @@ from time import time
 from fastapi import FastAPI
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 # Suppress chatty HTTP internals that flood Railway logs and block the scheduler thread
 for _noisy in ("hpack", "httpcore", "httpx", "h2", "h11"):
@@ -26,11 +25,13 @@ for _noisy in ("hpack", "httpcore", "httpx", "h2", "h11"):
 # ---------------------------------------------------------------------------
 try:
     from backend.app.core.config import get_settings as _get_settings
+
     _s = _get_settings()
     if _s.sentry_dsn:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
+
         sentry_sdk.init(
             dsn=_s.sentry_dsn,
             environment=_s.sentry_environment,
@@ -50,9 +51,49 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from backend.app.api.routes import companies, approvals, pipeline, analytics, webhooks, settings, actions, action_queue, contacts, today, content, events, sequences, monitoring, workspaces, invite, billing, signup, threads, intelligence, outreach_agent, hitl, personalization, auth as auth_routes, voice_of_prospect, multi_thread, ghostwriting, crm, meetings, deals, targeting, intent_signals, memory, llm_qualify, composer, onboarding
+from fastapi import Depends
+
+from backend.app.api.routes import (
+    companies,
+    approvals,
+    pipeline,
+    analytics,
+    webhooks,
+    settings,
+    actions,
+    action_queue,
+    contacts,
+    today,
+    content,
+    events,
+    sequences,
+    monitoring,
+    workspaces,
+    invite,
+    billing,
+    signup,
+    threads,
+    intelligence,
+    outreach_agent,
+    hitl,
+    personalization,
+    auth as auth_routes,
+    voice_of_prospect,
+    multi_thread,
+    ghostwriting,
+    crm,
+    meetings,
+    deals,
+    targeting,
+    intent_signals,
+    memory,
+    llm_qualify,
+    composer,
+    onboarding,
+)
 from backend.app.api.routes import quality_dashboard
 from backend.app.webhooks import instantly as instantly_webhooks
+from backend.app.core.auth import get_current_user
 from backend.app.core.workspace_middleware import WorkspaceMiddleware
 
 logger = logging.getLogger(__name__)
@@ -74,6 +115,7 @@ def _schedule_pipeline_advance(delay_seconds: int = 60) -> None:
         return
     try:
         from datetime import datetime, timezone, timedelta
+
         _scheduler.add_job(
             _run_pipeline_advance,
             "date",
@@ -87,6 +129,7 @@ def _schedule_pipeline_advance(delay_seconds: int = 60) -> None:
 
 def _pipeline_advance_workspace(ws: dict) -> None:
     from backend.app.core.pipeline_orchestrator import PipelineOrchestrator
+
     result = PipelineOrchestrator(workspace_id=ws["id"]).advance()
     status = result.get("pipeline_status", {})
     actions = result.get("actions", [])
@@ -104,6 +147,7 @@ def _run_pipeline_advance() -> None:
     """Heartbeat + reactive trigger: advance the pipeline for all active workspaces."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_pipeline_advance_workspace, "pipeline_advance")
     except Exception as exc:
         logger.error("Pipeline advance failed: %s", exc, exc_info=True)
@@ -112,6 +156,7 @@ def _run_pipeline_advance() -> None:
 # ---------------------------------------------------------------------------
 # Rate limiting middleware
 # ---------------------------------------------------------------------------
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Simple in-memory rate limiter. 100 requests per minute per IP."""
@@ -126,7 +171,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in ("/health", "/healthz"):
             return await call_next(request)
 
-        ip = request.client.host if request.client else "unknown"
+        # Prefer X-Forwarded-For (set by Railway's proxy) so rate limits apply to the
+        # originating client IP rather than the proxy IP. Only the first (leftmost)
+        # value is used; it's the client-supplied address and the most reliable signal.
+        xff = request.headers.get("X-Forwarded-For", "")
+        ip = (
+            xff.split(",")[0].strip()
+            if xff
+            else (request.client.host if request.client else "unknown")
+        )
         now = time()
         window = now - 60
 
@@ -147,10 +200,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 # Background scheduler for engagement sequence processing
 # ---------------------------------------------------------------------------
 
+
 def _run_health_snapshot() -> None:
     """Every-15-min job: capture full system health snapshot."""
     try:
         from backend.app.agents.monitoring import HealthSnapshotAgent
+
         HealthSnapshotAgent().capture()
     except Exception as e:
         logger.error(f"Scheduled health_snapshot failed: {e}")
@@ -172,12 +227,16 @@ def _run_pipeline_qc() -> None:
     try:
         import sys
         import os
-        script = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts", "pipeline_qc.py")
+
+        script = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "scripts", "pipeline_qc.py"
+        )
         script = os.path.abspath(script)
         if os.path.exists(script):
             import importlib.util
+
             spec = importlib.util.spec_from_file_location("pipeline_qc", script)
-            mod  = importlib.util.module_from_spec(spec)
+            mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             mod.run_qc()
         else:
@@ -193,9 +252,11 @@ def _send_approved_workspace(ws: dict) -> None:
     # That mismatch caused Railway ticks to be gated out after ~125 sends/day.
     # EngagementAgent._load_send_config + _count_sent_today enforce the correct limit.
     from backend.app.core.config import get_settings
+
     if not get_settings().send_enabled:
         return
     from backend.app.agents.engagement import EngagementAgent
+
     agent = EngagementAgent(workspace_id=ws["id"])
     result = agent.run(action="send_approved")
     logger.info("Send [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
@@ -214,10 +275,12 @@ def _send_approved_workspace(ws: dict) -> None:
 def _dispatch_workspace(ws: dict) -> None:
     """Dispatch one batch from outbound_queue for a single workspace (PR G path)."""
     from backend.app.core.config import get_settings
+
     if not get_settings().send_enabled:
         return
     from backend.app.core.dispatch_scheduler import dispatch_workspace
     from backend.app.core.database import get_supabase_client
+
     db_client = get_supabase_client()
     try:
         send_cfg = (
@@ -226,7 +289,8 @@ def _dispatch_workspace(ws: dict) -> None:
             .eq("workspace_id", ws["id"])
             .limit(1)
             .execute()
-            .data or [{}]
+            .data
+            or [{}]
         )[0]
     except Exception:
         send_cfg = {}
@@ -253,7 +317,7 @@ def _dispatch_workspace(ws: dict) -> None:
     if result.delivered > 0:
         _schedule_pipeline_advance(delay_seconds=60)
         try:
-            _schedule_post_send_intent_refresh(ws["id"], db, lookback_minutes=15)
+            _schedule_post_send_intent_refresh(ws["id"], db_client, lookback_minutes=15)
         except Exception as exc:
             logger.debug("post-send intent refresh scheduling failed: %s", exc)
 
@@ -262,16 +326,17 @@ def _reclaim_stale_locks_workspace(ws: dict) -> None:
     """Reclaim stale outbound_queue locks for a single workspace."""
     from backend.app.core.dispatch_scheduler import reclaim_stale_locks
     from backend.app.core.database import get_supabase_client
+
     db_client = get_supabase_client()
     count = reclaim_stale_locks(db_client, ws["id"])
     if count:
-        logger.warning(
-            "Stale lock reclaim [%s]: %d rows released", ws["name"], count
-        )
+        logger.warning("Stale lock reclaim [%s]: %d rows released", ws["name"], count)
 
 
 def _schedule_post_send_intent_refresh(
-    workspace_id: str, db, lookback_minutes: int = 15,
+    workspace_id: str,
+    db,
+    lookback_minutes: int = 15,
 ) -> None:
     """Schedule a one-shot intent refresh in 24h for companies just emailed.
 
@@ -281,6 +346,7 @@ def _schedule_post_send_intent_refresh(
     if _scheduler is None:
         return
     from datetime import datetime, timezone, timedelta
+
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)).isoformat()
     try:
         rows = (
@@ -289,7 +355,8 @@ def _schedule_post_send_intent_refresh(
             .eq("workspace_id", workspace_id)
             .gte("sent_at", cutoff)
             .execute()
-            .data or []
+            .data
+            or []
         )
     except Exception:
         return
@@ -308,7 +375,8 @@ def _schedule_post_send_intent_refresh(
         )
         logger.info(
             "Scheduled 24h post-send intent refresh for %d companies (ws=%s)",
-            len(company_ids), workspace_id,
+            len(company_ids),
+            workspace_id,
         )
     except Exception as exc:
         logger.debug("post-send intent refresh add_job failed: %s", exc)
@@ -321,6 +389,7 @@ def _run_send_approved() -> None:
     """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_send_approved_workspace, "send_approved")
     except Exception as e:
         logger.error(f"Scheduled send_approved failed: {e}")
@@ -334,6 +403,7 @@ def _run_dispatch_loop() -> None:
     """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_dispatch_workspace, "dispatch_loop")
     except Exception as exc:
         logger.error("Scheduled dispatch_loop failed: %s", exc)
@@ -343,10 +413,16 @@ def _enqueue_schedule_workspace(ws: dict) -> None:
     """Move today's forward-schedule slice into outbound_queue for one workspace."""
     from backend.app.core.send_scheduler import enqueue_todays_schedule
     from backend.app.core.database import Database
+
     try:
         res = enqueue_todays_schedule(Database(workspace_id=ws["id"]), ws["id"])
-        logger.info("Schedule enqueue [%s]: enqueued=%d due=%d (%s)",
-                    ws.get("name", ws["id"]), res["enqueued"], res["due"], res["date"])
+        logger.info(
+            "Schedule enqueue [%s]: enqueued=%d due=%d (%s)",
+            ws.get("name", ws["id"]),
+            res["enqueued"],
+            res["due"],
+            res["date"],
+        )
     except Exception as exc:
         logger.error("enqueue_schedule [%s] failed: %s", ws["id"], exc)
 
@@ -356,6 +432,7 @@ def _run_enqueue_schedule() -> None:
     Enqueues today's pre-computed schedule slice. No selection logic at send time."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_enqueue_schedule_workspace, "enqueue_schedule")
     except Exception as exc:
         logger.error("Scheduled enqueue_schedule failed: %s", exc)
@@ -365,14 +442,23 @@ def _recompute_schedule_workspace(ws: dict) -> None:
     """Rebuild the forward schedule from live state for one workspace."""
     from backend.app.core.send_scheduler import recompute_and_persist
     from backend.app.core.database import Database
+
     try:
         res = recompute_and_persist(Database(workspace_id=ws["id"]), ws["id"])
         if res.get("persisted"):
-            logger.info("Schedule recompute [%s]: slots=%d contacts=%d warnings=%d",
-                        ws.get("name", ws["id"]), res["slots"], res["contacts"], res["warnings"])
+            logger.info(
+                "Schedule recompute [%s]: slots=%d contacts=%d warnings=%d",
+                ws.get("name", ws["id"]),
+                res["slots"],
+                res["contacts"],
+                res["warnings"],
+            )
         else:
-            logger.error("Schedule recompute [%s] ABORTED: %d violations",
-                         ws.get("name", ws["id"]), len(res.get("violations", [])))
+            logger.error(
+                "Schedule recompute [%s] ABORTED: %d violations",
+                ws.get("name", ws["id"]),
+                len(res.get("violations", [])),
+            )
     except Exception as exc:
         logger.error("recompute_schedule [%s] failed: %s", ws["id"], exc)
 
@@ -383,6 +469,7 @@ def _run_schedule_recompute() -> None:
     changes, and newly generated drafts. Idempotent and self-validating."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_recompute_schedule_workspace, "schedule_recompute")
     except Exception as exc:
         logger.error("Scheduled schedule_recompute failed: %s", exc)
@@ -395,8 +482,10 @@ def _in_send_window(now_chicago=None) -> bool:
     The upper bound is 11:00 inclusive because the cron's last tick is 11:00.
     """
     from datetime import datetime as _dt
+
     try:
         from zoneinfo import ZoneInfo
+
         tz = ZoneInfo("America/Chicago")
     except Exception:
         return False
@@ -408,22 +497,29 @@ def _in_send_window(now_chicago=None) -> bool:
 
 def _dispatch_catchup_if_in_window() -> None:
     """One-shot startup catch-up: if the app boots inside the send window,
-    run a dispatch immediately instead of waiting for the next :00/:30 cron tick.
+    run an enqueue + dispatch immediately instead of waiting for the next cron tick.
 
     Why this exists: the in-memory jobstore loses all scheduled-job state on a
     process restart, so a Railway dyno restart mid-window would otherwise drop
     every tick until the next one fires (and could miss that one too on a second
-    restart). This makes a fresh process drain the queue right away if it is
-    supposed to be sending now. Idempotent: the atomic queue claim + sent_at
-    guard prevent any double-send if a normal tick also fires.
+    restart). This makes a fresh process:
+      1. Enqueue any today-scheduled but not-yet-enqueued slots (in case the
+         7:55am enqueue cron was missed by the restart).
+      2. Drain the queue right away if it is supposed to be sending now.
+    Both steps are idempotent: the advisory lock in enqueue_todays_schedule and
+    the atomic queue claim + sent_at guard in dispatch prevent double-sends.
     """
     if not _in_send_window():
         logger.info("dispatch_catchup: not in send window — skipping startup catch-up")
         return
     logger.warning(
         "dispatch_catchup: app started inside send window — running immediate "
-        "dispatch to recover any tick missed during restart"
+        "enqueue+dispatch to recover any tick missed during restart"
     )
+    try:
+        _run_enqueue_schedule()
+    except Exception as exc:
+        logger.error("dispatch_catchup: enqueue_schedule failed: %s", exc)
     _run_dispatch_loop()
 
 
@@ -439,6 +535,7 @@ def _run_dispatch_heartbeat_check() -> None:
         from backend.app.core.database import get_supabase_client
         from backend.app.utils.notifications import notify_slack
         from datetime import datetime as _dt, timezone as _tz
+
         db_client = get_supabase_client()
 
         # Eligible queue items: unlocked, due now or never-scheduled
@@ -448,18 +545,29 @@ def _run_dispatch_heartbeat_check() -> None:
             .select("id, next_retry_at, locked_by")
             .is_("locked_by", "null")
             .execute()
-            .data or []
+            .data
+            or []
         )
-        eligible = [
-            q for q in queue
-            if not q.get("next_retry_at") or q["next_retry_at"] <= now_iso
-        ]
+        eligible = [q for q in queue if not q.get("next_retry_at") or q["next_retry_at"] <= now_iso]
         if not eligible:
             logger.info("dispatch_heartbeat: no eligible queue items — nothing to verify")
             return
 
-        # Any send_attempts today?
-        today_start = _dt.now(_tz.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        # Any send_attempts today? Use Chicago time so "today" matches the send window.
+        try:
+            from zoneinfo import ZoneInfo
+
+            _chicago = ZoneInfo("America/Chicago")
+            _now_chi = _dt.now(_chicago)
+            today_start = (
+                _now_chi.replace(hour=0, minute=0, second=0, microsecond=0)
+                .astimezone(_tz.utc)
+                .isoformat()
+            )
+        except Exception:
+            today_start = (
+                _dt.now(_tz.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+            )
         attempts = (
             db_client.table("send_attempts")
             .select("id", count="exact")
@@ -484,7 +592,8 @@ def _run_dispatch_heartbeat_check() -> None:
         else:
             logger.info(
                 "dispatch_heartbeat: OK — %d send_attempts today with %d eligible queued",
-                attempt_count, len(eligible),
+                attempt_count,
+                len(eligible),
             )
     except Exception as exc:
         logger.error("dispatch_heartbeat check failed: %s", exc)
@@ -494,15 +603,57 @@ def _run_reclaim_stale_locks() -> None:
     """Runs every 2 minutes: clears outbound_queue locks older than 5 minutes."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_reclaim_stale_locks_workspace, "reclaim_stale_locks")
     except Exception as exc:
         logger.error("Scheduled reclaim_stale_locks failed: %s", exc)
+
+
+def _run_dispatched_sweeper() -> None:
+    """Hourly: mark DISPATCHED send_attempts that are older than 30 minutes as
+    PERMANENTLY_FAILED so stale rows don't inflate in-flight accounting forever.
+
+    A DISPATCHED row that is never resolved means the process crashed between
+    the pre-send claim and the post-send update. After 30 minutes the email has
+    either been delivered (and the webhook will update it) or is truly lost.
+    The 30-minute window is well beyond Resend's async delivery latency.
+    """
+    try:
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        from backend.app.core.database import get_supabase_client
+
+        db_client = get_supabase_client()
+        stale_cutoff = (_dt.now(_tz.utc) - _td(minutes=30)).isoformat()
+        rows = (
+            db_client.table("send_attempts")
+            .update(
+                {
+                    "status": "PERMANENTLY_FAILED",
+                    "failure_code": "orphan_dispatched",
+                    "failure_reason": "DISPATCHED_for_more_than_30_minutes_without_resolution",
+                    "resolved_at": _dt.now(_tz.utc).isoformat(),
+                }
+            )
+            .eq("status", "DISPATCHED")
+            .lt("dispatched_at", stale_cutoff)
+            .execute()
+            .data
+            or []
+        )
+        if rows:
+            logger.warning(
+                "dispatched_sweeper: marked %d orphan DISPATCHED rows as PERMANENTLY_FAILED",
+                len(rows),
+            )
+    except Exception as exc:
+        logger.error("Scheduled dispatched_sweeper failed: %s", exc)
 
 
 def _run_process_due_sequences() -> None:
     """Hourly job: process engagement sequences with due follow-up actions."""
     try:
         from backend.app.agents.engagement import EngagementAgent
+
         agent = EngagementAgent()
         agent.run(action="process_due")
     except Exception as e:
@@ -513,9 +664,11 @@ def _run_poll_instantly() -> None:
     """Every-6-hour job: poll Instantly.ai for new email events (webhook fallback)."""
     try:
         from backend.app.core.config import get_settings
+
         if not get_settings().instantly_api_key:
             return
         from backend.app.agents.engagement import EngagementAgent
+
         agent = EngagementAgent()
         agent.run(action="poll_events")
     except Exception as e:
@@ -526,6 +679,7 @@ def _run_process_hitl_snoozed() -> None:
     """Every-15-min job: move snoozed HITL items past their snooze_until back to pending."""
     try:
         from backend.app.core.database import Database
+
         db = Database()
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         result = (
@@ -546,6 +700,7 @@ def _run_personalization_refresh() -> None:
     """Every-24-hour job: refresh personalization for top 100 qualified companies."""
     try:
         from backend.app.core.personalization_batch import PersonalizationBatch
+
         runner = PersonalizationBatch()
         result = runner.run_batch(filters={"min_pqs": 50}, max_companies=100)
         logger.info(
@@ -556,11 +711,11 @@ def _run_personalization_refresh() -> None:
         logger.error(f"Scheduled personalization_refresh failed: {e}")
 
 
-
 def _run_jit_pregenerate() -> None:
     """Every-24-hour job: pre-generate follow-up drafts due within the next 3 days."""
     try:
         from backend.app.agents.engagement import EngagementAgent
+
         agent = EngagementAgent()
         result = agent.run(action="jit_pregenerate")
         logger.info(f"JIT pre-generate: {result}")
@@ -625,6 +780,7 @@ def _gmail_intake_workspace(ws: dict) -> None:
         try:
             if _use_gmail_api:
                 from backend.app.integrations.gmail_api_client import fetch_recent_replies
+
                 replies = fetch_recent_replies(gmail_user)
             else:
                 # Use SINCE-based polling so replies already read by a human before
@@ -647,7 +803,9 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             _state_row[0]["last_run_at"].replace("Z", "+00:00")
                         )
                 except Exception as _e:
-                    logger.warning("gmail_intake: could not read scheduler_state (%s), using 48h fallback", _e)
+                    logger.warning(
+                        "gmail_intake: could not read scheduler_state (%s), using 48h fallback", _e
+                    )
 
                 _run_start = datetime.now(timezone.utc)
                 with GmailImapClient(gmail_user, gmail_password) as gmail:
@@ -655,13 +813,16 @@ def _gmail_intake_workspace(ws: dict) -> None:
 
                 # Persist the cursor after a successful fetch so next run picks up from here.
                 try:
-                    db.client.table("scheduler_state").upsert({
-                        "job_id": "gmail_intake",
-                        "workspace_id": str(ws_id),
-                        "account_email": gmail_user,
-                        "last_run_at": _run_start.isoformat(),
-                        "updated_at": _run_start.isoformat(),
-                    }, on_conflict="job_id,workspace_id,account_email").execute()
+                    db.client.table("scheduler_state").upsert(
+                        {
+                            "job_id": "gmail_intake",
+                            "workspace_id": str(ws_id),
+                            "account_email": gmail_user,
+                            "last_run_at": _run_start.isoformat(),
+                            "updated_at": _run_start.isoformat(),
+                        },
+                        on_conflict="job_id,workspace_id,account_email",
+                    ).execute()
                 except Exception as _e:
                     logger.warning("gmail_intake: could not persist scheduler_state (%s)", _e)
 
@@ -669,140 +830,162 @@ def _gmail_intake_workspace(ws: dict) -> None:
                 continue
 
             for reply in replies:
-                    from_email = reply["from_email"]
-                    subject = reply["subject"]
-                    body = reply["body"]
-                    received_at = reply["received_at"]
+                from_email = reply["from_email"]
+                subject = reply["subject"]
+                body = reply["body"]
+                received_at = reply["received_at"]
 
-                    clean_subject = subject.strip()
-                    if clean_subject.lower().startswith("re:"):
-                        clean_subject = clean_subject[3:].strip()
+                clean_subject = subject.strip()
+                if clean_subject.lower().startswith("re:"):
+                    clean_subject = clean_subject[3:].strip()
 
-                    match = (
-                        db.client.table("outreach_drafts")
-                        .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
-                        .ilike("subject", clean_subject)
-                        .not_.is_("sent_at", "null")
+                match = (
+                    db.client.table("outreach_drafts")
+                    .select(
+                        "id, company_id, contact_id, sequence_name, sequence_step, workspace_id"
+                    )
+                    .ilike("subject", clean_subject)
+                    .not_.is_("sent_at", "null")
+                    .eq("workspace_id", ws_id)
+                    .limit(1)
+                    .execute()
+                ).data
+
+                if not match:
+                    contact_row = (
+                        db.client.table("contacts")
+                        .select("id, company_id")
+                        .eq("email", from_email)
                         .eq("workspace_id", ws_id)
                         .limit(1)
                         .execute()
                     ).data
-
-                    if not match:
-                        contact_row = (
-                            db.client.table("contacts")
-                            .select("id, company_id")
-                            .eq("email", from_email)
+                    if contact_row:
+                        match = (
+                            db.client.table("outreach_drafts")
+                            .select(
+                                "id, company_id, contact_id, sequence_name, sequence_step, workspace_id"
+                            )
+                            .eq("contact_id", contact_row[0]["id"])
+                            .not_.is_("sent_at", "null")
                             .eq("workspace_id", ws_id)
+                            .order("sent_at", desc=True)
                             .limit(1)
                             .execute()
                         ).data
-                        if contact_row:
-                            match = (
-                                db.client.table("outreach_drafts")
-                                .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
-                                .eq("contact_id", contact_row[0]["id"])
-                                .not_.is_("sent_at", "null")
-                                .eq("workspace_id", ws_id)
-                                .order("sent_at", desc=True)
-                                .limit(1)
-                                .execute()
-                            ).data
 
-                    if not match:
-                        if not _use_gmail_api:
-                            gmail.mark_as_read(reply["uid"])
-                        skipped += 1
-                        continue
+                if not match:
+                    if not _use_gmail_api:
+                        gmail.mark_as_read(reply["uid"])
+                    skipped += 1
+                    continue
 
-                    draft = match[0]
-                    company_id = draft["company_id"]
-                    contact_id = draft["contact_id"]
+                draft = match[0]
+                company_id = draft["company_id"]
+                contact_id = draft["contact_id"]
 
-                    # Dedup: for Gmail API path check raw_message_id in metadata;
-                    # for IMAP path use the 5-minute timestamp window.
-                    raw_message_id = reply.get("raw_message_id", "")
-                    if _use_gmail_api and raw_message_id:
-                        existing = (
-                            db.client.table("interactions")
-                            .select("id")
-                            .eq("contact_id", contact_id)
-                            .eq("type", "email_replied")
-                            .contains("metadata", {"raw_message_id": raw_message_id})
-                            .limit(1)
-                            .execute()
-                        ).data
-                    else:
-                        existing = (
-                            db.client.table("thread_messages")
-                            .select("id")
-                            .eq("contact_id", contact_id)
-                            .eq("direction", "inbound")
-                            .gte("created_at", (
+                # Dedup: for Gmail API path check raw_message_id in metadata;
+                # for IMAP path use the 5-minute timestamp window.
+                raw_message_id = reply.get("raw_message_id", "")
+                if _use_gmail_api and raw_message_id:
+                    existing = (
+                        db.client.table("interactions")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .eq("type", "email_replied")
+                        .contains("metadata", {"raw_message_id": raw_message_id})
+                        .limit(1)
+                        .execute()
+                    ).data
+                else:
+                    existing = (
+                        db.client.table("thread_messages")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .eq("direction", "inbound")
+                        .gte(
+                            "created_at",
+                            (
                                 datetime.fromisoformat(received_at.replace("Z", "+00:00"))
                                 - timedelta(minutes=5)
-                            ).isoformat())
-                            .limit(1)
-                            .execute()
-                        ).data
-                    if existing:
-                        if not _use_gmail_api:
-                            gmail.mark_as_read(reply["uid"])
-                        skipped += 1
-                        continue
+                            ).isoformat(),
+                        )
+                        .limit(1)
+                        .execute()
+                    ).data
+                if existing:
+                    if not _use_gmail_api:
+                        gmail.mark_as_read(reply["uid"])
+                    skipped += 1
+                    continue
 
-                    intent = _classify_intent(body, subject)
+                intent = _classify_intent(body, subject)
 
-                    thread_id = None
-                    try:
-                        existing_thread = (
+                thread_id = None
+                try:
+                    existing_thread = (
+                        db.client.table("campaign_threads")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .limit(1)
+                        .execute()
+                    ).data
+                    if existing_thread:
+                        thread_id = existing_thread[0]["id"]
+                        db.client.table("campaign_threads").update(
+                            {
+                                "status": "replied",
+                                "last_replied_at": received_at,
+                            }
+                        ).eq("id", thread_id).execute()
+                    else:
+                        new_thread = (
                             db.client.table("campaign_threads")
-                            .select("id")
-                            .eq("contact_id", contact_id)
-                            .limit(1)
+                            .insert(
+                                {
+                                    "company_id": company_id,
+                                    "contact_id": contact_id,
+                                    "status": "replied",
+                                    "last_replied_at": received_at,
+                                    "workspace_id": ws_id,
+                                    "sequence_name": draft.get(
+                                        "sequence_name", "email_value_first"
+                                    ),
+                                    "current_step": draft.get("sequence_step", 1),
+                                }
+                            )
                             .execute()
-                        ).data
-                        if existing_thread:
-                            thread_id = existing_thread[0]["id"]
-                            db.client.table("campaign_threads").update({
-                                "status": "replied",
-                                "last_replied_at": received_at,
-                            }).eq("id", thread_id).execute()
-                        else:
-                            new_thread = db.client.table("campaign_threads").insert({
-                                "company_id": company_id,
-                                "contact_id": contact_id,
-                                "status": "replied",
-                                "last_replied_at": received_at,
-                                "workspace_id": ws_id,
-                                "sequence_name": draft.get("sequence_name", "email_value_first"),
-                                "current_step": draft.get("sequence_step", 1),
-                            }).execute()
-                            if new_thread.data:
-                                thread_id = new_thread.data[0]["id"]
-                    except Exception as e:
-                        logger.warning(f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}")
+                        )
+                        if new_thread.data:
+                            thread_id = new_thread.data[0]["id"]
+                except Exception as e:
+                    logger.warning(
+                        f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}"
+                    )
 
-                    try:
-                        # thread_messages schema does NOT include company_id, contact_id,
-                        # or workspace_id — those are inferred via the thread_id FK.
-                        # Sending those columns causes a PGRST204 column-not-found error
-                        # and silently drops the record. Only send columns that exist.
-                        _tm_payload = {
-                            "direction": "inbound",
-                            "body": body[:4000],
-                            "subject": subject,
-                            "classification": intent,
-                            "source": "gmail_imap",
-                        }
-                        if thread_id:
-                            _tm_payload["thread_id"] = thread_id
-                        db.client.table("thread_messages").insert(_tm_payload).execute()
-                    except Exception as e:
-                        logger.warning(f"Gmail intake [{ws['name']}]: thread_message insert failed: {e}")
+                try:
+                    # thread_messages schema does NOT include company_id, contact_id,
+                    # or workspace_id — those are inferred via the thread_id FK.
+                    # Sending those columns causes a PGRST204 column-not-found error
+                    # and silently drops the record. Only send columns that exist.
+                    _tm_payload = {
+                        "direction": "inbound",
+                        "body": body[:4000],
+                        "subject": subject,
+                        "classification": intent,
+                        "source": "gmail_imap",
+                    }
+                    if thread_id:
+                        _tm_payload["thread_id"] = thread_id
+                    db.client.table("thread_messages").insert(_tm_payload).execute()
+                except Exception as e:
+                    logger.warning(
+                        f"Gmail intake [{ws['name']}]: thread_message insert failed: {e}"
+                    )
 
-                    try:
-                        db.client.table("interactions").insert({
+                try:
+                    db.client.table("interactions").insert(
+                        {
                             "company_id": company_id,
                             "contact_id": contact_id,
                             "type": "email_replied",
@@ -810,87 +993,110 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             "subject": subject,
                             "body": body[:4000],
                             "source": "gmail_imap",
-                            "metadata": {"intent": intent, "from": from_email,
-                                         "raw_message_id": raw_message_id},
+                            "metadata": {
+                                "intent": intent,
+                                "from": from_email,
+                                "raw_message_id": raw_message_id,
+                            },
                             "workspace_id": ws_id,
-                        }).execute()
-                    except Exception as e:
-                        logger.warning(f"Gmail intake [{ws['name']}]: interaction insert failed: {e}")
-
-                    try:
-                        if intent == "not_interested":
-                            db.client.table("engagement_sequences").update({"status": "paused"}).eq(
-                                "contact_id", contact_id).eq("status", "active").execute()
-                        elif intent == "interested":
-                            expedite_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-                            db.client.table("engagement_sequences").update({"next_action_at": expedite_at}).eq(
-                                "contact_id", contact_id).eq("status", "active").execute()
-                        elif intent == "ooo":
-                            delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
-                            db.client.table("engagement_sequences").update({"next_action_at": delay_at}).eq(
-                                "contact_id", contact_id).eq("status", "active").execute()
-                    except Exception as e:
-                        logger.warning(f"Gmail intake [{ws['name']}]: sequence update failed: {e}")
-
-                    # Forward-schedule reply policy (2026-06-02): a genuine human reply
-                    # PAUSES the contact's remaining scheduled steps for human review;
-                    # an out-of-office keeps the sequence running. Bounce/unsubscribe
-                    # are handled by the suppression path. No-ops safely if the
-                    # send_schedule table is not yet present.
-                    try:
-                        from backend.app.core.send_scheduler import pause_contact_on_reply
-                        _intent_map = {
-                            "ooo": "out_of_office", "out_of_office": "out_of_office",
-                            "not_interested": "soft_no", "interested": "interested",
-                            "objection": "objection", "referral": "referral",
-                            "question": "other",
                         }
-                        _policy_intent = _intent_map.get(intent, "other")
-                        _res = pause_contact_on_reply(db, ws_id, contact_id, _policy_intent)
-                        if _res.get("action") == "paused":
-                            logger.info("Gmail intake [%s]: paused %s remaining schedule (%d slots) on %s reply",
-                                        ws["name"], contact_id, _res.get("cancelled_slots", 0), intent)
-                    except Exception as e:
-                        logger.debug(f"Gmail intake [{ws['name']}]: schedule pause skipped: {e}")
+                    ).execute()
+                except Exception as e:
+                    logger.warning(f"Gmail intake [{ws['name']}]: interaction insert failed: {e}")
 
-                    # For reply-worthy intents, draft a response and queue for approval.
-                    if intent in ("interested", "question", "objection", "referral"):
-                        try:
-                            draft_row = (
-                                db.client.table("outreach_drafts")
-                                .select("id")
-                                .eq("contact_id", contact_id)
-                                .not_.is_("sent_at", "null")
-                                .eq("workspace_id", ws_id)
-                                .order("sent_at", desc=True)
-                                .limit(1)
-                                .execute()
-                            ).data
-                            original_draft_id = draft_row[0]["id"] if draft_row else None
-                            if original_draft_id:
-                                from backend.app.agents.reply import ReplyAgent
-                                reply_agent = ReplyAgent(workspace_id=ws_id)
-                                reply_result = reply_agent.run(reply_data={
+                try:
+                    if intent == "not_interested":
+                        db.client.table("engagement_sequences").update({"status": "paused"}).eq(
+                            "contact_id", contact_id
+                        ).eq("status", "active").execute()
+                    elif intent == "interested":
+                        expedite_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+                        db.client.table("engagement_sequences").update(
+                            {"next_action_at": expedite_at}
+                        ).eq("contact_id", contact_id).eq("status", "active").execute()
+                    elif intent == "ooo":
+                        delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+                        db.client.table("engagement_sequences").update(
+                            {"next_action_at": delay_at}
+                        ).eq("contact_id", contact_id).eq("status", "active").execute()
+                except Exception as e:
+                    logger.warning(f"Gmail intake [{ws['name']}]: sequence update failed: {e}")
+
+                # Forward-schedule reply policy (2026-06-02): a genuine human reply
+                # PAUSES the contact's remaining scheduled steps for human review;
+                # an out-of-office keeps the sequence running. Bounce/unsubscribe
+                # are handled by the suppression path. No-ops safely if the
+                # send_schedule table is not yet present.
+                try:
+                    from backend.app.core.send_scheduler import pause_contact_on_reply
+
+                    _intent_map = {
+                        "ooo": "out_of_office",
+                        "out_of_office": "out_of_office",
+                        "not_interested": "soft_no",
+                        "interested": "interested",
+                        "objection": "objection",
+                        "referral": "referral",
+                        "question": "other",
+                    }
+                    _policy_intent = _intent_map.get(intent, "other")
+                    _res = pause_contact_on_reply(db, ws_id, contact_id, _policy_intent)
+                    if _res.get("action") == "paused":
+                        logger.info(
+                            "Gmail intake [%s]: paused %s remaining schedule (%d slots) on %s reply",
+                            ws["name"],
+                            contact_id,
+                            _res.get("cancelled_slots", 0),
+                            intent,
+                        )
+                except Exception as e:
+                    logger.debug(f"Gmail intake [{ws['name']}]: schedule pause skipped: {e}")
+
+                # For reply-worthy intents, draft a response and queue for approval.
+                if intent in ("interested", "question", "objection", "referral"):
+                    try:
+                        draft_row = (
+                            db.client.table("outreach_drafts")
+                            .select("id")
+                            .eq("contact_id", contact_id)
+                            .not_.is_("sent_at", "null")
+                            .eq("workspace_id", ws_id)
+                            .order("sent_at", desc=True)
+                            .limit(1)
+                            .execute()
+                        ).data
+                        original_draft_id = draft_row[0]["id"] if draft_row else None
+                        if original_draft_id:
+                            from backend.app.agents.reply import ReplyAgent
+
+                            reply_agent = ReplyAgent(workspace_id=ws_id)
+                            reply_result = reply_agent.run(
+                                reply_data={
                                     "company_id": company_id,
                                     "contact_id": contact_id,
                                     "subject": subject,
                                     "body": body,
                                     "outreach_draft_id": original_draft_id,
-                                })
-                                if reply_result.success and thread_id:
-                                    _push_reply_to_hitl(db, thread_id, ws_id, intent)
-                                    logger.info(
-                                        "Gmail intake [%s]: reply draft queued for %s (intent=%s)",
-                                        ws["name"], from_email, intent,
-                                    )
-                        except Exception as e:
-                            logger.warning(f"Gmail intake [{ws['name']}]: reply draft failed: {e}")
+                                }
+                            )
+                            if reply_result.success and thread_id:
+                                _push_reply_to_hitl(db, thread_id, ws_id, intent)
+                                logger.info(
+                                    "Gmail intake [%s]: reply draft queued for %s (intent=%s)",
+                                    ws["name"],
+                                    from_email,
+                                    intent,
+                                )
+                    except Exception as e:
+                        logger.warning(f"Gmail intake [{ws['name']}]: reply draft failed: {e}")
 
-                    gmail.mark_as_read(reply["uid"])
-                    processed += 1
+                gmail.mark_as_read(reply["uid"])
+                processed += 1
 
         except Exception as e:
-            logger.error(f"Gmail intake [{ws['name']}]: account {gmail_user} failed: {e}", exc_info=True)
+            logger.error(
+                f"Gmail intake [{ws['name']}]: account {gmail_user} failed: {e}", exc_info=True
+            )
 
     if processed or skipped:
         logger.info("Gmail intake [%s]: %d processed, %d skipped", ws["name"], processed, skipped)
@@ -903,14 +1109,16 @@ def _push_reply_to_hitl(db, thread_id: str, workspace_id: str, intent: str) -> N
     """Push a reply needing approval into the HITL queue."""
     priority_map = {"interested": 1, "referral": 2, "objection": 3, "question": 3}
     try:
-        db.client.table("hitl_queue").insert({
-            "thread_id": thread_id,
-            "workspace_id": workspace_id,
-            "classification": intent,
-            "classification_confidence": 0.85,
-            "priority": priority_map.get(intent, 3),
-            "status": "pending",
-        }).execute()
+        db.client.table("hitl_queue").insert(
+            {
+                "thread_id": thread_id,
+                "workspace_id": workspace_id,
+                "classification": intent,
+                "classification_confidence": 0.85,
+                "priority": priority_map.get(intent, 3),
+                "status": "pending",
+            }
+        ).execute()
     except Exception as e:
         logger.warning("_push_reply_to_hitl failed: %s", e)
 
@@ -922,17 +1130,25 @@ def _run_gmail_intake() -> None:
     detect a silent failure (no log = cron stopped running).
     """
     from datetime import datetime, timezone as _tz
+
     _tick_start = datetime.now(_tz.utc).isoformat()
-    logger.info("gmail_intake_heartbeat tick_start=%s", _tick_start,
-                extra={"event": "gmail_intake_heartbeat", "tick_start": _tick_start})
+    logger.info(
+        "gmail_intake_heartbeat tick_start=%s",
+        _tick_start,
+        extra={"event": "gmail_intake_heartbeat", "tick_start": _tick_start},
+    )
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_gmail_intake_workspace, "gmail_intake")
     except Exception as e:
         logger.error(f"Scheduled gmail_intake failed: {e}", exc_info=True)
     _tick_end = datetime.now(_tz.utc).isoformat()
-    logger.info("gmail_intake_heartbeat tick_end=%s", _tick_end,
-                extra={"event": "gmail_intake_complete", "tick_end": _tick_end})
+    logger.info(
+        "gmail_intake_heartbeat tick_end=%s",
+        _tick_end,
+        extra={"event": "gmail_intake_complete", "tick_end": _tick_end},
+    )
 
 
 def _run_gmail_intake_LEGACY() -> None:
@@ -970,7 +1186,9 @@ def _run_gmail_intake_LEGACY() -> None:
                 # Try to find matching draft by subject + sender email
                 match = (
                     db.client.table("outreach_drafts")
-                    .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
+                    .select(
+                        "id, company_id, contact_id, sequence_name, sequence_step, workspace_id"
+                    )
                     .ilike("subject", clean_subject)
                     .not_.is_("sent_at", "null")
                     .limit(1)
@@ -989,7 +1207,9 @@ def _run_gmail_intake_LEGACY() -> None:
                     if contact_row:
                         match = (
                             db.client.table("outreach_drafts")
-                            .select("id, company_id, contact_id, sequence_name, sequence_step, workspace_id")
+                            .select(
+                                "id, company_id, contact_id, sequence_name, sequence_step, workspace_id"
+                            )
                             .eq("contact_id", contact_row[0]["id"])
                             .not_.is_("sent_at", "null")
                             .order("sent_at", desc=True)
@@ -998,7 +1218,9 @@ def _run_gmail_intake_LEGACY() -> None:
                         ).data
 
                 if not match:
-                    logger.debug(f"Gmail intake: no draft match for reply from {from_email} re: {subject!r}")
+                    logger.debug(
+                        f"Gmail intake: no draft match for reply from {from_email} re: {subject!r}"
+                    )
                     gmail.mark_as_read(reply["uid"])
                     skipped += 1
                     continue
@@ -1014,9 +1236,13 @@ def _run_gmail_intake_LEGACY() -> None:
                     .select("id")
                     .eq("contact_id", contact_id)
                     .eq("direction", "inbound")
-                    .gte("created_at", (
-                        datetime.fromisoformat(received_at.replace("Z", "+00:00")) - timedelta(minutes=5)
-                    ).isoformat())
+                    .gte(
+                        "created_at",
+                        (
+                            datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+                            - timedelta(minutes=5)
+                        ).isoformat(),
+                    )
                     .limit(1)
                     .execute()
                 ).data
@@ -1041,20 +1267,30 @@ def _run_gmail_intake_LEGACY() -> None:
                     ).data
                     if existing_thread:
                         thread_id = existing_thread[0]["id"]
-                        db.client.table("campaign_threads").update({
-                            "status": "replied",
-                            "last_replied_at": received_at,
-                        }).eq("id", thread_id).execute()
+                        db.client.table("campaign_threads").update(
+                            {
+                                "status": "replied",
+                                "last_replied_at": received_at,
+                            }
+                        ).eq("id", thread_id).execute()
                     else:
-                        new_thread = db.client.table("campaign_threads").insert({
-                            "company_id": company_id,
-                            "contact_id": contact_id,
-                            "status": "replied",
-                            "last_replied_at": received_at,
-                            "workspace_id": workspace_id,
-                            "sequence_name": draft.get("sequence_name", "email_value_first"),
-                            "current_step": draft.get("sequence_step", 1),
-                        }).execute()
+                        new_thread = (
+                            db.client.table("campaign_threads")
+                            .insert(
+                                {
+                                    "company_id": company_id,
+                                    "contact_id": contact_id,
+                                    "status": "replied",
+                                    "last_replied_at": received_at,
+                                    "workspace_id": workspace_id,
+                                    "sequence_name": draft.get(
+                                        "sequence_name", "email_value_first"
+                                    ),
+                                    "current_step": draft.get("sequence_step", 1),
+                                }
+                            )
+                            .execute()
+                        )
                         if new_thread.data:
                             thread_id = new_thread.data[0]["id"]
                 except Exception as e:
@@ -1062,54 +1298,65 @@ def _run_gmail_intake_LEGACY() -> None:
 
                 # Insert thread_message — includes thread_id so it surfaces in the triage UI
                 try:
-                    db.client.table("thread_messages").insert({
-                        "thread_id": thread_id,
-                        "company_id": company_id,
-                        "contact_id": contact_id,
-                        "direction": "inbound",
-                        "body": body[:4000],
-                        "subject": subject,
-                        "classification": intent,
-                        "source": "gmail_imap",
-                        "workspace_id": workspace_id,
-                    }).execute()
+                    db.client.table("thread_messages").insert(
+                        {
+                            "thread_id": thread_id,
+                            "company_id": company_id,
+                            "contact_id": contact_id,
+                            "direction": "inbound",
+                            "body": body[:4000],
+                            "subject": subject,
+                            "classification": intent,
+                            "source": "gmail_imap",
+                            "workspace_id": workspace_id,
+                        }
+                    ).execute()
                 except Exception as e:
                     logger.warning(f"Gmail intake: thread_message insert failed: {e}")
 
                 # Insert interaction
                 try:
-                    db.client.table("interactions").insert({
-                        "company_id": company_id,
-                        "contact_id": contact_id,
-                        "type": "email_replied",
-                        "channel": "email",
-                        "subject": subject,
-                        "body": body[:4000],
-                        "source": "gmail_imap",
-                        "metadata": {"intent": intent, "from": from_email},
-                        "workspace_id": workspace_id,
-                    }).execute()
+                    db.client.table("interactions").insert(
+                        {
+                            "company_id": company_id,
+                            "contact_id": contact_id,
+                            "type": "email_replied",
+                            "channel": "email",
+                            "subject": subject,
+                            "body": body[:4000],
+                            "source": "gmail_imap",
+                            "metadata": {"intent": intent, "from": from_email},
+                            "workspace_id": workspace_id,
+                        }
+                    ).execute()
                 except Exception as e:
                     logger.warning(f"Gmail intake: interaction insert failed: {e}")
 
                 # Update engagement_sequence based on intent
                 try:
                     if intent == "not_interested":
-                        db.client.table("engagement_sequences").update({
-                            "status": "paused",
-                        }).eq("contact_id", contact_id).eq("status", "active").execute()
+                        db.client.table("engagement_sequences").update(
+                            {
+                                "status": "paused",
+                            }
+                        ).eq("contact_id", contact_id).eq("status", "active").execute()
                     elif intent == "interested":
                         from datetime import timedelta
+
                         expedite_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-                        db.client.table("engagement_sequences").update({
-                            "next_action_at": expedite_at,
-                        }).eq("contact_id", contact_id).eq("status", "active").execute()
+                        db.client.table("engagement_sequences").update(
+                            {
+                                "next_action_at": expedite_at,
+                            }
+                        ).eq("contact_id", contact_id).eq("status", "active").execute()
                     elif intent == "ooo":
                         # Delay next step by 7 days
                         delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
-                        db.client.table("engagement_sequences").update({
-                            "next_action_at": delay_at,
-                        }).eq("contact_id", contact_id).eq("status", "active").execute()
+                        db.client.table("engagement_sequences").update(
+                            {
+                                "next_action_at": delay_at,
+                            }
+                        ).eq("contact_id", contact_id).eq("status", "active").execute()
                 except Exception as e:
                     logger.warning(f"Gmail intake: sequence update failed: {e}")
 
@@ -1133,6 +1380,7 @@ def _get_monthly_api_spend() -> float:
     try:
         from backend.app.core.database import get_supabase_client
         from datetime import datetime, timezone
+
         client = get_supabase_client()
         now = datetime.now(timezone.utc)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -1164,6 +1412,7 @@ def _check_budget(job_name: str) -> bool:
         try:
             from backend.app.core.database import get_supabase_client
             from datetime import date
+
             client = get_supabase_client()
             today = str(date.today())
             already_warned = (
@@ -1176,55 +1425,66 @@ def _check_budget(job_name: str) -> bool:
             if not already_warned:
                 import asyncio
                 from backend.app.core.notifications import send_email
-                asyncio.run(send_email(
-                    to="avi@digitillis.io",
-                    subject=f"[ProspectIQ] Budget alert: ${spend:.0f} of ${MONTHLY_API_BUDGET_USD:.0f} used this month — hold or increase?",
-                    html_body=(
-                        f"<html><body style='font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;color:#111;padding:20px'>"
-                        f"<h2 style='color:#b45309;margin-bottom:4px'>API Budget Alert</h2>"
-                        f"<p style='color:#6b7280;font-size:13px;margin-top:0'>Monthly spend has crossed the 75% warning threshold.</p>"
-                        f"<table style='width:100%;border-collapse:collapse;font-size:14px;margin:14px 0'>"
-                        f"<tr style='background:#fef3c7'><td style='padding:8px 12px;font-weight:600'>Spent this month</td><td style='text-align:right;padding:8px 12px'><strong>${spend:.2f}</strong></td></tr>"
-                        f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Monthly cap</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb'>${MONTHLY_API_BUDGET_USD:.2f}</td></tr>"
-                        f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Remaining</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#16a34a'><strong>${MONTHLY_API_BUDGET_USD - spend:.2f}</strong></td></tr>"
-                        f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Usage</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb'>{spend / MONTHLY_API_BUDGET_USD * 100:.0f}%</td></tr>"
-                        f"</table>"
-                        f"<div style='background:#fef9c3;border:1px solid #fde047;padding:12px 16px;border-radius:6px;font-size:14px;margin:16px 0'>"
-                        f"<strong>Action required:</strong> All automated jobs (research, enrichment, outreach drafting) will hard-stop at ${MONTHLY_API_BUDGET_USD:.0f}. "
-                        f"Reply to this email or update <code>workspace.settings.monthly_api_budget_usd</code> to increase the cap. "
-                        f"Otherwise jobs will pause automatically when the limit is reached."
-                        f"</div>"
-                        f"<p style='font-size:13px'>Should we <strong>hold at ${MONTHLY_API_BUDGET_USD:.0f}</strong> and let it stop, or <strong>increase the cap</strong> to keep the pipeline running?</p>"
-                        f"<p style='font-size:11px;color:#9ca3af'>This alert fires once per day while spend remains above the threshold.</p>"
-                        f"</body></html>"
-                    ),
-                ))
-                client.table("api_costs").insert({
-                    "provider": "__budget_warn__",
-                    "model": "alert",
-                    "estimated_cost_usd": 0,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                }).execute()
+
+                asyncio.run(
+                    send_email(
+                        to="avi@digitillis.io",
+                        subject=f"[ProspectIQ] Budget alert: ${spend:.0f} of ${MONTHLY_API_BUDGET_USD:.0f} used this month — hold or increase?",
+                        html_body=(
+                            f"<html><body style='font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;color:#111;padding:20px'>"
+                            f"<h2 style='color:#b45309;margin-bottom:4px'>API Budget Alert</h2>"
+                            f"<p style='color:#6b7280;font-size:13px;margin-top:0'>Monthly spend has crossed the 75% warning threshold.</p>"
+                            f"<table style='width:100%;border-collapse:collapse;font-size:14px;margin:14px 0'>"
+                            f"<tr style='background:#fef3c7'><td style='padding:8px 12px;font-weight:600'>Spent this month</td><td style='text-align:right;padding:8px 12px'><strong>${spend:.2f}</strong></td></tr>"
+                            f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Monthly cap</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb'>${MONTHLY_API_BUDGET_USD:.2f}</td></tr>"
+                            f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Remaining</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb;color:#16a34a'><strong>${MONTHLY_API_BUDGET_USD - spend:.2f}</strong></td></tr>"
+                            f"<tr><td style='padding:8px 12px;border-top:1px solid #e5e7eb'>Usage</td><td style='text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb'>{spend / MONTHLY_API_BUDGET_USD * 100:.0f}%</td></tr>"
+                            f"</table>"
+                            f"<div style='background:#fef9c3;border:1px solid #fde047;padding:12px 16px;border-radius:6px;font-size:14px;margin:16px 0'>"
+                            f"<strong>Action required:</strong> All automated jobs (research, enrichment, outreach drafting) will hard-stop at ${MONTHLY_API_BUDGET_USD:.0f}. "
+                            f"Reply to this email or update <code>workspace.settings.monthly_api_budget_usd</code> to increase the cap. "
+                            f"Otherwise jobs will pause automatically when the limit is reached."
+                            f"</div>"
+                            f"<p style='font-size:13px'>Should we <strong>hold at ${MONTHLY_API_BUDGET_USD:.0f}</strong> and let it stop, or <strong>increase the cap</strong> to keep the pipeline running?</p>"
+                            f"<p style='font-size:11px;color:#9ca3af'>This alert fires once per day while spend remains above the threshold.</p>"
+                            f"</body></html>"
+                        ),
+                    )
+                )
+                client.table("api_costs").insert(
+                    {
+                        "provider": "__budget_warn__",
+                        "model": "alert",
+                        "estimated_cost_usd": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                    }
+                ).execute()
         except Exception as e:
             logger.debug(f"Budget warning email skipped: {e}")
 
     remaining = MONTHLY_API_BUDGET_USD - spend
-    logger.info(f"Budget check ({job_name}): ${spend:.2f} spent, ${remaining:.2f} remaining this month")
+    logger.info(
+        f"Budget check ({job_name}): ${spend:.2f} spent, ${remaining:.2f} remaining this month"
+    )
     return True
 
 
 def _qualify_workspace(ws: dict) -> None:
     from backend.app.agents.qualification import QualificationAgent
+
     agent = QualificationAgent(workspace_id=ws["id"])
     result = agent.run(limit=300)
-    logger.info("Qualification [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+    logger.info(
+        "Qualification [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors
+    )
 
 
 def _run_qualification() -> None:
     """Every-15-min job: score researched companies and promote to qualified/disqualified."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_qualify_workspace, "qualification")
         # Draft fast-path disabled 2026-05-28 — generation moved to Claude Code workflow.
         pass
@@ -1256,6 +1516,7 @@ def _run_llm_qualification() -> None:
     """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_llm_qualify_workspace, "llm_qualification")
     except Exception as e:
         logger.error("Scheduled llm_qualification failed: %s", e, exc_info=True)
@@ -1265,6 +1526,7 @@ def _run_llm_qualification() -> None:
 # Draft generation — closes the gap between enriched contacts and outreach
 # ---------------------------------------------------------------------------
 
+
 def _draft_workspace(ws: dict) -> None:
     """Generate initial outreach drafts for qualified companies with enriched contacts.
 
@@ -1273,14 +1535,19 @@ def _draft_workspace(ws: dict) -> None:
     up again on the next tick.
     """
     from backend.app.core.workspace_scheduler import workspace_budget_ok
+
     if not workspace_budget_ok(ws, "drafting"):
         return
     from backend.app.agents.outreach import OutreachAgent
+
     agent = OutreachAgent(workspace_id=ws["id"])
     result = agent.run(limit=50)
     logger.info(
         "Draft generation [%s]: drafted=%d skipped=%d errors=%d",
-        ws["name"], result.processed, result.skipped, result.errors,
+        ws["name"],
+        result.processed,
+        result.skipped,
+        result.errors,
     )
 
 
@@ -1288,6 +1555,7 @@ def _run_draft_generation() -> None:
     """Every-30-min job: generate initial outreach drafts for qualified-but-undrafted companies."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_draft_workspace, "drafting")
     except Exception as e:
         logger.error(f"Draft generation failed: {e}", exc_info=True)
@@ -1295,14 +1563,18 @@ def _run_draft_generation() -> None:
 
 def _research_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_budget_ok, research_budget_ok
+
     if not workspace_budget_ok(ws, "research"):
         return
     if not research_budget_ok(ws):
         return
     from backend.app.agents.research import ResearchAgent
+
     agent = ResearchAgent(workspace_id=ws["id"])
     result = agent.run(limit=150)
-    logger.info("Research [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors)
+    logger.info(
+        "Research [%s]: processed=%d errors=%d", ws["name"], result.processed, result.errors
+    )
 
 
 def _run_research() -> None:
@@ -1314,6 +1586,7 @@ def _run_research() -> None:
     """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_research_workspace, "research")
         # Fast-path: research → qualify, closes 35-min gap to ~2 min
         try:
@@ -1393,7 +1666,8 @@ def _sampled_qa_approve_workspace(ws: dict) -> None:
         step = int(draft.get("sequence_step") or 1)
 
         violations = _check_draft_integrity(
-            body, subject,
+            body,
+            subject,
             personalization_notes=notes,
             sequence_step=step,
         )
@@ -1410,12 +1684,15 @@ def _sampled_qa_approve_workspace(ws: dict) -> None:
         # Auto-approve: call the approve RPC directly. Send priority = 6 - step so later
         # sequence steps drain before new Step-1 starts under a choked daily cap.
         try:
-            db.client.rpc("approve_draft_and_enqueue", {
-                "p_draft_id": draft["id"],
-                "p_status": "approved",
-                "p_workspace_id": str(ws_id),
-                "p_priority": max(1, 6 - int(step or 1)),
-            }).execute()
+            db.client.rpc(
+                "approve_draft_and_enqueue",
+                {
+                    "p_draft_id": draft["id"],
+                    "p_status": "approved",
+                    "p_workspace_id": str(ws_id),
+                    "p_priority": max(1, 6 - int(step or 1)),
+                },
+            ).execute()
             auto_approved += 1
         except Exception as exc:
             logger.warning("sampled_qa_approve: failed to approve %s: %s", draft["id"], exc)
@@ -1423,7 +1700,9 @@ def _sampled_qa_approve_workspace(ws: dict) -> None:
     if auto_approved or held_for_qa:
         logger.info(
             "sampled_qa_approve [%s]: auto_approved=%d held_for_qa=%d",
-            ws.get("name"), auto_approved, held_for_qa,
+            ws.get("name"),
+            auto_approved,
+            held_for_qa,
         )
 
 
@@ -1435,6 +1714,7 @@ def _run_sampled_qa_approve() -> None:
         return
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_sampled_qa_approve_workspace, "sampled_qa_approve")
     except Exception as e:
         logger.error("sampled_qa_approve failed: %s", e, exc_info=True)
@@ -1445,12 +1725,15 @@ def _run_limit_ramp() -> None:
     try:
         from backend.app.core.database import get_supabase_client
         from backend.app.core.config import get_settings
+
         client = get_supabase_client()
         ws = get_settings().default_workspace_id
-        client.table("outreach_send_config").update({
-            "daily_limit": 150,
-            "batch_size": 25,
-        }).eq("workspace_id", ws).execute()
+        client.table("outreach_send_config").update(
+            {
+                "daily_limit": 150,
+                "batch_size": 25,
+            }
+        ).eq("workspace_id", ws).execute()
         logger.info("Limit ramp: daily_limit bumped to 150 (30/account/day × 5 senders)")
     except Exception as e:
         logger.error(f"Limit ramp failed: {e}", exc_info=True)
@@ -1460,6 +1743,7 @@ def _run_daily_report() -> None:
     """Daily job at 5pm Chicago: generate and email the GTM brief."""
     try:
         from backend.app.agents.daily_report import run_daily_report
+
         run_daily_report()
     except Exception as e:
         logger.error(f"Daily report failed: {e}", exc_info=True)
@@ -1472,10 +1756,12 @@ def _run_intent_refresh() -> None:
 
         def _intent_refresh_workspace(ws: dict) -> None:
             from backend.app.core.workspace_scheduler import workspace_budget_ok
+
             if not workspace_budget_ok(ws, "intent_refresh"):
                 return
             from backend.app.core.database import Database
             from backend.app.core.intent_engine import IntentEngine
+
             db = Database(workspace_id=ws["id"])
             engine = IntentEngine(db)
             result = engine.recompute_all_intent_scores()
@@ -1496,6 +1782,7 @@ def _run_intent_refresh_for_companies(company_ids: list[str], workspace_id: str)
     try:
         from backend.app.core.database import Database
         from backend.app.core.intent_engine import IntentEngine
+
         db = Database(workspace_id=workspace_id)
         engine = IntentEngine(db)
         refreshed = 0
@@ -1530,9 +1817,9 @@ def _run_pipeline_monitor_email() -> None:
         # May 2 9PM CT: +$28.75 grant | May 3 ~11PM CT: confirmed $23.82 actual balance
         # Note: TOPUP_AMOUNT reflects Anthropic console balance; delta vs api_costs
         # is Claude Code session usage not tracked in ProspectIQ api_costs table.
-        TOPUP_TS   = "2026-05-03T04:00:00+00:00"  # ~11PM CT May 2 / 4AM UTC May 3 anchor
-        TOPUP_AMOUNT = 23.82   # confirmed balance from Anthropic console screenshot (10:59 PM CT)
-        WORKSPACE_CAP = 65.0   # monthly_api_budget_usd — allows ~$20 new spend
+        TOPUP_TS = "2026-05-03T04:00:00+00:00"  # ~11PM CT May 2 / 4AM UTC May 3 anchor
+        TOPUP_AMOUNT = 23.82  # confirmed balance from Anthropic console screenshot (10:59 PM CT)
+        WORKSPACE_CAP = 65.0  # monthly_api_budget_usd — allows ~$20 new spend
 
         def claude_spend(since: str) -> float:
             rows = (
@@ -1547,28 +1834,37 @@ def _run_pipeline_monitor_email() -> None:
             return sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
 
         def draft_count(since: str, approval_status: str | None = None) -> int:
-            q = client.table("outreach_drafts").select("id", count="exact")\
-                .eq("workspace_id", WS).gte("created_at", since)
+            q = (
+                client.table("outreach_drafts")
+                .select("id", count="exact")
+                .eq("workspace_id", WS)
+                .gte("created_at", since)
+            )
             if approval_status:
                 q = q.eq("approval_status", approval_status)
             return q.execute().count or 0
 
         # Spend figures
-        spend_1h       = claude_spend(one_hour_ago)
-        spend_topup    = claude_spend(TOPUP_TS)
+        spend_1h = claude_spend(one_hour_ago)
+        spend_topup = claude_spend(TOPUP_TS)
         acct_remaining = max(0.0, TOPUP_AMOUNT - spend_topup)
 
         # MTD all-providers for workspace cap check
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-        mtd_rows = (client.table("api_costs").select("estimated_cost_usd")
-                    .eq("workspace_id", WS).gte("created_at", month_start).execute()).data or []
+        mtd_rows = (
+            client.table("api_costs")
+            .select("estimated_cost_usd")
+            .eq("workspace_id", WS)
+            .gte("created_at", month_start)
+            .execute()
+        ).data or []
         mtd_all = sum(float(r.get("estimated_cost_usd") or 0) for r in mtd_rows)
         cap_remaining = max(0.0, WORKSPACE_CAP - mtd_all)
 
         # Drafts this hour / since top-up
-        drafts_1h       = draft_count(one_hour_ago)
-        drafts_topup    = draft_count(TOPUP_TS)
-        cost_per_draft  = (spend_topup / drafts_topup) if drafts_topup else None
+        drafts_1h = draft_count(one_hour_ago)
+        drafts_topup = draft_count(TOPUP_TS)
+        cost_per_draft = (spend_topup / drafts_topup) if drafts_topup else None
 
         # R11 — North-star metric: cost per qualified manufacturing conversation.
         # "Qualified conversation" = a reply classified as interested, question, or referral
@@ -1588,11 +1884,10 @@ def _run_pipeline_monitor_email() -> None:
         cost_per_qualified_conv = (mtd_all / qualified_convs) if qualified_convs > 0 else None
 
         # Draft queue depth
-        pending_approval = draft_count(
-            (now - timedelta(days=30)).isoformat(), "pending"
-        )
+        pending_approval = draft_count((now - timedelta(days=30)).isoformat(), "pending")
         approved_unsent = (
-            client.table("outreach_drafts").select("id", count="exact")
+            client.table("outreach_drafts")
+            .select("id", count="exact")
             .eq("workspace_id", WS)
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
@@ -1601,18 +1896,26 @@ def _run_pipeline_monitor_email() -> None:
 
         # Pipeline counts
         def co_count(status):
-            return client.table("companies").select("id", count="exact")\
-                .eq("workspace_id", WS).eq("status", status).execute().count or 0
+            return (
+                client.table("companies")
+                .select("id", count="exact")
+                .eq("workspace_id", WS)
+                .eq("status", status)
+                .execute()
+                .count
+                or 0
+            )
 
-        qualified    = co_count("qualified")
+        qualified = co_count("qualified")
         outreach_pnd = co_count("outreach_pending")
-        contacted    = co_count("contacted")
-        discovered   = co_count("discovered")
+        contacted = co_count("contacted")
+        discovered = co_count("discovered")
 
         # Staleness check: outreach_pending companies not updated in >3 days = stuck
         three_days_ago = (now - timedelta(days=3)).isoformat()
         stuck_pending = (
-            client.table("companies").select("id", count="exact")
+            client.table("companies")
+            .select("id", count="exact")
             .eq("workspace_id", WS)
             .eq("status", "outreach_pending")
             .lt("updated_at", three_days_ago)
@@ -1621,15 +1924,22 @@ def _run_pipeline_monitor_email() -> None:
 
         # Burn rate projection
         burn_rate_hr = spend_1h  # $/hr based on last hour
-        hrs_to_stop  = (acct_remaining / burn_rate_hr) if burn_rate_hr > 0.01 else 999
+        hrs_to_stop = (acct_remaining / burn_rate_hr) if burn_rate_hr > 0.01 else 999
 
         # Color helpers
-        def green(v): return f"<span style='color:#16a34a'>{v}</span>"
-        def red(v):   return f"<span style='color:#dc2626'>{v}</span>"
-        def amber(v): return f"<span style='color:#d97706'>{v}</span>"
+        def green(v):
+            return f"<span style='color:#16a34a'>{v}</span>"
 
-        acct_color = "#16a34a" if acct_remaining > 15 else "#d97706" if acct_remaining > 5 else "#dc2626"
-        burn_note  = (
+        def red(v):
+            return f"<span style='color:#dc2626'>{v}</span>"
+
+        def amber(v):
+            return f"<span style='color:#d97706'>{v}</span>"
+
+        acct_color = (
+            "#16a34a" if acct_remaining > 15 else "#d97706" if acct_remaining > 5 else "#dc2626"
+        )
+        burn_note = (
             f"At this rate, account lasts <strong>{hrs_to_stop:.1f}h</strong>"
             if burn_rate_hr > 0.01
             else "No spend recorded yet this hour"
@@ -1643,7 +1953,7 @@ def _run_pipeline_monitor_email() -> None:
         html = f"""
 <html><body style="font-family:-apple-system,sans-serif;max-width:580px;margin:0 auto;color:#111;padding:20px">
 <h2 style="color:#1a56db;margin-bottom:2px">ProspectIQ — Hourly Spend vs. Value</h2>
-<p style="color:#6b7280;margin-top:0">{now.strftime('%A %b %-d, %-I:%M %p UTC')}</p>
+<p style="color:#6b7280;margin-top:0">{now.strftime("%A %b %-d, %-I:%M %p UTC")}</p>
 
 <h3 style="font-size:14px;margin-bottom:6px">Spend</h3>
 <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
@@ -1689,13 +1999,13 @@ def _run_pipeline_monitor_email() -> None:
   <tr style="background:#f9fafb">
     <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px">Cost per draft</td>
     <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px" colspan="2">
-      {'${:.4f}'.format(cost_per_draft) if cost_per_draft else '— (no drafts yet)'}
+      {"${:.4f}".format(cost_per_draft) if cost_per_draft else "— (no drafts yet)"}
     </td>
   </tr>
   <tr>
     <td style="padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px"><strong>Cost per qualified conversation ⭐</strong></td>
     <td style="text-align:right;padding:7px 12px;border-top:1px solid #e5e7eb;font-size:13px" colspan="2">
-      {'${:.2f} (MTD {} replies)'.format(cost_per_qualified_conv, qualified_convs) if cost_per_qualified_conv else f'— ({qualified_convs} qualified replies so far)'}
+      {"${:.2f} (MTD {} replies)".format(cost_per_qualified_conv, qualified_convs) if cost_per_qualified_conv else f"— ({qualified_convs} qualified replies so far)"}
     </td>
   </tr>
   <tr>
@@ -1736,14 +2046,18 @@ def _run_pipeline_monitor_email() -> None:
 </p>
 </body></html>"""
 
-        asyncio.run(send_email(
-            to="avi@digitillis.io",
-            subject=subject,
-            html_body=html,
-        ))
+        asyncio.run(
+            send_email(
+                to="avi@digitillis.io",
+                subject=subject,
+                html_body=html,
+            )
+        )
         logger.info(
             "Hourly spend report sent. 1h spend: $%.4f | drafts this hour: %d | acct remaining: $%.2f",
-            spend_1h, drafts_1h, acct_remaining,
+            spend_1h,
+            drafts_1h,
+            acct_remaining,
         )
     except Exception as e:
         logger.error("Pipeline monitor email failed: %s", e, exc_info=True)
@@ -1751,6 +2065,7 @@ def _run_pipeline_monitor_email() -> None:
 
 def _enrich_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_budget_ok
+
     if not workspace_budget_ok(ws, "enrichment"):
         return
 
@@ -1762,7 +2077,9 @@ def _enrich_workspace(ws: dict) -> None:
         logger.info(
             "Enrichment [%s]: cap of %d companies reached (%d processed) — paused. "
             "Reset enrichment_companies_processed in workspace settings to resume.",
-            ws["name"], cap, count_so_far,
+            ws["name"],
+            cap,
+            count_so_far,
         )
         return
 
@@ -1773,39 +2090,49 @@ def _enrich_workspace(ws: dict) -> None:
         run_limit = 200
 
     from backend.app.agents.enrichment import EnrichmentAgent
+
     agent = EnrichmentAgent(workspace_id=ws["id"])
     result = agent.run(limit=run_limit)
     logger.info(
         "Enrichment [%s]: processed=%d errors=%d (cap=%s used=%d)",
-        ws["name"], result.processed, result.errors,
-        cap, count_so_far + result.processed,
+        ws["name"],
+        result.processed,
+        result.errors,
+        cap,
+        count_so_far + result.processed,
     )
 
     # Persist running total back to workspace settings
     if result.processed > 0:
         try:
             from backend.app.core.database import get_supabase_client
+
             client = get_supabase_client()
             new_count = count_so_far + result.processed
             updated_settings = dict(settings)
             updated_settings["enrichment_companies_processed"] = new_count
-            client.table("workspaces").update({"settings": updated_settings}).eq("id", ws["id"]).execute()
+            client.table("workspaces").update({"settings": updated_settings}).eq(
+                "id", ws["id"]
+            ).execute()
 
             # Alert when cap is hit
             if cap is not None and new_count >= cap:
                 import asyncio
                 from backend.app.core.notifications import send_email
-                asyncio.run(send_email(
-                    to="avi@digitillis.io",
-                    subject=f"ProspectIQ: enrichment cap of {cap} companies reached",
-                    html_body=(
-                        f"<p>The enrichment run has processed <strong>{new_count}</strong> companies "
-                        f"(cap: {cap}).</p>"
-                        f"<p>Enrichment is now <strong>paused</strong>. Review the results, then "
-                        f"reset <code>enrichment_companies_processed</code> to 0 (or raise "
-                        f"<code>enrichment_company_cap</code>) in workspace settings to resume.</p>"
-                    ),
-                ))
+
+                asyncio.run(
+                    send_email(
+                        to="avi@digitillis.io",
+                        subject=f"ProspectIQ: enrichment cap of {cap} companies reached",
+                        html_body=(
+                            f"<p>The enrichment run has processed <strong>{new_count}</strong> companies "
+                            f"(cap: {cap}).</p>"
+                            f"<p>Enrichment is now <strong>paused</strong>. Review the results, then "
+                            f"reset <code>enrichment_companies_processed</code> to 0 (or raise "
+                            f"<code>enrichment_company_cap</code>) in workspace settings to resume.</p>"
+                        ),
+                    )
+                )
         except Exception as exc:
             logger.warning("Could not update enrichment counter: %s", exc)
 
@@ -1823,6 +2150,7 @@ def _run_enrichment() -> None:
     """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_enrich_workspace, "enrichment")
         # Draft fast-path disabled 2026-05-28 — generation moved to Claude Code workflow.
         pass
@@ -1834,11 +2162,14 @@ def _run_enrichment() -> None:
 # Discovery jobs — scheduled weekly to keep the pipeline full
 # ---------------------------------------------------------------------------
 
+
 def _fb_discovery_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_budget_ok
+
     if not workspace_budget_ok(ws, "fb_discovery"):
         return
     from backend.app.agents.discovery import DiscoveryAgent
+
     agent = DiscoveryAgent(workspace_id=ws["id"])
     result = agent.run(
         campaign_name="fsma204-fb",
@@ -1847,7 +2178,10 @@ def _fb_discovery_workspace(ws: dict) -> None:
     )
     logger.info(
         "F&B discovery [%s]: processed=%d skipped=%d errors=%d",
-        ws["name"], result.processed, result.skipped, result.errors,
+        ws["name"],
+        result.processed,
+        result.skipped,
+        result.errors,
     )
 
 
@@ -1855,6 +2189,7 @@ def _run_fb_discovery() -> None:
     """Monday 7am: discover new F&B FSMA 204 companies across all sub-segments."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_fb_discovery_workspace, "fb_discovery")
     except Exception as e:
         logger.error("Scheduled F&B discovery failed: %s", e, exc_info=True)
@@ -1862,9 +2197,11 @@ def _run_fb_discovery() -> None:
 
 def _mfg_discovery_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_budget_ok
+
     if not workspace_budget_ok(ws, "mfg_discovery"):
         return
     from backend.app.agents.discovery import DiscoveryAgent
+
     agent = DiscoveryAgent(workspace_id=ws["id"])
     result = agent.run(
         campaign_name="mfg-fsma",
@@ -1873,7 +2210,10 @@ def _mfg_discovery_workspace(ws: dict) -> None:
     )
     logger.info(
         "Mfg discovery [%s]: processed=%d skipped=%d errors=%d",
-        ws["name"], result.processed, result.skipped, result.errors,
+        ws["name"],
+        result.processed,
+        result.skipped,
+        result.errors,
     )
 
 
@@ -1881,6 +2221,7 @@ def _run_mfg_discovery() -> None:
     """Wednesday 7am: discover new discrete/process manufacturing companies."""
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_mfg_discovery_workspace, "mfg_discovery")
     except Exception as e:
         logger.error("Scheduled mfg discovery failed: %s", e, exc_info=True)
@@ -1890,24 +2231,31 @@ def _run_mfg_discovery() -> None:
 # Learning job — weekly self-improvement loop
 # ---------------------------------------------------------------------------
 
+
 def _learning_workspace(ws: dict) -> None:
     from backend.app.core.workspace_scheduler import workspace_budget_ok
+
     if not workspace_budget_ok(ws, "weekly_learning"):
         return
     from backend.app.agents.learning import LearningAgent
     from backend.app.core.database import Database
     from backend.app.core.pipeline_orchestrator import _resolve_auto_apply
+
     # Graduated rollout: env var explicit override wins; otherwise auto-apply
     # turns on once cumulative outcomes for this workspace cross the threshold
     # (LEARNING_AUTO_APPLY_OUTCOME_THRESHOLD = 50).
     from backend.app.core.database import Database
+
     _db = Database(workspace_id=ws["id"])
     auto_apply = _resolve_auto_apply(_db, ws["id"])
     agent = LearningAgent(workspace_id=ws["id"])
     result = agent.run(period_days=30, auto_apply=auto_apply)
     logger.info(
         "Weekly learning [%s]: processed=%d errors=%d (auto_apply=%s)",
-        ws["name"], result.processed, result.errors, auto_apply,
+        ws["name"],
+        result.processed,
+        result.errors,
+        auto_apply,
     )
 
 
@@ -1919,6 +2267,7 @@ def _run_weekly_learning() -> None:
     """
     try:
         from backend.app.core.workspace_scheduler import for_each_workspace
+
         for_each_workspace(_learning_workspace, "weekly_learning")
     except Exception as e:
         logger.error("Scheduled weekly learning failed: %s", e, exc_info=True)
@@ -1931,6 +2280,7 @@ def _run_weekly_post_send_audit() -> None:
 
         def _audit_workspace(ws: dict) -> None:
             from backend.app.agents.post_send_audit import PostSendAuditAgent
+
             PostSendAuditAgent(workspace_id=ws["id"]).run(days=7)
 
         for_each_workspace(_audit_workspace, "post_send_audit")
@@ -1947,8 +2297,10 @@ def _run_weekly_approval_audit() -> None:
 
         def _audit_workspace(ws: dict) -> None:
             from backend.app.agents.post_send_audit import PostSendAuditAgent
+
             PostSendAuditAgent(workspace_id=ws["id"]).audit_approvals(
-                sample_size=20, window_days=7,
+                sample_size=20,
+                window_days=7,
             )
 
         for_each_workspace(_audit_workspace, "approval_audit")
@@ -1963,6 +2315,7 @@ def _run_weekly_contact_backup() -> None:
 
         def _backup_workspace(ws: dict) -> None:
             from backend.app.agents.contact_backup import ContactBackupAgent
+
             ContactBackupAgent(workspace_id=ws["id"]).run()
 
         for_each_workspace(_backup_workspace, "contact_backup")
@@ -1977,14 +2330,19 @@ def _run_signal_monitor() -> None:
 
         def _signal_monitor_workspace(ws: dict) -> None:
             from backend.app.core.workspace_scheduler import workspace_budget_ok
+
             if not workspace_budget_ok(ws, "signal_monitor"):
                 return
             from backend.app.agents.signal_monitor import SignalMonitorAgent
+
             agent = SignalMonitorAgent(workspace_id=ws["id"])
             result = agent.run(limit=50, min_pqs=30)
             logger.info(
                 "Signal monitor [%s]: refreshed=%d skipped=%d errors=%d",
-                ws["name"], result.processed, result.skipped, result.errors,
+                ws["name"],
+                result.processed,
+                result.skipped,
+                result.errors,
             )
 
         for_each_workspace(_signal_monitor_workspace, "signal_monitor")
@@ -1999,11 +2357,14 @@ def _run_reengagement() -> None:
 
         def _reengagement_workspace(ws: dict) -> None:
             from backend.app.agents.reengagement import ReengagementAgent
+
             agent = ReengagementAgent(workspace_id=ws["id"])
             result = agent.run(limit=50)
             logger.info(
                 "Reengagement [%s]: requeued=%d errors=%d",
-                ws["name"], result.processed, result.errors,
+                ws["name"],
+                result.processed,
+                result.errors,
             )
 
         for_each_workspace(_reengagement_workspace, "reengagement")
@@ -2034,6 +2395,7 @@ def _run_weekly_signal_scrapers() -> None:
 
         try:
             from backend.app.utils.notifications import notify_slack
+
             notify_slack(
                 f"*Signal scrapers complete:* "
                 f"FDA {fda_result.get('matched', 0)} matched | "
@@ -2051,6 +2413,7 @@ def _run_weekly_cost_summary() -> None:
     try:
         from backend.app.core.database import get_supabase_client
         from datetime import datetime, timezone, timedelta
+
         client = get_supabase_client()
         now = datetime.now(timezone.utc)
         week_start = (now - timedelta(days=7)).isoformat()
@@ -2070,15 +2433,19 @@ def _run_weekly_cost_summary() -> None:
         )
 
         week_rows = week_result.data or []
-        month_total = sum(float(r.get("estimated_cost_usd") or 0) for r in (month_result.data or []))
+        month_total = sum(
+            float(r.get("estimated_cost_usd") or 0) for r in (month_result.data or [])
+        )
         week_total = sum(float(r.get("estimated_cost_usd") or 0) for r in week_rows)
 
         by_provider: dict[str, float] = {}
         for r in week_rows:
-            key = f"{r.get('provider','?')}/{r.get('model','?')}"
+            key = f"{r.get('provider', '?')}/{r.get('model', '?')}"
             by_provider[key] = by_provider.get(key, 0) + float(r.get("estimated_cost_usd") or 0)
 
-        breakdown = " | ".join(f"{k}: ${v:.2f}" for k, v in sorted(by_provider.items(), key=lambda x: -x[1])[:5])
+        breakdown = " | ".join(
+            f"{k}: ${v:.2f}" for k, v in sorted(by_provider.items(), key=lambda x: -x[1])[:5]
+        )
         logger.info(
             f"WEEKLY COST SUMMARY — past 7 days: ${week_total:.2f} | "
             f"month-to-date: ${month_total:.2f} / ${MONTHLY_API_BUDGET_USD:.2f} budget | "
@@ -2104,7 +2471,9 @@ def _run_daily_financial_summary() -> None:
         now = datetime.now(timezone.utc)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-        yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        yesterday_start = (
+            (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        )
 
         def fetch_costs(since: str) -> list[dict]:
             # Exclude Apollo: its estimated_cost_usd is a fake hardcoded figure ($0.0285/call),
@@ -2114,21 +2483,24 @@ def _run_daily_financial_summary() -> None:
                 .select("provider,model,estimated_cost_usd,input_tokens,output_tokens")
                 .gte("created_at", since)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             return [r for r in rows if r.get("provider") != "apollo"]
 
-        today_rows  = fetch_costs(today_start)
-        month_rows  = fetch_costs(month_start)
+        today_rows = fetch_costs(today_start)
+        month_rows = fetch_costs(month_start)
 
-        def sum_cost(rows): return sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+        def sum_cost(rows):
+            return sum(float(r.get("estimated_cost_usd") or 0) for r in rows)
+
         def by_model(rows):
             agg: dict[str, dict] = {}
             for r in rows:
-                key = f"{r.get('provider','?')}/{r.get('model','?')}"
+                key = f"{r.get('provider', '?')}/{r.get('model', '?')}"
                 if key not in agg:
                     agg[key] = {"cost": 0.0, "calls": 0}
-                agg[key]["cost"]  += float(r.get("estimated_cost_usd") or 0)
+                agg[key]["cost"] += float(r.get("estimated_cost_usd") or 0)
                 agg[key]["calls"] += 1
             return sorted(agg.items(), key=lambda x: -x[1]["cost"])
 
@@ -2141,7 +2513,8 @@ def _run_daily_financial_summary() -> None:
             .eq("provider", "apollo")
             .gte("created_at", today_start)
             .execute()
-            .count or 0
+            .count
+            or 0
         )
         apollo_calls_mtd = (
             client.table("api_costs")
@@ -2149,28 +2522,31 @@ def _run_daily_financial_summary() -> None:
             .eq("provider", "apollo")
             .gte("created_at", month_start)
             .execute()
-            .count or 0
+            .count
+            or 0
         )
 
-        today_total   = sum_cost(today_rows)
+        today_total = sum_cost(today_rows)
         yesterday_total = sum_cost(yesterday_rows)
-        mtd_total     = sum_cost(month_rows)
+        mtd_total = sum_cost(month_rows)
 
         # Planned amounts (approved 2026-05-02, current scale ~50 sends/day)
         # Source: docs/FINANCIAL_PROJECTIONS.md
-        PLAN_CLAUDE_MONTHLY   = 21.0    # Claude API only
-        PLAN_TOTAL_MONTHLY    = 193.0   # All-in (Claude + Perplexity + Apollo + Infra)
-        PLAN_CLAUDE_DAILY     = PLAN_CLAUDE_MONTHLY / 30
-        BUDGET_CAP            = MONTHLY_API_BUDGET_USD  # $200 hard stop (Claude only)
+        PLAN_CLAUDE_MONTHLY = 21.0  # Claude API only
+        PLAN_TOTAL_MONTHLY = 193.0  # All-in (Claude + Perplexity + Apollo + Infra)
+        PLAN_CLAUDE_DAILY = PLAN_CLAUDE_MONTHLY / 30
+        BUDGET_CAP = MONTHLY_API_BUDGET_USD  # $200 hard stop (Claude only)
 
         # MTD Claude-only spend
         mtd_claude = sum(
             float(r.get("estimated_cost_usd") or 0)
-            for r in month_rows if r.get("provider") == "anthropic"
+            for r in month_rows
+            if r.get("provider") == "anthropic"
         )
         today_claude = sum(
             float(r.get("estimated_cost_usd") or 0)
-            for r in today_rows if r.get("provider") == "anthropic"
+            for r in today_rows
+            if r.get("provider") == "anthropic"
         )
 
         # Check for banned model (web_search) sneaking back in
@@ -2222,7 +2598,7 @@ def _run_daily_financial_summary() -> None:
             if plan == 0:
                 return ""
             diff = actual - plan
-            pct = (diff / plan * 100)
+            pct = diff / plan * 100
             color = "#16a34a" if diff <= 0 else "#dc2626"
             sign = "+" if diff > 0 else ""
             return f"<span style='color:{color};font-size:12px'> ({sign}{pct:.0f}% vs plan{' ' + label if label else ''})</span>"
@@ -2230,7 +2606,11 @@ def _run_daily_financial_summary() -> None:
         # Model breakdown rows for today
         model_rows_html = ""
         for model_key, stats in by_model(today_rows)[:6]:
-            flag = " <span style='color:#dc2626;font-size:11px'>DISABLED</span>" if "web_search" in model_key else ""
+            flag = (
+                " <span style='color:#dc2626;font-size:11px'>DISABLED</span>"
+                if "web_search" in model_key
+                else ""
+            )
             model_rows_html += (
                 f"<tr><td style='padding:6px 12px;border-top:1px solid #e5e7eb;font-size:13px'>"
                 f"{model_key}{flag}</td>"
@@ -2312,7 +2692,7 @@ def _run_daily_financial_summary() -> None:
   <tr>
     <td style="padding:8px 12px;border-top:1px solid #e5e7eb">Cost per email sent (MTD)</td>
     <td style="text-align:right;padding:8px 12px;border-top:1px solid #e5e7eb" colspan="2">
-      {'${:.4f}'.format(mtd_total / sends_mtd) if sends_mtd else '—'}
+      {"${:.4f}".format(mtd_total / sends_mtd) if sends_mtd else "—"}
     </td>
   </tr>
 </table>
@@ -2348,12 +2728,18 @@ def _run_daily_financial_summary() -> None:
 </p>
 </body></html>"""
 
-        asyncio.run(send_email(
-            to="avi@digitillis.io",
-            subject=f"[ProspectIQ] Daily spend: ${today_claude:.4f} today · ${mtd_claude:.2f} MTD · {sends_today} sent · {pending} pending approval",
-            html_body=html,
-        ))
-        logger.info("Daily financial summary sent. Today Claude: $%.4f, MTD: $%.2f", today_claude, mtd_claude)
+        asyncio.run(
+            send_email(
+                to="avi@digitillis.io",
+                subject=f"[ProspectIQ] Daily spend: ${today_claude:.4f} today · ${mtd_claude:.2f} MTD · {sends_today} sent · {pending} pending approval",
+                html_body=html,
+            )
+        )
+        logger.info(
+            "Daily financial summary sent. Today Claude: $%.4f, MTD: $%.2f",
+            today_claude,
+            mtd_claude,
+        )
     except Exception as e:
         logger.error("Daily financial summary failed: %s", e, exc_info=True)
 
@@ -2363,6 +2749,7 @@ def _run_auto_action_low_priority() -> None:
     try:
         from backend.app.core.database import Database
         from datetime import datetime, timezone, timedelta
+
         db = Database()
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
         result = (
@@ -2387,6 +2774,7 @@ def _run_bounce_hygiene() -> None:
 
         def _hygiene_workspace(ws: dict) -> None:
             from backend.app.agents.bounce_hygiene import BounceHygieneAgent
+
             summary = BounceHygieneAgent(workspace_id=ws["id"]).run()
             logger.info(
                 "Bounce hygiene [%s]: contacts=%d domains=%d already=%d errors=%d",
@@ -2416,13 +2804,18 @@ def _validate_scheduler_signatures() -> None:
         ("ResearchAgent", "backend.app.agents.research", {"limit": True, "batch_size": False}),
         ("OutreachAgent", "backend.app.agents.outreach", {"limit": True}),
         ("EnrichmentAgent", "backend.app.agents.enrichment", {"limit": True}),
-        ("DiscoveryAgent", "backend.app.agents.discovery", {"max_pages": True, "campaign_name": True, "tiers": True}),
+        (
+            "DiscoveryAgent",
+            "backend.app.agents.discovery",
+            {"max_pages": True, "campaign_name": True, "tiers": True},
+        ),
         ("LearningAgent", "backend.app.agents.learning", {"period_days": True, "auto_apply": True}),
     ]
 
     for class_name, module_path, param_checks in checks:
         try:
             import importlib
+
             mod = importlib.import_module(module_path)
             cls = getattr(mod, class_name)
             sig = inspect.signature(cls.run)
@@ -2441,7 +2834,9 @@ def _validate_scheduler_signatures() -> None:
                         f"signature. Audit scheduler wrappers before deploying."
                     )
         except ImportError:
-            logger.warning("_validate_scheduler_signatures: could not import %s — skipping check", module_path)
+            logger.warning(
+                "_validate_scheduler_signatures: could not import %s — skipping check", module_path
+            )
         except RuntimeError:
             raise  # Re-raise so startup fails loudly
 
@@ -2461,6 +2856,7 @@ async def lifespan(app: FastAPI):
         global _scheduler
         from apscheduler.schedulers.background import BackgroundScheduler
         from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
         # job_defaults make cron ticks resilient to a briefly-blocked or
         # late-starting scheduler thread:
         #   misfire_grace_time=3600 — a tick missed by up to 1h still runs once
@@ -2481,7 +2877,10 @@ async def lifespan(app: FastAPI):
         # Offsets: health_snapshot +0s, qualification +30s, pipeline_qc +45s,
         #          gmail_intake +90s, dispatch_loop +120s.
         scheduler.add_job(
-            _run_health_snapshot, "interval", minutes=15, id="health_snapshot",
+            _run_health_snapshot,
+            "interval",
+            minutes=15,
+            id="health_snapshot",
             start_date=_now,
         )
         # SUSPENDED (Avanish 2026-05-15): pipeline_qc emails paused until further notice.
@@ -2507,22 +2906,31 @@ async def lifespan(app: FastAPI):
         # schedule_recompute: nightly rebuild of the forward send schedule from live
         # state (absorbs sends, reply-pauses, bounces, mailbox changes, new drafts).
         scheduler.add_job(
-            _run_schedule_recompute, "cron",
-            hour=2, minute=30, timezone="America/Chicago",
+            _run_schedule_recompute,
+            "cron",
+            hour=2,
+            minute=30,
+            timezone="America/Chicago",
             id="schedule_recompute",
         )
         # enqueue_schedule: Mon-Fri 7:55 AM Chicago — moves today's pre-computed
         # schedule slice into outbound_queue just before the dispatch window opens.
         scheduler.add_job(
-            _run_enqueue_schedule, "cron",
-            day_of_week="mon-fri", hour=7, minute=55,
+            _run_enqueue_schedule,
+            "cron",
+            day_of_week="mon-fri",
+            hour=7,
+            minute=55,
             timezone="America/Chicago",
             id="enqueue_schedule",
         )
         # dispatch_loop: queue-consumer send path (PR G). Sole scheduler-registered send path.
         scheduler.add_job(
-            _run_dispatch_loop, "cron",
-            day_of_week="mon-fri", hour="8-11", minute="0,30",
+            _run_dispatch_loop,
+            "cron",
+            day_of_week="mon-fri",
+            hour="8-11",
+            minute="0,30",
             timezone="America/Chicago",
             id="dispatch_loop",
         )
@@ -2531,22 +2939,35 @@ async def lifespan(app: FastAPI):
         # exist but the dispatcher recorded zero send_attempts today — i.e. the
         # scheduler silently died. Makes a dead dispatcher visible same-day.
         scheduler.add_job(
-            _run_dispatch_heartbeat_check, "cron",
-            day_of_week="mon-fri", hour=11, minute=40,
+            _run_dispatch_heartbeat_check,
+            "cron",
+            day_of_week="mon-fri",
+            hour=11,
+            minute=40,
             timezone="America/Chicago",
             id="dispatch_heartbeat",
         )
         # Stale lock reclaim: every 2 minutes, all workspaces.
         scheduler.add_job(_run_reclaim_stale_locks, "interval", minutes=2, id="reclaim_stale_locks")
+        # Orphan DISPATCHED sweeper: hourly — marks send_attempts stuck in DISPATCHED
+        # for >30 min as PERMANENTLY_FAILED so accounting never drifts.
+        scheduler.add_job(_run_dispatched_sweeper, "interval", hours=1, id="dispatched_sweeper")
         scheduler.add_job(_run_process_due_sequences, "interval", hours=1, id="process_due")
         scheduler.add_job(_run_poll_instantly, "interval", hours=6, id="poll_instantly")
         scheduler.add_job(_run_process_hitl_snoozed, "interval", minutes=15, id="hitl_snoozed")
-        scheduler.add_job(_run_auto_action_low_priority, "interval", hours=1, id="hitl_auto_archive")
-        scheduler.add_job(_run_personalization_refresh, "interval", hours=24, id="personalization_refresh")
+        scheduler.add_job(
+            _run_auto_action_low_priority, "interval", hours=1, id="hitl_auto_archive"
+        )
+        scheduler.add_job(
+            _run_personalization_refresh, "interval", hours=24, id="personalization_refresh"
+        )
         scheduler.add_job(_run_jit_pregenerate, "interval", hours=24, id="jit_pregenerate")
         # Gmail intake: every 15 min so replies surface quickly for triage
         scheduler.add_job(
-            _run_gmail_intake, "interval", minutes=15, id="gmail_intake",
+            _run_gmail_intake,
+            "interval",
+            minutes=15,
+            id="gmail_intake",
             start_date=_now + _td(seconds=90),
         )
         # Research: PAUSED again 2026-05-30 — research is run via the Claude Code outreach
@@ -2559,7 +2980,10 @@ async def lifespan(app: FastAPI):
         # )
         # Qualification: every 15 min 24/7 — +30s offset avoids health_snapshot collision
         scheduler.add_job(
-            _run_qualification, "interval", minutes=15, id="qualification",
+            _run_qualification,
+            "interval",
+            minutes=15,
+            id="qualification",
             start_date=_now + _td(seconds=30),
         )
         # LLM 7-gate qualification: PAUSED 2026-05-30 — spends Anthropic credits per company.
@@ -2572,7 +2996,10 @@ async def lifespan(app: FastAPI):
         # Auto-approves integrity-passing drafts; holds SAMPLED_QA_RATE fraction for human QA.
         # Set SAMPLED_QA_ENABLED=true in Railway to activate (R10 autonomy split fix).
         scheduler.add_job(
-            _run_sampled_qa_approve, "interval", minutes=30, id="sampled_qa_approve",
+            _run_sampled_qa_approve,
+            "interval",
+            minutes=30,
+            id="sampled_qa_approve",
             start_date=_now + _td(minutes=15),
         )
         # Draft generation: DISABLED 2026-05-28.
@@ -2610,8 +3037,11 @@ async def lifespan(app: FastAPI):
         # )
         # Weekly post-send audit: Sunday 7am Chicago
         scheduler.add_job(
-            _run_weekly_post_send_audit, "cron",
-            day_of_week="sun", hour=7, minute=0,
+            _run_weekly_post_send_audit,
+            "cron",
+            day_of_week="sun",
+            hour=7,
+            minute=0,
             timezone="America/Chicago",
             id="weekly_post_send_audit",
         )
@@ -2619,30 +3049,42 @@ async def lifespan(app: FastAPI):
         # Samples 20 approved drafts from the prior 7 days and runs them
         # through the benchmark detector.
         scheduler.add_job(
-            _run_weekly_approval_audit, "cron",
-            day_of_week="fri", hour=9, minute=0,
+            _run_weekly_approval_audit,
+            "cron",
+            day_of_week="fri",
+            hour=9,
+            minute=0,
             timezone="America/Chicago",
             id="weekly_approval_audit",
         )
         # Weekly contact backup: Saturday 5am Chicago → /Volumes/Digitillis/Data/prospectiq_backups/
         scheduler.add_job(
-            _run_weekly_contact_backup, "cron",
-            day_of_week="sat", hour=5, minute=0,
+            _run_weekly_contact_backup,
+            "cron",
+            day_of_week="sat",
+            hour=5,
+            minute=0,
             timezone="America/Chicago",
             id="weekly_contact_backup",
         )
         # Weekly signal scrapers: Saturday 6am Chicago (FDA + OSHA)
         scheduler.add_job(
-            _run_weekly_signal_scrapers, "cron",
-            day_of_week="sat", hour=6, minute=0,
+            _run_weekly_signal_scrapers,
+            "cron",
+            day_of_week="sat",
+            hour=6,
+            minute=0,
             timezone="America/Chicago",
             id="weekly_signal_scrapers",
         )
         # Weekly signal monitor: Sunday 6am Chicago — re-research tracked
         # companies for new buying signals (leadership changes, capex, etc.)
         scheduler.add_job(
-            _run_signal_monitor, "cron",
-            day_of_week="sun", hour=6, minute=0,
+            _run_signal_monitor,
+            "cron",
+            day_of_week="sun",
+            hour=6,
+            minute=0,
             timezone="America/Chicago",
             id="signal_monitor",
         )
@@ -2651,15 +3093,21 @@ async def lifespan(app: FastAPI):
         # them with fresh messaging instead of letting them fall off pipeline.
         # Slot one hour after post_send_audit to avoid contention.
         scheduler.add_job(
-            _run_reengagement, "cron",
-            day_of_week="sun", hour=8, minute=0,
+            _run_reengagement,
+            "cron",
+            day_of_week="sun",
+            hour=8,
+            minute=0,
             timezone="America/Chicago",
             id="reengagement",
         )
         # Weekly cost summary: Monday 8am Chicago
         scheduler.add_job(
-            _run_weekly_cost_summary, "cron",
-            day_of_week="mon", hour=8, minute=0,
+            _run_weekly_cost_summary,
+            "cron",
+            day_of_week="mon",
+            hour=8,
+            minute=0,
             timezone="America/Chicago",
             id="weekly_cost_summary",
         )
@@ -2672,8 +3120,11 @@ async def lifespan(app: FastAPI):
         # )
         # Daily GTM brief: 6am Chicago Mon-Fri — Claude-written analysis + email to Avi
         scheduler.add_job(
-            _run_daily_report, "cron",
-            day_of_week="mon-fri", hour=6, minute=0,
+            _run_daily_report,
+            "cron",
+            day_of_week="mon-fri",
+            hour=6,
+            minute=0,
             timezone="America/Chicago",
             id="daily_report",
         )
@@ -2681,8 +3132,10 @@ async def lifespan(app: FastAPI):
         # Apollo job postings + fresh signals so any overnight buying signal
         # is reflected in PQS before the morning send window opens.
         scheduler.add_job(
-            _run_intent_refresh, "cron",
-            hour=5, minute=0,
+            _run_intent_refresh,
+            "cron",
+            hour=5,
+            minute=0,
             timezone="America/Chicago",
             id="intent_refresh",
         )
@@ -2690,8 +3143,10 @@ async def lifespan(app: FastAPI):
         # back onto contacts.status + the do_not_contact registry so the next
         # send cycle never re-targets a known bounce.
         scheduler.add_job(
-            _run_bounce_hygiene, "cron",
-            hour=3, minute=0,
+            _run_bounce_hygiene,
+            "cron",
+            hour=3,
+            minute=0,
             timezone="America/Chicago",
             id="bounce_hygiene",
         )
@@ -2714,7 +3169,8 @@ async def lifespan(app: FastAPI):
         # the other startup-offset jobs). Recovers ticks lost to a mid-window
         # dyno restart, which the in-memory jobstore cannot otherwise replay.
         scheduler.add_job(
-            _dispatch_catchup_if_in_window, "date",
+            _dispatch_catchup_if_in_window,
+            "date",
             run_date=_now + _td(seconds=45),
             id="dispatch_catchup_startup",
         )
@@ -2755,10 +3211,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow Next.js dev server, Vercel, and Netlify domains
+# CORS — allow localhost dev and *.digitillis.com only.
+# Wildcard *.vercel.app / *.netlify.app removed: any attacker can create a
+# free deployment at evil.vercel.app and exploit allow_credentials=True to make
+# credentialed cross-origin requests on behalf of a logged-in user.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://localhost(:\d+)?$|^https://.*\.vercel\.app$|^https://.*\.netlify\.app$|^https://.*\.digitillis\.com$",
+    allow_origin_regex=r"^https?://localhost(:\d+)?$|^https://[a-zA-Z0-9-]+\.digitillis\.com$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -2817,22 +3276,23 @@ app.include_router(quality_dashboard.router)
 async def health_check():
     """Basic health check endpoint."""
     from backend.app.core.config import get_settings
+
     s = get_settings()
     secret = s.resend_webhook_secret or ""
     return {
         "status": "ok",
         "service": "prospectiq-api",
         "resend_webhook_secret_set": bool(secret),
-        "resend_webhook_secret_preview": secret[:8] + "..." if len(secret) > 8 else secret,
     }
 
 
-@app.get("/api/admin/send-config")
+@app.get("/api/admin/send-config", dependencies=[Depends(get_current_user)])
 async def send_config_check():
     """Diagnostic: show send-relevant config flags (no secret values)."""
     from backend.app.core.config import get_settings
     from backend.app.core.database import get_supabase_client
     from datetime import date
+
     s = get_settings()
     client = get_supabase_client()
     today = date.today().isoformat()
@@ -2849,7 +3309,10 @@ async def send_config_check():
         cfg_row = (
             client.table("outreach_send_config")
             .select("daily_limit,batch_size,min_gap_minutes,send_enabled")
-            .limit(1).execute().data or [{}]
+            .limit(1)
+            .execute()
+            .data
+            or [{}]
         )[0]
     except Exception:
         cfg_row = {}
@@ -2882,6 +3345,7 @@ async def send_config_check():
     try:
         import uuid as _uuid
         from datetime import datetime as _dt, timezone as _tz
+
         drafts_sample = (
             client.table("outreach_drafts")
             .select("id,sent_at")
@@ -2904,7 +3368,9 @@ async def send_config_check():
         "env_resend_api_key_set": bool(s.resend_api_key),
         "env_resend_api_key_prefix": s.resend_api_key[:8] + "..." if s.resend_api_key else "",
         "env_supabase_service_key_set": bool(s.supabase_service_key),
-        "env_supabase_service_key_role": "service_role" if "service_role" in (s.supabase_service_key or "") else "anon_or_other",
+        "env_supabase_service_key_role": "service_role"
+        if "service_role" in (s.supabase_service_key or "")
+        else "anon_or_other",
         "env_send_window_start": s.send_window_start,
         "env_send_window_end": s.send_window_end,
         "db_send_config": cfg_row,
@@ -2915,7 +3381,7 @@ async def send_config_check():
     }
 
 
-@app.get("/api/admin/send-trace")
+@app.get("/api/admin/send-trace", dependencies=[Depends(get_current_user)])
 async def send_trace():
     """Step-by-step dry-run of the send path — identifies exactly where it stops."""
     from backend.app.core.config import get_settings
@@ -2943,15 +3409,23 @@ async def send_trace():
     today = date.today().isoformat()
     try:
         sent_today = (
-            client.table("outreach_drafts").select("id", count="exact")
-            .gte("sent_at", f"{today}T00:00:00").execute()
+            client.table("outreach_drafts")
+            .select("id", count="exact")
+            .gte("sent_at", f"{today}T00:00:00")
+            .execute()
         ).count or 0
     except Exception as e:
         return {"abort_at": f"count_sent_today error: {e}", "trace": trace}
 
     cfg = {"daily_limit": 30, "batch_size": 10}
     try:
-        row = client.table("outreach_send_config").select("daily_limit,batch_size").limit(1).execute().data
+        row = (
+            client.table("outreach_send_config")
+            .select("daily_limit,batch_size")
+            .limit(1)
+            .execute()
+            .data
+        )
         if row:
             cfg.update(row[0])
     except Exception:
@@ -2968,7 +3442,9 @@ async def send_trace():
     try:
         drafts = (
             client.table("outreach_drafts")
-            .select("id,company_id,contact_id,subject,channel,companies(name),contacts(full_name,email)")
+            .select(
+                "id,company_id,contact_id,subject,channel,companies(name),contacts(full_name,email)"
+            )
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
             .eq("channel", "email")
@@ -3002,7 +3478,10 @@ async def send_trace():
 
         try:
             suppressed, sup_reason = is_suppressed(
-                db, draft["company_id"], contact_id=draft.get("contact_id"), skip_duplicate_check=True
+                db,
+                draft["company_id"],
+                contact_id=draft.get("contact_id"),
+                skip_duplicate_check=True,
             )
             info["suppressed"] = suppressed
             info["sup_reason"] = sup_reason
@@ -3015,7 +3494,9 @@ async def send_trace():
             continue
 
         try:
-            locked, lock_reason = is_company_locked(db, draft["company_id"], exclude_contact_id=draft.get("contact_id"))
+            locked, lock_reason = is_company_locked(
+                db, draft["company_id"], exclude_contact_id=draft.get("contact_id")
+            )
             info["locked"] = locked
             info["lock_reason"] = lock_reason
         except Exception as e:
@@ -3033,7 +3514,7 @@ async def send_trace():
     return {"abort_at": None, "trace": trace, "per_draft": per_draft}
 
 
-@app.post("/api/admin/trigger-send")
+@app.post("/api/admin/trigger-send", dependencies=[Depends(get_current_user)])
 async def trigger_send():
     """Manually trigger send_approved (legacy path) for operator use only.
 
@@ -3042,11 +3523,15 @@ async def trigger_send():
     Do not use this endpoint after SEND_ENABLED is set to true — use trigger-dispatch instead.
     """
     import threading
+
     threading.Thread(target=_run_send_approved, daemon=True).start()
-    return {"status": "triggered", "message": "send_approved (legacy path) started in background — see retirement note in D7"}
+    return {
+        "status": "triggered",
+        "message": "send_approved (legacy path) started in background — see retirement note in D7",
+    }
 
 
-@app.get("/api/prospectiq/admin/cadence-velocity")
+@app.get("/api/prospectiq/admin/cadence-velocity", dependencies=[Depends(get_current_user)])
 async def cadence_velocity(window_days: int = 30):
     """Cadence-velocity SLO data (P4.4 — GTM rebuild 2026-05-08).
 
@@ -3079,7 +3564,8 @@ async def cadence_velocity(window_days: int = 30):
             .eq("sequence_step", 1)
             .limit(2000)
             .execute()
-            .data or []
+            .data
+            or []
         )
         for r in rows:
             try:
@@ -3103,7 +3589,8 @@ async def cadence_velocity(window_days: int = 30):
             .eq("sequence_step", 2)
             .limit(2000)
             .execute()
-            .data or []
+            .data
+            or []
         )
         contact_ids = list({r["contact_id"] for r in step2_rows if r.get("contact_id")})
         engagements_by_contact: dict[str, datetime] = {}
@@ -3119,7 +3606,8 @@ async def cadence_velocity(window_days: int = 30):
                     .order("created_at", desc=True)
                     .limit(1000)
                     .execute()
-                    .data or []
+                    .data
+                    or []
                 )
                 for ev in ev_rows:
                     cid = ev.get("contact_id")
@@ -3158,12 +3646,15 @@ async def cadence_velocity(window_days: int = 30):
             .not_.is_("last_founder_action_at", "null")
             .limit(1000)
             .execute()
-            .data or []
+            .data
+            or []
         )
         for r in state_rows:
             try:
                 hot = datetime.fromisoformat(str(r["hot_at"]).replace("Z", "+00:00"))
-                act = datetime.fromisoformat(str(r["last_founder_action_at"]).replace("Z", "+00:00"))
+                act = datetime.fromisoformat(
+                    str(r["last_founder_action_at"]).replace("Z", "+00:00")
+                )
                 if act >= hot:
                     hot_to_founder_action.append((act - hot).total_seconds() / 3600.0)
             except Exception:

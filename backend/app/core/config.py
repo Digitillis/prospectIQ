@@ -62,8 +62,8 @@ class Settings(BaseSettings):
     # 8am–11am Chicago CDT (UTC-5) → SEND_WINDOW_START=13 SEND_WINDOW_END=16
     # 8am–11am Chicago CST (UTC-6, Nov–Mar) → SEND_WINDOW_START=14 SEND_WINDOW_END=17
     # Set both to 0 to disable the window check (send any time SEND_ENABLED is true).
-    send_window_start: int = 0   # UTC hour to start sending (inclusive)
-    send_window_end: int = 0     # UTC hour to stop sending (exclusive); 0 = no window
+    send_window_start: int = 0  # UTC hour to start sending (inclusive)
+    send_window_end: int = 0  # UTC hour to stop sending (exclusive); 0 = no window
 
     # Auth — Supabase JWT secret (from Project Settings → API → JWT Secret)
     supabase_jwt_secret: str = ""
@@ -72,16 +72,16 @@ class Settings(BaseSettings):
     default_workspace_id: str = "00000000-0000-0000-0000-000000000001"
 
     # Stripe billing
-    stripe_secret_key: str = ""         # sk_live_... or sk_test_...
-    stripe_webhook_secret: str = ""     # whsec_...
+    stripe_secret_key: str = ""  # sk_live_... or sk_test_...
+    stripe_webhook_secret: str = ""  # whsec_...
     app_base_url: str = "https://app.prospectiq.ai"
 
     # Stripe price IDs — set per environment after creating products in Stripe dashboard.
     # Monthly prices:
-    stripe_price_starter: str = ""      # $1,500/mo
-    stripe_price_growth: str = ""       # $3,500/mo
-    stripe_price_scale: str = ""        # $7,500/mo
-    stripe_price_api: str = ""          # $0.05/company (metered)
+    stripe_price_starter: str = ""  # $1,500/mo
+    stripe_price_growth: str = ""  # $3,500/mo
+    stripe_price_scale: str = ""  # $7,500/mo
+    stripe_price_api: str = ""  # $0.05/company (metered)
     # Annual prices (15% discount):
     stripe_price_starter_annual: str = ""
     stripe_price_growth_annual: str = ""
@@ -89,26 +89,30 @@ class Settings(BaseSettings):
 
     # Unipile — LinkedIn automation
     unipile_api_key: str = ""
-    unipile_account_id: str = ""        # LinkedIn account ID registered in Unipile
-    unipile_dsn: str = ""               # Unipile DSN (e.g. api4.unipile.com:13453)
-    unipile_webhook_secret: str = ""    # Shared secret for validating Unipile webhook calls
+    unipile_account_id: str = ""  # LinkedIn account ID registered in Unipile
+    unipile_dsn: str = ""  # Unipile DSN (e.g. api4.unipile.com:13453)
+    unipile_webhook_secret: str = ""  # Shared secret for validating Unipile webhook calls
+
+    # Per-integration webhook secrets — set independent values in Railway, never share
+    trigify_webhook_secret: str = ""  # Trigify competitor-signal webhook auth
+    meeting_transcript_webhook_secret: str = ""  # Fathom/Fireflies meeting transcript webhook auth
 
     # Gmail IMAP reply intake
-    gmail_user: str = ""              # e.g. avi@digitillis.io
-    gmail_app_password: str = ""      # App Password from myaccount.google.com/apppasswords
+    gmail_user: str = ""  # e.g. avi@digitillis.io
+    gmail_app_password: str = ""  # App Password from myaccount.google.com/apppasswords
 
     # Daily GTM report recipient (defaults to founder email)
     report_recipient_email: str = "avi@digitillis.io"
 
     # HubSpot CRM sync (optional)
-    hubspot_api_key: str = ""           # Private app access token
-    hubspot_portal_id: str = ""         # Numeric portal/account ID
+    hubspot_api_key: str = ""  # Private app access token
+    hubspot_portal_id: str = ""  # Numeric portal/account ID
 
     # Salesforce CRM sync (optional)
     salesforce_username: str = ""
     salesforce_password: str = ""
     salesforce_security_token: str = ""
-    salesforce_domain: str = "login"    # "login" for production, "test" for sandbox
+    salesforce_domain: str = "login"  # "login" for production, "test" for sandbox
     salesforce_consumer_key: str = ""
     salesforce_consumer_secret: str = ""
 
@@ -118,7 +122,7 @@ class Settings(BaseSettings):
     voyage_api_key: str = ""
 
     # Sentry — error tracking and performance monitoring
-    sentry_dsn: str = ""                # Get from Sentry project settings
+    sentry_dsn: str = ""  # Get from Sentry project settings
     sentry_environment: str = "production"  # production | staging | development
     sentry_traces_sample_rate: float = 0.1  # 10% of transactions for performance monitoring
 

@@ -12,11 +12,24 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import re
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
+
+
+def _safe_search(value: str) -> str:
+    """Strip characters that PostgREST interprets as .or_() operators.
+
+    PostgREST's .or_() parser treats '(', ')', and ',' as structural tokens.
+    Injecting them allows a caller to escape the intended filter and append
+    arbitrary filter predicates (e.g. workspace_id.neq.other_tenant).
+    """
+    return re.sub(r"[(),]", "", value)
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +43,7 @@ def get_db() -> Database:
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
+
 
 class ContactUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -61,6 +75,7 @@ class NextActionUpdate(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("/relationship-summary")
 async def relationship_summary():
     """Get relationship strength distribution across all contacts.
@@ -70,22 +85,25 @@ async def relationship_summary():
     """
     db = get_db()
     contacts_result = (
-        db._filter_ws(db.client.table("contacts")
-        .select("id, full_name, relationship_strength, is_decision_maker, company_id, companies!contacts_company_id_fkey(name, tier)"))
+        db._filter_ws(
+            db.client.table("contacts").select(
+                "id, full_name, relationship_strength, is_decision_maker, company_id, companies!contacts_company_id_fkey(name, tier)"
+            )
+        )
         .not_.is_("relationship_strength", "null")
         .execute()
     )
     all_contacts = contacts_result.data or []
 
     strong = [c for c in all_contacts if (c.get("relationship_strength") or 0) >= 70]
-    warm   = [c for c in all_contacts if 30 <= (c.get("relationship_strength") or 0) < 70]
-    cold   = [c for c in all_contacts if (c.get("relationship_strength") or 0) < 30]
+    warm = [c for c in all_contacts if 30 <= (c.get("relationship_strength") or 0) < 70]
+    cold = [c for c in all_contacts if (c.get("relationship_strength") or 0) < 30]
 
     return {
         "data": {
             "strong": {"count": len(strong), "contacts": strong[:10]},
-            "warm":   {"count": len(warm),   "contacts": warm[:10]},
-            "cold":   {"count": len(cold),   "contacts": cold[:10]},
+            "warm": {"count": len(warm), "contacts": warm[:10]},
+            "cold": {"count": len(cold), "contacts": cold[:10]},
             "total_tracked": len(all_contacts),
         }
     }
@@ -104,9 +122,11 @@ async def list_contacts(
 ):
     """List all contacts across companies with optional filters."""
     db = get_db()
-    query = db._filter_ws(db.client.table("contacts").select(
-        "*, companies!contacts_company_id_fkey(id, name, tier, status, pqs_total, domain)"
-    ))
+    query = db._filter_ws(
+        db.client.table("contacts").select(
+            "*, companies!contacts_company_id_fkey(id, name, tier, status, pqs_total, domain)"
+        )
+    )
     if persona_type:
         query = query.eq("persona_type", persona_type)
     if seniority:
@@ -116,15 +136,14 @@ async def list_contacts(
     if is_decision_maker is not None:
         query = query.eq("is_decision_maker", is_decision_maker)
     if search:
-        query = query.or_(f"full_name.ilike.%{search}%,first_name.ilike.%{search}%,last_name.ilike.%{search}%")
+        safe = _safe_search(search)
+        query = query.or_(
+            f"full_name.ilike.%{safe}%,first_name.ilike.%{safe}%,last_name.ilike.%{safe}%"
+        )
     if min_relationship is not None:
         query = query.gte("relationship_strength", min_relationship)
 
-    result = (
-        query.order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute()
-    )
+    result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
     return {"data": result.data, "count": len(result.data)}
 
 
@@ -133,8 +152,11 @@ async def get_contact(contact_id: str):
     """Get a single contact with company details and recent company interactions."""
     db = get_db()
     contact_result = (
-        db._filter_ws(db.client.table("contacts")
-        .select("*, companies!contacts_company_id_fkey(id, name, tier, status, pqs_total, domain)"))
+        db._filter_ws(
+            db.client.table("contacts").select(
+                "*, companies!contacts_company_id_fkey(id, name, tier, status, pqs_total, domain)"
+            )
+        )
         .eq("id", contact_id)
         .execute()
     )
@@ -148,8 +170,7 @@ async def get_contact(contact_id: str):
     interactions: list = []
     if company_id:
         interactions_result = (
-            db._filter_ws(db.client.table("interactions")
-            .select("*"))
+            db._filter_ws(db.client.table("interactions").select("*"))
             .eq("company_id", company_id)
             .order("created_at", desc=True)
             .limit(20)
@@ -198,14 +219,14 @@ async def update_contact(contact_id: str, body: ContactUpdate):
 # IMPORTANT: pending-actions must be declared before /{contact_id}/events so
 # the static path segment isn't captured by the dynamic route.
 
+
 @router.get("/events/pending-actions")
 async def get_pending_actions(contact_id: Optional[str] = None):
     """Return events that have a pending next_action for a contact (or all contacts)."""
     db = get_db()
     try:
         query = (
-            db._filter_ws(db.client.table("contact_events")
-            .select("*"))
+            db._filter_ws(db.client.table("contact_events").select("*"))
             .eq("next_action_status", "pending")
             .not_.is_("next_action", "null")
         )
@@ -226,8 +247,14 @@ async def update_next_action(event_id: str, body: NextActionUpdate):
     db = get_db()
     try:
         result = (
-            db._filter_ws(db.client.table("contact_events")
-            .update({"next_action_status": body.status, "updated_at": datetime.now(timezone.utc).isoformat()}))
+            db._filter_ws(
+                db.client.table("contact_events").update(
+                    {
+                        "next_action_status": body.status,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+            )
             .eq("id", event_id)
             .execute()
         )
@@ -254,8 +281,7 @@ async def list_contact_events(contact_id: str):
 
     try:
         result = (
-            db._filter_ws(db.client.table("contact_events")
-            .select("*"))
+            db._filter_ws(db.client.table("contact_events").select("*"))
             .eq("contact_id", contact_id)
             .order("created_at", desc=True)
             .limit(100)
@@ -280,8 +306,7 @@ async def create_contact_event(contact_id: str, body: ContactEventCreate):
 
     # Validate contact + get company_id
     contact_result = (
-        db._filter_ws(db.client.table("contacts")
-        .select("id, company_id, full_name, title"))
+        db._filter_ws(db.client.table("contacts").select("id, company_id, full_name, title"))
         .eq("id", contact_id)
         .execute()
     )
@@ -321,22 +346,25 @@ async def create_contact_event(contact_id: str, body: ContactEventCreate):
     if body.analyze and body.body:
         try:
             from backend.app.agents.event_analyzer import EventAnalyzer  # type: ignore
+
             analyzer = EventAnalyzer()
             analysis = analyzer.analyze(
                 event_type=body.event_type,
                 body=body.body,
                 contact=contact,
             )
-            event_row.update({
-                "sentiment": analysis.get("sentiment"),
-                "sentiment_reason": analysis.get("sentiment_reason"),
-                "signals": analysis.get("signals", []),
-                "next_action": analysis.get("next_action"),
-                "next_action_date": analysis.get("next_action_date"),
-                "suggested_message": analysis.get("suggested_message"),
-                "action_reasoning": analysis.get("action_reasoning"),
-                "ai_analyzed": True,
-            })
+            event_row.update(
+                {
+                    "sentiment": analysis.get("sentiment"),
+                    "sentiment_reason": analysis.get("sentiment_reason"),
+                    "signals": analysis.get("signals", []),
+                    "next_action": analysis.get("next_action"),
+                    "next_action_date": analysis.get("next_action_date"),
+                    "suggested_message": analysis.get("suggested_message"),
+                    "action_reasoning": analysis.get("action_reasoning"),
+                    "ai_analyzed": True,
+                }
+            )
         except ImportError:
             logger.info("event_analyzer not available — saving event without AI enrichment")
         except Exception as exc:

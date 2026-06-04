@@ -42,7 +42,9 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         workspace_id: str | None = None
-        logger.debug("WorkspaceMiddleware.dispatch: path=%s method=%s", request.url.path, request.method)
+        logger.debug(
+            "WorkspaceMiddleware.dispatch: path=%s method=%s", request.url.path, request.method
+        )
 
         try:
             workspace_id = self._resolve_workspace_id(request)
@@ -64,7 +66,9 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
             else:
                 logger.warning("WorkspaceMiddleware: failed to load workspace %s", workspace_id)
         else:
-            logger.debug("WorkspaceMiddleware: no workspace_id resolved, skipping context enrichment")
+            logger.debug(
+                "WorkspaceMiddleware: no workspace_id resolved, skipping context enrichment"
+            )
 
         try:
             response = await call_next(request)
@@ -84,7 +88,11 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("Authorization", "")
         api_key_header = request.headers.get("X-API-Key", "")
 
-        logger.debug("_resolve_workspace_id: auth_header present=%s api_key_header present=%s", bool(auth_header), bool(api_key_header))
+        logger.debug(
+            "_resolve_workspace_id: auth_header present=%s api_key_header present=%s",
+            bool(auth_header),
+            bool(api_key_header),
+        )
 
         if auth_header.startswith("Bearer "):
             logger.debug("_resolve_workspace_id: extracting workspace from JWT")
@@ -101,17 +109,15 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
         """Decode JWT and extract workspace_id."""
         settings = get_settings()
         if not settings.supabase_jwt_secret:
-            logger.debug("JWT secret not configured, falling back to workspace_members table lookup")
-            # Extract user_id from token without verification (we need the secret to verify anyway)
-            try:
-                import jwt
-                unverified = jwt.decode(token, options={"verify_signature": False})
-                user_id = unverified.get("sub", "")
-                if user_id:
-                    logger.debug(f"Extracted user_id from unverified JWT: {user_id}")
-                    return self._lookup_workspace_member(user_id)
-            except Exception as exc:
-                logger.debug(f"Could not extract user_id from JWT: {exc}")
+            # Without a secret we cannot verify the signature, so we refuse to trust
+            # any claims from the token. Enriching the context with an unverified
+            # workspace_id would let a caller impersonate any workspace by crafting
+            # their own unsigned JWT. Auth dependencies (get_current_user) will
+            # reject the request with 401 at the route layer.
+            logger.warning(
+                "WorkspaceMiddleware: SUPABASE_JWT_SECRET not configured — "
+                "refusing to trust unverified JWT claims"
+            )
             return None
         try:
             claims = jwt.decode(
@@ -141,7 +147,9 @@ class WorkspaceMiddleware(BaseHTTPMiddleware):
 
         # Fall back to workspace_members table
         user_id: str = claims.get("sub", "")
-        logger.debug("workspace_id not in JWT, looking up via workspace_members for user_id=%s", user_id)
+        logger.debug(
+            "workspace_id not in JWT, looking up via workspace_members for user_id=%s", user_id
+        )
         if user_id:
             ws_id = self._lookup_workspace_member(user_id)
             logger.debug("workspace_members lookup result: %s", ws_id)

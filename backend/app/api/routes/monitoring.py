@@ -10,8 +10,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from backend.app.core.auth import get_current_user
 from backend.app.core.database import Database
 from backend.app.core.workspace import get_workspace_id
 
@@ -42,6 +43,7 @@ async def get_health():
         if not result.data:
             # No snapshot yet — capture one now on demand
             from backend.app.agents.monitoring import HealthSnapshotAgent
+
             snapshot = HealthSnapshotAgent().capture()
             return {"data": snapshot, "source": "live"}
 
@@ -72,8 +74,13 @@ async def get_health_history(hours: int = Query(24, ge=1, le=168)):
 
 @router.get("/runs")
 async def list_runs(
-    agent: Optional[str] = Query(None, description="Filter by agent: research | qualification | enrichment | outreach | engagement"),
-    status: Optional[str] = Query(None, description="Filter by status: running | completed | failed | partial"),
+    agent: Optional[str] = Query(
+        None,
+        description="Filter by agent: research | qualification | enrichment | outreach | engagement",
+    ),
+    status: Optional[str] = Query(
+        None, description="Filter by status: running | completed | failed | partial"
+    ),
     limit: int = Query(50, ge=1, le=500),
 ):
     """List recent pipeline runs with performance metrics.
@@ -119,9 +126,7 @@ async def get_run(run_id: str):
     db = get_db()
     try:
         run_result = (
-            db._filter_ws(db.client.table("pipeline_runs").select("*"))
-            .eq("id", run_id)
-            .execute()
+            db._filter_ws(db.client.table("pipeline_runs").select("*")).eq("id", run_id).execute()
         )
         if not run_result.data:
             raise HTTPException(status_code=404, detail="Run not found")
@@ -160,9 +165,7 @@ async def list_errors(
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     try:
         query = (
-            db._filter_ws(
-                db.client.table("pipeline_errors").select("*, companies(name, tier)")
-            )
+            db._filter_ws(db.client.table("pipeline_errors").select("*, companies(name, tier)"))
             .gte("occurred_at", cutoff)
             .order("occurred_at", desc=True)
             .limit(limit)
@@ -222,7 +225,7 @@ async def get_cost_breakdown(days: int = Query(7, ge=1, le=30)):
         by_day: dict[str, float] = {}
         total = 0.0
 
-        for run in (runs.data or []):
+        for run in runs.data or []:
             cost = float(run.get("cost_usd") or 0)
             agent = run.get("agent", "unknown")
             day = (run.get("started_at") or "")[:10]
@@ -234,13 +237,11 @@ async def get_cost_breakdown(days: int = Query(7, ge=1, le=30)):
         # Also sum from api_costs table (older format)
         try:
             costs = (
-                db._filter_ws(
-                    db.client.table("api_costs").select("cost_usd, created_at")
-                )
+                db._filter_ws(db.client.table("api_costs").select("cost_usd, created_at"))
                 .gte("created_at", cutoff)
                 .execute()
             )
-            for row in (costs.data or []):
+            for row in costs.data or []:
                 cost = float(row.get("cost_usd") or 0)
                 day = (row.get("created_at") or "")[:10]
                 by_day[day] = round(by_day.get(day, 0) + cost, 4)
@@ -263,6 +264,7 @@ async def trigger_snapshot():
     """Manually trigger a health snapshot now (instead of waiting 15 minutes)."""
     try:
         from backend.app.agents.monitoring import HealthSnapshotAgent
+
         snapshot = HealthSnapshotAgent().capture()
         return {"data": snapshot, "message": "Snapshot captured"}
     except Exception as e:
@@ -273,7 +275,11 @@ async def trigger_snapshot():
 # Admin metrics — operations dashboard snapshot
 # ---------------------------------------------------------------------------
 
-admin_router = APIRouter(prefix="/api/prospectiq/admin", tags=["admin"])
+admin_router = APIRouter(
+    prefix="/api/prospectiq/admin",
+    tags=["admin"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 def _count(query) -> int:
@@ -319,7 +325,8 @@ async def get_admin_metrics():
         .gte("sent_at", window_start)
         .not_.is_("sent_at", "null")
         .execute()
-        .data or []
+        .data
+        or []
     )
 
     sends_total = len(drafts_30d)
@@ -344,14 +351,13 @@ async def get_admin_metrics():
     try:
         outcomes = (
             db._filter_ws(
-                db.client.table("outreach_outcomes").select(
-                    "reply_classification, replied_at"
-                )
+                db.client.table("outreach_outcomes").select("reply_classification, replied_at")
             )
             .gte("replied_at", window_start)
             .not_.is_("replied_at", "null")
             .execute()
-            .data or []
+            .data
+            or []
         )
         for o in outcomes:
             replies_total += 1
@@ -381,21 +387,22 @@ async def get_admin_metrics():
         )
         .eq("resend_status", "bounced")
         .execute()
-        .data or []
+        .data
+        or []
     )
     bounces_total = len(bounced_drafts)
     bounce_rate = round(bounces_total * 100.0 / max(sends_total, 1), 2)
     unsuppressed = sum(
-        1 for d in bounced_drafts
-        if (d.get("contacts") or {}).get("is_outreach_eligible") is True
+        1 for d in bounced_drafts if (d.get("contacts") or {}).get("is_outreach_eligible") is True
     )
 
     # ------------------------------------------------------------------
     # Approvals
     # ------------------------------------------------------------------
     pending = _count(
-        db._filter_ws(_select_count(db.client.table("outreach_drafts")))
-        .eq("approval_status", "pending")
+        db._filter_ws(_select_count(db.client.table("outreach_drafts"))).eq(
+            "approval_status", "pending"
+        )
     )
     approved_unsent = _count(
         db._filter_ws(_select_count(db.client.table("outreach_drafts")))
@@ -403,8 +410,9 @@ async def get_admin_metrics():
         .is_("sent_at", "null")
     )
     rejected = _count(
-        db._filter_ws(_select_count(db.client.table("outreach_drafts")))
-        .eq("approval_status", "rejected")
+        db._filter_ws(_select_count(db.client.table("outreach_drafts"))).eq(
+            "approval_status", "rejected"
+        )
     )
 
     # ------------------------------------------------------------------
@@ -414,18 +422,18 @@ async def get_admin_metrics():
     cap_usd = 200.0
     try:
         from backend.app.core.limits import L
+
         cap_usd = float(L.workspace_monthly_default_usd)
     except Exception as exc:
         logger.warning("admin metrics: limits load failed (%s) — using $200 default", exc)
 
     try:
         cost_rows = (
-            db._filter_ws(
-                db.client.table("api_costs").select("estimated_cost_usd")
-            )
+            db._filter_ws(db.client.table("api_costs").select("estimated_cost_usd"))
             .gte("created_at", month_start)
             .execute()
-            .data or []
+            .data
+            or []
         )
         mtd_usd = round(sum(float(r.get("estimated_cost_usd") or 0) for r in cost_rows), 4)
     except Exception as exc:
@@ -438,20 +446,22 @@ async def get_admin_metrics():
     # ------------------------------------------------------------------
     pipeline = {
         "discovered": _count(
-            db._filter_ws(_select_count(db.client.table("companies")))
-            .eq("status", "discovered")
+            db._filter_ws(_select_count(db.client.table("companies"))).eq("status", "discovered")
         ),
         "qualified": _count(
-            db._filter_ws(_select_count(db.client.table("companies")))
-            .in_("status", ["qualified", "high_priority", "hot_prospect"])
+            db._filter_ws(_select_count(db.client.table("companies"))).in_(
+                "status", ["qualified", "high_priority", "hot_prospect"]
+            )
         ),
         "enriched": _count(
-            db._filter_ws(_select_count(db.client.table("contacts")))
-            .eq("enrichment_status", "enriched")
+            db._filter_ws(_select_count(db.client.table("contacts"))).eq(
+                "enrichment_status", "enriched"
+            )
         ),
         "outreach_pending": _count(
-            db._filter_ws(_select_count(db.client.table("companies")))
-            .eq("status", "outreach_pending")
+            db._filter_ws(_select_count(db.client.table("companies"))).eq(
+                "status", "outreach_pending"
+            )
         ),
     }
 

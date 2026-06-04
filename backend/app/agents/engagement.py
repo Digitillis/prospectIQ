@@ -37,7 +37,14 @@ from backend.app.agents.base import BaseAgent, AgentResult
 @dataclass
 class QueueDispatchOutcome:
     """Result returned by dispatch_queued_draft(); consumed by dispatch_scheduler."""
-    status: Literal["DELIVERED", "TRANSIENT_FAILED", "PERMANENTLY_FAILED", "ASSERTION_FAILED", "ALREADY_DELIVERED"]
+
+    status: Literal[
+        "DELIVERED",
+        "TRANSIENT_FAILED",
+        "PERMANENTLY_FAILED",
+        "ASSERTION_FAILED",
+        "ALREADY_DELIVERED",
+    ]
     provider_message_id: Optional[str] = None
     failure_code: Optional[str] = None
     failure_reason: Optional[str] = None
@@ -62,7 +69,9 @@ def _classify_resend_error(exc: Exception) -> tuple[str, str]:
     if "internalserver" in exc_type.lower() or "server error" in exc_str:
         return "TRANSIENT_FAILED", "5xx_server_error"
 
-    if any(kw in exc_str for kw in ("connection", "timeout", "network", "remoteprotocol", "disconnect")):
+    if any(
+        kw in exc_str for kw in ("connection", "timeout", "network", "remoteprotocol", "disconnect")
+    ):
         return "TRANSIENT_FAILED", "network_error"
 
     for code in ("400", "401", "403", "404", "422"):
@@ -70,6 +79,8 @@ def _classify_resend_error(exc: Exception) -> tuple[str, str]:
             return "PERMANENTLY_FAILED", f"{code}_client_error"
 
     return "PERMANENTLY_FAILED", "unknown_client_error"
+
+
 from backend.app.core.config import get_settings, get_sequences_config
 from backend.app.integrations.instantly import InstantlyClient
 
@@ -138,6 +149,7 @@ def classify_engagement_tier(
     """
     if click_classifier is None:
         from backend.app.core.click_classifier import ClickClassifier
+
         click_classifier = ClickClassifier().classify
 
     current = now or _utcnow()
@@ -192,6 +204,7 @@ def classify_engagement_tier(
 # Send-path governance helpers
 # ---------------------------------------------------------------------------
 
+
 def _rollback_sent_at(
     db: Any,
     draft_id: str,
@@ -211,13 +224,14 @@ def _rollback_sent_at(
     resolution. Do not silently continue.
     """
     try:
-        db.client.table("outreach_drafts").update(
-            {"sent_at": None}
-        ).eq("id", draft_id).execute()
+        db.client.table("outreach_drafts").update({"sent_at": None}).eq("id", draft_id).execute()
         logger.warning(
             "send_path_governance rollback_success draft_id=%s contact_id=%s "
             "company_id=%s assertion=%s",
-            draft_id, contact_id, company_id, assertion,
+            draft_id,
+            contact_id,
+            company_id,
+            assertion,
             extra={
                 "event": "rollback_success",
                 "draft_id": draft_id,
@@ -232,8 +246,12 @@ def _rollback_sent_at(
             "company_id=%s assertion=%s rollback_error=%r original_error=%r — "
             "ORPHANED DRAFT: sent_at is set but no email was delivered. "
             "Manual intervention required.",
-            draft_id, contact_id, company_id, assertion,
-            str(rollback_exc), str(original_exc),
+            draft_id,
+            contact_id,
+            company_id,
+            assertion,
+            str(rollback_exc),
+            str(original_exc),
             extra={
                 "event": "rollback_failure",
                 "draft_id": draft_id,
@@ -338,6 +356,7 @@ class EngagementAgent(BaseAgent):
     def _count_sent_today(self) -> int:
         """Count emails already sent today (UTC date) for this workspace."""
         from datetime import date
+
         today = date.today().isoformat()
         try:
             q = (
@@ -356,31 +375,34 @@ class EngagementAgent(BaseAgent):
         campaign_name: str | None = None,
         draft_ids: list[str] | None = None,
     ) -> AgentResult:
-        """Send approved unsent outreach drafts via Resend.
+        """RETIRED (2026-05-15 D7). The outbound_queue path (dispatch_queued_draft) is the
+        sole send path. This method is kept as a hard-guarded stub so any accidental caller
+        receives a clear error rather than silently sending with a different approval gate
+        and idempotency key, which would race the queue path and potentially double-send.
 
-        Limits are read from outreach_send_config table (not hardcoded):
-        - daily_limit: max emails per calendar day
-        - batch_size:  max emails per scheduler run (bypassed when draft_ids provided)
-        - min_gap_minutes: stagger between sends within a batch
-
-        When draft_ids is provided, only those specific drafts are attempted
-        and the batch_size cap is bypassed. daily_limit and all safety gates
-        (suppression, company lock, assertion gate) still apply.
-
-        FROM address is read from config/outreach_guidelines.yaml (sender.email).
+        To send drafts, approve them and enqueue via enqueue_todays_schedule() or the
+        approve_draft_and_enqueue RPC, then let dispatch_workspace() drain the queue.
         """
         result = AgentResult()
+        logger.error(
+            "_send_approved_drafts called but is retired — refusing to run. "
+            "Use the outbound_queue path (dispatch_workspace) instead."
+        )
+        result.errors += 1
+        return result
 
+        # --- dead code below intentionally preserved for reference ---
         settings = get_settings()
         if not settings.send_enabled:
-            console.print(
-                "[yellow]SEND_ENABLED is false — drafts staged but not sent.[/yellow]"
-            )
+            console.print("[yellow]SEND_ENABLED is false — drafts staged but not sent.[/yellow]")
             return result
 
         # Load Resend API key: workspace credential store first, then env var
         from backend.app.core.credential_store import get_credential
-        resend_api_key = get_credential("resend", "api_key", self.db.workspace_id) or settings.resend_api_key
+
+        resend_api_key = (
+            get_credential("resend", "api_key", self.db.workspace_id) or settings.resend_api_key
+        )
         if not resend_api_key:
             console.print("[red]Resend API key not configured. Cannot send.[/red]")
             result.success = False
@@ -388,9 +410,11 @@ class EngagementAgent(BaseAgent):
 
         # Load limits from DB — no hardcoding
         send_cfg = self._load_send_config()
-        daily_limit     = send_cfg["daily_limit"]
-        batch_size      = send_cfg["batch_size"]
-        stagger_seconds = send_cfg.get("min_gap_seconds") or int(send_cfg.get("min_gap_minutes", 0) * 60)
+        daily_limit = send_cfg["daily_limit"]
+        batch_size = send_cfg["batch_size"]
+        stagger_seconds = send_cfg.get("min_gap_seconds") or int(
+            send_cfg.get("min_gap_minutes", 0) * 60
+        )
 
         # DB send gate — the DB toggle is the operator kill switch; env var is the
         # deployment gate. Both must be True. DB flag wins for runtime control.
@@ -402,6 +426,7 @@ class EngagementAgent(BaseAgent):
         # 8–11 AM CDT = 13–16 UTC (summer) or 14–17 UTC (winter). Set in Railway env.
         if settings.send_window_end > 0:
             from datetime import datetime as _dt
+
             _hour = _dt.utcnow().hour
             if not (settings.send_window_start <= _hour < settings.send_window_end):
                 console.print(
@@ -421,6 +446,7 @@ class EngagementAgent(BaseAgent):
 
         import hashlib
         import resend
+
         resend.api_key = resend_api_key
 
         # Load sender pool: DB (outreach_send_config) → YAML → hardcoded fallback
@@ -450,6 +476,7 @@ class EngagementAgent(BaseAgent):
         if not _sender_pool:
             try:
                 from backend.app.core.config import get_outreach_guidelines
+
                 _guidelines = get_outreach_guidelines()
                 _pool_cfg = _guidelines.get("sender_pool", {})
                 _reply_to = _pool_cfg.get("reply_to", _reply_to)
@@ -467,7 +494,9 @@ class EngagementAgent(BaseAgent):
             """Return (from_address, from_display) deterministically from pool."""
             if not _sender_pool:
                 return _fallback_address, _fallback_display
-            idx = int(hashlib.md5(contact_email.lower().encode()).hexdigest(), 16) % len(_sender_pool)
+            idx = int(hashlib.md5(contact_email.lower().encode()).hexdigest(), 16) % len(
+                _sender_pool
+            )
             s = _sender_pool[idx]
             addr = s.get("email", _fallback_address)
             name = s.get("name", "")
@@ -501,7 +530,9 @@ class EngagementAgent(BaseAgent):
         # TODO: run migration adding outreach_drafts.reviewed_at (TIMESTAMPTZ)
         _draft_query = (
             self.db.client.table("outreach_drafts")
-            .select("id, company_id, contact_id, channel, sequence_name, sequence_step, subject, body, edited_body, workspace_id, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)")
+            .select(
+                "id, company_id, contact_id, channel, sequence_name, sequence_step, subject, body, edited_body, workspace_id, companies(name, tier, campaign_cluster), contacts(full_name, email, first_name, last_name, company_id, persona_type)"
+            )
             .eq("approval_status", "approved")
             .is_("sent_at", "null")
             .eq("channel", "email")
@@ -518,11 +549,15 @@ class EngagementAgent(BaseAgent):
                 # approved_by/reviewed_at gate so unpopulated reviewer columns don't
                 # silently block manually-targeted sends.
                 drafts = _draft_query.order("created_at").limit(fetch_limit).execute().data
-                logger.info("Send query using explicit draft_ids (%d) — skipping reviewer column gate", len(draft_ids))
+                logger.info(
+                    "Send query using explicit draft_ids (%d) — skipping reviewer column gate",
+                    len(draft_ids),
+                )
             else:
                 # Scheduler path: require explicit human attestation
                 _strict_query = (
-                    _draft_query.not_.is_("approved_by", "null").not_.is_("reviewed_at", "null")
+                    _draft_query.not_.is_("approved_by", "null")
+                    .not_.is_("reviewed_at", "null")
                     .order("created_at")
                     .limit(fetch_limit)
                 )
@@ -544,9 +579,7 @@ class EngagementAgent(BaseAgent):
                     exc,
                 )
                 self._logged_send_filter_fallback = True
-            drafts = (
-                _draft_query.order("created_at").limit(fetch_limit).execute().data
-            )
+            drafts = _draft_query.order("created_at").limit(fetch_limit).execute().data
 
         if not drafts:
             console.print("[yellow]No approved email drafts to send.[/yellow]")
@@ -584,8 +617,10 @@ class EngagementAgent(BaseAgent):
             # Suppression check — pass skip_duplicate_check=True so the approved
             # draft being sent doesn't trigger the duplicate_draft_pending guard
             from backend.app.core.suppression import is_suppressed
+
             suppressed, reason = is_suppressed(
-                self.db, company_id,
+                self.db,
+                company_id,
                 contact_id=draft.get("contact_id"),
                 skip_duplicate_check=True,
             )
@@ -598,16 +633,21 @@ class EngagementAgent(BaseAgent):
             # 1. In-batch: already sent another contact at this company in this run
             # 2. Cross-run: another contact at this company was emailed in the last 24h
             if company_id in company_ids_sent_this_batch:
-                console.print(f"  [dim]{company_name}: already sent to another contact this batch. Skipping.[/dim]")
+                console.print(
+                    f"  [dim]{company_name}: already sent to another contact this batch. Skipping.[/dim]"
+                )
                 result.skipped += 1
                 continue
 
             from backend.app.core.channel_coordinator import is_company_locked
+
             locked, lock_reason = is_company_locked(
                 self.db, company_id, exclude_contact_id=draft.get("contact_id")
             )
             if locked:
-                console.print(f"  [dim]{company_name}: company locked ({lock_reason}). Skipping.[/dim]")
+                console.print(
+                    f"  [dim]{company_name}: company locked ({lock_reason}). Skipping.[/dim]"
+                )
                 result.skipped += 1
                 continue
 
@@ -617,6 +657,7 @@ class EngagementAgent(BaseAgent):
             # manual review. Missing env var also blocks the send so we never
             # deliver to an unrouted cluster silently.
             from backend.app.core.sequence_router import get_campaign_id_for_company
+
             _cluster = company.get("campaign_cluster") or "other"
             _persona = contact.get("persona_type")
 
@@ -624,7 +665,10 @@ class EngagementAgent(BaseAgent):
                 logger.warning(
                     "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
                     "cluster requires manual review, not sending",
-                    draft.get("id"), company_name, _cluster, _persona,
+                    draft.get("id"),
+                    company_name,
+                    _cluster,
+                    _persona,
                 )
                 console.print(
                     f"  [yellow]{company_name}: cluster={_cluster!r} — manual review required. Skipping.[/yellow]"
@@ -637,7 +681,10 @@ class EngagementAgent(BaseAgent):
                 logger.warning(
                     "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
                     "no Instantly sequence configured for this cluster/persona combination",
-                    draft.get("id"), company_name, _cluster, _persona,
+                    draft.get("id"),
+                    company_name,
+                    _cluster,
+                    _persona,
                 )
                 console.print(
                     f"  [yellow]{company_name}: cluster={_cluster!r} persona={_persona!r} — "
@@ -663,7 +710,9 @@ class EngagementAgent(BaseAgent):
                 )
                 if not claim.data:
                     # Another instance already claimed this draft — skip
-                    console.print(f"  [dim]{company_name}: draft already claimed by another instance. Skipping.[/dim]")
+                    console.print(
+                        f"  [dim]{company_name}: draft already claimed by another instance. Skipping.[/dim]"
+                    )
                     result.skipped += 1
                     continue
 
@@ -692,8 +741,10 @@ class EngagementAgent(BaseAgent):
                 try:
                     _fresh_contact_rows = (
                         self.db.client.table("contacts")
-                        .select("id, email, email_status, email_name_verified, "
-                                "is_outreach_eligible, contact_tier, company_id, full_name")
+                        .select(
+                            "id, email, email_status, email_name_verified, "
+                            "is_outreach_eligible, contact_tier, company_id, full_name"
+                        )
                         .eq("id", _contact_id)
                         .limit(1)
                         .execute()
@@ -711,7 +762,9 @@ class EngagementAgent(BaseAgent):
                     logger.error(
                         "send_path_governance assertion_exception draft_id=%s "
                         "contact_id=%s — runtime state fetch failed, failing closed: %s",
-                        _draft_id, _contact_id, _fetch_exc,
+                        _draft_id,
+                        _contact_id,
+                        _fetch_exc,
                         extra={
                             "event": "assertion_exception",
                             "draft_id": _draft_id,
@@ -719,11 +772,20 @@ class EngagementAgent(BaseAgent):
                             "company_id": _company_id,
                         },
                     )
-                    _rollback_sent_at(self.db, _draft_id, _contact_id, _company_id,
-                                      "contact_fetch_failed", _fetch_exc)
+                    _rollback_sent_at(
+                        self.db,
+                        _draft_id,
+                        _contact_id,
+                        _company_id,
+                        "contact_fetch_failed",
+                        _fetch_exc,
+                    )
                     result.skipped += 1
-                    result.add_detail(company_name, "assertion_failed_at_send",
-                                      f"contact_fetch_failed: {_fetch_exc}")
+                    result.add_detail(
+                        company_name,
+                        "assertion_failed_at_send",
+                        f"contact_fetch_failed: {_fetch_exc}",
+                    )
                     continue
 
                 # Sender identity for the per-sender daily cap check.
@@ -735,16 +797,19 @@ class EngagementAgent(BaseAgent):
                 # legitimate sequences are not blocked by their own prior step.
                 # (Mirroring the cooldown_days=0 logic in outreach.py.)
                 from backend.app.core.pre_send_assertions import (
-                    run_pre_send_assertions, AssertionFailure,
+                    run_pre_send_assertions,
+                    AssertionFailure,
                     COMPANY_COOLDOWN_DAYS as _COOLDOWN_DAYS,
                 )
+
                 _cooldown = 0 if _seq_step >= 2 else _COOLDOWN_DAYS
 
                 _assert_start = datetime.now(timezone.utc)
                 logger.info(
-                    "send_path_governance assertion_start draft_id=%s contact_id=%s "
-                    "seq_step=%d",
-                    _draft_id, _contact_id, _seq_step,
+                    "send_path_governance assertion_start draft_id=%s contact_id=%s seq_step=%d",
+                    _draft_id,
+                    _contact_id,
+                    _seq_step,
                     extra={
                         "event": "assertion_start",
                         "draft_id": _draft_id,
@@ -771,8 +836,12 @@ class EngagementAgent(BaseAgent):
                     logger.warning(
                         "send_path_governance assertion_fail draft_id=%s contact_id=%s "
                         "company_id=%s assertion=%s detail=%s elapsed=%.3fs",
-                        _draft_id, _contact_id, _company_id,
-                        _af.assertion, _af.detail, _elapsed,
+                        _draft_id,
+                        _contact_id,
+                        _company_id,
+                        _af.assertion,
+                        _af.detail,
+                        _elapsed,
                         extra={
                             "event": "assertion_fail",
                             "draft_id": _draft_id,
@@ -781,18 +850,24 @@ class EngagementAgent(BaseAgent):
                             "assertion": _af.assertion,
                         },
                     )
-                    _rollback_sent_at(self.db, _draft_id, _contact_id, _company_id,
-                                      _af.assertion, _af)
+                    _rollback_sent_at(
+                        self.db, _draft_id, _contact_id, _company_id, _af.assertion, _af
+                    )
                     result.skipped += 1
-                    result.add_detail(company_name, "assertion_failed_at_send",
-                                      f"{_af.assertion}: {_af.detail}")
+                    result.add_detail(
+                        company_name, "assertion_failed_at_send", f"{_af.assertion}: {_af.detail}"
+                    )
                     continue
                 except Exception as _ae:
                     _elapsed = (datetime.now(timezone.utc) - _assert_start).total_seconds()
                     logger.error(
                         "send_path_governance assertion_exception draft_id=%s "
                         "contact_id=%s company_id=%s elapsed=%.3fs error=%s",
-                        _draft_id, _contact_id, _company_id, _elapsed, _ae,
+                        _draft_id,
+                        _contact_id,
+                        _company_id,
+                        _elapsed,
+                        _ae,
                         exc_info=True,
                         extra={
                             "event": "assertion_exception",
@@ -801,18 +876,21 @@ class EngagementAgent(BaseAgent):
                             "company_id": _company_id,
                         },
                     )
-                    _rollback_sent_at(self.db, _draft_id, _contact_id, _company_id,
-                                      "assertion_exception", _ae)
+                    _rollback_sent_at(
+                        self.db, _draft_id, _contact_id, _company_id, "assertion_exception", _ae
+                    )
                     result.skipped += 1
-                    result.add_detail(company_name, "assertion_failed_at_send",
-                                      f"assertion_exception: {_ae}")
+                    result.add_detail(
+                        company_name, "assertion_failed_at_send", f"assertion_exception: {_ae}"
+                    )
                     continue
 
                 _elapsed = (datetime.now(timezone.utc) - _assert_start).total_seconds()
                 logger.info(
-                    "send_path_governance assertion_pass draft_id=%s contact_id=%s "
-                    "elapsed=%.3fs",
-                    _draft_id, _contact_id, _elapsed,
+                    "send_path_governance assertion_pass draft_id=%s contact_id=%s elapsed=%.3fs",
+                    _draft_id,
+                    _contact_id,
+                    _elapsed,
                     extra={
                         "event": "assertion_pass",
                         "draft_id": _draft_id,
@@ -822,6 +900,7 @@ class EngagementAgent(BaseAgent):
                 )
 
                 from backend.app.utils.email_html import plain_to_html
+
                 _from_address, _from_display = _pick_sender(contact_email)
                 # Pass draft ID as idempotency key — Resend will deduplicate on
                 # their end if this exact key was already sent (belt-and-suspenders
@@ -853,24 +932,27 @@ class EngagementAgent(BaseAgent):
                 # body is intentionally omitted: full email bodies in INSERT payloads
                 # trigger Cloudflare 400 on Railway's network path to Supabase.
                 from backend.app.core.config import get_settings as _get_settings
+
                 _settings = _get_settings()
-                self.db.client.table("interactions").insert({
-                    "company_id": draft["company_id"],
-                    "contact_id": draft["contact_id"],
-                    "type": "email_sent",
-                    "channel": "email",
-                    "subject": subject,
-                    "source": "resend",
-                    "workspace_id": _settings.default_workspace_id,
-                    "metadata": {
-                        "from": _from_address,
-                        "reply_to": _reply_to,
-                        "sequence_name": draft.get("sequence_name"),
-                        "sequence_step": draft.get("sequence_step"),
-                        "campaign_cluster": _cluster,
-                        "instantly_campaign_id": _instantly_campaign_id,
-                    },
-                }).execute()
+                self.db.client.table("interactions").insert(
+                    {
+                        "company_id": draft["company_id"],
+                        "contact_id": draft["contact_id"],
+                        "type": "email_sent",
+                        "channel": "email",
+                        "subject": subject,
+                        "source": "resend",
+                        "workspace_id": _settings.default_workspace_id,
+                        "metadata": {
+                            "from": _from_address,
+                            "reply_to": _reply_to,
+                            "sequence_name": draft.get("sequence_name"),
+                            "sequence_step": draft.get("sequence_step"),
+                            "campaign_cluster": _cluster,
+                            "instantly_campaign_id": _instantly_campaign_id,
+                        },
+                    }
+                ).execute()
 
                 # Update company status — non-fatal so a DB hiccup doesn't orphan
                 # a sent draft (sent_at is already claimed above).
@@ -886,7 +968,9 @@ class EngagementAgent(BaseAgent):
                 # Create / update campaign_thread so IMAP reply routing can match
                 # incoming replies to this contact+company pair.
                 try:
-                    _ws_id = getattr(self.db, "workspace_id", None) or _settings.default_workspace_id
+                    _ws_id = (
+                        getattr(self.db, "workspace_id", None) or _settings.default_workspace_id
+                    )
                     _thread_row = (
                         self.db.client.table("campaign_threads")
                         .select("id, current_step")
@@ -896,16 +980,19 @@ class EngagementAgent(BaseAgent):
                         .order("updated_at", desc=True)
                         .limit(1)
                         .execute()
-                        .data or []
+                        .data
+                        or []
                     )
                     _seq_step = int(draft.get("sequence_step") or 1)
                     if _thread_row:
                         _thread_id = _thread_row[0]["id"]
-                        self.db.client.table("campaign_threads").update({
-                            "current_step": _seq_step,
-                            "last_sent_at": now,
-                            "status": "active",
-                        }).eq("id", _thread_id).execute()
+                        self.db.client.table("campaign_threads").update(
+                            {
+                                "current_step": _seq_step,
+                                "last_sent_at": now,
+                                "status": "active",
+                            }
+                        ).eq("id", _thread_id).execute()
                     else:
                         _insert = {
                             "company_id": draft["company_id"],
@@ -917,25 +1004,31 @@ class EngagementAgent(BaseAgent):
                         }
                         if _ws_id:
                             _insert["workspace_id"] = _ws_id
-                        _tresult = self.db.client.table("campaign_threads").insert(_insert).execute()
-                        _thread_id = (_tresult.data[0]["id"] if _tresult.data else None)
+                        _tresult = (
+                            self.db.client.table("campaign_threads").insert(_insert).execute()
+                        )
+                        _thread_id = _tresult.data[0]["id"] if _tresult.data else None
                     # Record the outbound message in thread_messages for reply context
                     if _thread_id:
-                        self.db.client.table("thread_messages").insert({
-                            "thread_id": _thread_id,
-                            "direction": "outbound",
-                            "subject": subject,
-                            "body": body,
-                            "sent_at": now,
-                            "outreach_draft_id": draft["id"],
-                            "source": "gmail_webhook",
-                        }).execute()
+                        self.db.client.table("thread_messages").insert(
+                            {
+                                "thread_id": _thread_id,
+                                "direction": "outbound",
+                                "subject": subject,
+                                "body": body,
+                                "sent_at": now,
+                                "outreach_draft_id": draft["id"],
+                                "source": "gmail_webhook",
+                            }
+                        ).execute()
                 except Exception as _te:
                     logger.warning("campaign_thread creation failed (non-fatal): %s", _te)
 
                 # Create engagement sequence record
                 seq_config = get_sequences_config()
-                sequence = seq_config["sequences"].get(draft.get("sequence_name", "initial_outreach"), {})
+                sequence = seq_config["sequences"].get(
+                    draft.get("sequence_name", "initial_outreach"), {}
+                )
                 total_steps = sequence.get("total_steps", 5)
                 current_step = draft.get("sequence_step", 1)
 
@@ -950,20 +1043,24 @@ class EngagementAgent(BaseAgent):
                             next_action_at = (
                                 datetime.now(timezone.utc) + timedelta(days=delay)
                             ).isoformat()
-                            next_action_type = f"send_{step.get('channel') or step.get('type', 'email')}"
+                            next_action_type = (
+                                f"send_{step.get('channel') or step.get('type', 'email')}"
+                            )
                             break
 
-                self.db.insert_engagement_sequence({
-                    "company_id": draft["company_id"],
-                    "contact_id": draft["contact_id"],
-                    "sequence_name": draft.get("sequence_name", "initial_outreach"),
-                    "current_step": current_step,
-                    "total_steps": total_steps,
-                    "status": "active" if next_step <= total_steps else "completed",
-                    "next_action_at": next_action_at,
-                    "next_action_type": next_action_type,
-                    "started_at": now,
-                })
+                self.db.insert_engagement_sequence(
+                    {
+                        "company_id": draft["company_id"],
+                        "contact_id": draft["contact_id"],
+                        "sequence_name": draft.get("sequence_name", "initial_outreach"),
+                        "current_step": current_step,
+                        "total_steps": total_steps,
+                        "status": "active" if next_step <= total_steps else "completed",
+                        "next_action_at": next_action_at,
+                        "next_action_type": next_action_type,
+                        "started_at": now,
+                    }
+                )
 
                 # Advance contact state machine: enriched → touch_N_sent
                 _step = max(1, min(int(draft.get("sequence_step") or 1), 5))
@@ -1031,6 +1128,7 @@ class EngagementAgent(BaseAgent):
         if not _sender_pool:
             try:
                 from backend.app.core.config import get_outreach_guidelines
+
                 _guidelines = get_outreach_guidelines()
                 _pool_cfg = _guidelines.get("sender_pool", {})
                 _reply_to = _pool_cfg.get("reply_to", _reply_to)
@@ -1055,6 +1153,7 @@ class EngagementAgent(BaseAgent):
     ) -> tuple[str, str]:
         """Return (from_address, from_display) deterministically from sender pool."""
         import hashlib
+
         if not sender_pool:
             return fallback_address, fallback_display
         idx = int(hashlib.md5(contact_email.lower().encode()).hexdigest(), 16) % len(sender_pool)
@@ -1100,9 +1199,9 @@ class EngagementAgent(BaseAgent):
 
         # Load Resend API key
         from backend.app.core.credential_store import get_credential
+
         resend_api_key = (
-            get_credential("resend", "api_key", self.db.workspace_id)
-            or settings.resend_api_key
+            get_credential("resend", "api_key", self.db.workspace_id) or settings.resend_api_key
         )
         if not resend_api_key:
             return QueueDispatchOutcome(
@@ -1129,7 +1228,8 @@ class EngagementAgent(BaseAgent):
         except Exception as exc:
             logger.error(
                 "dispatch_queued_draft draft_fetch_failed draft_id=%s error=%s",
-                draft_id, exc,
+                draft_id,
+                exc,
             )
             return QueueDispatchOutcome(
                 status="ASSERTION_FAILED",
@@ -1150,7 +1250,8 @@ class EngagementAgent(BaseAgent):
         if draft.get("sent_at"):
             logger.warning(
                 "dispatch_queued_draft already_delivered_at_fetch draft_id=%s sent_at=%s",
-                draft_id, draft.get("sent_at"),
+                draft_id,
+                draft.get("sent_at"),
             )
             return QueueDispatchOutcome(
                 status="ALREADY_DELIVERED",
@@ -1171,8 +1272,10 @@ class EngagementAgent(BaseAgent):
 
         # Suppression check
         from backend.app.core.suppression import is_suppressed
+
         suppressed, reason = is_suppressed(
-            self.db, company_id,
+            self.db,
+            company_id,
             contact_id=draft.get("contact_id"),
             skip_duplicate_check=True,
         )
@@ -1184,6 +1287,7 @@ class EngagementAgent(BaseAgent):
 
         # Company-level send lock
         from backend.app.core.channel_coordinator import is_company_locked
+
         locked, lock_reason = is_company_locked(
             self.db, company_id, exclude_contact_id=draft.get("contact_id")
         )
@@ -1193,11 +1297,47 @@ class EngagementAgent(BaseAgent):
                 failure_reason=f"company_locked: {lock_reason}",
             )
 
+        # HOT suppression: a HOT company has an active human engagement signal
+        # (reply, 2+ human opens/clicks within 7 days). Auto-sending to a HOT
+        # prospect risks disrupting an active human conversation. Block here so
+        # the gate is authoritative at dispatch time — not only in the campaign
+        # check that runs separately on a slower cadence.
+        try:
+            _interactions_for_tier = (
+                self.db.client.table("interactions")
+                .select("type, created_at, metadata")
+                .eq("company_id", company_id)
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+                .data
+                or []
+            )
+            _tier = classify_engagement_tier(company_id, _interactions_for_tier)
+            if _tier == HOT:
+                logger.info(
+                    "dispatch_queued_draft hot_suppressed draft_id=%s company_id=%s",
+                    draft_id,
+                    company_id,
+                )
+                return QueueDispatchOutcome(
+                    status="ASSERTION_FAILED",
+                    failure_reason="hot_suppressed: company has active human engagement",
+                )
+        except Exception as _tier_exc:
+            # Non-fatal: if tier check fails, proceed (don't block on monitoring failure)
+            logger.warning(
+                "dispatch_queued_draft hot_tier_check_failed draft_id=%s error=%s — proceeding",
+                draft_id,
+                _tier_exc,
+            )
+
         # Cluster routing gate — resolve the Instantly sequence ID for this
         # company's campaign_cluster + contact persona. Contacts in the
         # 'other' or 'watchlist' cluster must not be auto-sent; they require
         # manual review. Missing env var also blocks the send.
         from backend.app.core.sequence_router import get_campaign_id_for_company
+
         _dq_cluster = company.get("campaign_cluster") or "other"
         _dq_persona = contact.get("persona_type")
 
@@ -1205,7 +1345,10 @@ class EngagementAgent(BaseAgent):
             logger.warning(
                 "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
                 "cluster requires manual review, not dispatching",
-                draft_id, company_name, _dq_cluster, _dq_persona,
+                draft_id,
+                company_name,
+                _dq_cluster,
+                _dq_persona,
             )
             return QueueDispatchOutcome(
                 status="ASSERTION_FAILED",
@@ -1217,7 +1360,10 @@ class EngagementAgent(BaseAgent):
             logger.warning(
                 "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
                 "no Instantly sequence env var configured for this cluster/persona",
-                draft_id, company_name, _dq_cluster, _dq_persona,
+                draft_id,
+                company_name,
+                _dq_cluster,
+                _dq_persona,
             )
             return QueueDispatchOutcome(
                 status="ASSERTION_FAILED",
@@ -1235,12 +1381,15 @@ class EngagementAgent(BaseAgent):
         try:
             _fresh_contact = (
                 self.db.client.table("contacts")
-                .select("id, email, email_status, email_name_verified, "
-                        "is_outreach_eligible, contact_tier, company_id, full_name")
+                .select(
+                    "id, email, email_status, email_name_verified, "
+                    "is_outreach_eligible, contact_tier, company_id, full_name"
+                )
                 .eq("id", _contact_id)
                 .limit(1)
                 .execute()
-                .data or [{}]
+                .data
+                or [{}]
             )[0]
             _fresh_company = (
                 self.db.client.table("companies")
@@ -1248,12 +1397,14 @@ class EngagementAgent(BaseAgent):
                 .eq("id", _company_id)
                 .limit(1)
                 .execute()
-                .data or [{}]
+                .data
+                or [{}]
             )[0]
         except Exception as fetch_exc:
             logger.error(
                 "dispatch_queued_draft fresh_fetch_failed draft_id=%s error=%s",
-                draft_id, fetch_exc,
+                draft_id,
+                fetch_exc,
             )
             return QueueDispatchOutcome(
                 status="ASSERTION_FAILED",
@@ -1266,12 +1417,15 @@ class EngagementAgent(BaseAgent):
         )
 
         _cooldown = (
-            0 if _seq_step >= 2
-            else __import__("backend.app.core.pre_send_assertions",
-                            fromlist=["COMPANY_COOLDOWN_DAYS"]).COMPANY_COOLDOWN_DAYS
+            0
+            if _seq_step >= 2
+            else __import__(
+                "backend.app.core.pre_send_assertions", fromlist=["COMPANY_COOLDOWN_DAYS"]
+            ).COMPANY_COOLDOWN_DAYS
         )
 
         from backend.app.core.pre_send_assertions import run_pre_send_assertions, AssertionFailure
+
         try:
             run_pre_send_assertions(
                 db=self.db,
@@ -1287,7 +1441,9 @@ class EngagementAgent(BaseAgent):
         except AssertionFailure as af:
             logger.warning(
                 "dispatch_queued_draft assertion_fail draft_id=%s assertion=%s detail=%s",
-                draft_id, af.assertion, af.detail,
+                draft_id,
+                af.assertion,
+                af.detail,
             )
             return QueueDispatchOutcome(
                 status="ASSERTION_FAILED",
@@ -1296,7 +1452,8 @@ class EngagementAgent(BaseAgent):
         except Exception as ae:
             logger.error(
                 "dispatch_queued_draft assertion_exception draft_id=%s error=%s",
-                draft_id, ae,
+                draft_id,
+                ae,
             )
             return QueueDispatchOutcome(
                 status="ASSERTION_FAILED",
@@ -1327,7 +1484,8 @@ class EngagementAgent(BaseAgent):
         except Exception as _claim_exc:
             logger.error(
                 "dispatch_queued_draft pre_send_claim_failed draft_id=%s error=%s",
-                draft_id, _claim_exc,
+                draft_id,
+                _claim_exc,
             )
             return QueueDispatchOutcome(
                 status="ASSERTION_FAILED",
@@ -1360,21 +1518,23 @@ class EngagementAgent(BaseAgent):
         except Exception as send_exc:
             # Resend call failed — roll back sent_at to allow safe retry.
             try:
-                self.db.client.table("outreach_drafts").update(
-                    {"sent_at": None}
-                ).eq("id", draft_id).execute()
-                logger.info(
-                    "dispatch_queued_draft sent_at_rollback_ok draft_id=%s", draft_id
-                )
+                self.db.client.table("outreach_drafts").update({"sent_at": None}).eq(
+                    "id", draft_id
+                ).execute()
+                logger.info("dispatch_queued_draft sent_at_rollback_ok draft_id=%s", draft_id)
             except Exception as _rb_exc:
                 logger.error(
                     "dispatch_queued_draft sent_at_rollback_failed draft_id=%s error=%s",
-                    draft_id, _rb_exc,
+                    draft_id,
+                    _rb_exc,
                 )
             status, failure_code = _classify_resend_error(send_exc)
             logger.warning(
                 "dispatch_queued_draft resend_%s draft_id=%s code=%s error=%s",
-                status.lower(), draft_id, failure_code, send_exc,
+                status.lower(),
+                draft_id,
+                failure_code,
+                send_exc,
             )
             return QueueDispatchOutcome(
                 status=status,
@@ -1390,32 +1550,41 @@ class EngagementAgent(BaseAgent):
 
         # Post-send updates (non-fatal — sent_at already set by pre-send claim above)
         try:
-            self.db.update_outreach_draft(draft_id, {
-                "resend_message_id": resend_id,
-            })
+            self.db.update_outreach_draft(
+                draft_id,
+                {
+                    "resend_message_id": resend_id,
+                    # Write sender_email so assert_sender_under_daily_cap in pre_send_assertions
+                    # can count actual sends per mailbox. Without this write the field is always
+                    # NULL and the per-sender daily cap assertion is always 0 → never enforced.
+                    "sender_email": from_address,
+                },
+            )
         except Exception as _e:
             logger.warning("dispatch_queued_draft update_resend_id failed (non-fatal): %s", _e)
 
         try:
             _ws_id = self.db.workspace_id or settings.default_workspace_id
-            self.db.client.table("interactions").insert({
-                "company_id": draft["company_id"],
-                "contact_id": draft["contact_id"],
-                "type": "email_sent",
-                "channel": "email",
-                "subject": subject,
-                "source": "resend",
-                "workspace_id": _ws_id,
-                "metadata": {
-                    "from": from_address,
-                    "reply_to": reply_to,
-                    "sequence_name": draft.get("sequence_name"),
-                    "sequence_step": draft.get("sequence_step"),
-                    "queue_path": True,
-                    "campaign_cluster": _dq_cluster,
-                    "instantly_campaign_id": _dq_instantly_campaign_id,
-                },
-            }).execute()
+            self.db.client.table("interactions").insert(
+                {
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "type": "email_sent",
+                    "channel": "email",
+                    "subject": subject,
+                    "source": "resend",
+                    "workspace_id": _ws_id,
+                    "metadata": {
+                        "from": from_address,
+                        "reply_to": reply_to,
+                        "sequence_name": draft.get("sequence_name"),
+                        "sequence_step": draft.get("sequence_step"),
+                        "queue_path": True,
+                        "campaign_cluster": _dq_cluster,
+                        "instantly_campaign_id": _dq_instantly_campaign_id,
+                    },
+                }
+            ).execute()
         except Exception as _e:
             logger.warning("dispatch_queued_draft interactions insert failed (non-fatal): %s", _e)
 
@@ -1427,7 +1596,9 @@ class EngagementAgent(BaseAgent):
         try:
             self.db.set_company_outreach_active(draft["company_id"], draft["contact_id"])
         except Exception as _e:
-            logger.warning("dispatch_queued_draft set_company_outreach_active failed (non-fatal): %s", _e)
+            logger.warning(
+                "dispatch_queued_draft set_company_outreach_active failed (non-fatal): %s", _e
+            )
 
         try:
             _ws_id = self.db.workspace_id or settings.default_workspace_id
@@ -1440,15 +1611,18 @@ class EngagementAgent(BaseAgent):
                 .order("updated_at", desc=True)
                 .limit(1)
                 .execute()
-                .data or []
+                .data
+                or []
             )
             if _thread_row:
                 _thread_id = _thread_row[0]["id"]
-                self.db.client.table("campaign_threads").update({
-                    "current_step": _seq_step,
-                    "last_sent_at": now,
-                    "status": "active",
-                }).eq("id", _thread_id).execute()
+                self.db.client.table("campaign_threads").update(
+                    {
+                        "current_step": _seq_step,
+                        "last_sent_at": now,
+                        "status": "active",
+                    }
+                ).eq("id", _thread_id).execute()
             else:
                 _insert = {
                     "company_id": draft["company_id"],
@@ -1461,17 +1635,19 @@ class EngagementAgent(BaseAgent):
                 if _ws_id:
                     _insert["workspace_id"] = _ws_id
                 _tresult = self.db.client.table("campaign_threads").insert(_insert).execute()
-                _thread_id = (_tresult.data[0]["id"] if _tresult.data else None)
+                _thread_id = _tresult.data[0]["id"] if _tresult.data else None
             if _thread_id:
-                self.db.client.table("thread_messages").insert({
-                    "thread_id": _thread_id,
-                    "direction": "outbound",
-                    "subject": subject,
-                    "body": body,
-                    "sent_at": now,
-                    "outreach_draft_id": draft["id"],
-                    "source": "gmail_webhook",
-                }).execute()
+                self.db.client.table("thread_messages").insert(
+                    {
+                        "thread_id": _thread_id,
+                        "direction": "outbound",
+                        "subject": subject,
+                        "body": body,
+                        "sent_at": now,
+                        "outreach_draft_id": draft["id"],
+                        "source": "gmail_webhook",
+                    }
+                ).execute()
         except Exception as _te:
             logger.warning("dispatch_queued_draft campaign_thread failed (non-fatal): %s", _te)
 
@@ -1492,19 +1668,23 @@ class EngagementAgent(BaseAgent):
                         next_action_at = (
                             datetime.now(timezone.utc) + timedelta(days=delay)
                         ).isoformat()
-                        next_action_type = f"send_{step.get('channel') or step.get('type', 'email')}"
+                        next_action_type = (
+                            f"send_{step.get('channel') or step.get('type', 'email')}"
+                        )
                         break
-            self.db.insert_engagement_sequence({
-                "company_id": draft["company_id"],
-                "contact_id": draft["contact_id"],
-                "sequence_name": draft.get("sequence_name", "initial_outreach"),
-                "current_step": current_step,
-                "total_steps": total_steps,
-                "status": "active" if next_step <= total_steps else "completed",
-                "next_action_at": next_action_at,
-                "next_action_type": next_action_type,
-                "started_at": now,
-            })
+            self.db.insert_engagement_sequence(
+                {
+                    "company_id": draft["company_id"],
+                    "contact_id": draft["contact_id"],
+                    "sequence_name": draft.get("sequence_name", "initial_outreach"),
+                    "current_step": current_step,
+                    "total_steps": total_steps,
+                    "status": "active" if next_step <= total_steps else "completed",
+                    "next_action_at": next_action_at,
+                    "next_action_type": next_action_type,
+                    "started_at": now,
+                }
+            )
         except Exception as _se:
             logger.warning("dispatch_queued_draft engagement_sequence failed (non-fatal): %s", _se)
 
@@ -1531,7 +1711,9 @@ class EngagementAgent(BaseAgent):
 
         logger.info(
             "dispatch_queued_draft DELIVERED draft_id=%s contact=%s resend_id=%s",
-            draft_id, contact_email, resend_id,
+            draft_id,
+            contact_email,
+            resend_id,
         )
         console.print(
             f"  [green]{company_name} → {contact_email}: Dispatched "
@@ -1555,11 +1737,12 @@ class EngagementAgent(BaseAgent):
                 .eq("contact_id", contact_id)
                 .in_("type", ["email_opened", "email_clicked", "email_replied", "reply_received"])
                 .execute()
-                .data or []
+                .data
+                or []
             )
             types = {r["type"] for r in rows}
             return {
-                "opened":  bool(types & {"email_opened"}),
+                "opened": bool(types & {"email_opened"}),
                 "clicked": bool(types & {"email_clicked"}),
                 "replied": bool(types & {"email_replied", "reply_received"}),
             }
@@ -1651,7 +1834,11 @@ class EngagementAgent(BaseAgent):
                 if v2_def:
                     # ---- V2 path: step_id-based navigation with branching ----
                     v2_steps: list = v2_def.get("steps") or []
-                    current_step_id: str | None = seq.get("metadata", {}).get("current_step_id") if seq.get("metadata") else None
+                    current_step_id: str | None = (
+                        seq.get("metadata", {}).get("current_step_id")
+                        if seq.get("metadata")
+                        else None
+                    )
 
                     # Find current position
                     if current_step_id:
@@ -1662,10 +1849,13 @@ class EngagementAgent(BaseAgent):
 
                     if current_idx >= len(v2_steps):
                         # All steps done
-                        self.db.update_engagement_sequence(seq["id"], {
-                            "status": "completed",
-                            "completed_at": now,
-                        })
+                        self.db.update_engagement_sequence(
+                            seq["id"],
+                            {
+                                "status": "completed",
+                                "completed_at": now,
+                            },
+                        )
                         result.processed += 1
                         result.add_detail(company_name, "completed", "V2 sequence finished")
                         continue
@@ -1677,7 +1867,11 @@ class EngagementAgent(BaseAgent):
                     if stype == "condition":
                         pqs = float(contact.get("pqs_total") or 0)
                         branch_taken = self._evaluate_condition(step_def, contact_id or "", pqs)
-                        branch_step_id = step_def.get("branch_yes") if branch_taken else step_def.get("branch_no")
+                        branch_step_id = (
+                            step_def.get("branch_yes")
+                            if branch_taken
+                            else step_def.get("branch_no")
+                        )
                         next_idx = self._find_step_index_by_id(v2_steps, branch_step_id)
                         if next_idx is None:
                             next_idx = current_idx + 1  # fallback: just advance
@@ -1685,17 +1879,31 @@ class EngagementAgent(BaseAgent):
                         if next_idx < len(v2_steps):
                             next_step_def = v2_steps[next_idx]
                             delay = next_step_def.get("wait_days") or 0
-                            next_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
-                            self.db.update_engagement_sequence(seq["id"], {
-                                "current_step": next_idx,
-                                "next_action_at": next_at,
-                                "metadata": {**(seq.get("metadata") or {}), "current_step_id": next_step_def["step_id"]},
-                            })
+                            next_at = (
+                                datetime.now(timezone.utc) + timedelta(days=delay)
+                            ).isoformat()
+                            self.db.update_engagement_sequence(
+                                seq["id"],
+                                {
+                                    "current_step": next_idx,
+                                    "next_action_at": next_at,
+                                    "metadata": {
+                                        **(seq.get("metadata") or {}),
+                                        "current_step_id": next_step_def["step_id"],
+                                    },
+                                },
+                            )
                         else:
-                            self.db.update_engagement_sequence(seq["id"], {"status": "completed", "completed_at": now})
+                            self.db.update_engagement_sequence(
+                                seq["id"], {"status": "completed", "completed_at": now}
+                            )
                         branch_label = "YES" if branch_taken else "NO"
                         result.processed += 1
-                        result.add_detail(company_name, f"condition_{branch_label}", step_def.get("condition_type", ""))
+                        result.add_detail(
+                            company_name,
+                            f"condition_{branch_label}",
+                            step_def.get("condition_type", ""),
+                        )
                         continue
 
                     # Wait step — schedule next action
@@ -1703,13 +1911,21 @@ class EngagementAgent(BaseAgent):
                         delay = step_def.get("wait_days") or 1
                         next_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
                         next_idx = current_idx + 1
-                        next_step_id = v2_steps[next_idx]["step_id"] if next_idx < len(v2_steps) else None
-                        self.db.update_engagement_sequence(seq["id"], {
-                            "current_step": next_idx,
-                            "next_action_at": next_at,
-                            "metadata": {**(seq.get("metadata") or {}), "current_step_id": next_step_id},
-                            "status": "active" if next_step_id else "completed",
-                        })
+                        next_step_id = (
+                            v2_steps[next_idx]["step_id"] if next_idx < len(v2_steps) else None
+                        )
+                        self.db.update_engagement_sequence(
+                            seq["id"],
+                            {
+                                "current_step": next_idx,
+                                "next_action_at": next_at,
+                                "metadata": {
+                                    **(seq.get("metadata") or {}),
+                                    "current_step_id": next_step_id,
+                                },
+                                "status": "active" if next_step_id else "completed",
+                            },
+                        )
                         result.processed += 1
                         result.add_detail(company_name, "wait", f"{delay}d")
                         continue
@@ -1717,6 +1933,7 @@ class EngagementAgent(BaseAgent):
                     # Email / LinkedIn / Task step
                     if stype == "email":
                         from backend.app.agents.outreach import OutreachAgent
+
                         outreach = OutreachAgent(batch_id=self.batch_id)
                         outreach.run(
                             company_ids=[seq["company_id"]],
@@ -1724,26 +1941,30 @@ class EngagementAgent(BaseAgent):
                             sequence_step=current_idx + 1,
                         )
                     elif stype == "linkedin":
-                        self.db.insert_interaction({
-                            "company_id": seq["company_id"],
-                            "contact_id": contact_id,
-                            "type": "linkedin_message",
-                            "channel": "linkedin",
-                            "subject": f"LinkedIn touch — V2 step {current_idx + 1}",
-                            "body": step_def.get("body_template", ""),
-                            "source": "system",
-                            "metadata": {"action_required": "manual", "sequence_id": seq_name},
-                        })
+                        self.db.insert_interaction(
+                            {
+                                "company_id": seq["company_id"],
+                                "contact_id": contact_id,
+                                "type": "linkedin_message",
+                                "channel": "linkedin",
+                                "subject": f"LinkedIn touch — V2 step {current_idx + 1}",
+                                "body": step_def.get("body_template", ""),
+                                "source": "system",
+                                "metadata": {"action_required": "manual", "sequence_id": seq_name},
+                            }
+                        )
                     elif stype == "task":
-                        self.db.insert_interaction({
-                            "company_id": seq["company_id"],
-                            "contact_id": contact_id,
-                            "type": "task",
-                            "channel": "internal",
-                            "subject": step_def.get("task_description", "Follow-up task"),
-                            "body": step_def.get("task_description", ""),
-                            "source": "system",
-                        })
+                        self.db.insert_interaction(
+                            {
+                                "company_id": seq["company_id"],
+                                "contact_id": contact_id,
+                                "type": "task",
+                                "channel": "internal",
+                                "subject": step_def.get("task_description", "Follow-up task"),
+                                "body": step_def.get("task_description", ""),
+                                "source": "system",
+                            }
+                        )
 
                     # Advance to next step
                     next_idx = current_idx + 1
@@ -1751,14 +1972,22 @@ class EngagementAgent(BaseAgent):
                         next_step_def = v2_steps[next_idx]
                         delay = next_step_def.get("wait_days") or 1
                         next_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
-                        self.db.update_engagement_sequence(seq["id"], {
-                            "current_step": next_idx,
-                            "next_action_at": next_at,
-                            "metadata": {**(seq.get("metadata") or {}), "current_step_id": next_step_def["step_id"]},
-                            "status": "active",
-                        })
+                        self.db.update_engagement_sequence(
+                            seq["id"],
+                            {
+                                "current_step": next_idx,
+                                "next_action_at": next_at,
+                                "metadata": {
+                                    **(seq.get("metadata") or {}),
+                                    "current_step_id": next_step_def["step_id"],
+                                },
+                                "status": "active",
+                            },
+                        )
                     else:
-                        self.db.update_engagement_sequence(seq["id"], {"status": "completed", "completed_at": now})
+                        self.db.update_engagement_sequence(
+                            seq["id"], {"status": "completed", "completed_at": now}
+                        )
 
                     result.processed += 1
                     result.add_detail(company_name, f"v2_step_{current_idx + 1}", stype)
@@ -1778,10 +2007,13 @@ class EngagementAgent(BaseAgent):
                         break
 
                 if not step_config:
-                    self.db.update_engagement_sequence(seq["id"], {
-                        "status": "completed",
-                        "completed_at": now,
-                    })
+                    self.db.update_engagement_sequence(
+                        seq["id"],
+                        {
+                            "status": "completed",
+                            "completed_at": now,
+                        },
+                    )
                     result.processed += 1
                     result.add_detail(company_name, "completed", "Sequence finished")
                     continue
@@ -1814,11 +2046,16 @@ class EngagementAgent(BaseAgent):
 
                     # Auto-stop sequence if prospect unsubscribed or bounced
                     if reply_ctx and reply_ctx.get("stop_sequence"):
-                        self.db.update_engagement_sequence(seq["id"], {
-                            "status": "completed",
-                            "completed_at": datetime.now(timezone.utc).isoformat(),
-                        })
-                        console.print(f"  [yellow]{company_name}: Sequence stopped ({reply_ctx['reason']})[/yellow]")
+                        self.db.update_engagement_sequence(
+                            seq["id"],
+                            {
+                                "status": "completed",
+                                "completed_at": datetime.now(timezone.utc).isoformat(),
+                            },
+                        )
+                        console.print(
+                            f"  [yellow]{company_name}: Sequence stopped ({reply_ctx['reason']})[/yellow]"
+                        )
                         result.processed += 1
                         result.add_detail(company_name, "stopped", reply_ctx["reason"])
                         continue
@@ -1847,6 +2084,7 @@ class EngagementAgent(BaseAgent):
                         pass
 
                     from backend.app.agents.outreach import OutreachAgent
+
                     outreach = OutreachAgent(batch_id=self.batch_id)
                     outreach_result = outreach.run(
                         company_ids=[seq["company_id"]],
@@ -1857,24 +2095,40 @@ class EngagementAgent(BaseAgent):
                         contact_id=contact_id,  # enables _is_followup → bypasses new-thread gates
                     )
                     if outreach_result.processed > 0:
-                        gap_label = f" [{time_gap_days}d gap]" if time_gap_days and time_gap_days >= 14 else ""
+                        gap_label = (
+                            f" [{time_gap_days}d gap]"
+                            if time_gap_days and time_gap_days >= 14
+                            else ""
+                        )
                         label = "reply-aware " if reply_ctx else ""
-                        console.print(f"  [green]{company_name}: {label}Follow-up draft created (step {next_step}, email){gap_label}[/green]")
+                        console.print(
+                            f"  [green]{company_name}: {label}Follow-up draft created (step {next_step}, email){gap_label}[/green]"
+                        )
                     else:
-                        console.print(f"  [yellow]{company_name}: Could not generate follow-up[/yellow]")
+                        console.print(
+                            f"  [yellow]{company_name}: Could not generate follow-up[/yellow]"
+                        )
 
                 elif channel == "linkedin":
-                    console.print(f"  [bold cyan]{company_name}: LinkedIn touch needed (step {next_step}) → {contact.get('full_name', 'Unknown')}[/bold cyan]")
-                    self.db.insert_interaction({
-                        "company_id": seq["company_id"],
-                        "contact_id": seq["contact_id"],
-                        "type": "linkedin_connection" if next_step <= 2 else "linkedin_message",
-                        "channel": "linkedin",
-                        "subject": f"LinkedIn touch — Step {next_step}",
-                        "body": step_config.get("instructions", {}).get("approach", ""),
-                        "source": "system",
-                        "metadata": {"action_required": "manual", "sequence_name": seq_name, "sequence_step": next_step},
-                    })
+                    console.print(
+                        f"  [bold cyan]{company_name}: LinkedIn touch needed (step {next_step}) → {contact.get('full_name', 'Unknown')}[/bold cyan]"
+                    )
+                    self.db.insert_interaction(
+                        {
+                            "company_id": seq["company_id"],
+                            "contact_id": seq["contact_id"],
+                            "type": "linkedin_connection" if next_step <= 2 else "linkedin_message",
+                            "channel": "linkedin",
+                            "subject": f"LinkedIn touch — Step {next_step}",
+                            "body": step_config.get("instructions", {}).get("approach", ""),
+                            "source": "system",
+                            "metadata": {
+                                "action_required": "manual",
+                                "sequence_name": seq_name,
+                                "sequence_step": next_step,
+                            },
+                        }
+                    )
 
                 further_step = next_step + 1
                 next_next_action_at = None
@@ -1884,16 +2138,23 @@ class EngagementAgent(BaseAgent):
                     for step in sequence.get("steps", []):
                         if step["step"] == further_step:
                             delay = step.get("delay_days", 3)
-                            next_next_action_at = (datetime.now(timezone.utc) + timedelta(days=delay)).isoformat()
-                            next_next_type = f"send_{step.get('channel') or sequence.get('channel', 'email')}"
+                            next_next_action_at = (
+                                datetime.now(timezone.utc) + timedelta(days=delay)
+                            ).isoformat()
+                            next_next_type = (
+                                f"send_{step.get('channel') or sequence.get('channel', 'email')}"
+                            )
                             break
 
-                self.db.update_engagement_sequence(seq["id"], {
-                    "current_step": next_step,
-                    "next_action_at": next_next_action_at,
-                    "next_action_type": next_next_type,
-                    "status": "active" if further_step <= seq["total_steps"] else "completed",
-                })
+                self.db.update_engagement_sequence(
+                    seq["id"],
+                    {
+                        "current_step": next_step,
+                        "next_action_at": next_next_action_at,
+                        "next_action_type": next_next_type,
+                        "status": "active" if further_step <= seq["total_steps"] else "completed",
+                    },
+                )
 
                 result.processed += 1
                 result.add_detail(company_name, f"step_{next_step}", f"Channel: {channel}")
@@ -1964,10 +2225,7 @@ class EngagementAgent(BaseAgent):
                 "other": "REPLIED — intent unclear",
             }
             intent_label = intent_labels.get(classification, "REPLIED")
-            context_str = (
-                f'Intent: {intent_label}\n'
-                f'Their message: "{body[:600]}"'
-            )
+            context_str = f'Intent: {intent_label}\nTheir message: "{body[:600]}"'
             return {"stop_sequence": False, "context_str": context_str, "reason": classification}
 
         except Exception as exc:
@@ -1993,8 +2251,9 @@ class EngagementAgent(BaseAgent):
         try:
             seq_result = (
                 self.db._filter_ws(
-                    self.db.client.table("engagement_sequences")
-                    .select("*, companies(name), contacts(full_name, email)")
+                    self.db.client.table("engagement_sequences").select(
+                        "*, companies(name), contacts(full_name, email)"
+                    )
                 )
                 .eq("status", "active")
                 .lte("next_action_at", window_end)
@@ -2011,7 +2270,9 @@ class EngagementAgent(BaseAgent):
             console.print("[dim]JIT pregenerate: no sequences due within 3 days[/dim]")
             return result
 
-        console.print(f"[cyan]JIT pregenerate: {len(sequences)} sequence(s) due within 3 days[/cyan]")
+        console.print(
+            f"[cyan]JIT pregenerate: {len(sequences)} sequence(s) due within 3 days[/cyan]"
+        )
 
         seq_config = get_sequences_config()
 
@@ -2028,9 +2289,7 @@ class EngagementAgent(BaseAgent):
             try:
                 # Check if a pending draft already exists for this contact + step
                 existing = (
-                    self.db._filter_ws(
-                        self.db.client.table("outreach_drafts").select("id")
-                    )
+                    self.db._filter_ws(self.db.client.table("outreach_drafts").select("id"))
                     .eq("company_id", company_id)
                     .eq("contact_id", contact_id)
                     .eq("sequence_step", next_step)
@@ -2039,7 +2298,9 @@ class EngagementAgent(BaseAgent):
                     .execute()
                 )
                 if existing.data:
-                    console.print(f"  [dim]{company_name}: Step {next_step} draft already pending — skipping[/dim]")
+                    console.print(
+                        f"  [dim]{company_name}: Step {next_step} draft already pending — skipping[/dim]"
+                    )
                     result.skipped += 1
                     continue
 
@@ -2047,11 +2308,16 @@ class EngagementAgent(BaseAgent):
                 sequence_def = seq_config.get("sequences", {}).get(seq_name, {})
                 step_exists = any(s["step"] == next_step for s in sequence_def.get("steps", []))
                 if not step_exists:
-                    console.print(f"  [dim]{company_name}: No step {next_step} in {seq_name} — sequence complete[/dim]")
-                    self.db.update_engagement_sequence(seq["id"], {
-                        "status": "completed",
-                        "completed_at": now.isoformat(),
-                    })
+                    console.print(
+                        f"  [dim]{company_name}: No step {next_step} in {seq_name} — sequence complete[/dim]"
+                    )
+                    self.db.update_engagement_sequence(
+                        seq["id"],
+                        {
+                            "status": "completed",
+                            "completed_at": now.isoformat(),
+                        },
+                    )
                     result.skipped += 1
                     continue
 
@@ -2077,11 +2343,14 @@ class EngagementAgent(BaseAgent):
 
                     # Check 2: minimum gap between consecutive steps
                     from backend.app.core.pre_send_assertions import MIN_STEP_GAP_DAYS
+
                     prior_sent_str = prior_sent_rows[0].get("sent_at", "")
                     try:
                         prior_dt = datetime.fromisoformat(prior_sent_str.replace("Z", "+00:00"))
                     except ValueError:
-                        prior_dt = datetime.fromisoformat(prior_sent_str.replace("+00:00", "")).replace(tzinfo=timezone.utc)
+                        prior_dt = datetime.fromisoformat(
+                            prior_sent_str.replace("+00:00", "")
+                        ).replace(tzinfo=timezone.utc)
                     days_since_prior = (now - prior_dt).days
                     if days_since_prior < MIN_STEP_GAP_DAYS:
                         console.print(
@@ -2094,11 +2363,16 @@ class EngagementAgent(BaseAgent):
                 # Check 3: reply context — inject or stop sequence
                 reply_ctx = self._get_latest_reply_context(contact_id)
                 if reply_ctx and reply_ctx.get("stop_sequence"):
-                    self.db.update_engagement_sequence(seq["id"], {
-                        "status": "completed",
-                        "completed_at": now.isoformat(),
-                    })
-                    console.print(f"  [yellow]{company_name}: Stopped ({reply_ctx['reason']})[/yellow]")
+                    self.db.update_engagement_sequence(
+                        seq["id"],
+                        {
+                            "status": "completed",
+                            "completed_at": now.isoformat(),
+                        },
+                    )
+                    console.print(
+                        f"  [yellow]{company_name}: Stopped ({reply_ctx['reason']})[/yellow]"
+                    )
                     result.processed += 1
                     continue
 
@@ -2125,6 +2399,7 @@ class EngagementAgent(BaseAgent):
 
                 # Generate the draft JIT
                 from backend.app.agents.outreach import OutreachAgent
+
                 outreach = OutreachAgent(batch_id=self.batch_id)
                 outreach_result = outreach.run(
                     company_ids=[company_id],
@@ -2145,7 +2420,9 @@ class EngagementAgent(BaseAgent):
                     result.processed += 1
                     result.add_detail(company_name, f"jit_step_{next_step}", "draft created")
                 else:
-                    console.print(f"  [yellow]{company_name}: Could not generate step {next_step}[/yellow]")
+                    console.print(
+                        f"  [yellow]{company_name}: Could not generate step {next_step}[/yellow]"
+                    )
                     result.errors += 1
 
             except Exception as e:
@@ -2239,11 +2516,13 @@ class EngagementAgent(BaseAgent):
             if not email or not contact_id or contact_id in seen:
                 continue
             seen.add(contact_id)
-            contacts_to_poll.append({
-                "contact_id": contact_id,
-                "email": email,
-                "company_id": contact.get("company_id"),
-            })
+            contacts_to_poll.append(
+                {
+                    "contact_id": contact_id,
+                    "email": email,
+                    "company_id": contact.get("company_id"),
+                }
+            )
 
         if not contacts_to_poll:
             console.print("[yellow]No sent drafts found — nothing to poll.[/yellow]")
@@ -2276,7 +2555,9 @@ class EngagementAgent(BaseAgent):
                     self.db.client.table("interactions")
                     .select("type")
                     .eq("contact_id", contact_id)
-                    .in_("type", ["email_opened", "email_clicked", "email_replied", "email_bounced"])
+                    .in_(
+                        "type", ["email_opened", "email_clicked", "email_replied", "email_bounced"]
+                    )
                     .execute()
                     .data
                 )
@@ -2290,7 +2571,9 @@ class EngagementAgent(BaseAgent):
                         "email_opened",
                     ),
                     (
-                        lead.get("is_clicked") or lead.get("clicked") or lead.get("times_clicked", 0),
+                        lead.get("is_clicked")
+                        or lead.get("clicked")
+                        or lead.get("times_clicked", 0),
                         "email_clicked",
                         "email_clicked",
                     ),
@@ -2318,9 +2601,7 @@ class EngagementAgent(BaseAgent):
                     }
                     try:
                         self.process_webhook_event(instantly_event, event_data)
-                        console.print(
-                            f"  [green]{email}: new {instantly_event} detected[/green]"
-                        )
+                        console.print(f"  [green]{email}: new {instantly_event} detected[/green]")
                         result.processed += 1
                         result.add_detail(email, instantly_event, "polled")
                     except Exception as e:
@@ -2390,17 +2671,19 @@ class EngagementAgent(BaseAgent):
             return {"status": "skipped", "reason": f"Unknown event type: {event_type}"}
 
         # Log interaction
-        db.insert_interaction({
-            "company_id": company_id,
-            "contact_id": contact_id,
-            "type": interaction_type,
-            "channel": "email",
-            "subject": event_data.get("subject", ""),
-            "body": event_data.get("body", ""),
-            "source": "instantly_webhook",
-            "external_id": event_data.get("event_id", ""),
-            "metadata": event_data,
-        })
+        db.insert_interaction(
+            {
+                "company_id": company_id,
+                "contact_id": contact_id,
+                "type": interaction_type,
+                "channel": "email",
+                "subject": event_data.get("subject", ""),
+                "body": event_data.get("body", ""),
+                "source": "instantly_webhook",
+                "external_id": event_data.get("event_id", ""),
+                "metadata": event_data,
+            }
+        )
 
         # Update engagement score
         engagement_bump = {
@@ -2420,10 +2703,13 @@ class EngagementAgent(BaseAgent):
                     + company.get("pqs_timing", 0)
                     + new_engagement
                 )
-                db.update_company(company_id, {
-                    "pqs_engagement": new_engagement,
-                    "pqs_total": new_total,
-                })
+                db.update_company(
+                    company_id,
+                    {
+                        "pqs_engagement": new_engagement,
+                        "pqs_total": new_total,
+                    },
+                )
 
         # Handle specific events
         if event_type == "email_opened":
@@ -2449,8 +2735,11 @@ class EngagementAgent(BaseAgent):
             # Notify Slack about the hot reply
             try:
                 from backend.app.utils.notifications import notify_slack
+
                 company = db.get_company(company_id)
-                company_name = company.get("name", "Unknown company") if company else "Unknown company"
+                company_name = (
+                    company.get("name", "Unknown company") if company else "Unknown company"
+                )
                 notify_slack(
                     f"*Hot reply received!* {company_name} ({email}) replied to your outreach. "
                     f"Check the ProspectIQ dashboard to respond.",
