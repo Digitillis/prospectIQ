@@ -541,7 +541,13 @@ def assert_minimum_step_gap(
                 last_sent = datetime.fromisoformat(sent_str.replace("+00:00", "")).replace(
                     tzinfo=timezone.utc
                 )
-            days_since = (datetime.now(timezone.utc) - last_sent).days
+            # Compare calendar dates, not datetimes. The scheduler plans at date
+            # granularity; timedelta.days truncates fractional days and fires
+            # spuriously when dispatch runs early morning after a late-afternoon send.
+            # Root cause of June 3 batch failure (429 sends blocked incorrectly).
+            today_date = datetime.now(timezone.utc).date()
+            last_sent_date = last_sent.date()
+            days_since = (today_date - last_sent_date).days
             gap = _step_gap_days(sequence_step)
             if days_since < gap:
                 detail = (

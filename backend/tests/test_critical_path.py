@@ -120,6 +120,92 @@ def test_step4_not_scheduled_sooner_than_2_calendar_days_after_step3():
 
 
 # ---------------------------------------------------------------------------
+# Stage 2b — Assertion step-gap uses calendar dates, not timedelta.days
+#
+# Regression test for the June 3 2026 incident: step-3 sent at 2:49 PM UTC
+# June 1; step-4 dispatched at 8:53 AM UTC June 3. timedelta.days = 1 (18h
+# short of a full 2 days), so the assertion wrongly blocked 429 sends.
+# The fix: compare .date() values so time-of-day drift can't cause a false fail.
+# ---------------------------------------------------------------------------
+
+
+def test_step_gap_assertion_uses_calendar_dates_not_timedelta_days():
+    """assert_minimum_step_gap must pass when 2 calendar days have elapsed,
+    even if the datetime difference is < 2.0 days due to time-of-day offset."""
+    from unittest.mock import patch, MagicMock
+    from datetime import datetime, timezone
+    from backend.app.core.pre_send_assertions import assert_minimum_step_gap, AssertionFailure
+
+    # Step 3 sent late afternoon UTC June 1; step 4 dispatched early morning June 3
+    step3_sent = "2026-06-01T14:49:16.583551+00:00"
+    dispatch_time = datetime(2026, 6, 3, 8, 53, 0, tzinfo=timezone.utc)
+    # timedelta.days = 1 (broken); date diff = 2 (correct)
+
+    class _R:
+        data = [{"sent_at": step3_sent}]
+
+    class _Q:
+        def select(self, *a): return self
+        def eq(self, *a): return self
+        def order(self, *a, **k): return self
+        def limit(self, *a): return self
+        def execute(self): return _R()
+        def __getattr__(self, name): return self
+        def __call__(self, *a, **k): return self
+
+    class _Client:
+        def table(self, _): return _Q()
+
+    class _Db:
+        client = _Client()
+
+    contact = {"id": "c-001", "contact_id": "c-001", "company_id": "co-001", "full_name": "T"}
+
+    with patch("backend.app.core.pre_send_assertions.datetime") as mock_dt:
+        mock_dt.now.return_value = dispatch_time
+        mock_dt.fromisoformat = datetime.fromisoformat
+        # Must NOT raise — 2 calendar days >= 2 day minimum for step 4
+        assert_minimum_step_gap(_Db(), contact, sequence_step=4)
+
+
+def test_step_gap_assertion_blocks_when_only_one_calendar_day_has_passed():
+    """assert_minimum_step_gap must FAIL when only 1 calendar day has elapsed."""
+    from unittest.mock import patch
+    from datetime import datetime, timezone
+    from backend.app.core.pre_send_assertions import assert_minimum_step_gap, AssertionFailure
+
+    step3_sent = "2026-06-02T08:00:00.000000+00:00"
+    dispatch_time = datetime(2026, 6, 3, 8, 0, 0, tzinfo=timezone.utc)  # 1 calendar day
+
+    class _R:
+        data = [{"sent_at": step3_sent}]
+
+    class _Q:
+        def select(self, *a): return self
+        def eq(self, *a): return self
+        def order(self, *a, **k): return self
+        def limit(self, *a): return self
+        def execute(self): return _R()
+        def __getattr__(self, name): return self
+        def __call__(self, *a, **k): return self
+
+    class _Client:
+        def table(self, _): return _Q()
+
+    class _Db:
+        client = _Client()
+
+    contact = {"id": "c-002", "contact_id": "c-002", "company_id": "co-002", "full_name": "T"}
+
+    with patch("backend.app.core.pre_send_assertions.datetime") as mock_dt:
+        mock_dt.now.return_value = dispatch_time
+        mock_dt.fromisoformat = datetime.fromisoformat
+        import pytest
+        with pytest.raises(AssertionFailure, match="minimum_step_gap"):
+            assert_minimum_step_gap(_Db(), contact, sequence_step=4)
+
+
+# ---------------------------------------------------------------------------
 # Stage 3 — Dispatch idempotency (stable key across retries — SDP#3)
 # ---------------------------------------------------------------------------
 
