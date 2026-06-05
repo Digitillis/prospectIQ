@@ -800,6 +800,8 @@ def enqueue_todays_schedule(
                         "p_approved_at": now_iso,
                         "p_edited_body": None,
                         "p_priority": priority,
+                        "p_approved_by": reviewer_id,
+                        "p_reviewed_at": now_iso,
                     },
                 ).execute()
                 db.client.table("send_schedule").update({"status": "enqueued"}).eq(
