@@ -27,7 +27,7 @@ import email
 import imaplib
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.header import decode_header
 from typing import Optional
 
@@ -101,6 +101,54 @@ _OOO_KWS = [
     "away until",
     "automatic reply",
 ]
+
+
+_OOO_RETURN_PATTERNS = [
+    # "back on June 16" / "returning June 16, 2026" / "available on 6/16"
+    r"(?:back|return(?:ing)?|available again?|in the office)\s+(?:on\s+)?([A-Za-z]+ \d{1,2}(?:st|nd|rd|th)?,?\s*\d{0,4})",
+    r"(?:back|return(?:ing)?|available again?|in the office)\s+(?:on\s+)?(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)",
+    # "out until June 15" / "away until 2026-06-15"
+    r"(?:out|away|off|leave)\s+until\s+([A-Za-z]+ \d{1,2}(?:st|nd|rd|th)?,?\s*\d{0,4})",
+    r"(?:out|away|off|leave)\s+until\s+(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)",
+    r"(?:out|away|off|leave)\s+until\s+(\d{4}-\d{2}-\d{2})",
+    # "return date: June 16"
+    r"return\s+date[:\s]+([A-Za-z]+ \d{1,2}(?:st|nd|rd|th)?,?\s*\d{0,4})",
+]
+
+
+def _parse_ooo_return_date(body: str) -> date | None:
+    """Extract the return date from an OOO reply body.
+
+    Returns a date in the future (within 90 days), or None if not parseable.
+    """
+    try:
+        from dateutil import parser as du_parser
+    except ImportError:
+        return None
+
+    today = datetime.now(timezone.utc).date()
+    text = body[:2000]  # Only scan the first 2 KB — return date is always near the top
+
+    for pattern in _OOO_RETURN_PATTERNS:
+        for m in re.finditer(pattern, text, re.IGNORECASE):
+            raw = m.group(1).strip().rstrip(",")
+            # Append current year if missing (e.g. "June 16" with no year)
+            if not re.search(r"\d{4}", raw):
+                raw = f"{raw} {today.year}"
+            try:
+                parsed = du_parser.parse(raw, fuzzy=True, dayfirst=False)
+                candidate = parsed.date()
+                # Accept only future dates within 90 days
+                if today < candidate <= today + timedelta(days=90):
+                    return candidate
+                # If year was appended and date has passed, try next year
+                if candidate < today and not re.search(r"\d{4}", m.group(1)):
+                    candidate = candidate.replace(year=today.year + 1)
+                    if today < candidate <= today + timedelta(days=90):
+                        return candidate
+            except Exception:
+                continue
+    return None
 
 
 def _decode_str(value: str) -> str:
