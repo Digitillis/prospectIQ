@@ -1,0 +1,6 @@
+[settings]
+# mise 2026.6.0 introduced GitHub artifact attestation verification for Python
+# installs. The CPython builds do not carry matching GitHub attestations, so
+# verification hard-fails during `mise install`. Disabling it restores the
+# previous install behaviour (checksum verification still applies).
+python.github_attestations = false

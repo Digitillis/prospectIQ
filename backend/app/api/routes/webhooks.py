@@ -1264,10 +1264,23 @@ async def resend_webhook(
             is_bounce = event_type == "email.bounced"
             is_complaint = event_type == "email.complained"
 
+            # Resend distinguishes Permanent (hard) vs Transient (soft) bounces.
+            # Soft bounces must NOT be DNC'd — the address is reachable; we only pause the sequence.
+            _bounce_data = payload.get("data", {}).get("bounce", {}) if is_bounce else {}
+            _resend_bounce_type = _bounce_data.get("type", "Permanent")  # "Permanent" | "Transient"
+            is_hard_bounce = _resend_bounce_type != "Transient"
+            _diag = _bounce_data.get("diagnosticCode", [])
+            bounce_smtp_code: str | None = _diag[0][:200] if _diag else None
+
             try:
-                # Stamp draft with bounce/complaint time + sender
+                # Stamp draft with bounce/complaint time, resend_status, and bounce detail columns.
                 try:
                     draft_update = {draft_time_col: now_iso}
+                    if is_bounce:
+                        draft_update["resend_status"] = "bounced"
+                        draft_update["bounce_type"] = "hard" if is_hard_bounce else "soft"
+                        if bounce_smtp_code:
+                            draft_update["bounce_smtp_code"] = bounce_smtp_code
                     if sender_email:
                         draft_update["sender_email"] = sender_email
                     q = db._filter_ws(db.client.table("outreach_drafts").update(draft_update))
@@ -1295,8 +1308,15 @@ async def resend_webhook(
                     maybe_escalate_to_company,
                 )
 
-                suppression_reason = "spam_complaint" if is_complaint else "hard_bounce_contact"
-                bounce_class = "complaint" if is_complaint else "hard"
+                if is_complaint:
+                    suppression_reason = "spam_complaint"
+                    bounce_class = "complaint"
+                elif is_hard_bounce:
+                    suppression_reason = "hard_bounce_contact"
+                    bounce_class = "hard"
+                else:
+                    suppression_reason = "soft_bounce"
+                    bounce_class = "soft"
                 provider_code = (
                     str(payload.get("data", {}).get("bounce", {}).get("code", "")) or None
                 )
@@ -1349,7 +1369,8 @@ async def resend_webhook(
                     # Check multi-contact bounce threshold — escalates only if ≥2 distinct contacts
                     maybe_escalate_to_company(db, company_id, triggering_suppression_id=sup_id)
 
-                if recipient_email:
+                # Soft bounces are transient — do not permanently suppress the address.
+                if recipient_email and (is_complaint or is_hard_bounce):
                     db.add_to_dnc(recipient_email, reason=dnc_reason, added_by="resend_webhook")
 
                 # Pause active engagement sequences for this contact
@@ -1360,10 +1381,12 @@ async def resend_webhook(
                     .in_("status", ["active", "paused"])
                     .execute()
                 )
+                # Hard bounces and complaints cancel permanently; soft bounces only pause.
+                seq_new_status = "cancelled" if (is_complaint or is_hard_bounce) else "paused"
                 for seq in active_seqs.data or []:
                     db.client.table("engagement_sequences").update(
                         {
-                            "status": "cancelled",
+                            "status": seq_new_status,
                             "updated_at": now_iso,
                         }
                     ).eq("id", seq["id"]).execute()

@@ -614,11 +614,15 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
             .execute()
             .data
         )
+        # Only count hard bounces (bounce_type='hard' or NULL for pre-063 rows).
+        # Soft/Transient bounces are not permanent delivery failures and must not
+        # inflate the gate — they suppress sequences temporarily, not addresses.
         bounces_rows = (
             db.client.table("outreach_drafts")
             .select("contact_id")
             .not_.is_("bounced_at", "null")
             .gte("sent_at", cutoff)
+            .or_("bounce_type.is.null,bounce_type.eq.hard")
             .execute()
             .data
         )
