@@ -515,16 +515,30 @@ def _dispatch_workspace_inner(
             result.delivered += 1
 
         elif outcome.status == "ASSERTION_FAILED":
+            _failure_reason = (outcome.failure_reason or "pre-send assertion blocked")[:500]
+            # cluster_routing_skip means the env var / cluster config is absent — it
+            # will never self-resolve.  Dead-letter immediately so the item does not
+            # spin in the queue forever on every scheduler tick.
+            _is_permanent_skip = _failure_reason.startswith("cluster_routing_skip:")
             _update_send_attempt(
                 db_client,
                 attempt_id,
-                status="FAILED",
-                failure_code="assertion_failed",
-                failure_reason=(outcome.failure_reason or "pre-send assertion blocked")[:500],
+                status="PERMANENTLY_FAILED" if _is_permanent_skip else "FAILED",
+                failure_code="cluster_routing_skip" if _is_permanent_skip else "assertion_failed",
+                failure_reason=_failure_reason,
                 resolved_at=_now_iso(),
             )
-            _release_queue_lock_bump_retry(db_client, queue_row_id, retry_count)
-            result.assertion_skipped += 1
+            if _is_permanent_skip:
+                _mark_draft_dispatch_failed(db_client, draft_id)
+                _delete_queue_row(db_client, queue_row_id)
+                result.permanently_failed += 1
+                logger.warning(
+                    "dispatch.cluster_routing_permanent_skip draft_id=%s — dead-lettered",
+                    draft_id,
+                )
+            else:
+                _release_queue_lock_bump_retry(db_client, queue_row_id, retry_count)
+                result.assertion_skipped += 1
 
         elif outcome.status == "TRANSIENT_FAILED":
             new_retry_count = retry_count + 1
