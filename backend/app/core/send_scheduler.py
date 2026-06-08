@@ -675,10 +675,13 @@ def recompute_and_persist(
             }
 
         run_id = str(uuid.uuid4())
-        # Clear existing not-yet-enqueued schedule rows for this workspace.
+        # Clear existing not-yet-enqueued schedule rows for FUTURE dates only.
+        # Rows for today are preserved so the 7:55am enqueue can still pick them up
+        # even when the recompute runs at 2:30am on weekday mornings.
+        today_iso = datetime.now(timezone.utc).date().isoformat()
         db.client.table("send_schedule").delete().eq("workspace_id", workspace_id).eq(
             "status", "scheduled"
-        ).execute()
+        ).gt("scheduled_date", today_iso).execute()
 
         rows = [
             {
