@@ -1027,10 +1027,34 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             {"next_action_at": expedite_at}
                         ).eq("contact_id", contact_id).eq("status", "active").execute()
                     elif intent == "ooo":
-                        delay_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+                        from backend.app.integrations.gmail_imap import _parse_ooo_return_date
+
+                        _return_date = _parse_ooo_return_date(body)
+                        if _return_date:
+                            # Resume the day after they're back
+                            delay_at = datetime(
+                                _return_date.year, _return_date.month, _return_date.day,
+                                9, 0, 0, tzinfo=timezone.utc,
+                            ) + timedelta(days=1)
+                            logger.info(
+                                "Gmail intake [%s]: OOO return date parsed for %s → %s",
+                                ws["name"], from_email, _return_date.isoformat(),
+                            )
+                        else:
+                            delay_at = datetime.now(timezone.utc) + timedelta(days=7)
                         db.client.table("engagement_sequences").update(
-                            {"next_action_at": delay_at}
+                            {"next_action_at": delay_at.isoformat()}
                         ).eq("contact_id", contact_id).eq("status", "active").execute()
+                        # Snooze pre-computed schedule steps until return day
+                        try:
+                            snooze_date = (_return_date or (datetime.now(timezone.utc) + timedelta(days=7)).date()).isoformat()
+                            db.client.table("send_schedule").update(
+                                {"scheduled_date": snooze_date}
+                            ).eq("contact_id", contact_id).eq("workspace_id", ws_id).eq(
+                                "status", "scheduled"
+                            ).lt("scheduled_date", snooze_date).execute()
+                        except Exception:
+                            pass
                 except Exception as e:
                     logger.warning(f"Gmail intake [{ws['name']}]: sequence update failed: {e}")
 
@@ -1050,6 +1074,7 @@ def _gmail_intake_workspace(ws: dict) -> None:
                         "objection": "objection",
                         "referral": "referral",
                         "question": "other",
+                        "unknown": "other",
                     }
                     _policy_intent = _intent_map.get(intent, "other")
                     _res = pause_contact_on_reply(db, ws_id, contact_id, _policy_intent)
@@ -1065,6 +1090,19 @@ def _gmail_intake_workspace(ws: dict) -> None:
                     logger.debug(f"Gmail intake [{ws['name']}]: schedule pause skipped: {e}")
 
                 # For reply-worthy intents, draft a response and queue for approval.
+                # unknown replies go straight to HITL without a reply draft — a human
+                # reads them and decides how to respond.
+                if intent == "unknown" and thread_id:
+                    try:
+                        _push_reply_to_hitl(db, thread_id, ws_id, intent)
+                        logger.info(
+                            "Gmail intake [%s]: unknown-intent reply from %s queued for human review",
+                            ws["name"],
+                            from_email,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Gmail intake [{ws['name']}]: unknown HITL push failed: {e}")
+
                 if intent in ("interested", "question", "objection", "referral"):
                     try:
                         draft_row = (
@@ -1119,7 +1157,7 @@ def _gmail_intake_workspace(ws: dict) -> None:
 
 def _push_reply_to_hitl(db, thread_id: str, workspace_id: str, intent: str) -> None:
     """Push a reply needing approval into the HITL queue."""
-    priority_map = {"interested": 1, "referral": 2, "objection": 3, "question": 3}
+    priority_map = {"interested": 1, "referral": 2, "objection": 3, "question": 3, "unknown": 4}
     try:
         db.client.table("hitl_queue").insert(
             {
