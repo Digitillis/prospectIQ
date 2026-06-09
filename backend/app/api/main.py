@@ -1017,7 +1017,42 @@ def _gmail_intake_workspace(ws: dict) -> None:
                     logger.warning(f"Gmail intake [{ws['name']}]: interaction insert failed: {e}")
 
                 try:
-                    if intent == "not_interested":
+                    if intent == "departed":
+                        # Contact has retired or left the company — suppress permanently.
+                        try:
+                            from backend.app.core.suppression import record_suppression
+
+                            _company_id = None
+                            try:
+                                _c = db.client.table("contacts").select("company_id").eq("id", contact_id).limit(1).execute().data
+                                _company_id = _c[0]["company_id"] if _c else None
+                            except Exception:
+                                pass
+
+                            record_suppression(
+                                db,
+                                scope="contact",
+                                reason="contact_departed",
+                                contact_id=contact_id,
+                                company_id=_company_id,
+                                email=from_email,
+                                metadata={"detected_via": "gmail_imap", "intent": "departed"},
+                            )
+                            logger.info(
+                                "Gmail intake [%s]: contact %s suppressed — departed/retired (email=%s)",
+                                ws["name"], contact_id, from_email,
+                            )
+                        except Exception as _sup_err:
+                            logger.warning("Gmail intake [%s]: departed suppression failed: %s", ws["name"], _sup_err)
+
+                        # Terminate the sequence and cancel remaining send slots
+                        db.client.table("engagement_sequences").update({"status": "completed"}).eq(
+                            "contact_id", contact_id
+                        ).in_("status", ["active", "paused"]).execute()
+                        db.client.table("send_schedule").update({"status": "cancelled"}).eq(
+                            "contact_id", contact_id
+                        ).eq("workspace_id", ws_id).eq("status", "scheduled").execute()
+                    elif intent == "not_interested":
                         db.client.table("engagement_sequences").update({"status": "paused"}).eq(
                             "contact_id", contact_id
                         ).eq("status", "active").execute()
@@ -1070,6 +1105,7 @@ def _gmail_intake_workspace(ws: dict) -> None:
                         "ooo": "out_of_office",
                         "out_of_office": "out_of_office",
                         "not_interested": "soft_no",
+                        "departed": "soft_no",
                         "interested": "interested",
                         "objection": "objection",
                         "referral": "referral",

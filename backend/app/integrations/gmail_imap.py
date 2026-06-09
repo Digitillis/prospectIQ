@@ -101,6 +101,22 @@ _OOO_KWS = [
     "away until",
     "automatic reply",
 ]
+_DEPARTED_KWS = [
+    "retired",
+    "no longer with",
+    "no longer works",
+    "no longer employed",
+    "has left",
+    "left the company",
+    "left our company",
+    "is no longer",
+    "longer part of",
+    "departed",
+    "i've retired",
+    "i have retired",
+    "no longer have access to this email",
+    "will not respond",
+]
 
 
 _OOO_RETURN_PATTERNS = [
@@ -165,10 +181,12 @@ def _decode_str(value: str) -> str:
 
 def _classify_intent(body: str, subject: str) -> str:
     """Fast keyword-based intent classification. Returns one of:
-    interested | not_interested | question | referral | ooo | objection | unknown
+    interested | not_interested | question | referral | ooo | departed | objection | unknown
     """
     text = (body + " " + subject).lower()
 
+    if any(kw in text for kw in _DEPARTED_KWS):
+        return "departed"
     if any(kw in text for kw in _OOO_KWS):
         return "ooo"
     if any(kw in text for kw in _NOT_INTERESTED_KWS):
