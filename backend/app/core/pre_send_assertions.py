@@ -629,12 +629,16 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
         send_contacts = {r["contact_id"] for r in sends_rows if r.get("contact_id")}
         bounce_contacts = {r["contact_id"] for r in bounces_rows if r.get("contact_id")}
 
-        # All-time deliverability snapshot — informational, non-blocking
+        # All-time deliverability snapshot — informational, non-blocking.
+        # Only counts contacts actually sent to (last_touch_at IS NOT NULL) to
+        # avoid inflating the rate with pre-send invalid/unavailable classifications.
+        # Denominator includes all touch states (1-5) + terminal states.
         try:
             all_bounced = (
                 db.client.table("contacts")
                 .select("id", count="exact")
                 .eq("outreach_state", "bounced")
+                .not_.is_("last_touch_at", "null")
                 .execute()
                 .count
                 or 0
@@ -648,11 +652,14 @@ def assert_bounce_rate_ok(db: Any, assertion_context: str = "send_path") -> None
                         "touch_1_sent",
                         "touch_2_sent",
                         "touch_3_sent",
+                        "touch_4_sent",
+                        "touch_5_sent",
                         "bounced",
                         "replied",
                         "opted_out",
                     ],
                 )
+                .not_.is_("last_touch_at", "null")
                 .execute()
                 .count
                 or 0
