@@ -2855,6 +2855,60 @@ def _run_auto_action_low_priority() -> None:
         logger.error(f"Scheduled auto_action_low_priority failed: {e}")
 
 
+def _run_orphan_attempt_cleanup() -> None:
+    """Daily 7am job: delete orphaned FAILED send_attempts for drafts scheduled today.
+
+    A failed attempt_number=1 blocks the dispatch loop from ever sending that draft.
+    This runs 55 minutes before enqueue (7:55am) so the path is clear when dispatch fires.
+    """
+    try:
+        from backend.app.core.database import Database
+        from datetime import datetime, timezone
+
+        db = Database()
+        today = datetime.now(timezone.utc).date().isoformat()
+        sched = (
+            db.client.table("send_schedule")
+            .select("draft_id")
+            .eq("scheduled_date", today)
+            .eq("status", "scheduled")
+            .execute()
+            .data
+        )
+        draft_ids = [r["draft_id"] for r in sched if r.get("draft_id")]
+        if not draft_ids:
+            return
+
+        # Check in batches
+        blocked = []
+        for i in range(0, len(draft_ids), 100):
+            rows = (
+                db.client.table("send_attempts")
+                .select("draft_id")
+                .in_("draft_id", draft_ids[i : i + 100])
+                .execute()
+                .data
+            )
+            blocked.extend({r["draft_id"] for r in rows})
+
+        if not blocked:
+            return
+
+        cleared = 0
+        for did in blocked:
+            # Skip drafts that are already marked as permanently failed
+            d = db.client.table("outreach_drafts").select("approval_status, sent_at").eq("id", did).execute().data
+            if d and (d[0]["approval_status"] == "dispatch_failed" or d[0].get("sent_at")):
+                continue
+            res = db.client.table("send_attempts").delete().eq("draft_id", did).execute()
+            cleared += len(res.data) if res.data else 0
+
+        if cleared:
+            logger.info("orphan_attempt_cleanup: cleared %d stale FAILED attempt(s) for %d draft(s)", cleared, len(blocked))
+    except Exception as e:
+        logger.error("Scheduled orphan_attempt_cleanup failed: %s", e)
+
+
 def _run_bounce_hygiene() -> None:
     """Daily 3am job: reconcile bounced drafts to contact + DNC suppression."""
     try:
@@ -3226,6 +3280,16 @@ async def lifespan(app: FastAPI):
             minute=0,
             timezone="America/Chicago",
             id="intent_refresh",
+        )
+        # Daily orphan-attempt cleanup: 7am Chicago — delete stale FAILED send_attempts
+        # for today's scheduled drafts so dispatch never deadlocks on attempt_number=1.
+        scheduler.add_job(
+            _run_orphan_attempt_cleanup,
+            "cron",
+            hour=7,
+            minute=0,
+            timezone="America/Chicago",
+            id="orphan_attempt_cleanup",
         )
         # Daily bounce hygiene: 3am Chicago — reconcile outreach_drafts.bounced_at
         # back onto contacts.status + the do_not_contact registry so the next
