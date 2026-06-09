@@ -131,13 +131,28 @@ class Slot:
 
 
 def _pick_sender(email: str, sender_pool: list[str]) -> str:
+    """Retained for direct callers outside compute_schedule. Uses MD5 hash."""
     if not sender_pool:
-        # SDP#18: deliberate last-resort fallback — only reached if outreach_send_config
-        # has no sender_pool configured. Set SEND_ENABLED=false and fix the config before
-        # this ever fires in production. Override via outreach_send_config.sender_pool.
         return "avi@digitillis.io"
     idx = int(hashlib.md5(email.lower().encode()).hexdigest(), 16) % len(sender_pool)
     return sender_pool[idx]
+
+
+def _build_sender_map(contacts: list["Contact"], sender_pool: list[str]) -> dict[str, str]:
+    """Assign one sender per contact using rank-ordered round-robin.
+
+    Contacts are sorted by MD5(email) — deterministic across recomputes — then
+    assigned sender_pool[rank % len(pool)]. This guarantees at most 1-contact
+    variance between mailboxes regardless of pool size or contact count.
+    Pure MD5-modulo can produce 2-3x variance at N≈150 with 9 mailboxes.
+    """
+    if not sender_pool:
+        return {c.email: "avi@digitillis.io" for c in contacts}
+    sorted_contacts = sorted(
+        contacts,
+        key=lambda c: int(hashlib.md5(c.email.lower().encode()).hexdigest(), 16),
+    )
+    return {c.email: sender_pool[i % len(sender_pool)] for i, c in enumerate(sorted_contacts)}
 
 
 def compute_schedule(
@@ -162,6 +177,10 @@ def compute_schedule(
         (soft-capped per day), lowest priority.
     """
     start = _next_business_day(start_date)
+
+    # Pre-assign one sender per contact (balanced round-robin by hash rank).
+    # All steps for a contact use the same sender for consistency.
+    sender_map = _build_sender_map(contacts, sender_pool)
 
     # company_touches[company_id] = list of (date, contact_id) already placed/sent
     company_touches: dict[str, list[tuple[date, str]]] = defaultdict(list)
@@ -255,7 +274,7 @@ def compute_schedule(
                 continue
             if not company_ok(e.contact.company_id, e.contact.contact_id, day):
                 continue
-            sender = _pick_sender(e.contact.email, sender_pool)
+            sender = sender_map.get(e.contact.email) or _pick_sender(e.contact.email, sender_pool)
             if mailbox_load[sender] >= PER_MAILBOX_DAILY_CAP:
                 continue
             # place
@@ -299,7 +318,7 @@ def compute_schedule(
             if not company_ok(c.company_id, c.contact_id, day):
                 still_blocked.append(c)
                 continue
-            sender = _pick_sender(c.email, sender_pool)
+            sender = sender_map.get(c.email) or _pick_sender(c.email, sender_pool)
             if mailbox_load[sender] >= PER_MAILBOX_DAILY_CAP:
                 still_blocked.append(c)
                 continue
