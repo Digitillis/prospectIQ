@@ -61,14 +61,59 @@ def _company_from_domain(domain: str | None) -> str:
     return base.replace("-", " ").title()
 
 
+def _cold_collision(client, cold_ws: str, email: str) -> dict | None:
+    """Detect whether this person is already a COLD prospect.
+
+    INTENTIONALLY cross-workspace (read-only): warm and cold data are never mixed,
+    but we DO check for overlap so the same person is not double-touched by cold
+    automation AND a personal warm note. Returns None if not in the cold workspace,
+    else {state, contacted} where contacted=True means a cold email was already sent
+    (or the cold contact is mid-sequence / engaged).
+    """
+    rows = (
+        client.table("contacts")
+        .select("id,outreach_state,status")
+        .eq("workspace_id", cold_ws)
+        .eq("email", email)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not rows:
+        return None
+    cc = rows[0]
+    state = (cc.get("outreach_state") or cc.get("status") or "").lower()
+    sent = (
+        client.table("outreach_drafts")
+        .select("id")
+        .eq("workspace_id", cold_ws)
+        .eq("contact_id", cc["id"])
+        .not_.is_("sent_at", "null")
+        .limit(1)
+        .execute()
+        .data
+    )
+    contacted = bool(sent) or any(
+        k in state for k in ("touch_", "contacted", "engaged", "replied", "demo", "closed")
+    )
+    return {"state": state or "unknown", "contacted": contacted}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("csv_path")
     ap.add_argument("--max-touches", type=int, default=3)
+    ap.add_argument(
+        "--include-cold-contacted",
+        action="store_true",
+        help="also generate warm drafts for people already CONTACTED in the cold pipeline "
+        "(default: skip them to avoid double-touch)",
+    )
     args = ap.parse_args()
 
     ws = get_settings().warm_workspace_id
-    if not ws or ws == get_settings().default_workspace_id:
+    cold_ws = get_settings().default_workspace_id
+    if not ws or ws == cold_ws:
         print("FATAL: warm_workspace_id is unset or equals the cold workspace.", file=sys.stderr)
         return 1
     client = get_supabase_client()
@@ -77,6 +122,7 @@ def main() -> int:
         rows = [_norm(r) for r in csv.DictReader(fh)]
 
     threads: list[dict] = []
+    collisions: list[dict] = []
     created_companies = created_contacts = skipped_complete = 0
 
     for r in rows:
@@ -89,6 +135,16 @@ def main() -> int:
         domain = _domain(email)
         company_name = r.get("company") or _company_from_domain(domain)
         first, last = _split_name(name)
+
+        # --- cross-channel collision: already a COLD prospect? (read-only) ---
+        collision = _cold_collision(client, cold_ws, email)
+        if collision and collision["contacted"] and not args.include_cold_contacted:
+            # Already being cold-emailed → skip the warm note to avoid double-touch.
+            collisions.append({"email": email, "name": name, **collision, "action": "skipped"})
+            continue
+        if collision:
+            # In the cold list but not yet contacted → warm note is fine; flag for awareness.
+            collisions.append({"email": email, "name": name, **collision, "action": "flagged"})
 
         # --- company (dedup by domain, else name, within the warm workspace) ---
         company = None
@@ -201,10 +257,35 @@ def main() -> int:
                 "contact_email": email,
                 "domain": domain or "",
                 "note": note,
+                "cold_collision": collision,
                 "pending_step": next_step,
                 "prior_emails": prior_emails,
             }
         )
+
+    cold_contacted_skipped = sum(1 for c in collisions if c["action"] == "skipped")
+    cold_flagged = sum(1 for c in collisions if c["action"] == "flagged")
+
+    # Human-readable collision summary to stderr (stdout stays pure JSON for the workflow).
+    if collisions:
+        print(
+            f"\nCROSS-CHANNEL COLLISIONS: {len(collisions)} attendee(s) also exist as cold prospects",
+            file=sys.stderr,
+        )
+        print(
+            f"  - {cold_contacted_skipped} already COLD-CONTACTED -> skipped "
+            f"(re-run with --include-cold-contacted to override)",
+            file=sys.stderr,
+        )
+        print(
+            f"  - {cold_flagged} in cold list but not yet contacted -> included, flagged",
+            file=sys.stderr,
+        )
+        for c in collisions:
+            print(
+                f"      [{c['action']}] {c['name']} <{c['email']}>  cold-state={c['state']}",
+                file=sys.stderr,
+            )
 
     print(
         json.dumps(
@@ -213,6 +294,9 @@ def main() -> int:
                 "created_companies": created_companies,
                 "created_contacts": created_contacts,
                 "skipped_complete": skipped_complete,
+                "collisions": collisions,
+                "cold_contacted_skipped": cold_contacted_skipped,
+                "cold_flagged": cold_flagged,
                 "workspace_id": ws,
             }
         )

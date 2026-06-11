@@ -39,13 +39,13 @@ phase('Prepare')
 
 const PREP_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['threads', 'created_companies', 'created_contacts', 'skipped_complete', 'workspace_id'],
+  required: ['threads', 'created_companies', 'created_contacts', 'skipped_complete', 'collisions', 'cold_contacted_skipped', 'cold_flagged', 'workspace_id'],
   properties: {
     threads: {
       type: 'array',
       items: {
         type: 'object', additionalProperties: false,
-        required: ['company_id','company_name','contact_id','contact_name','contact_title','contact_email','domain','note','pending_step','prior_emails'],
+        required: ['company_id','company_name','contact_id','contact_name','contact_title','contact_email','domain','note','cold_collision','pending_step','prior_emails'],
         properties: {
           company_id:    { type: 'string' },
           company_name:  { type: 'string' },
@@ -55,6 +55,7 @@ const PREP_SCHEMA = {
           contact_email: { type: 'string' },
           domain:        { type: 'string' },
           note:          { type: 'string' },
+          cold_collision:{ type: ['object','null'] },
           pending_step:  { type: 'integer' },
           prior_emails:  {
             type: 'array',
@@ -70,6 +71,9 @@ const PREP_SCHEMA = {
     created_companies: { type: 'integer' },
     created_contacts:  { type: 'integer' },
     skipped_complete:  { type: 'integer' },
+    collisions:        { type: 'array' },
+    cold_contacted_skipped: { type: 'integer' },
+    cold_flagged:      { type: 'integer' },
     workspace_id:      { type: 'string' },
   }
 }
@@ -91,6 +95,8 @@ Then return the parsed JSON. Cap the returned threads to the first ${limit}. Do 
 const threads = ((prep && prep.threads) || []).slice(0, limit)
 const warmWs = prep && prep.workspace_id
 log(`Prepared ${threads.length} threads (new companies: ${prep?.created_companies||0}, new contacts: ${prep?.created_contacts||0}, already-complete: ${prep?.skipped_complete||0}) in workspace ${warmWs}`)
+if (prep?.cold_contacted_skipped) log(`Cross-channel: SKIPPED ${prep.cold_contacted_skipped} attendee(s) already cold-contacted (avoid double-touch). ${prep?.cold_flagged||0} in cold list but not yet contacted were included + flagged.`)
+else if (prep?.cold_flagged) log(`Cross-channel: ${prep.cold_flagged} attendee(s) are in the cold list (not yet contacted) — included + flagged.`)
 
 if (!warmWs) {
   return { error: 'Ingest did not return a warm workspace_id. Run scripts/seed_warm_workspace.py first and set WARM_WORKSPACE_ID. Aborting.' }

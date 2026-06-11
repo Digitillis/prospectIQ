@@ -43,6 +43,10 @@ pytest tests/test_warm_isolation.py -q        # confirm isolation
                                    max_touches: 3 }
    ```
    This ingests the list into the warm workspace and writes pending drafts there.
+   **Cross-channel safety:** the ingest checks each attendee against the cold prospect
+   workspace (read-only). Anyone already **cold-contacted** is skipped by default (no warm
+   draft) to avoid double-touching; anyone merely in the cold list but not yet contacted is
+   included and flagged. Re-run the ingest with `--include-cold-contacted` to override.
 3. Review + send by hand:
    ```
    python3 scripts/warm_review.py                 # read drafts, copy into Gmail, send personally
