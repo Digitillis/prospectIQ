@@ -3047,14 +3047,20 @@ async def lifespan(app: FastAPI):
         # )
         # schedule_recompute: nightly rebuild of the forward send schedule from live
         # state (absorbs sends, reply-pauses, bounces, mailbox changes, new drafts).
-        scheduler.add_job(
-            _run_schedule_recompute,
-            "cron",
-            hour=2,
-            minute=30,
-            timezone="America/Chicago",
-            id="schedule_recompute",
-        )
+        # SUSPENDED (Avanish 2026-06-11): the nightly recompute is paused so a manually
+        # packed forward schedule (270/day, follow-ups only, ramp off, company-cooldown=3,
+        # touches packed to the min-gap floor) is preserved while the in-flight backlog
+        # drains. The recompute would otherwise rebuild send_schedule with default rules
+        # (ramp on, cadence spacing, cooldown 14, new starts on) and overwrite it nightly.
+        # Re-enable by restoring the add_job call below once the backlog has gone out.
+        # scheduler.add_job(
+        #     _run_schedule_recompute,
+        #     "cron",
+        #     hour=2,
+        #     minute=30,
+        #     timezone="America/Chicago",
+        #     id="schedule_recompute",
+        # )
         # enqueue_schedule: Mon-Fri 7:55 AM Chicago — moves today's pre-computed
         # schedule slice into outbound_queue just before the dispatch window opens.
         scheduler.add_job(
