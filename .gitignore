@@ -72,3 +72,10 @@ node_modules/
 docs/reports/approval_restoration_audit.json
 docs/reports/rejected_draft_reassessment.json
 .pipeline-queues/
+
+# Warm / personal outreach PII — prospect lists, generated emails, hooks, validation
+# artifacts. The DB (isolated warm workspace) is the system of record; these files are
+# local generation scratch and must NEVER be committed. Keep only the README + example.
+warm_outreach/*
+!warm_outreach/README.md
+!warm_outreach/attendees.example.csv

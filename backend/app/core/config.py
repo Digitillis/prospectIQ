@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     # Default workspace for single-tenant / dev use
     default_workspace_id: str = "00000000-0000-0000-0000-000000000001"
 
+    # Warm / personal outreach workspace — fully isolated from the cold pipeline.
+    # Hand-sent only; never scheduled or dispatched. Seeded by scripts/seed_warm_workspace.py.
+    # Its workspace row carries subscription_status='internal' (excluded from get_active_workspaces),
+    # and its outreach_send_config has send_enabled=false — see docs in the seed script.
+    warm_workspace_id: str = "00000000-0000-0000-0000-000000000002"
+
     # Stripe billing
     stripe_secret_key: str = ""  # sk_live_... or sk_test_...
     stripe_webhook_secret: str = ""  # whsec_...
