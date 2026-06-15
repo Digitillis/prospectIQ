@@ -318,7 +318,7 @@ async def get_admin_metrics():
     drafts_30d = (
         db._filter_ws(
             db.client.table("outreach_drafts").select(
-                "id, sent_at, opened_at, clicked_at, bounced_at, replied_at, "
+                "id, contact_id, sent_at, opened_at, clicked_at, bounced_at, replied_at, "
                 "approval_status, contacts(is_outreach_eligible)"
             )
         )
@@ -379,10 +379,18 @@ async def get_admin_metrics():
     # resend_status != 'bounced' are system classification errors from
     # the pre-ZeroBounce era and must not inflate the bounce rate.
     # ------------------------------------------------------------------
+    # NOTE on bounce rate formula:
+    # Numerator  — unique contacts where Resend confirmed a hard delivery failure
+    #              (resend_status='bounced'). suppression_log entries with reason='manual_block'
+    #              are NOT delivery failures and must never appear here.
+    # Denominator — unique contacts reached (deduped). A contact who received Steps 1+2
+    #              counts once, not twice.
+    # Source     — outreach_drafts only. suppression_log is an administrative table
+    #              and must not be used as a bounce source.
     bounced_drafts = (
         db._filter_ws(
             db.client.table("outreach_drafts").select(
-                "id, bounced_at, resend_status, contacts(is_outreach_eligible)"
+                "id, contact_id, bounced_at, resend_status, contacts(is_outreach_eligible)"
             )
         )
         .eq("resend_status", "bounced")
@@ -391,7 +399,12 @@ async def get_admin_metrics():
         or []
     )
     bounces_total = len(bounced_drafts)
-    bounce_rate = round(bounces_total * 100.0 / max(sends_total, 1), 2)
+    # Contact-level deduplication: one contact bouncing across multiple steps = 1 bounce, 1 send
+    bounce_contact_ids = {d["contact_id"] for d in bounced_drafts if d.get("contact_id")}
+    send_contact_ids = {d["contact_id"] for d in drafts_30d if d.get("contact_id")}
+    bounce_rate = round(
+        len(bounce_contact_ids) * 100.0 / max(len(send_contact_ids), 1), 2
+    )
     unsuppressed = sum(
         1 for d in bounced_drafts if (d.get("contacts") or {}).get("is_outreach_eligible") is True
     )

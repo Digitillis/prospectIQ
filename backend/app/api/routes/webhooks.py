@@ -1072,6 +1072,31 @@ async def resend_webhook(
             company_id, contact_id = _lookup_company_contact(db, recipient_email)
 
         if not contact_id:
+            # For bounce events on unknown addresses, still suppress by email so the
+            # address can never be re-enrolled. bodensteinerr@heartnnhome.com-style gap.
+            if event_type == "email.bounced" and recipient_email:
+                try:
+                    _bounce_type = (
+                        payload.get("data", {}).get("bounce", {}).get("type", "Permanent")
+                    )
+                    _bclass = "soft" if _bounce_type == "Transient" else "hard"
+                    _breason = "soft_bounce" if _bclass == "soft" else "hard_bounce_contact"
+                    from backend.app.core.suppression import record_suppression
+                    record_suppression(
+                        db,
+                        scope="contact",
+                        reason=_breason,
+                        email=recipient_email,
+                        bounce_classification=_bclass,
+                        metadata={"event_type": event_type, "resend_message_id": resend_message_id},
+                    )
+                    logger.info(
+                        "resend_webhook: suppressed unknown address %s (%s bounce) — no contact record",
+                        recipient_email,
+                        _bclass,
+                    )
+                except Exception as _exc:
+                    logger.warning("resend_webhook: suppression of unknown address failed: %s", _exc)
             return {
                 "status": "ignored",
                 "reason": f"no contact found for {recipient_email or resend_message_id}",
@@ -1323,6 +1348,22 @@ async def resend_webhook(
                 provider_msg = (
                     str(payload.get("data", {}).get("bounce", {}).get("message", ""))[:500] or None
                 )
+                # If Resend now confirms a hard bounce for an address previously stored
+                # as soft_bounce, upgrade the existing row rather than inserting a duplicate.
+                if is_hard_bounce and recipient_email:
+                    try:
+                        db.client.table("suppression_log").update(
+                            {
+                                "reason": "hard_bounce_contact",
+                                "bounce_classification": "hard",
+                                "provider_message": (
+                                    provider_msg or "Upgraded from soft_bounce: Resend confirmed Permanent bounce"
+                                ),
+                            }
+                        ).eq("email", recipient_email).eq("reason", "soft_bounce").execute()
+                    except Exception as _upg_exc:
+                        logger.debug("soft→hard upgrade failed (non-fatal): %s", _upg_exc)
+
                 sup_id = record_suppression(
                     db,
                     scope="contact",
