@@ -108,3 +108,118 @@ def test_no_warm_schedule_or_queue_rows(warm_workspace):
         assert not rows, (
             f"found {table} rows for the warm workspace — it must never be scheduled/enqueued"
         )
+
+
+# ============================================================
+# PROSPECT-LEVEL ISOLATION — the same PERSON must not live in both channels.
+# The structural tests above prove the warm *workspace* is inert. These prove the
+# warm and cold *prospect lists* do not mix: no one is hand-sent a personal note
+# while also being machine-emailed by the cold pipeline (a double-touch), and warm
+# messages never leak into the cold workspace.
+# ============================================================
+
+_COLD_CONTACTED_STATES = ("touch_", "contacted", "engaged", "replied", "demo", "closed")
+
+
+def _chunked(seq, n=200):
+    for i in range(0, len(seq), n):
+        yield seq[i : i + n]
+
+
+def _warm_contacts(client):
+    return (
+        client.table("contacts").select("id,email").eq("workspace_id", _warm_id()).execute().data
+        or []
+    )
+
+
+def _cold_is_contacted(client, cold_ws, cold_contact):
+    """Mirror the ingest collision rule: a cold contact counts as CONTACTED if a cold
+    email was already sent to it, or its state is mid-sequence/engaged/closed."""
+    state = (cold_contact.get("outreach_state") or cold_contact.get("status") or "").lower()
+    if any(k in state for k in _COLD_CONTACTED_STATES):
+        return True
+    sent = (
+        client.table("outreach_drafts")
+        .select("id")
+        .eq("workspace_id", cold_ws)
+        .eq("contact_id", cold_contact["id"])
+        .not_.is_("sent_at", "null")
+        .limit(1)
+        .execute()
+        .data
+    )
+    return bool(sent)
+
+
+def test_no_warm_contact_is_cold_contacted(warm_workspace):
+    """STRICT no-mix canary: no warm prospect may also be a COLD-CONTACTED prospect.
+
+    Someone already in a cold sequence (or already cold-emailed) must never also receive
+    a personal warm note — that is the double-touch the channels exist to prevent. An email
+    that is in the cold list but NOT yet contacted is allowed (warm may proceed, flagged);
+    those are reported but do not fail.
+    """
+    client = _client_or_skip()
+    cold_ws = get_settings().default_workspace_id
+    warm = _warm_contacts(client)
+    warm_emails = sorted({(c.get("email") or "").lower() for c in warm if c.get("email")})
+    if not warm_emails:
+        pytest.skip("no warm contacts loaded yet")
+
+    cold_contacted = []
+    cold_uncontacted = []
+    for chunk in _chunked(warm_emails):
+        cold = (
+            client.table("contacts")
+            .select("id,email,outreach_state,status")
+            .eq("workspace_id", cold_ws)
+            .in_("email", chunk)
+            .execute()
+            .data
+            or []
+        )
+        for cc in cold:
+            if _cold_is_contacted(client, cold_ws, cc):
+                cold_contacted.append(cc["email"])
+            else:
+                cold_uncontacted.append(cc["email"])
+
+    if cold_uncontacted:
+        print(
+            "\n[warm/cold overlap, ALLOWED] in cold list but not yet contacted "
+            f"({len(cold_uncontacted)}): {cold_uncontacted}"
+        )
+    assert not cold_contacted, (
+        "DOUBLE-TOUCH: these warm prospects are also COLD-CONTACTED and must be removed "
+        f"from one channel: {cold_contacted}"
+    )
+
+
+def test_warm_messages_never_in_cold_workspace(warm_workspace):
+    """STRICT message separation: every draft addressed to a warm contact lives ONLY in the
+    warm workspace. No warm contact may have an outreach_draft under the cold workspace."""
+    client = _client_or_skip()
+    cold_ws = get_settings().default_workspace_id
+    warm = _warm_contacts(client)
+    warm_ids = [c["id"] for c in warm]
+    if not warm_ids:
+        pytest.skip("no warm contacts loaded yet")
+
+    leaked = []
+    for chunk in _chunked(warm_ids):
+        rows = (
+            client.table("outreach_drafts")
+            .select("id,contact_id")
+            .eq("workspace_id", cold_ws)
+            .in_("contact_id", chunk)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        leaked.extend(r["id"] for r in rows)
+    assert not leaked, (
+        f"found {len(leaked)} cold-workspace drafts targeting warm contacts — messages leaked "
+        "across the channel boundary"
+    )
