@@ -20,9 +20,16 @@ def _client_or_skip():
     try:
         from backend.app.core.database import get_supabase_client
 
-        return get_supabase_client()
+        client = get_supabase_client()
     except Exception as exc:  # noqa: BLE001 — env not configured (e.g. CI)
         pytest.skip(f"Supabase not configured: {exc}")
+    # The client can construct with a placeholder URL yet fail to reach Supabase (CI / offline).
+    # Probe once and skip cleanly rather than erroring every DB-touching test.
+    try:
+        client.table("workspaces").select("id").limit(1).execute()
+    except Exception as exc:  # noqa: BLE001 — unreachable in CI / offline
+        pytest.skip(f"Supabase not reachable: {exc}")
+    return client
 
 
 def _warm_id() -> str:
