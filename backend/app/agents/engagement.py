@@ -792,6 +792,13 @@ class EngagementAgent(BaseAgent):
                 # _pick_sender is deterministic; calling it here (before the
                 # main call below) adds negligible cost.
                 _assert_sender, _ = _pick_sender(contact_email)
+                # Per-mailbox cap: use the specific sender's pool entry limit,
+                # not the workspace total. daily_limit (270) is workspace-wide.
+                if _sender_pool:
+                    _s_idx = int(hashlib.md5(contact_email.lower().encode()).hexdigest(), 16) % len(_sender_pool)
+                    _per_mailbox_cap = _sender_pool[_s_idx].get("daily_limit") or 30
+                else:
+                    _per_mailbox_cap = 30
 
                 # For follow-up steps, bypass the per-contact cooldown so
                 # legitimate sequences are not blocked by their own prior step.
@@ -825,7 +832,7 @@ class EngagementAgent(BaseAgent):
                         contact=_fresh_contact,
                         company=_fresh_company,
                         sender_email=_assert_sender,
-                        daily_cap=daily_limit,
+                        daily_cap=_per_mailbox_cap,
                         cooldown_days=_cooldown,
                         sequence_step=_seq_step,
                         assertion_context="send_path",
@@ -1402,6 +1409,10 @@ class EngagementAgent(BaseAgent):
         from_address, _ = self._pick_sender_from_config(
             contact_email, sender_pool, fallback_addr, fallback_display
         )
+        # Per-mailbox cap: use the specific sender's pool entry, not the workspace total.
+        # daily_limit (270) is workspace-wide; each mailbox is capped at its own daily_limit (30).
+        _sender_entry = next((s for s in sender_pool if s.get("email") == from_address), None)
+        _per_mailbox_cap = (_sender_entry.get("daily_limit") if _sender_entry else None) or 30
 
         _cooldown = (
             0
@@ -1419,7 +1430,7 @@ class EngagementAgent(BaseAgent):
                 contact=_fresh_contact,
                 company=_fresh_company,
                 sender_email=from_address,
-                daily_cap=daily_limit,
+                daily_cap=_per_mailbox_cap,
                 cooldown_days=_cooldown,
                 sequence_step=_seq_step,
                 assertion_context="send_path",
