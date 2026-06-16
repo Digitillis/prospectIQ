@@ -3751,6 +3751,63 @@ async def trigger_send():
     }
 
 
+@app.post("/api/admin/trigger-dispatch", dependencies=[Depends(get_current_user)])
+async def trigger_dispatch(batch_size: int = 100):
+    """Manually trigger the queue-path dispatch with built-in pre-screen.
+
+    Pre-screens the top `batch_size` claimable rows before dispatching to report
+    how many will actually reach Resend (eligible) vs. be blocked by assertions
+    (not_eligible, suppressed, bad_cluster, prior_step_not_sent). Dispatches only
+    if eligible_count > 0.
+    """
+    import threading
+    from backend.app.core.dispatch_scheduler import screen_dispatch_queue, dispatch_workspace
+    from backend.app.core.database import get_supabase_client
+    from backend.app.core.workspace_scheduler import get_active_workspaces
+
+    db_client = get_supabase_client()
+    workspaces = get_active_workspaces()
+    if not workspaces:
+        return {"status": "no_workspaces"}
+
+    ws = workspaces[0]
+    ws_id = ws["id"]
+
+    screen = screen_dispatch_queue(db_client, ws_id, batch_size=batch_size)
+    if screen.get("error"):
+        return {"status": "screen_error", "detail": screen["error"]}
+
+    eligible = screen.get("eligible_count", 0)
+    if eligible == 0:
+        return {
+            "status": "nothing_to_send",
+            "screen": screen,
+        }
+
+    def _dispatch():
+        from backend.app.core.workspace import WorkspaceContext, set_workspace_context
+        ctx = WorkspaceContext(
+            workspace_id=ws["id"],
+            name=ws.get("name", ""),
+            owner_email=ws.get("owner_email", ""),
+            tier=ws.get("tier", "starter"),
+            subscription_status=ws.get("subscription_status", "active"),
+            settings=ws.get("settings") or {},
+        )
+        set_workspace_context(ctx)
+        dispatch_workspace(db_client, workspace_id=ws_id, batch_size=batch_size, max_retries=4)
+
+    threading.Thread(target=_dispatch, daemon=True).start()
+    return {
+        "status": "dispatching",
+        "screen": screen,
+        "message": (
+            f"Pre-screen: {eligible}/{screen['total_claimable']} eligible. "
+            f"Blocked: {screen.get('blocked', {})}. Dispatch started."
+        ),
+    }
+
+
 @app.get("/api/prospectiq/admin/cadence-velocity", dependencies=[Depends(get_current_user)])
 async def cadence_velocity(window_days: int = 30):
     """Cadence-velocity SLO data (P4.4 — GTM rebuild 2026-05-08).
