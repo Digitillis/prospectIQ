@@ -441,8 +441,31 @@ class TestStaleLockReclaim:
 
 
 class TestAssertionFailure:
-    def test_assertion_failure_releases_lock_no_retry_at(self):
-        """ASSERTION_FAILED: lock released, next_retry_at NOT set."""
+    def test_assertion_failure_unknown_reason_releases_lock(self):
+        """ASSERTION_FAILED with unrecognized reason: lock released, retry_count bumped."""
+        from backend.app.core.dispatch_scheduler import dispatch_workspace
+        from backend.app.agents.engagement import QueueDispatchOutcome
+
+        queue_row = _make_queue_row(retry_count=0)
+        client = _mock_db_client(claimed_rows=[queue_row])
+        outcome = QueueDispatchOutcome(
+            status="ASSERTION_FAILED",
+            failure_reason="unknown_assertion_type: some detail",
+        )
+
+        agent_mock = MagicMock()
+        agent_mock.dispatch_queued_draft.return_value = outcome
+
+        with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
+            result = dispatch_workspace(client, WORKSPACE_ID)
+
+        assert result.assertion_skipped == 1
+        assert result.delivered == 0
+        assert result.transient_failed == 0
+        assert result.permanently_failed == 0
+
+    def test_assertion_failure_suppressed_dead_letters(self):
+        """ASSERTION_FAILED with suppressed: prefix → permanent dead-letter."""
         from backend.app.core.dispatch_scheduler import dispatch_workspace
         from backend.app.agents.engagement import QueueDispatchOutcome
 
@@ -459,9 +482,49 @@ class TestAssertionFailure:
         with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
             result = dispatch_workspace(client, WORKSPACE_ID)
 
+        assert result.permanently_failed == 1
+        assert result.assertion_skipped == 0
+
+    def test_assertion_failure_company_locked_parks_row(self):
+        """ASSERTION_FAILED with company_locked: → assertion_skipped (parked 8 days, no retry_count bump)."""
+        from backend.app.core.dispatch_scheduler import dispatch_workspace
+        from backend.app.agents.engagement import QueueDispatchOutcome
+
+        queue_row = _make_queue_row(retry_count=0)
+        client = _mock_db_client(claimed_rows=[queue_row])
+        outcome = QueueDispatchOutcome(
+            status="ASSERTION_FAILED",
+            failure_reason="company_locked: another contact reached 2d ago",
+        )
+
+        agent_mock = MagicMock()
+        agent_mock.dispatch_queued_draft.return_value = outcome
+
+        with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
+            result = dispatch_workspace(client, WORKSPACE_ID)
+
         assert result.assertion_skipped == 1
-        assert result.delivered == 0
-        assert result.transient_failed == 0
+        assert result.permanently_failed == 0
+
+    def test_assertion_failure_hot_suppressed_parks_24h(self):
+        """ASSERTION_FAILED with hot_suppressed: → assertion_skipped (parked 24h)."""
+        from backend.app.core.dispatch_scheduler import dispatch_workspace
+        from backend.app.agents.engagement import QueueDispatchOutcome
+
+        queue_row = _make_queue_row(retry_count=0)
+        client = _mock_db_client(claimed_rows=[queue_row])
+        outcome = QueueDispatchOutcome(
+            status="ASSERTION_FAILED",
+            failure_reason="hot_suppressed: recent reply signal",
+        )
+
+        agent_mock = MagicMock()
+        agent_mock.dispatch_queued_draft.return_value = outcome
+
+        with patch("backend.app.agents.engagement.EngagementAgent", return_value=agent_mock):
+            result = dispatch_workspace(client, WORKSPACE_ID)
+
+        assert result.assertion_skipped == 1
         assert result.permanently_failed == 0
 
 

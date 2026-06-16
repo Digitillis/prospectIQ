@@ -236,6 +236,23 @@ def _release_queue_lock_bump_retry(db_client, queue_row_id: str, current_retry_c
         logger.error("dispatch.release_lock_bump_retry id=%s error=%s", queue_row_id, exc)
 
 
+def _set_queue_next_retry(db_client, queue_row_id: str, delay_seconds: int) -> None:
+    """Park a queue row until delay_seconds from now without bumping retry_count.
+
+    Used for timed assertion failures (company_locked, hot_suppressed, prior_step_not_sent)
+    where the row is valid but temporarily blocked. Preserves retry_count so the row
+    is not dead-lettered before the block resolves.
+    """
+    from datetime import datetime, timezone, timedelta
+    retry_at = (datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)).isoformat()
+    try:
+        db_client.table("outbound_queue").update(
+            {"locked_by": None, "locked_at": None, "next_retry_at": retry_at}
+        ).eq("id", queue_row_id).execute()
+    except Exception as exc:
+        logger.error("dispatch.set_queue_next_retry id=%s error=%s", queue_row_id, exc)
+
+
 def _delete_queue_row(db_client, queue_row_id: str) -> None:
     try:
         db_client.table("outbound_queue").delete().eq("id", queue_row_id).execute()
@@ -329,6 +346,199 @@ def reclaim_stale_locks(db_client, workspace_id: str) -> int:
             exc,
         )
         return 0
+
+
+# ---------------------------------------------------------------------------
+# Public: pre-dispatch eligibility screen
+# ---------------------------------------------------------------------------
+
+
+def screen_dispatch_queue(db_client, workspace_id: str, batch_size: int = 100) -> dict:
+    """Pre-dispatch eligibility check — call before any manual trigger.
+
+    Counts how many of the top `batch_size` claimable rows in outbound_queue
+    would actually reach Resend after passing the key assertions checked in
+    dispatch_queued_draft:
+      - contact.is_outreach_eligible = true
+      - contact not in suppression_log (hard_bounce / manual_block / unsubscribed)
+      - company.campaign_cluster not in ('other', 'watchlist')
+      - prior sequence step has been sent (for steps 2–5)
+
+    Returns a dict with eligible_count, blocked_breakdown, and total_claimable
+    so callers can decide whether to proceed and with what batch_size.
+    """
+    try:
+        result = (
+            db_client.rpc(
+                "claim_outbound_queue_batch",
+                {
+                    "p_workspace_id": workspace_id,
+                    "p_instance_id": "pre_screen_dry_run",
+                    "p_batch_size": batch_size,
+                },
+            )
+            .execute()
+            .data
+            or []
+        )
+    except Exception as exc:
+        logger.error("screen_dispatch_queue: claim failed: %s", exc)
+        return {"error": str(exc)}
+
+    # Immediately release all locks — this is a read-only screen, not a real dispatch
+    if result:
+        ids = [r["id"] for r in result]
+        try:
+            db_client.table("outbound_queue").update(
+                {"locked_by": None, "locked_at": None}
+            ).in_("id", ids).execute()
+        except Exception as exc:
+            logger.warning("screen_dispatch_queue: lock release failed: %s", exc)
+
+    total_claimable = len(result)
+    if total_claimable == 0:
+        return {"eligible_count": 0, "total_claimable": 0, "blocked": {}}
+
+    draft_ids = [r["draft_id"] for r in result]
+
+    # Fetch drafts with contact/company data needed for assertion checks
+    try:
+        drafts = (
+            db_client.table("outreach_drafts")
+            .select(
+                "id, contact_id, company_id, sequence_step, "
+                "contact:contacts(is_outreach_eligible, contact_tier, email), "
+                "company:companies(campaign_cluster)"
+            )
+            .in_("id", draft_ids)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as exc:
+        logger.error("screen_dispatch_queue: draft fetch failed: %s", exc)
+        return {"error": str(exc), "total_claimable": total_claimable}
+
+    # Suppressed emails
+    try:
+        all_emails = [
+            (d.get("contact") or {}).get("email") for d in drafts if d.get("contact")
+        ]
+        suppressed_emails: set[str] = set()
+        if all_emails:
+            sup_rows = (
+                db_client.table("suppression_log")
+                .select("email")
+                .in_("email", [e for e in all_emails if e])
+                .in_("reason", ["hard_bounce_contact", "manual_block", "unsubscribed", "spam_complaint"])
+                .execute()
+                .data
+                or []
+            )
+            suppressed_emails = {r["email"] for r in sup_rows}
+    except Exception:
+        suppressed_emails = set()
+
+    # Prior-step sent check: for each step>1, verify prior step is sent
+    try:
+        contact_ids = list({d["contact_id"] for d in drafts if d.get("contact_id")})
+        sent_steps: dict[str, set[int]] = {}
+        if contact_ids:
+            sent_rows = (
+                db_client.table("outreach_drafts")
+                .select("contact_id, sequence_step")
+                .in_("contact_id", contact_ids)
+                .not_.is_("sent_at", "null")
+                .execute()
+                .data
+                or []
+            )
+            for row in sent_rows:
+                sent_steps.setdefault(row["contact_id"], set()).add(row["sequence_step"])
+    except Exception:
+        sent_steps = {}
+
+    # Company-locked check: step-1 rows where company was touched within 8 days
+    from datetime import datetime, timezone, timedelta
+    cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    company_ids_step1 = {
+        d["company_id"] for d in drafts
+        if d.get("company_id") and int(d.get("sequence_step") or 1) == 1
+    }
+    locked_company_ids: set[str] = set()
+    if company_ids_step1:
+        try:
+            lock_rows = (
+                db_client.table("interactions")
+                .select("contact_id, company_id:contacts(company_id)")
+                .in_("type", ["email_sent", "email_replied", "linkedin_connection", "linkedin_message"])
+                .gte("created_at", cutoff_iso)
+                .execute()
+                .data
+                or []
+            )
+            for row in lock_rows:
+                cid = (row.get("company_id") or {}).get("company_id")
+                if cid in company_ids_step1:
+                    locked_company_ids.add(cid)
+        except Exception:
+            pass
+
+    # Hot-suppressed check: companies with recent human reply/click (last 7 days)
+    all_company_ids = {d["company_id"] for d in drafts if d.get("company_id")}
+    hot_company_ids: set[str] = set()
+    hot_cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    if all_company_ids:
+        try:
+            hot_rows = (
+                db_client.table("interactions")
+                .select("contact_id, company_id:contacts(company_id)")
+                .in_("type", ["email_replied", "email_clicked"])
+                .gte("created_at", hot_cutoff)
+                .execute()
+                .data
+                or []
+            )
+            for row in hot_rows:
+                cid = (row.get("company_id") or {}).get("company_id")
+                if cid in all_company_ids:
+                    hot_company_ids.add(cid)
+        except Exception:
+            pass
+
+    blocked: dict[str, int] = {}
+    eligible = 0
+
+    for d in drafts:
+        contact = d.get("contact") or {}
+        company = d.get("company") or {}
+        email = contact.get("email", "")
+        step = int(d.get("sequence_step") or 1)
+        cluster = company.get("campaign_cluster") or "other"
+        contact_id = d.get("contact_id", "")
+        company_id = d.get("company_id", "")
+
+        if not contact.get("is_outreach_eligible"):
+            blocked["not_eligible"] = blocked.get("not_eligible", 0) + 1
+        elif email in suppressed_emails:
+            blocked["suppressed"] = blocked.get("suppressed", 0) + 1
+        elif cluster in ("other", "watchlist"):
+            blocked["bad_cluster"] = blocked.get("bad_cluster", 0) + 1
+        elif step == 1 and company_id in locked_company_ids:
+            blocked["company_locked"] = blocked.get("company_locked", 0) + 1
+        elif company_id in hot_company_ids:
+            blocked["hot_suppressed"] = blocked.get("hot_suppressed", 0) + 1
+        elif step > 1 and (step - 1) not in sent_steps.get(contact_id, set()):
+            blocked["prior_step_not_sent"] = blocked.get("prior_step_not_sent", 0) + 1
+        else:
+            eligible += 1
+
+    return {
+        "total_claimable": total_claimable,
+        "eligible_count": eligible,
+        "will_assert_fail": total_claimable - eligible,
+        "blocked": blocked,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -516,26 +726,55 @@ def _dispatch_workspace_inner(
 
         elif outcome.status == "ASSERTION_FAILED":
             _failure_reason = (outcome.failure_reason or "pre-send assertion blocked")[:500]
-            # cluster_routing_skip means the env var / cluster config is absent — it
-            # will never self-resolve.  Dead-letter immediately so the item does not
-            # spin in the queue forever on every scheduler tick.
-            _is_permanent_skip = _failure_reason.startswith("cluster_routing_skip:")
+
+            # Classify assertion by self-resolution potential:
+            #   permanent  — will never resolve; dead-letter immediately
+            #   timed      — resolves after a known delay; set next_retry_at, don't burn retry_count
+            #   transient  — resolves soon (prior step in-flight); short backoff
+            _is_permanent = any(_failure_reason.startswith(p) for p in (
+                "cluster_routing_skip:",
+                "outreach_eligible:",   # tier/eligibility flag — won't flip automatically
+                "suppressed:",          # suppression list — manual removal only
+                "contact_has_no_email",
+                "contact_fetch_failed",
+            ))
+            _is_company_locked = _failure_reason.startswith("company_locked:")
+            _is_hot_suppressed = _failure_reason.startswith("hot_suppressed:")
+            _is_prior_step = _failure_reason.startswith("prior_step_sent:")
+
             _update_send_attempt(
                 db_client,
                 attempt_id,
-                status="PERMANENTLY_FAILED" if _is_permanent_skip else "FAILED",
-                failure_code="cluster_routing_skip" if _is_permanent_skip else "assertion_failed",
+                status="PERMANENTLY_FAILED" if _is_permanent else "FAILED",
+                failure_code=(
+                    "cluster_routing_skip" if _failure_reason.startswith("cluster_routing_skip:")
+                    else "assertion_failed"
+                ),
                 failure_reason=_failure_reason,
                 resolved_at=_now_iso(),
             )
-            if _is_permanent_skip:
+
+            if _is_permanent:
                 _mark_draft_dispatch_failed(db_client, draft_id)
                 _delete_queue_row(db_client, queue_row_id)
                 result.permanently_failed += 1
                 logger.warning(
-                    "dispatch.cluster_routing_permanent_skip draft_id=%s — dead-lettered",
-                    draft_id,
+                    "dispatch.assertion_permanent draft_id=%s reason=%s — dead-lettered",
+                    draft_id, _failure_reason[:80],
                 )
+            elif _is_company_locked:
+                # Park for 8 days — past the 5-business-day company lock window.
+                # Do NOT bump retry_count; the row is valid, just temporarily blocked.
+                _set_queue_next_retry(db_client, queue_row_id, delay_seconds=8 * 86400)
+                result.assertion_skipped += 1
+            elif _is_hot_suppressed:
+                # Re-check after 24 h — engagement signal may clear.
+                _set_queue_next_retry(db_client, queue_row_id, delay_seconds=86400)
+                result.assertion_skipped += 1
+            elif _is_prior_step:
+                # Prior step may be in-flight; retry in 6 h.
+                _set_queue_next_retry(db_client, queue_row_id, delay_seconds=6 * 3600)
+                result.assertion_skipped += 1
             else:
                 _release_queue_lock_bump_retry(db_client, queue_row_id, retry_count)
                 result.assertion_skipped += 1
