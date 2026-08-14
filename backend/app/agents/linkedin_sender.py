@@ -620,8 +620,25 @@ class LinkedInSenderAgent(BaseAgent):
                 if dry_run:
                     withdrawn += 1
                     continue
-                if unipile.withdraw_invitation(inv["id"]):
-                    withdrawn += 1
+                # Per-invite isolation — withdraw_invitation() doesn't call
+                # raise_for_status() (its own 200/204 check already handles
+                # HTTP error codes), but the underlying httpx call can still
+                # raise on network failures (timeout, connection reset).
+                # Before this fix, that exception propagated out of this
+                # loop and was caught only by the outer try/except below,
+                # silently dropping every remaining invite in the batch and
+                # skipping the result.add_detail() call entirely — the same
+                # whole-batch-abort pattern found and fixed for
+                # _send_connection_requests/_send_opening_dms.
+                try:
+                    if unipile.withdraw_invitation(inv["id"]):
+                        withdrawn += 1
+                except Exception as exc:
+                    logger.warning(
+                        "LinkedInSenderAgent: withdraw_invitation failed for %s: %s",
+                        inv.get("id"),
+                        exc,
+                    )
 
             result.add_detail(
                 "stale_invites",
