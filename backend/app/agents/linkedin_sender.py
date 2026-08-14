@@ -237,6 +237,8 @@ class LinkedInSenderAgent(BaseAgent):
             result.skipped += 1
             return
 
+        contact_name = contact.get("full_name") or contact.get("first_name", "Unknown")
+
         # Suppression / DNC check — mirrors the email send path (engagement.py).
         # Before this fix, LinkedIn had no suppression check at all: a contact
         # who unsubscribed from email, or was otherwise added to do_not_contact
@@ -251,7 +253,6 @@ class LinkedInSenderAgent(BaseAgent):
             skip_duplicate_check=True,
         )
         if suppressed:
-            contact_name = contact.get("full_name") or contact.get("first_name", "Unknown")
             logger.info(
                 "LinkedInSenderAgent: connection request to %s suppressed (%s) — skipping",
                 contact_name,
@@ -259,6 +260,29 @@ class LinkedInSenderAgent(BaseAgent):
             )
             result.skipped += 1
             result.add_detail(contact_name, "suppressed", sup_reason or "unspecified")
+            return
+
+        # Company-lock check — mirrors the email send path (engagement.py).
+        # channel_coordinator.is_company_locked() already treats
+        # "linkedin_connection" and "linkedin_message" interaction types as
+        # lock-relevant (this agent writes those interactions on send, below),
+        # so LinkedIn touches correctly fed the lock for other contacts —
+        # LinkedIn just never checked it before sending its own messages,
+        # meaning two contacts at the same company could both get contacted
+        # in the same window as long as at least one touch was LinkedIn.
+        from backend.app.core.channel_coordinator import is_company_locked
+
+        locked, lock_reason = is_company_locked(
+            self.db, draft["company_id"], exclude_contact_id=draft.get("contact_id")
+        )
+        if locked:
+            logger.info(
+                "LinkedInSenderAgent: connection request to %s blocked — company locked (%s)",
+                contact_name,
+                lock_reason,
+            )
+            result.skipped += 1
+            result.add_detail(contact_name, "company_locked", lock_reason or "unspecified")
             return
 
         linkedin_url = contact.get("linkedin_url", "")
@@ -401,6 +425,8 @@ class LinkedInSenderAgent(BaseAgent):
             result.skipped += 1
             return
 
+        contact_name = contact.get("full_name") or contact.get("first_name", "Unknown")
+
         # Suppression / DNC check — see _send_connection_draft for why this
         # is needed on the LinkedIn path specifically.
         from backend.app.core.suppression import is_suppressed
@@ -412,7 +438,6 @@ class LinkedInSenderAgent(BaseAgent):
             skip_duplicate_check=True,
         )
         if suppressed:
-            contact_name = contact.get("full_name") or contact.get("first_name", "Unknown")
             logger.info(
                 "LinkedInSenderAgent: %s DM to %s suppressed (%s) — skipping",
                 dm_type,
@@ -423,13 +448,30 @@ class LinkedInSenderAgent(BaseAgent):
             result.add_detail(contact_name, "suppressed", sup_reason or "unspecified")
             return
 
+        # Company-lock check — see _send_connection_draft for why this is
+        # needed on the LinkedIn path specifically.
+        from backend.app.core.channel_coordinator import is_company_locked
+
+        locked, lock_reason = is_company_locked(
+            self.db, draft["company_id"], exclude_contact_id=draft.get("contact_id")
+        )
+        if locked:
+            logger.info(
+                "LinkedInSenderAgent: %s DM to %s blocked — company locked (%s)",
+                dm_type,
+                contact_name,
+                lock_reason,
+            )
+            result.skipped += 1
+            result.add_detail(contact_name, "company_locked", lock_reason or "unspecified")
+            return
+
         linkedin_url = contact.get("linkedin_url", "")
         if not linkedin_url:
             result.skipped += 1
             return
 
         message = draft.get("edited_body") or draft.get("body", "")
-        contact_name = contact.get("full_name") or contact.get("first_name", "Unknown")
         company_name = draft.get("companies", {}).get("name", "") if draft.get("companies") else ""
 
         if dry_run:

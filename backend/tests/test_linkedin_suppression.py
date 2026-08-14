@@ -1,9 +1,18 @@
-"""LinkedIn connection requests and DMs must respect suppression/DNC — same
-as the email send path (engagement.py). Before this fix, linkedin_sender.py
-never called is_suppressed() at all: a contact who unsubscribed from email,
-or who was otherwise added to do_not_contact or suppression_log, could
-still receive a LinkedIn connection request or DM, because those checks
-only ever ran on the email dispatch path. See backend/app/agents/linkedin_sender.py.
+"""LinkedIn connection requests and DMs must respect suppression/DNC and
+company-lock — same as the email send path (engagement.py).
+
+Before this fix, linkedin_sender.py never called is_suppressed() at all: a
+contact who unsubscribed from email, or who was otherwise added to
+do_not_contact or suppression_log, could still receive a LinkedIn connection
+request or DM, because those checks only ever ran on the email dispatch
+path. It also never called is_company_locked(), despite
+channel_coordinator.py already treating "linkedin_connection" and
+"linkedin_message" interactions as lock-relevant (LinkedIn touches correctly
+fed the lock for other contacts; LinkedIn just never checked it before
+sending its own messages) — so two contacts at the same company could both
+be contacted in the same window as long as at least one touch was LinkedIn.
+
+See backend/app/agents/linkedin_sender.py.
 """
 
 from __future__ import annotations
@@ -23,6 +32,17 @@ def _make_agent() -> LinkedInSenderAgent:
     agent.db = MagicMock()
     agent.workspace_id = "ws-1"
     return agent
+
+
+def _clear_gates(*, suppressed=(False, None), locked=(False, None)):
+    """Patch both gates open — the default state for happy-path tests. A bare
+    MagicMock() is truthy, so leaving is_company_locked unpatched would make
+    every send look "locked" and break tests that expect a normal send.
+    """
+    return (
+        patch("backend.app.core.suppression.is_suppressed", return_value=suppressed),
+        patch("backend.app.core.channel_coordinator.is_company_locked", return_value=locked),
+    )
 
 
 _DRAFT = {
@@ -49,10 +69,8 @@ class TestConnectionRequestSuppression:
         unipile = MagicMock()
         result = AgentResult()
 
-        with patch(
-            "backend.app.core.suppression.is_suppressed",
-            return_value=(True, "do_not_contact:email:unsubscribe"),
-        ):
+        sup_patch, lock_patch = _clear_gates(suppressed=(True, "do_not_contact:email:unsubscribe"))
+        with sup_patch, lock_patch:
             agent._send_connection_draft(unipile, _DRAFT, dry_run=False, result=result)
 
         unipile.send_connection_request.assert_not_called()
@@ -60,17 +78,30 @@ class TestConnectionRequestSuppression:
         assert result.processed == 0
         assert any(d["status"] == "suppressed" for d in result.details)
 
+    def test_company_locked_contact_never_reaches_unipile(self):
+        agent = _make_agent()
+        agent._get_contact = MagicMock(return_value=_CONTACT)
+        unipile = MagicMock()
+        result = AgentResult()
+
+        sup_patch, lock_patch = _clear_gates(locked=(True, "email_sent_within_5_business_days"))
+        with sup_patch, lock_patch:
+            agent._send_connection_draft(unipile, _DRAFT, dry_run=False, result=result)
+
+        unipile.send_connection_request.assert_not_called()
+        assert result.skipped == 1
+        assert any(d["status"] == "company_locked" for d in result.details)
+
     def test_non_suppressed_contact_still_sends_normally(self):
         agent = _make_agent()
         agent._get_contact = MagicMock(return_value=_CONTACT)
         unipile = MagicMock()
         result = AgentResult()
 
+        sup_patch, lock_patch = _clear_gates()
         with (
-            patch(
-                "backend.app.core.suppression.is_suppressed",
-                return_value=(False, None),
-            ),
+            sup_patch,
+            lock_patch,
             patch("backend.app.core.outbound_validator.OutboundValidator") as mock_validator_cls,
             patch("backend.app.core.linkedin_rate_limiter.LinkedInRateLimiter") as mock_limiter_cls,
         ):
@@ -90,15 +121,26 @@ class TestDMSuppression:
         unipile = MagicMock()
         result = AgentResult()
 
-        with patch(
-            "backend.app.core.suppression.is_suppressed",
-            return_value=(True, "contact_status:unsubscribed"),
-        ):
+        sup_patch, lock_patch = _clear_gates(suppressed=(True, "contact_status:unsubscribed"))
+        with sup_patch, lock_patch:
             agent._send_dm_draft(unipile, _DRAFT, "opening_dm", dry_run=False, result=result)
 
         unipile.send_message.assert_not_called()
         assert result.skipped == 1
         assert any(d["status"] == "suppressed" for d in result.details)
+
+    def test_company_locked_contact_never_receives_dm(self):
+        agent = _make_agent()
+        agent._get_contact = MagicMock(return_value=_CONTACT)
+        unipile = MagicMock()
+        result = AgentResult()
+
+        sup_patch, lock_patch = _clear_gates(locked=(True, "email_sent_within_5_business_days"))
+        with sup_patch, lock_patch:
+            agent._send_dm_draft(unipile, _DRAFT, "opening_dm", dry_run=False, result=result)
+
+        unipile.send_message.assert_not_called()
+        assert any(d["status"] == "company_locked" for d in result.details)
 
     def test_non_suppressed_contact_dm_still_sends_normally(self):
         agent = _make_agent()
@@ -106,11 +148,10 @@ class TestDMSuppression:
         unipile = MagicMock()
         result = AgentResult()
 
+        sup_patch, lock_patch = _clear_gates()
         with (
-            patch(
-                "backend.app.core.suppression.is_suppressed",
-                return_value=(False, None),
-            ),
+            sup_patch,
+            lock_patch,
             patch("backend.app.core.outbound_validator.OutboundValidator") as mock_validator_cls,
             patch("backend.app.core.linkedin_rate_limiter.LinkedInRateLimiter") as mock_limiter_cls,
         ):
@@ -133,10 +174,8 @@ class TestDMSuppression:
         unipile = MagicMock()
         result = AgentResult()
 
-        with patch(
-            "backend.app.core.suppression.is_suppressed",
-            return_value=(True, "do_not_contact:email:unsubscribe"),
-        ):
+        sup_patch, lock_patch = _clear_gates(suppressed=(True, "do_not_contact:email:unsubscribe"))
+        with sup_patch, lock_patch:
             agent._send_dm_draft(unipile, _DRAFT, "opening_dm", dry_run=False, result=result)
 
         unipile.send_message.assert_not_called()

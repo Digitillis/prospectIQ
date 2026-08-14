@@ -8,6 +8,7 @@ to one Slack post per hour. See backend/app/core/dispatch_scheduler.py.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -52,3 +53,28 @@ def test_notify_slack_exception_does_not_propagate():
     with patch("backend.app.utils.notifications.notify_slack", side_effect=RuntimeError("boom")):
         dispatch_scheduler._maybe_alert_compliance_config_missing("compliance_config_error: x")
     # No exception raised = pass.
+
+
+def test_concurrent_calls_fire_exactly_one_alert():
+    """dispatch_workspace() is called from multiple threads at once (see the
+    module docstring on _compliance_alert_lock: _DISPATCH_CONCURRENCY caps at
+    3, and a manual admin trigger can add a 4th). compliance_config_missing
+    is global by construction, so many threads hitting this simultaneously —
+    right when the misconfiguration first appears — is the normal case this
+    debounce exists for, not a rare edge case. Without the lock, concurrent
+    threads can all read the stale timestamp before any of them writes the
+    update, each passing the cooldown check and each firing its own alert.
+    """
+    with patch("backend.app.utils.notifications.notify_slack") as mock_notify:
+        threads = [
+            threading.Thread(
+                target=dispatch_scheduler._maybe_alert_compliance_config_missing,
+                args=("compliance_config_error: x",),
+            )
+            for _ in range(20)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    assert mock_notify.call_count == 1

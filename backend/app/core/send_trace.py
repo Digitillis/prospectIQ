@@ -18,9 +18,21 @@ from backend.app.core.unsubscribe import (
 
 
 def trace_draft_would_send(db: Database, draft: dict) -> dict:
-    """Trace a single draft through every gate the real dispatch path checks,
-    in the same order dispatch_scheduler.py / engagement.py apply them, and
-    report exactly where it would stop.
+    """Trace a single draft through suppression, company-lock, and compliance
+    config — three of the gates the real dispatch path checks, in the same
+    order engagement.py applies them.
+
+    NOT exhaustive — a "would_send": True result here does not guarantee the
+    real dispatch path will actually send. engagement.py's
+    dispatch_queued_draft() additionally checks hot-suppression (recent
+    reply/open activity), cluster_routing_skip (campaign_cluster in
+    "other"/"watchlist"), and the full run_pre_send_assertions() battery
+    (email verification, persona targeting, sender daily caps, prior-step
+    ordering, minimum step gap, bounce rate) — none of which this function
+    evaluates. Treat would_send=True as "not blocked by suppression, company
+    lock, or compliance config" — not as "will definitely send." An earlier
+    version of this docstring claimed "every gate... in the same order",
+    which was false; corrected after independent review.
 
     Returns a dict with at minimum "id", "company", "contact_email", and
     either "would_send": True or "skip_reason": "<gate>:<detail>".

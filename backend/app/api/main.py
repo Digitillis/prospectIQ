@@ -3691,7 +3691,13 @@ async def send_config_check():
 
 @app.get("/api/admin/send-trace", dependencies=[Depends(get_current_user)])
 async def send_trace():
-    """Step-by-step dry-run of the send path — identifies exactly where it stops."""
+    """Step-by-step dry-run of the send path — checks suppression, company
+    lock, and compliance config for each traced draft. NOT exhaustive: see
+    trace_draft_would_send()'s docstring for the gates this does not cover
+    (hot-suppression, cluster routing, the full pre-send assertion battery).
+    would_send=True means "not blocked by the gates this checks", not a
+    guarantee the real dispatch path will send it.
+    """
     from backend.app.core.config import get_settings
     from backend.app.core.database import get_supabase_client, Database
     from backend.app.core.send_trace import trace_draft_would_send

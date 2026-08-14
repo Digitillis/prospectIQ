@@ -45,8 +45,20 @@ _DISPATCH_CONCURRENCY: threading.Semaphore = threading.Semaphore(3)
 # persists. Without a cooldown this would post dozens of duplicate Slack
 # messages per tick, every tick. One alert per hour is enough to make the
 # outage known without becoming noise that gets muted.
+#
+# _last_compliance_alert_at is a check-then-act on a shared global, and this
+# module is genuinely multi-threaded: _DISPATCH_CONCURRENCY caps concurrent
+# dispatch_workspace() calls at 3, and a manual admin trigger
+# (backend/app/api/main.py's trigger-dispatch endpoint) can also spawn a
+# raw thread that reaches this same function concurrently with the
+# scheduled job. compliance_config_missing is global by construction — it
+# blocks every workspace at once — so "multiple dispatch threads hit this
+# right when the misconfiguration first appears" is the normal case this
+# debounce exists for, not an edge case. The lock bounds it to exactly one
+# alert per cooldown window instead of one per concurrent thread.
 _COMPLIANCE_ALERT_COOLDOWN: timedelta = timedelta(hours=1)
 _last_compliance_alert_at: Optional[datetime] = None
+_compliance_alert_lock: threading.Lock = threading.Lock()
 
 
 @dataclass
@@ -148,13 +160,14 @@ def _maybe_alert_compliance_config_missing(failure_reason: str) -> None:
     webhook is configured).
     """
     global _last_compliance_alert_at
-    now = datetime.now(timezone.utc)
-    if (
-        _last_compliance_alert_at is not None
-        and now - _last_compliance_alert_at < _COMPLIANCE_ALERT_COOLDOWN
-    ):
-        return
-    _last_compliance_alert_at = now
+    with _compliance_alert_lock:
+        now = datetime.now(timezone.utc)
+        if (
+            _last_compliance_alert_at is not None
+            and now - _last_compliance_alert_at < _COMPLIANCE_ALERT_COOLDOWN
+        ):
+            return
+        _last_compliance_alert_at = now
     try:
         from backend.app.utils.notifications import notify_slack
 
