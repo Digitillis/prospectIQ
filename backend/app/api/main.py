@@ -755,11 +755,30 @@ def _gmail_intake_workspace(ws: dict) -> None:
     # Additional sender_pool accounts are stored under "gmail_{safe_email}" key.
     accounts_to_poll: list[tuple[str, str]] = []
 
+    # Primary account: CredentialStore falls back to GMAIL_USER/
+    # GMAIL_APP_PASSWORD env vars when no workspace_credentials row exists
+    # (see credential_store.py's _ENV_FALLBACKS) — this is why this one
+    # account's reply capture works even with CREDENTIAL_ENCRYPTION_KEY
+    # unset. It resolves regardless of the loop below.
     primary_user = creds.get("gmail", "user")
     primary_password = creds.get("gmail", "app_password")
     if primary_user and primary_password:
         accounts_to_poll.append((primary_user, primary_password))
 
+    # Sender-pool accounts (fixed 2026-08: dedup/insert bugs — see the
+    # thread_id resolution and _tm_payload construction below). KNOWN GAP,
+    # NOT fixed by that change: these have NO env-var fallback (only
+    # ("gmail","user")/("gmail","app_password") are in _ENV_FALLBACKS), so
+    # each requires an actual workspace_credentials row, which requires
+    # CREDENTIAL_ENCRYPTION_KEY to be set AND migration
+    # 030_workspace_credentials.sql to be applied AND the credential itself
+    # to have been written via CredentialStore.set() for that mailbox. As of
+    # this writing none of those three preconditions hold, so replies to any
+    # sender-pool mailbox OTHER than the primary account are silently not
+    # captured — this loop below still runs and still logs a
+    # CredentialStore.get warning per missing mailbox, but nothing currently
+    # surfaces "N of M sender-pool mailboxes have no reply capture" as an
+    # aggregate, actionable signal.
     sender_pool = ws_settings.get("sender_pool") or []
     for acct in sender_pool:
         if not acct.get("active", True):
@@ -896,43 +915,14 @@ def _gmail_intake_workspace(ws: dict) -> None:
                 company_id = draft["company_id"]
                 contact_id = draft["contact_id"]
 
-                # Dedup: for Gmail API path check raw_message_id in metadata;
-                # for IMAP path use the 5-minute timestamp window.
-                raw_message_id = reply.get("raw_message_id", "")
-                if _use_gmail_api and raw_message_id:
-                    existing = (
-                        db.client.table("interactions")
-                        .select("id")
-                        .eq("contact_id", contact_id)
-                        .eq("type", "email_replied")
-                        .contains("metadata", {"raw_message_id": raw_message_id})
-                        .limit(1)
-                        .execute()
-                    ).data
-                else:
-                    existing = (
-                        db.client.table("thread_messages")
-                        .select("id")
-                        .eq("contact_id", contact_id)
-                        .eq("direction", "inbound")
-                        .gte(
-                            "created_at",
-                            (
-                                datetime.fromisoformat(received_at.replace("Z", "+00:00"))
-                                - timedelta(minutes=5)
-                            ).isoformat(),
-                        )
-                        .limit(1)
-                        .execute()
-                    ).data
-                if existing:
-                    if not _use_gmail_api:
-                        gmail.mark_as_read(reply["uid"])
-                    skipped += 1
-                    continue
-
-                intent = _classify_intent(body, subject)
-
+                # Resolve (or create) the campaign_thread BEFORE dedup — dedup
+                # for the non-Gmail-API path keys on thread_id, which requires
+                # this to run first. Previously this block ran after the dedup
+                # check, so dedup queried thread_messages.contact_id — a
+                # column that does not exist on thread_messages (see the
+                # comment below) — and was not wrapped in try/except, so it
+                # raised on the FIRST matched reply and aborted every
+                # subsequent reply in this mailbox's poll for the whole tick.
                 thread_id = None
                 try:
                     existing_thread = (
@@ -975,17 +965,72 @@ def _gmail_intake_workspace(ws: dict) -> None:
                         f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}"
                     )
 
+                # Dedup: for Gmail API path check raw_message_id in metadata;
+                # for IMAP path use thread_id + a 5-minute timestamp window
+                # (thread_messages has no contact_id column — see the schema
+                # note on the insert below).
+                raw_message_id = reply.get("raw_message_id", "")
+                if _use_gmail_api and raw_message_id:
+                    existing = (
+                        db.client.table("interactions")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .eq("type", "email_replied")
+                        .contains("metadata", {"raw_message_id": raw_message_id})
+                        .limit(1)
+                        .execute()
+                    ).data
+                elif thread_id:
+                    existing = (
+                        db.client.table("thread_messages")
+                        .select("id")
+                        .eq("thread_id", thread_id)
+                        .eq("direction", "inbound")
+                        .gte(
+                            "created_at",
+                            (
+                                datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+                                - timedelta(minutes=5)
+                            ).isoformat(),
+                        )
+                        .limit(1)
+                        .execute()
+                    ).data
+                else:
+                    # thread_id resolution failed above (already logged) —
+                    # cannot dedup by thread; proceed rather than silently
+                    # dropping a reply that might be the only record of it.
+                    existing = []
+                if existing:
+                    if not _use_gmail_api:
+                        gmail.mark_as_read(reply["uid"])
+                    skipped += 1
+                    continue
+
+                intent = _classify_intent(body, subject)
+
                 try:
                     # thread_messages schema does NOT include company_id, contact_id,
                     # or workspace_id — those are inferred via the thread_id FK.
                     # Sending those columns causes a PGRST204 column-not-found error
                     # and silently drops the record. Only send columns that exist.
+                    #
+                    # sent_at is NOT NULL with no column default (see
+                    # supabase_migrations/migrations/019_campaign_threads_hitl.sql)
+                    # and source is CHECK-constrained to
+                    # ('manual','instantly_webhook','gmail_webhook') — both were
+                    # previously omitted/wrong here, which violated the NOT NULL
+                    # and CHECK constraints on every inbound insert. The insert
+                    # was wrapped in try/except -> logger.warning, so it failed
+                    # silently on every single reply, which is why
+                    # thread_messages held outbound rows only.
                     _tm_payload = {
                         "direction": "inbound",
                         "body": body[:4000],
                         "subject": subject,
+                        "sent_at": received_at,
                         "classification": intent,
-                        "source": "gmail_imap",
+                        "source": "gmail_webhook",
                     }
                     if thread_id:
                         _tm_payload["thread_id"] = thread_id
