@@ -237,6 +237,30 @@ class LinkedInSenderAgent(BaseAgent):
             result.skipped += 1
             return
 
+        # Suppression / DNC check — mirrors the email send path (engagement.py).
+        # Before this fix, LinkedIn had no suppression check at all: a contact
+        # who unsubscribed from email, or was otherwise added to do_not_contact
+        # or suppression_log, could still receive a LinkedIn connection request
+        # or DM, because those checks only ever ran on the email dispatch path.
+        from backend.app.core.suppression import is_suppressed
+
+        suppressed, sup_reason = is_suppressed(
+            self.db,
+            draft["company_id"],
+            contact_id=draft.get("contact_id"),
+            skip_duplicate_check=True,
+        )
+        if suppressed:
+            contact_name = contact.get("full_name") or contact.get("first_name", "Unknown")
+            logger.info(
+                "LinkedInSenderAgent: connection request to %s suppressed (%s) — skipping",
+                contact_name,
+                sup_reason,
+            )
+            result.skipped += 1
+            result.add_detail(contact_name, "suppressed", sup_reason or "unspecified")
+            return
+
         linkedin_url = contact.get("linkedin_url", "")
         if not linkedin_url:
             logger.warning(
@@ -375,6 +399,28 @@ class LinkedInSenderAgent(BaseAgent):
         contact = self._get_contact(draft.get("contact_id"))
         if not contact:
             result.skipped += 1
+            return
+
+        # Suppression / DNC check — see _send_connection_draft for why this
+        # is needed on the LinkedIn path specifically.
+        from backend.app.core.suppression import is_suppressed
+
+        suppressed, sup_reason = is_suppressed(
+            self.db,
+            draft["company_id"],
+            contact_id=draft.get("contact_id"),
+            skip_duplicate_check=True,
+        )
+        if suppressed:
+            contact_name = contact.get("full_name") or contact.get("first_name", "Unknown")
+            logger.info(
+                "LinkedInSenderAgent: %s DM to %s suppressed (%s) — skipping",
+                dm_type,
+                contact_name,
+                sup_reason,
+            )
+            result.skipped += 1
+            result.add_detail(contact_name, "suppressed", sup_reason or "unspecified")
             return
 
         linkedin_url = contact.get("linkedin_url", "")
