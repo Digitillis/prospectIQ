@@ -222,7 +222,24 @@ class LinkedInSenderAgent(BaseAgent):
             )
 
             for draft in drafts:
-                self._send_connection_draft(unipile, draft, dry_run, result)
+                # Per-draft isolation — a transient exception from one draft's
+                # suppression/company-lock lookup (e.g. is_suppressed() calling
+                # db.get_company(), which is not itself wrapped) must not abort
+                # the remaining drafts in this batch. Mirrors the real dispatch
+                # path's per-queue-row isolation in dispatch_scheduler.py.
+                # Found by independent review: this loop previously relied on
+                # the outer try/except below, which catches at the WHOLE-BATCH
+                # level, so one bad draft silently dropped every draft after it.
+                try:
+                    self._send_connection_draft(unipile, draft, dry_run, result)
+                except Exception as exc:
+                    logger.error(
+                        "LinkedInSenderAgent: connection draft %s failed: %s",
+                        draft.get("id"),
+                        exc,
+                        exc_info=True,
+                    )
+                    result.errors += 1
 
         except Exception as exc:
             logger.error("LinkedInSenderAgent: connection requests failed: %s", exc, exc_info=True)
@@ -405,7 +422,19 @@ class LinkedInSenderAgent(BaseAgent):
             logger.info("LinkedInSenderAgent: %d opening DM drafts to send", len(drafts))
 
             for draft in drafts:
-                self._send_dm_draft(unipile, draft, "opening_dm", dry_run, result)
+                # Per-draft isolation — see the matching comment in
+                # _send_connection_requests for why this loop-level try/except
+                # is needed and not just the outer one below.
+                try:
+                    self._send_dm_draft(unipile, draft, "opening_dm", dry_run, result)
+                except Exception as exc:
+                    logger.error(
+                        "LinkedInSenderAgent: DM draft %s failed: %s",
+                        draft.get("id"),
+                        exc,
+                        exc_info=True,
+                    )
+                    result.errors += 1
 
         except Exception as exc:
             logger.error("LinkedInSenderAgent: DM send failed: %s", exc, exc_info=True)

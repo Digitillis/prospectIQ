@@ -180,3 +180,87 @@ class TestDMSuppression:
 
         unipile.send_message.assert_not_called()
         assert any(d["status"] == "suppressed" for d in result.details)
+
+
+class TestBatchIsolation:
+    """A transient exception from one draft's suppression/company-lock lookup
+    (e.g. is_suppressed() calling db.get_company(), which is not itself
+    wrapped in a try/except) must not abort the rest of the batch. Before
+    this fix, _send_connection_requests/_send_opening_dms only had one
+    outer try/except around the whole per-draft loop, so draft N's exception
+    silently dropped every draft after it — found by independent review.
+    """
+
+    def test_one_bad_draft_does_not_abort_the_rest_of_the_connection_batch(self):
+        agent = _make_agent()
+        agent._count_sent_today = MagicMock(return_value=0)
+        good_contact = dict(_CONTACT, id="contact-2")
+        agent._get_contact = MagicMock(
+            side_effect=lambda cid: good_contact if cid == "contact-2" else _CONTACT
+        )
+        draft_bad = dict(_DRAFT, id="draft-bad", contact_id="contact-1")
+        draft_good = dict(_DRAFT, id="draft-good", contact_id="contact-2")
+        agent._get_approved_linkedin_drafts = MagicMock(return_value=[draft_bad, draft_good])
+        unipile = MagicMock()
+        result = AgentResult()
+
+        def _is_suppressed_side_effect(db, company_id, contact_id=None, **kw):
+            if contact_id == "contact-1":
+                raise RuntimeError("transient db.get_company() failure")
+            return (False, None)
+
+        with (
+            patch(
+                "backend.app.core.suppression.is_suppressed",
+                side_effect=_is_suppressed_side_effect,
+            ),
+            patch(
+                "backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)
+            ),
+            patch("backend.app.core.outbound_validator.OutboundValidator") as mock_validator_cls,
+            patch("backend.app.core.linkedin_rate_limiter.LinkedInRateLimiter") as mock_limiter_cls,
+        ):
+            mock_validator_cls.return_value.validate_linkedin_connect.return_value = None
+            mock_limiter_cls.return_value.consume.return_value = True
+            agent._send_connection_requests(unipile, dry_run=False, result=result)
+
+        # The bad draft raised; the good draft after it must still be sent.
+        unipile.send_connection_request.assert_called_once()
+        assert result.processed == 1
+        assert result.errors == 1
+
+    def test_one_bad_draft_does_not_abort_the_rest_of_the_dm_batch(self):
+        agent = _make_agent()
+        good_contact = dict(_CONTACT, id="contact-2")
+        agent._get_contact = MagicMock(
+            side_effect=lambda cid: good_contact if cid == "contact-2" else _CONTACT
+        )
+        draft_bad = dict(_DRAFT, id="draft-bad", contact_id="contact-1")
+        draft_good = dict(_DRAFT, id="draft-good", contact_id="contact-2")
+        agent._get_approved_linkedin_drafts = MagicMock(return_value=[draft_bad, draft_good])
+        unipile = MagicMock()
+        result = AgentResult()
+
+        def _is_suppressed_side_effect(db, company_id, contact_id=None, **kw):
+            if contact_id == "contact-1":
+                raise RuntimeError("transient db.get_company() failure")
+            return (False, None)
+
+        with (
+            patch(
+                "backend.app.core.suppression.is_suppressed",
+                side_effect=_is_suppressed_side_effect,
+            ),
+            patch(
+                "backend.app.core.channel_coordinator.is_company_locked", return_value=(False, None)
+            ),
+            patch("backend.app.core.outbound_validator.OutboundValidator") as mock_validator_cls,
+            patch("backend.app.core.linkedin_rate_limiter.LinkedInRateLimiter") as mock_limiter_cls,
+        ):
+            mock_validator_cls.return_value.validate_linkedin_dm.return_value = None
+            mock_limiter_cls.return_value.consume.return_value = True
+            agent._send_opening_dms(unipile, dry_run=False, result=result)
+
+        unipile.send_message.assert_called_once()
+        assert result.processed == 1
+        assert result.errors == 1
