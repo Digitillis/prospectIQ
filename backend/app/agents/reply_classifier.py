@@ -185,6 +185,20 @@ class ReplyClassifierAgent:
             }
 
         # Write to cache table
+        #
+        # This insert is the entire reason classify_reply() exists — it's what
+        # makes a classification durable and reusable. Before this fix, a
+        # failure here was caught and silently discarded: `except Exception:
+        # pass`, no variable, no log call. reply_classifications held 0 rows
+        # in production despite classify_reply() having genuinely run at
+        # least once (confirmed via the paired interactions row its caller,
+        # ReplyAgent, writes independently) -- with the swallow in place,
+        # there was no way to tell whether that one real invocation's insert
+        # failed, or whether it never reached this line at all. A direct test
+        # insert against the live schema with real contact_id/company_id
+        # succeeded cleanly, ruling out a schema/permissions problem -- so
+        # whatever failed here that one time is now unknowable, which is
+        # exactly the failure mode this fix exists to prevent from repeating.
         try:
             self._db.client.table("reply_classifications").insert(
                 {
@@ -194,8 +208,20 @@ class ReplyClassifierAgent:
                     "classification": classification,
                 }
             ).execute()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error(
+                "reply_classifications insert failed for contact_id=%s company_id=%s "
+                "reply_hash=%s -- classification computed but not cached, and every "
+                "downstream action below (outcome update, wrong_person/unsubscribe/"
+                "not_a_fit handling) still runs on the in-memory result, so this is "
+                "non-fatal to THIS call, but it means the cache-by-hash dedup this "
+                "table exists for (see module docstring) will not skip a re-processed "
+                "copy of this same reply, and it will burn another Haiku call: %s",
+                contact_id,
+                company_id,
+                reply_hash,
+                exc,
+            )
 
         # Update outreach_outcomes
         self._update_outcome(send_id, contact_id, company_id, classification, reply_text)
