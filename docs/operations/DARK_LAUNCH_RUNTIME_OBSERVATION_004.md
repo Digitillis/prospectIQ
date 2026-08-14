@@ -332,7 +332,7 @@ Based on this observation window, the following items from the ACTIVATION_SAFETY
 
 ### Remaining open items before Stage C authorization
 
-Re-checked live 2026-08-14. Every item below reflects a direct verification this session, not an assumption:
+Re-checked live 2026-08-14 — each item's checked/unchecked status below reflects an actual attempt to verify it this session, not an assumption of "probably fine." That does not mean every fact is confirmed true: several are marked unverified or not done, deliberately, below.
 
 ```
 [x] D9 — batch_size=1 confirmed in production outreach_send_config
