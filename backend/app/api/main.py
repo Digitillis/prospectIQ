@@ -3691,11 +3691,16 @@ async def send_config_check():
 
 @app.get("/api/admin/send-trace", dependencies=[Depends(get_current_user)])
 async def send_trace():
-    """Step-by-step dry-run of the send path — identifies exactly where it stops."""
+    """Step-by-step dry-run of the send path — checks suppression, company
+    lock, and compliance config for each traced draft. NOT exhaustive: see
+    trace_draft_would_send()'s docstring for the gates this does not cover
+    (hot-suppression, cluster routing, the full pre-send assertion battery).
+    would_send=True means "not blocked by the gates this checks", not a
+    guarantee the real dispatch path will send it.
+    """
     from backend.app.core.config import get_settings
     from backend.app.core.database import get_supabase_client, Database
-    from backend.app.core.suppression import is_suppressed
-    from backend.app.core.channel_coordinator import is_company_locked
+    from backend.app.core.send_trace import trace_draft_would_send
     from datetime import date
 
     trace = []
@@ -3773,52 +3778,7 @@ async def send_trace():
         return {"abort_at": "no_drafts_returned", "trace": trace}
 
     # Step 4: trace first 3 drafts through all checks
-    per_draft = []
-    for draft in drafts[:3]:
-        info = {"id": draft["id"][:8]}
-        contact = draft.get("contacts") or {}
-        company = draft.get("companies") or {}
-        info["company"] = company.get("name", "null")
-        info["contact_email"] = contact.get("email") or None
-
-        if not info["contact_email"]:
-            info["skip_reason"] = "no_email"
-            per_draft.append(info)
-            continue
-
-        try:
-            suppressed, sup_reason = is_suppressed(
-                db,
-                draft["company_id"],
-                contact_id=draft.get("contact_id"),
-                skip_duplicate_check=True,
-            )
-            info["suppressed"] = suppressed
-            info["sup_reason"] = sup_reason
-        except Exception as e:
-            info["suppressed"] = f"error:{e}"
-
-        if info.get("suppressed") is True:
-            info["skip_reason"] = f"suppressed:{sup_reason}"
-            per_draft.append(info)
-            continue
-
-        try:
-            locked, lock_reason = is_company_locked(
-                db, draft["company_id"], exclude_contact_id=draft.get("contact_id")
-            )
-            info["locked"] = locked
-            info["lock_reason"] = lock_reason
-        except Exception as e:
-            info["locked"] = f"error:{e}"
-
-        if info.get("locked") is True:
-            info["skip_reason"] = f"locked:{lock_reason}"
-            per_draft.append(info)
-            continue
-
-        info["would_send"] = True
-        per_draft.append(info)
+    per_draft = [trace_draft_would_send(db, draft) for draft in drafts[:3]]
 
     trace.append(f"first_3_drafts_checked")
     return {"abort_at": None, "trace": trace, "per_draft": per_draft}

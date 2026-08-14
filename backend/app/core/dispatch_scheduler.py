@@ -39,6 +39,27 @@ STALE_LOCK_MINUTES: int = 5
 # Stagger between sends still comes from cron ticks — no time.sleep() here.
 _DISPATCH_CONCURRENCY: threading.Semaphore = threading.Semaphore(3)
 
+# Debounce for the compliance-config-missing Slack alert below — every
+# affected draft in a batch (up to batch_size=45) hits this on the same
+# tick, and the tick repeats every 30 minutes while the misconfiguration
+# persists. Without a cooldown this would post dozens of duplicate Slack
+# messages per tick, every tick. One alert per hour is enough to make the
+# outage known without becoming noise that gets muted.
+#
+# _last_compliance_alert_at is a check-then-act on a shared global, and this
+# module is genuinely multi-threaded: _DISPATCH_CONCURRENCY caps concurrent
+# dispatch_workspace() calls at 3, and a manual admin trigger
+# (backend/app/api/main.py's trigger-dispatch endpoint) can also spawn a
+# raw thread that reaches this same function concurrently with the
+# scheduled job. compliance_config_missing is global by construction — it
+# blocks every workspace at once — so "multiple dispatch threads hit this
+# right when the misconfiguration first appears" is the normal case this
+# debounce exists for, not an edge case. The lock bounds it to exactly one
+# alert per cooldown window instead of one per concurrent thread.
+_COMPLIANCE_ALERT_COOLDOWN: timedelta = timedelta(hours=1)
+_last_compliance_alert_at: Optional[datetime] = None
+_compliance_alert_lock: threading.Lock = threading.Lock()
+
 
 @dataclass
 class BatchResult:
@@ -125,6 +146,40 @@ def _classify_assertion_failure_code(failure_reason: str) -> str:
     if failure_reason.startswith("compliance_config_error:"):
         return "compliance_config_missing"
     return "assertion_failed"
+
+
+def _maybe_alert_compliance_config_missing(failure_reason: str) -> None:
+    """Fire a rate-limited Slack alert for a compliance_config_missing block.
+
+    The boot-log warning in main.py's lifespan() is the primary discovery
+    mechanism for this misconfiguration (see _classify_assertion_failure_code
+    above), but it only fires once, at startup, and is easy to miss in
+    Railway's log stream. This is the fallback for the case that motivated
+    that comment: whoever doesn't read boot logs. Fire-and-forget — never
+    raises, never blocks dispatch (notify_slack already fails soft if no
+    webhook is configured).
+    """
+    global _last_compliance_alert_at
+    with _compliance_alert_lock:
+        now = datetime.now(timezone.utc)
+        if (
+            _last_compliance_alert_at is not None
+            and now - _last_compliance_alert_at < _COMPLIANCE_ALERT_COOLDOWN
+        ):
+            return
+        _last_compliance_alert_at = now
+    try:
+        from backend.app.utils.notifications import notify_slack
+
+        notify_slack(
+            f"ProspectIQ dispatch blocked: compliance_config_missing "
+            f"({failure_reason[:200]}). All outbound sends are held until "
+            f"physical_address / backend_public_url are set. "
+            f"See /api/admin/send-trace for a live check.",
+            emoji=":warning:",
+        )
+    except Exception as exc:
+        logger.warning("compliance_config_missing Slack alert failed (non-fatal): %s", exc)
 
 
 def _resolve_provider_message_id(db_client, draft_id: str) -> Optional[str]:
@@ -849,6 +904,7 @@ def _dispatch_workspace_inner(
                 # main.py's lifespan() is the primary discovery mechanism;
                 # this is the fallback for whoever doesn't read boot logs.
                 _set_queue_next_retry(db_client, queue_row_id, delay_seconds=3600)
+                _maybe_alert_compliance_config_missing(_failure_reason)
                 result.assertion_skipped += 1
             else:
                 _release_queue_lock_bump_retry(db_client, queue_row_id, retry_count)
