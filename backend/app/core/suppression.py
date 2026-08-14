@@ -205,7 +205,16 @@ def is_suppressed(
     except Exception:
         pass
 
-    # 3. Contact-level suppression
+    # 3. Contact-level suppression: contacts.status, contact-scope
+    #    suppression_log, and do_not_contact (email + domain).
+    #
+    #    Added 2026-08 — previously this function never queried
+    #    do_not_contact and only checked suppression_log at scope='company'
+    #    (step 2 above), so a contact-scope entry (e.g. reason='unsubscribe',
+    #    written by backend/app/core/unsubscribe.py's record_unsubscribe())
+    #    blocked nothing unless a separate caller had also denormalized it
+    #    onto contacts.status. An unsubscribe recorded via the one-click
+    #    link now reliably blocks future sends to that address.
     if contact_id:
         try:
             contact_result = (
@@ -215,6 +224,37 @@ def is_suppressed(
                 contact = contact_result.data[0]
                 if contact.get("status") in ("bounced", "not_interested", "unsubscribed"):
                     return True, f"contact_status:{contact['status']}"
+
+                contact_email = (contact.get("email") or "").strip().lower()
+                if contact_email:
+                    domain = contact_email.rsplit("@", 1)[-1] if "@" in contact_email else None
+
+                    try:
+                        dnc_query = db.client.table("do_not_contact").select("id, reason, email, domain")
+                        dnc_filters = [f"email.eq.{contact_email}"]
+                        if domain:
+                            dnc_filters.append(f"domain.eq.{domain}")
+                        dnc_result = dnc_query.or_(",".join(dnc_filters)).limit(1).execute()
+                        if dnc_result.data:
+                            entry = dnc_result.data[0]
+                            scope = "email" if entry.get("email") else "domain"
+                            return True, f"do_not_contact:{scope}:{entry.get('reason', 'unspecified')}"
+                    except Exception:
+                        pass
+
+                    try:
+                        contact_suppression = (
+                            db.client.table("suppression_log")
+                            .select("reason")
+                            .eq("scope", "contact")
+                            .or_(f"contact_id.eq.{contact_id},email.eq.{contact_email}")
+                            .limit(1)
+                            .execute()
+                        )
+                        if contact_suppression.data:
+                            return True, f"suppression_log:{contact_suppression.data[0]['reason']}"
+                    except Exception:
+                        pass
         except Exception:
             pass
 

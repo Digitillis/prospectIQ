@@ -66,6 +66,51 @@ def _backoff_for(retry_count: int) -> int:
     return _BACKOFF_SECONDS[idx]
 
 
+def _is_permanent_assertion_failure(failure_reason: str) -> bool:
+    """True when an ASSERTION_FAILED outcome will never self-resolve and
+    should be dead-lettered immediately rather than retried.
+    """
+    return any(
+        failure_reason.startswith(p)
+        for p in (
+            "cluster_routing_skip:",
+            "outreach_eligible:",  # tier/eligibility flag — won't flip automatically
+            "suppressed:",  # suppression list — manual removal only
+            "contact_has_no_email",
+            "contact_fetch_failed",
+        )
+    )
+
+
+def _classify_assertion_failure_code(failure_reason: str) -> str:
+    """Map an ASSERTION_FAILED failure_reason to a send_attempts.failure_code.
+
+    Distinguishes a genuine assertion failure from an expected, self-resolving
+    scheduling deferral (company cooldown, hot-lead re-check window, prior
+    step in flight, minimum step gap). `send_attempts.status` stays
+    FAILED/PERMANENTLY_FAILED for all of these — the column is CHECK-
+    constrained to DISPATCHED|DELIVERED|FAILED|PERMANENTLY_FAILED, so there
+    is no DEFERRED value without a migration — but failure_code now records
+    which case this was.
+
+    Before this fix, all five collapsed into a single "assertion_failed"
+    bucket, which is why aggregate dashboards read as ~13.7k failures when
+    the majority were company-lock and step-gap deferrals re-evaluated (and
+    re-logged as a new "failure") on the next scheduler tick.
+    """
+    if failure_reason.startswith("cluster_routing_skip:"):
+        return "cluster_routing_skip"
+    if failure_reason.startswith("company_locked:"):
+        return "deferred_company_locked"
+    if failure_reason.startswith("hot_suppressed:"):
+        return "deferred_hot_suppressed"
+    if failure_reason.startswith("prior_step_sent:"):
+        return "deferred_prior_step"
+    if failure_reason.startswith("minimum_step_gap:"):
+        return "deferred_step_gap"
+    return "assertion_failed"
+
+
 def _resolve_provider_message_id(db_client, draft_id: str) -> Optional[str]:
     """Return resend_message_id from outreach_drafts for ALREADY_DELIVERED reconciliation.
 
@@ -726,18 +771,7 @@ def _dispatch_workspace_inner(
 
         elif outcome.status == "ASSERTION_FAILED":
             _failure_reason = (outcome.failure_reason or "pre-send assertion blocked")[:500]
-
-            # Classify assertion by self-resolution potential:
-            #   permanent  — will never resolve; dead-letter immediately
-            #   timed      — resolves after a known delay; set next_retry_at, don't burn retry_count
-            #   transient  — resolves soon (prior step in-flight); short backoff
-            _is_permanent = any(_failure_reason.startswith(p) for p in (
-                "cluster_routing_skip:",
-                "outreach_eligible:",   # tier/eligibility flag — won't flip automatically
-                "suppressed:",          # suppression list — manual removal only
-                "contact_has_no_email",
-                "contact_fetch_failed",
-            ))
+            _is_permanent = _is_permanent_assertion_failure(_failure_reason)
             _is_company_locked = _failure_reason.startswith("company_locked:")
             _is_hot_suppressed = _failure_reason.startswith("hot_suppressed:")
             _is_prior_step = _failure_reason.startswith("prior_step_sent:")
@@ -746,10 +780,7 @@ def _dispatch_workspace_inner(
                 db_client,
                 attempt_id,
                 status="PERMANENTLY_FAILED" if _is_permanent else "FAILED",
-                failure_code=(
-                    "cluster_routing_skip" if _failure_reason.startswith("cluster_routing_skip:")
-                    else "assertion_failed"
-                ),
+                failure_code=_classify_assertion_failure_code(_failure_reason),
                 failure_reason=_failure_reason,
                 resolved_at=_now_iso(),
             )

@@ -676,25 +676,34 @@ class EngagementAgent(BaseAgent):
                 result.skipped += 1
                 continue
 
+            # See dispatch_queued_draft() for why this no longer blocks: the
+            # resolved value is metadata-only (send_attempts.metadata,
+            # "instantly_campaign_id") and is never consulted by the Resend
+            # send path below. A None result here previously dead-lettered
+            # the draft against a provider that does not send anything.
             _instantly_campaign_id = get_campaign_id_for_company(company, _persona)
-            if _instantly_campaign_id is None:
-                logger.warning(
-                    "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
-                    "no Instantly sequence configured for this cluster/persona combination",
-                    draft.get("id"),
-                    company_name,
-                    _cluster,
-                    _persona,
-                )
-                console.print(
-                    f"  [yellow]{company_name}: cluster={_cluster!r} persona={_persona!r} — "
-                    f"no Instantly sequence env var set. Skipping.[/yellow]"
-                )
-                result.skipped += 1
-                continue
 
             subject = draft.get("subject", "")
             body = draft.get("edited_body") or draft.get("body", "")
+
+            # CAN-SPAM §7704(a)(3)/(5): compliance footer before any claim or
+            # send. See dispatch_queued_draft() for the same gate, applied
+            # there to the scheduled path — this is the CLI/batch path.
+            from backend.app.core.unsubscribe import ComplianceConfigError, compliance_footer_text
+
+            try:
+                body = body + compliance_footer_text(contact_email, draft["id"])
+            except ComplianceConfigError as _cc_exc:
+                console.print(
+                    f"  [red]{company_name}: compliance config error ({_cc_exc}). Skipping.[/red]"
+                )
+                logger.error(
+                    "batch_dispatch compliance_config_error draft_id=%s error=%s",
+                    draft["id"],
+                    _cc_exc,
+                )
+                result.skipped += 1
+                continue
 
             try:
                 # Atomically claim the draft by setting sent_at before calling Resend.
@@ -907,6 +916,7 @@ class EngagementAgent(BaseAgent):
                 )
 
                 from backend.app.utils.email_html import plain_to_html
+                from backend.app.core.unsubscribe import resend_unsubscribe_headers
 
                 _from_address, _from_display = _pick_sender(contact_email)
                 # Pass draft ID as idempotency key — Resend will deduplicate on
@@ -920,6 +930,7 @@ class EngagementAgent(BaseAgent):
                         "subject": subject,
                         "html": plain_to_html(body),
                         "text": body,
+                        "headers": resend_unsubscribe_headers(contact_email, draft["id"]),
                     },
                     {"idempotency_key": draft["id"]},
                 )
@@ -1349,20 +1360,18 @@ class EngagementAgent(BaseAgent):
                 failure_reason=f"cluster_routing_skip: cluster={_dq_cluster!r} requires manual review",
             )
 
+        # NOTE: get_campaign_id_for_company() resolves an Instantly campaign ID
+        # for observability/metadata only (written to send_attempts.metadata
+        # below as "instantly_campaign_id") — the actual send path is Resend
+        # (see resend.Emails.send() further down), which never reads this
+        # value. Previously a None result here (env var unset/misconfigured)
+        # blocked the send entirely, dead-lettering messages that had passed
+        # every real delivery gate. Removed 2026-08 after confirming ~5,691
+        # sends were destroyed by this check against a provider that does not
+        # send anything. The cluster in ("other", "watchlist") gate above is
+        # unrelated and intentionally preserved — it is a real manual-review
+        # control, not a routing lookup.
         _dq_instantly_campaign_id = get_campaign_id_for_company(company, _dq_persona)
-        if _dq_instantly_campaign_id is None:
-            logger.warning(
-                "cluster_routing skip draft_id=%s company=%r cluster=%r persona=%r — "
-                "no Instantly sequence env var configured for this cluster/persona",
-                draft_id,
-                company_name,
-                _dq_cluster,
-                _dq_persona,
-            )
-            return QueueDispatchOutcome(
-                status="ASSERTION_FAILED",
-                failure_reason=f"cluster_routing_skip: no Instantly sequence for cluster={_dq_cluster!r} persona={_dq_persona!r}",
-            )
 
         # Load send config for daily cap
         send_cfg = self._load_send_config()
@@ -1464,6 +1473,28 @@ class EngagementAgent(BaseAgent):
         subject = draft.get("subject", "")
         body = draft.get("edited_body") or draft.get("body", "")
 
+        # CAN-SPAM §7704(a)(3)/(5): append the compliance footer (physical
+        # address + unsubscribe link) before anything is claimed or sent.
+        # Raises ComplianceConfigError (fail closed) if the physical address
+        # is not configured — see config/outreach_guidelines.yaml. This is a
+        # gate, not a formatting step: it must run before the atomic claim
+        # below so a config error never leaves sent_at set with no message
+        # actually delivered.
+        from backend.app.core.unsubscribe import ComplianceConfigError, compliance_footer_text
+
+        try:
+            body = body + compliance_footer_text(contact_email, draft_id)
+        except ComplianceConfigError as _cc_exc:
+            logger.error(
+                "dispatch_queued_draft compliance_config_error draft_id=%s error=%s",
+                draft_id,
+                _cc_exc,
+            )
+            return QueueDispatchOutcome(
+                status="ASSERTION_FAILED",
+                failure_reason=f"compliance_config_error: {_cc_exc}",
+            )
+
         # Atomic pre-send claim: set sent_at BEFORE the Resend API call.
         # Closes the crash window where Resend accepts the email but the process dies
         # before sent_at is persisted. Without this, stale-lock reclaim re-dispatches
@@ -1515,6 +1546,8 @@ class EngagementAgent(BaseAgent):
             )
         resend.api_key = resend_api_key
 
+        from backend.app.core.unsubscribe import resend_unsubscribe_headers
+
         try:
             send_response = resend.Emails.send(
                 {
@@ -1524,6 +1557,7 @@ class EngagementAgent(BaseAgent):
                     "subject": subject,
                     "html": plain_to_html(body),
                     "text": body,
+                    "headers": resend_unsubscribe_headers(contact_email, draft_id),
                 },
                 {"idempotency_key": idempotency_key},
             )

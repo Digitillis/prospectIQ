@@ -79,3 +79,4 @@ docs/reports/rejected_draft_reassessment.json
 warm_outreach/*
 !warm_outreach/README.md
 !warm_outreach/attendees.example.csv
+.venv_test/

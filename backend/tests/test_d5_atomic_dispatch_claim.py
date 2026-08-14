@@ -278,6 +278,11 @@ class TestPreSendClaimReturnsZeroRows:
                 return_value="camp_test",
             ),
             patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"),
+            # CAN-SPAM compliance footer requires a configured physical
+            # address (see config/outreach_guidelines.yaml, deliberately
+            # left empty rather than fabricated) — not what this test is
+            # about, so stub it out.
+            patch("backend.app.core.unsubscribe.compliance_footer_text", return_value=""),
             patch("resend.Emails.send") as mock_send,
         ):
             outcome = agent.dispatch_queued_draft(
@@ -403,6 +408,11 @@ class TestRollbackOnResendFailure:
                 return_value="camp_test",
             ),
             patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"),
+            # CAN-SPAM compliance footer requires a configured physical
+            # address (see config/outreach_guidelines.yaml, deliberately
+            # left empty rather than fabricated) — not what this test is
+            # about, so stub it out.
+            patch("backend.app.core.unsubscribe.compliance_footer_text", return_value=""),
             patch("resend.Emails.send", side_effect=Exception("503 Service Unavailable")),
         ):
             outcome = agent.dispatch_queued_draft(
@@ -436,6 +446,11 @@ class TestRollbackOnResendFailure:
                 return_value="camp_test",
             ),
             patch("backend.app.core.pre_send_assertions.run_pre_send_assertions"),
+            # CAN-SPAM compliance footer requires a configured physical
+            # address (see config/outreach_guidelines.yaml, deliberately
+            # left empty rather than fabricated) — not what this test is
+            # about, so stub it out.
+            patch("backend.app.core.unsubscribe.compliance_footer_text", return_value=""),
             patch("resend.Emails.send", side_effect=Exception("422 Unprocessable Entity")),
         ):
             outcome = agent.dispatch_queued_draft(

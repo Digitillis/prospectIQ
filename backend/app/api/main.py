@@ -59,6 +59,7 @@ from backend.app.api.routes import (
     pipeline,
     analytics,
     webhooks,
+    unsubscribe,
     settings,
     actions,
     action_queue,
@@ -896,43 +897,14 @@ def _gmail_intake_workspace(ws: dict) -> None:
                 company_id = draft["company_id"]
                 contact_id = draft["contact_id"]
 
-                # Dedup: for Gmail API path check raw_message_id in metadata;
-                # for IMAP path use the 5-minute timestamp window.
-                raw_message_id = reply.get("raw_message_id", "")
-                if _use_gmail_api and raw_message_id:
-                    existing = (
-                        db.client.table("interactions")
-                        .select("id")
-                        .eq("contact_id", contact_id)
-                        .eq("type", "email_replied")
-                        .contains("metadata", {"raw_message_id": raw_message_id})
-                        .limit(1)
-                        .execute()
-                    ).data
-                else:
-                    existing = (
-                        db.client.table("thread_messages")
-                        .select("id")
-                        .eq("contact_id", contact_id)
-                        .eq("direction", "inbound")
-                        .gte(
-                            "created_at",
-                            (
-                                datetime.fromisoformat(received_at.replace("Z", "+00:00"))
-                                - timedelta(minutes=5)
-                            ).isoformat(),
-                        )
-                        .limit(1)
-                        .execute()
-                    ).data
-                if existing:
-                    if not _use_gmail_api:
-                        gmail.mark_as_read(reply["uid"])
-                    skipped += 1
-                    continue
-
-                intent = _classify_intent(body, subject)
-
+                # Resolve (or create) the campaign_thread BEFORE dedup — dedup
+                # for the non-Gmail-API path keys on thread_id, which requires
+                # this to run first. Previously this block ran after the dedup
+                # check, so dedup queried thread_messages.contact_id — a
+                # column that does not exist on thread_messages (see the
+                # comment below) — and was not wrapped in try/except, so it
+                # raised on the FIRST matched reply and aborted every
+                # subsequent reply in this mailbox's poll for the whole tick.
                 thread_id = None
                 try:
                     existing_thread = (
@@ -975,17 +947,72 @@ def _gmail_intake_workspace(ws: dict) -> None:
                         f"Gmail intake [{ws['name']}]: campaign_threads upsert failed: {e}"
                     )
 
+                # Dedup: for Gmail API path check raw_message_id in metadata;
+                # for IMAP path use thread_id + a 5-minute timestamp window
+                # (thread_messages has no contact_id column — see the schema
+                # note on the insert below).
+                raw_message_id = reply.get("raw_message_id", "")
+                if _use_gmail_api and raw_message_id:
+                    existing = (
+                        db.client.table("interactions")
+                        .select("id")
+                        .eq("contact_id", contact_id)
+                        .eq("type", "email_replied")
+                        .contains("metadata", {"raw_message_id": raw_message_id})
+                        .limit(1)
+                        .execute()
+                    ).data
+                elif thread_id:
+                    existing = (
+                        db.client.table("thread_messages")
+                        .select("id")
+                        .eq("thread_id", thread_id)
+                        .eq("direction", "inbound")
+                        .gte(
+                            "created_at",
+                            (
+                                datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+                                - timedelta(minutes=5)
+                            ).isoformat(),
+                        )
+                        .limit(1)
+                        .execute()
+                    ).data
+                else:
+                    # thread_id resolution failed above (already logged) —
+                    # cannot dedup by thread; proceed rather than silently
+                    # dropping a reply that might be the only record of it.
+                    existing = []
+                if existing:
+                    if not _use_gmail_api:
+                        gmail.mark_as_read(reply["uid"])
+                    skipped += 1
+                    continue
+
+                intent = _classify_intent(body, subject)
+
                 try:
                     # thread_messages schema does NOT include company_id, contact_id,
                     # or workspace_id — those are inferred via the thread_id FK.
                     # Sending those columns causes a PGRST204 column-not-found error
                     # and silently drops the record. Only send columns that exist.
+                    #
+                    # sent_at is NOT NULL with no column default (see
+                    # supabase_migrations/migrations/019_campaign_threads_hitl.sql)
+                    # and source is CHECK-constrained to
+                    # ('manual','instantly_webhook','gmail_webhook') — both were
+                    # previously omitted/wrong here, which violated the NOT NULL
+                    # and CHECK constraints on every inbound insert. The insert
+                    # was wrapped in try/except -> logger.warning, so it failed
+                    # silently on every single reply, which is why
+                    # thread_messages held outbound rows only.
                     _tm_payload = {
                         "direction": "inbound",
                         "body": body[:4000],
                         "subject": subject,
+                        "sent_at": received_at,
                         "classification": intent,
-                        "source": "gmail_imap",
+                        "source": "gmail_webhook",
                     }
                     if thread_id:
                         _tm_payload["thread_id"] = thread_id
@@ -3393,6 +3420,7 @@ app.include_router(approvals.router)
 app.include_router(pipeline.router)
 app.include_router(analytics.router)
 app.include_router(webhooks.router)
+app.include_router(unsubscribe.router)
 app.include_router(settings.router)
 app.include_router(actions.router)
 app.include_router(action_queue.router)
