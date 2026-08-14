@@ -155,6 +155,28 @@ def record_unsubscribe(db_client, *, email: str, draft_id: str | None, source: s
     *any* matching row, not uniqueness, so a suppressed email stays
     suppressed regardless of duplicate rows.
 
+    CORRECTNESS FIX (post-review, confirmed independently by two review
+    lenses): this used to omit workspace_id from the insert entirely. That
+    was only safe against migration 003_dnc_priority_queue.sql's original
+    schema. supabase_migrations/migrations/016_workspaces_multitenant.sql
+    adds workspace_id to do_not_contact, and 017_workspace_id_remaining_
+    tables.sql makes it NOT NULL with no default — no later migration
+    relaxes this. Every real call was throwing an unhandled Postgres 23502
+    NOT NULL violation, meaning the do_not_contact row was NEVER written
+    and the recipient was never actually suppressed. Confirmed by a second,
+    independent source in this same codebase:
+    backend/app/core/bounce_suppressor.py:190-198 documents and works
+    around this exact constraint for its own do_not_contact insert.
+
+    Resolves the correct workspace_id by looking up outreach_drafts for the
+    given draft_id (also NOT NULL there per the same two migrations) rather
+    than blindly defaulting, so the suppression lands in the workspace that
+    actually sent the email — correct if this system is ever genuinely
+    multi-workspace, and a no-op difference today since there is only one
+    workspace in practice. Falls back to settings.default_workspace_id
+    (the value both migrations backfilled existing rows with) only if the
+    draft lookup fails or draft_id is None.
+
     KNOWN LIMITATION, not fixed here: do_not_contact has no unique
     constraint on email (confirmed against the migration; not attempting a
     schema change in this pass without the live table's confirmed current
@@ -166,12 +188,40 @@ def record_unsubscribe(db_client, *, email: str, draft_id: str | None, source: s
     contact is still correctly blocked, but the *reported reason* is not
     reliable when duplicates with different reasons exist for one email.
     """
+    from backend.app.core.config import get_settings
+
+    workspace_id = get_settings().default_workspace_id
+    if draft_id:
+        try:
+            draft_result = (
+                db_client.table("outreach_drafts")
+                .select("workspace_id")
+                .eq("id", draft_id)
+                .limit(1)
+                .execute()
+            )
+            if draft_result.data and draft_result.data[0].get("workspace_id"):
+                workspace_id = draft_result.data[0]["workspace_id"]
+        except Exception as exc:
+            logger.warning(
+                "record_unsubscribe: could not resolve workspace_id from draft_id=%s "
+                "(falling back to default_workspace_id): %s",
+                draft_id,
+                exc,
+            )
+
     db_client.table("do_not_contact").insert(
         {
             "email": email.strip().lower(),
             "reason": "unsubscribed",
             "added_by": source,
             "notes": f"one-click unsubscribe, draft_id={draft_id}" if draft_id else "one-click unsubscribe",
+            "workspace_id": workspace_id,
         }
     ).execute()
-    logger.info("unsubscribe.recorded email_domain=%s source=%s", email.split("@")[-1], source)
+    logger.info(
+        "unsubscribe.recorded email_domain=%s source=%s workspace_id=%s",
+        email.split("@")[-1],
+        source,
+        workspace_id,
+    )

@@ -205,18 +205,116 @@ def test_compliance_footer_includes_address_and_link_when_configured():
 # ---------------------------------------------------------------------------
 
 
+class _FakeRecordUnsubscribeDB:
+    """do_not_contact.workspace_id is NOT NULL (migrations 016/017) with no
+    default. A plain MagicMock() lets record_unsubscribe insert without
+    workspace_id and never notices — exactly the blind spot that let this
+    bug ship and pass review once already. This double models both tables
+    record_unsubscribe touches precisely enough to catch a regression: a
+    missing workspace_id key in the do_not_contact payload is asserted on
+    directly below, not inferred from a mock accepting anything.
+    """
+
+    def __init__(self, draft_workspace_id: str | None = "ws-from-draft"):
+        self.insert_calls: list[tuple[str, dict]] = []
+        self._draft_workspace_id = draft_workspace_id
+
+    def table(self, name: str):
+        return _FakeRecordUnsubscribeTable(self, name)
+
+
+class _FakeRecordUnsubscribeTable:
+    def __init__(self, db: _FakeRecordUnsubscribeDB, name: str):
+        self._db = db
+        self._name = name
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def insert(self, payload: dict):
+        self._db.insert_calls.append((self._name, payload))
+        return self
+
+    def execute(self):
+        result = MagicMock()
+        if self._name == "outreach_drafts":
+            result.data = (
+                [{"workspace_id": self._db._draft_workspace_id}]
+                if self._db._draft_workspace_id
+                else []
+            )
+        else:
+            result.data = [{"id": "dnc-row-1"}]
+        return result
+
+
 def test_record_unsubscribe_inserts_do_not_contact_row():
     from backend.app.core.unsubscribe import record_unsubscribe
 
-    db_client = MagicMock()
+    db_client = _FakeRecordUnsubscribeDB(draft_workspace_id="ws-from-draft")
     record_unsubscribe(db_client, email="Person@Example.com", draft_id="draft-123", source="one_click_get")
 
-    db_client.table.assert_called_with("do_not_contact")
-    inserted = db_client.table.return_value.insert.call_args[0][0]
+    dnc_calls = [p for name, p in db_client.insert_calls if name == "do_not_contact"]
+    assert len(dnc_calls) == 1
+    inserted = dnc_calls[0]
     assert inserted["email"] == "person@example.com"  # normalized lowercase
     assert inserted["reason"] == "unsubscribed"
     assert inserted["added_by"] == "one_click_get"
     assert "draft-123" in inserted["notes"]
+
+
+def test_record_unsubscribe_includes_workspace_id_from_draft():
+    """The bug this regression-tests: do_not_contact.workspace_id is NOT
+    NULL with no default (migrations 016_workspaces_multitenant.sql,
+    017_workspace_id_remaining_tables.sql) — an insert omitting it throws
+    an unhandled Postgres 23502 violation, meaning the unsubscribe was
+    never actually recorded. Confirmed independently by two review lenses;
+    the same hazard is already documented and worked around in
+    backend/app/core/bounce_suppressor.py:190-198 for its own insert.
+    """
+    from backend.app.core.unsubscribe import record_unsubscribe
+
+    db_client = _FakeRecordUnsubscribeDB(draft_workspace_id="ws-real-workspace")
+    record_unsubscribe(db_client, email="person@example.com", draft_id="draft-123", source="one_click_post")
+
+    dnc_calls = [p for name, p in db_client.insert_calls if name == "do_not_contact"]
+    assert dnc_calls[0]["workspace_id"] == "ws-real-workspace"
+
+
+def test_record_unsubscribe_falls_back_to_default_workspace_when_draft_lookup_empty():
+    """draft_id resolves to no row (deleted draft, stale link) — must still
+    write a non-null workspace_id rather than omitting the key or writing
+    None, which would hit the same NOT NULL violation this fix exists to
+    prevent.
+    """
+    from backend.app.core.unsubscribe import record_unsubscribe
+    from backend.app.core.config import get_settings
+
+    db_client = _FakeRecordUnsubscribeDB(draft_workspace_id=None)
+    record_unsubscribe(db_client, email="person@example.com", draft_id="draft-does-not-exist", source="one_click_post")
+
+    dnc_calls = [p for name, p in db_client.insert_calls if name == "do_not_contact"]
+    assert dnc_calls[0]["workspace_id"] == get_settings().default_workspace_id
+
+
+def test_record_unsubscribe_falls_back_to_default_workspace_when_draft_id_is_none():
+    """No draft_id at all (e.g. a manually-triggered unsubscribe with no
+    associated send) must still write a valid workspace_id.
+    """
+    from backend.app.core.unsubscribe import record_unsubscribe
+    from backend.app.core.config import get_settings
+
+    db_client = _FakeRecordUnsubscribeDB()
+    record_unsubscribe(db_client, email="person@example.com", draft_id=None, source="manual")
+
+    dnc_calls = [p for name, p in db_client.insert_calls if name == "do_not_contact"]
+    assert dnc_calls[0]["workspace_id"] == get_settings().default_workspace_id
 
 
 # ---------------------------------------------------------------------------
