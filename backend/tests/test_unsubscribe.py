@@ -19,10 +19,15 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _settings(webhook_secret="test-secret-value", app_base_url="https://app.example.com"):
+def _settings(
+    webhook_secret="test-secret-value",
+    app_base_url="https://app.example.com",
+    backend_public_url="https://api.example.com",
+):
     s = MagicMock()
     s.webhook_secret = webhook_secret
     s.app_base_url = app_base_url
+    s.backend_public_url = backend_public_url
     return s
 
 
@@ -88,7 +93,26 @@ def test_build_unsubscribe_url_contains_email_and_token():
     assert "email=person%40example.com" in url
     assert "draft_id=draft-123" in url
     assert "token=" in url
-    assert url.startswith("https://app.example.com/api/unsubscribe")
+    # Must use backend_public_url, NOT app_base_url — app_base_url is the
+    # Next.js frontend (see workspaces.py's invite-link use of it) and has
+    # no route/rewrite for this backend-only API endpoint.
+    assert url.startswith("https://api.example.com/api/unsubscribe")
+
+
+def test_build_unsubscribe_url_raises_when_backend_public_url_unset():
+    """A wrong-host unsubscribe link is a silent CAN-SPAM failure — this
+    must fail closed exactly like the missing-physical-address case, not
+    fall back to app_base_url (the frontend) and produce a 404 for every
+    recipient who clicks it.
+    """
+    from backend.app.core.unsubscribe import UnsubscribeConfigError, build_unsubscribe_url
+
+    with patch(
+        "backend.app.core.unsubscribe.get_settings",
+        return_value=_settings(backend_public_url=""),
+    ):
+        with pytest.raises(UnsubscribeConfigError):
+            build_unsubscribe_url("person@example.com", "draft-123")
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +130,24 @@ def test_resend_headers_include_list_unsubscribe_and_one_click():
     assert headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
 
 
+def test_resend_headers_reraises_as_compliance_config_error():
+    """resend_unsubscribe_headers() must raise ComplianceConfigError, not
+    UnsubscribeConfigError, when backend_public_url is unset — callers in
+    engagement.py only catch ComplianceConfigError. If this raised the
+    unwrapped UnsubscribeConfigError instead, it would propagate as an
+    unhandled exception and crash dispatch_queued_draft() rather than
+    degrading to a graceful ASSERTION_FAILED outcome.
+    """
+    from backend.app.core.unsubscribe import ComplianceConfigError, resend_unsubscribe_headers
+
+    with patch(
+        "backend.app.core.unsubscribe.get_settings",
+        return_value=_settings(backend_public_url=""),
+    ):
+        with pytest.raises(ComplianceConfigError):
+            resend_unsubscribe_headers("person@example.com", "draft-123")
+
+
 # ---------------------------------------------------------------------------
 # compliance_footer_text — fails closed without a physical address
 # ---------------------------------------------------------------------------
@@ -117,6 +159,25 @@ def test_compliance_footer_raises_without_physical_address():
     guidelines = {"sender": {"physical_address": "", "company": "Acme"}}
     with (
         patch("backend.app.core.unsubscribe.get_settings", return_value=_settings()),
+        patch("backend.app.core.config.get_outreach_guidelines", return_value=guidelines),
+    ):
+        with pytest.raises(ComplianceConfigError):
+            compliance_footer_text("person@example.com", "draft-123")
+
+
+def test_compliance_footer_reraises_backend_url_error_as_compliance_config_error():
+    """Same unification requirement as resend_unsubscribe_headers — a
+    missing backend_public_url must surface as ComplianceConfigError, the
+    one type engagement.py's dispatch callers actually catch.
+    """
+    from backend.app.core.unsubscribe import ComplianceConfigError, compliance_footer_text
+
+    guidelines = {"sender": {"physical_address": "123 Main St, Chicago, IL 60601", "company": "Acme"}}
+    with (
+        patch(
+            "backend.app.core.unsubscribe.get_settings",
+            return_value=_settings(backend_public_url=""),
+        ),
         patch("backend.app.core.config.get_outreach_guidelines", return_value=guidelines),
     ):
         with pytest.raises(ComplianceConfigError):
@@ -163,7 +224,7 @@ def test_record_unsubscribe_inserts_do_not_contact_row():
 # ---------------------------------------------------------------------------
 
 
-def test_route_get_valid_token_records_and_confirms():
+def test_route_get_valid_token_shows_confirmation_form():
     from fastapi.testclient import TestClient
     from fastapi import FastAPI
     from backend.app.api.routes.unsubscribe import router
@@ -185,8 +246,63 @@ def test_route_get_valid_token_records_and_confirms():
         )
 
     assert resp.status_code == 200
-    assert "unsubscribed" in resp.text.lower()
-    mock_record.assert_called_once()
+    assert "confirm" in resp.text.lower()
+    # GET must NEVER record the unsubscribe — see module docstring: email
+    # security gateways (Microsoft Defender/Safe Links, Proofpoint,
+    # Mimecast) auto-fetch every link in an inbound email via GET before a
+    # human ever sees it. If GET mutated state, that automated scan would
+    # silently unsubscribe the recipient with zero human intent.
+    mock_record.assert_not_called()
+    assert 'method="POST"' in resp.text
+
+
+def test_route_get_renders_form_targeting_post_with_same_credentials():
+    """The confirm-page form must POST back to the SAME (email, draft_id,
+    token) — a human clicking "Confirm" is what actually triggers the
+    action, not the initial GET.
+    """
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from backend.app.api.routes.unsubscribe import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    with patch("backend.app.api.routes.unsubscribe.verify_unsubscribe_token", return_value=True):
+        resp = client.get(
+            "/api/unsubscribe",
+            params={"email": "person@example.com", "draft_id": "draft-123", "token": "tok-abc"},
+        )
+
+    assert "email=person%40example.com" in resp.text
+    assert "draft_id=draft-123" in resp.text
+    assert "token=tok-abc" in resp.text
+
+
+def test_route_get_escapes_email_in_html_display_context():
+    """email is unvalidated, scraped/imported contact data with no
+    EmailStr/regex enforcement on contacts.email — an email value
+    containing HTML/script must not be rendered unescaped into the
+    confirmation page. Regression test for a found-in-review injection gap.
+    """
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from backend.app.api.routes.unsubscribe import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    malicious_email = '<script>alert(1)</script>@example.com'
+    with patch("backend.app.api.routes.unsubscribe.verify_unsubscribe_token", return_value=True):
+        resp = client.get(
+            "/api/unsubscribe",
+            params={"email": malicious_email, "draft_id": "draft-123", "token": "tok-abc"},
+        )
+
+    assert "<script>alert(1)</script>" not in resp.text
+    assert "&lt;script&gt;" in resp.text
 
 
 def test_route_get_invalid_token_returns_400_and_does_not_record():

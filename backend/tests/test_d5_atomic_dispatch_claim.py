@@ -283,6 +283,7 @@ class TestPreSendClaimReturnsZeroRows:
             # left empty rather than fabricated) — not what this test is
             # about, so stub it out.
             patch("backend.app.core.unsubscribe.compliance_footer_text", return_value=""),
+            patch("backend.app.core.unsubscribe.resend_unsubscribe_headers", return_value={}),
             patch("resend.Emails.send") as mock_send,
         ):
             outcome = agent.dispatch_queued_draft(
@@ -413,6 +414,7 @@ class TestRollbackOnResendFailure:
             # left empty rather than fabricated) — not what this test is
             # about, so stub it out.
             patch("backend.app.core.unsubscribe.compliance_footer_text", return_value=""),
+            patch("backend.app.core.unsubscribe.resend_unsubscribe_headers", return_value={}),
             patch("resend.Emails.send", side_effect=Exception("503 Service Unavailable")),
         ):
             outcome = agent.dispatch_queued_draft(
@@ -451,6 +453,7 @@ class TestRollbackOnResendFailure:
             # left empty rather than fabricated) — not what this test is
             # about, so stub it out.
             patch("backend.app.core.unsubscribe.compliance_footer_text", return_value=""),
+            patch("backend.app.core.unsubscribe.resend_unsubscribe_headers", return_value={}),
             patch("resend.Emails.send", side_effect=Exception("422 Unprocessable Entity")),
         ):
             outcome = agent.dispatch_queued_draft(

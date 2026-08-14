@@ -756,11 +756,30 @@ def _gmail_intake_workspace(ws: dict) -> None:
     # Additional sender_pool accounts are stored under "gmail_{safe_email}" key.
     accounts_to_poll: list[tuple[str, str]] = []
 
+    # Primary account: CredentialStore falls back to GMAIL_USER/
+    # GMAIL_APP_PASSWORD env vars when no workspace_credentials row exists
+    # (see credential_store.py's _ENV_FALLBACKS) — this is why this one
+    # account's reply capture works even with CREDENTIAL_ENCRYPTION_KEY
+    # unset. It resolves regardless of the loop below.
     primary_user = creds.get("gmail", "user")
     primary_password = creds.get("gmail", "app_password")
     if primary_user and primary_password:
         accounts_to_poll.append((primary_user, primary_password))
 
+    # Sender-pool accounts (fixed 2026-08: dedup/insert bugs — see the
+    # thread_id resolution and _tm_payload construction below). KNOWN GAP,
+    # NOT fixed by that change: these have NO env-var fallback (only
+    # ("gmail","user")/("gmail","app_password") are in _ENV_FALLBACKS), so
+    # each requires an actual workspace_credentials row, which requires
+    # CREDENTIAL_ENCRYPTION_KEY to be set AND migration
+    # 030_workspace_credentials.sql to be applied AND the credential itself
+    # to have been written via CredentialStore.set() for that mailbox. As of
+    # this writing none of those three preconditions hold, so replies to any
+    # sender-pool mailbox OTHER than the primary account are silently not
+    # captured — this loop below still runs and still logs a
+    # CredentialStore.get warning per missing mailbox, but nothing currently
+    # surfaces "N of M sender-pool mailboxes have no reply capture" as an
+    # aggregate, actionable signal.
     sender_pool = ws_settings.get("sender_pool") or []
     for acct in sender_pool:
         if not acct.get("active", True):
@@ -3020,6 +3039,49 @@ async def lifespan(app: FastAPI):
     except RuntimeError as _sig_err:
         logger.error("FATAL: scheduler signature validation failed — %s", _sig_err)
         raise
+
+    # CAN-SPAM 7704(a)(5) startup check — deliberately a loud WARNING, not a
+    # fatal error: this system does more than send outbound email (reply
+    # capture, dashboards, HITL, qualification all still need to run), so
+    # crashing the whole process over one missing sender-config field would
+    # take down unrelated capabilities to protect one. The actual send-time
+    # gate (backend/app/core/unsubscribe.py's compliance_footer_text(),
+    # ComplianceConfigError) is what blocks dispatch — this exists so a
+    # deploy makes the gap visible in boot logs before any drafts pile up
+    # against it, rather than only being discoverable via a generically-
+    # labeled dispatch failure days later. Fixable via
+    # PATCH /api/settings/outreach-guidelines {"sender_physical_address": "..."}
+    # without a redeploy.
+    try:
+        from backend.app.core.config import get_outreach_guidelines, get_settings as _get_settings
+
+        _address = (get_outreach_guidelines().get("sender", {}).get("physical_address") or "").strip()
+        if not _address:
+            logger.warning(
+                "STARTUP: sender.physical_address is not set in outreach_guidelines.yaml. "
+                "CAN-SPAM requires a physical mailing address in every commercial email — "
+                "ALL outbound dispatch will be blocked (compliance_config_missing) until this "
+                "is set via PATCH /api/settings/outreach-guidelines."
+            )
+        if not (_get_settings().backend_public_url or "").strip():
+            logger.warning(
+                "STARTUP: backend_public_url is not set. Unsubscribe links cannot be built — "
+                "ALL outbound dispatch will be blocked (compliance_config_missing) until this "
+                "is set to this service's own public domain. Do NOT set it to app_base_url; "
+                "that is the frontend, not this API, and an unsubscribe link pointing there "
+                "would 404 for every recipient."
+            )
+        if not (_get_settings().webhook_secret or "").strip():
+            logger.warning(
+                "STARTUP: webhook_secret is not set. Unsubscribe tokens cannot be signed or "
+                "verified (backend/app/core/unsubscribe.py's UnsubscribeConfigError) — ALL "
+                "outbound dispatch will be blocked until this is set. This is also the "
+                "inbound webhook signature secret (backend/app/core/webhook_auth.py); if it "
+                "was intentionally left unset because no webhooks are configured yet, setting "
+                "it now is still required before enabling sends."
+            )
+    except Exception as _addr_check_exc:
+        logger.warning("STARTUP: could not check compliance config: %s", _addr_check_exc)
 
     try:
         global _scheduler

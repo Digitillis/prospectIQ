@@ -686,13 +686,22 @@ class EngagementAgent(BaseAgent):
             subject = draft.get("subject", "")
             body = draft.get("edited_body") or draft.get("body", "")
 
-            # CAN-SPAM §7704(a)(3)/(5): compliance footer before any claim or
-            # send. See dispatch_queued_draft() for the same gate, applied
-            # there to the scheduled path — this is the CLI/batch path.
-            from backend.app.core.unsubscribe import ComplianceConfigError, compliance_footer_text
+            # CAN-SPAM §7704(a)(3)/(5): footer AND headers computed together
+            # here, before any claim or send — see dispatch_queued_draft()
+            # for why they must not be split (a ComplianceConfigError from
+            # the headers call, computed separately at send time, escapes
+            # this gate and gets misclassified as a Resend provider
+            # failure). This is the CLI/batch path; that one is the
+            # scheduled path.
+            from backend.app.core.unsubscribe import (
+                ComplianceConfigError,
+                compliance_footer_text,
+                resend_unsubscribe_headers,
+            )
 
             try:
                 body = body + compliance_footer_text(contact_email, draft["id"])
+                _unsubscribe_headers = resend_unsubscribe_headers(contact_email, draft["id"])
             except ComplianceConfigError as _cc_exc:
                 console.print(
                     f"  [red]{company_name}: compliance config error ({_cc_exc}). Skipping.[/red]"
@@ -916,7 +925,6 @@ class EngagementAgent(BaseAgent):
                 )
 
                 from backend.app.utils.email_html import plain_to_html
-                from backend.app.core.unsubscribe import resend_unsubscribe_headers
 
                 _from_address, _from_display = _pick_sender(contact_email)
                 # Pass draft ID as idempotency key — Resend will deduplicate on
@@ -930,7 +938,7 @@ class EngagementAgent(BaseAgent):
                         "subject": subject,
                         "html": plain_to_html(body),
                         "text": body,
-                        "headers": resend_unsubscribe_headers(contact_email, draft["id"]),
+                        "headers": _unsubscribe_headers,
                     },
                     {"idempotency_key": draft["id"]},
                 )
@@ -1473,17 +1481,28 @@ class EngagementAgent(BaseAgent):
         subject = draft.get("subject", "")
         body = draft.get("edited_body") or draft.get("body", "")
 
-        # CAN-SPAM §7704(a)(3)/(5): append the compliance footer (physical
-        # address + unsubscribe link) before anything is claimed or sent.
-        # Raises ComplianceConfigError (fail closed) if the physical address
-        # is not configured — see config/outreach_guidelines.yaml. This is a
-        # gate, not a formatting step: it must run before the atomic claim
-        # below so a config error never leaves sent_at set with no message
-        # actually delivered.
-        from backend.app.core.unsubscribe import ComplianceConfigError, compliance_footer_text
+        # CAN-SPAM §7704(a)(3)/(5): compute the compliance footer AND the
+        # List-Unsubscribe headers together, before anything is claimed or
+        # sent. Both depend on the same config (physical_address,
+        # backend_public_url) and must fail together — computing the
+        # headers separately at send time (as an earlier version of this
+        # fix did) let a ComplianceConfigError from resend_unsubscribe_
+        # headers() escape this gate, fall into the generic
+        # `except Exception as send_exc` around the raw Resend call further
+        # down, and get misclassified as a resend-provider failure instead
+        # of the intended ASSERTION_FAILED/compliance_config_error outcome.
+        # This is a gate, not a formatting step: it must run before the
+        # atomic claim below so a config error never leaves sent_at set
+        # with no message actually delivered.
+        from backend.app.core.unsubscribe import (
+            ComplianceConfigError,
+            compliance_footer_text,
+            resend_unsubscribe_headers,
+        )
 
         try:
             body = body + compliance_footer_text(contact_email, draft_id)
+            _unsubscribe_headers = resend_unsubscribe_headers(contact_email, draft_id)
         except ComplianceConfigError as _cc_exc:
             logger.error(
                 "dispatch_queued_draft compliance_config_error draft_id=%s error=%s",
@@ -1546,8 +1565,6 @@ class EngagementAgent(BaseAgent):
             )
         resend.api_key = resend_api_key
 
-        from backend.app.core.unsubscribe import resend_unsubscribe_headers
-
         try:
             send_response = resend.Emails.send(
                 {
@@ -1557,7 +1574,7 @@ class EngagementAgent(BaseAgent):
                     "subject": subject,
                     "html": plain_to_html(body),
                     "text": body,
-                    "headers": resend_unsubscribe_headers(contact_email, draft_id),
+                    "headers": _unsubscribe_headers,
                 },
                 {"idempotency_key": idempotency_key},
             )

@@ -61,13 +61,28 @@ def verify_unsubscribe_token(email: str, draft_id: str, token: str) -> bool:
 def build_unsubscribe_url(email: str, draft_id: str) -> str:
     """Build the full one-click unsubscribe URL for List-Unsubscribe headers
     and the email footer link.
+
+    Uses settings.backend_public_url, NOT app_base_url. app_base_url is the
+    Next.js frontend (see workspaces.py's invite-link use of it); this route
+    lives only on the FastAPI backend with no frontend rewrite in front of
+    it. Fails closed (raises) if unset, for the same reason
+    compliance_footer_text() fails closed on a missing physical address: an
+    unsubscribe link resolving to the wrong host is a silent CAN-SPAM
+    failure, and silent is worse than blocked.
     """
     settings = get_settings()
+    if not settings.backend_public_url:
+        raise UnsubscribeConfigError(
+            "backend_public_url is not configured — cannot build an unsubscribe "
+            "link. Do not fall back to app_base_url; that points at the frontend, "
+            "not this API. Set backend_public_url to this service's own public "
+            "domain before enabling sends."
+        )
     token = generate_unsubscribe_token(email, draft_id)
     from urllib.parse import quote
 
     return (
-        f"{settings.app_base_url}/api/unsubscribe"
+        f"{settings.backend_public_url}/api/unsubscribe"
         f"?email={quote(email)}&draft_id={quote(draft_id)}&token={quote(token)}"
     )
 
@@ -87,8 +102,17 @@ def resend_unsubscribe_headers(email: str, draft_id: str) -> dict[str, str]:
     POST to the URL with no page load and no user-visible redirect — which
     is why the URL must itself be enough to identify and action the request
     (see backend/app/api/routes/unsubscribe.py's POST handler).
+
+    Raises ComplianceConfigError (not UnsubscribeConfigError) if
+    backend_public_url is unset — callers (engagement.py) only catch
+    ComplianceConfigError, so every send-blocking config precondition must
+    surface through that one type or it propagates as an unhandled
+    exception instead of a graceful ASSERTION_FAILED outcome.
     """
-    url = build_unsubscribe_url(email, draft_id)
+    try:
+        url = build_unsubscribe_url(email, draft_id)
+    except UnsubscribeConfigError as exc:
+        raise ComplianceConfigError(str(exc)) from exc
     return {
         "List-Unsubscribe": f"<{url}>",
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
@@ -100,8 +124,8 @@ def compliance_footer_text(email: str, draft_id: str) -> str:
     address (CAN-SPAM §7704(a)(5)) + a visible unsubscribe link, for mail
     clients that don't surface the List-Unsubscribe header UI.
 
-    Raises ComplianceConfigError if sender.physical_address is unset in
-    config/outreach_guidelines.yaml — callers must not send without it.
+    Raises ComplianceConfigError if sender.physical_address OR
+    backend_public_url is unset — callers must not send without either.
     """
     from backend.app.core.config import get_outreach_guidelines
 
@@ -113,7 +137,10 @@ def compliance_footer_text(email: str, draft_id: str) -> str:
             "CAN-SPAM requires a real physical mailing address in every commercial "
             "email. Set it before enabling sends."
         )
-    unsub_url = build_unsubscribe_url(email, draft_id)
+    try:
+        unsub_url = build_unsubscribe_url(email, draft_id)
+    except UnsubscribeConfigError as exc:
+        raise ComplianceConfigError(str(exc)) from exc
     company = sender.get("company", "")
     return f"\n\n---\n{company}\n{address}\n\nDon't want these emails? Unsubscribe: {unsub_url}"
 
@@ -123,9 +150,21 @@ def record_unsubscribe(db_client, *, email: str, draft_id: str | None, source: s
 
     Mirrors the shape used elsewhere for manual/bounce DNC entries
     (do_not_contact.reason, added_by — see supabase_migrations/migrations/
-    003_dnc_priority_queue.sql). Idempotent in effect: repeated unsubscribe
-    clicks each insert a row, which is harmless since is_suppressed() checks
-    for *any* matching row, not uniqueness.
+    003_dnc_priority_queue.sql). Blocking is idempotent — repeated
+    unsubscribe clicks each insert a row, and is_suppressed() checks for
+    *any* matching row, not uniqueness, so a suppressed email stays
+    suppressed regardless of duplicate rows.
+
+    KNOWN LIMITATION, not fixed here: do_not_contact has no unique
+    constraint on email (confirmed against the migration; not attempting a
+    schema change in this pass without the live table's confirmed current
+    state — see this repo's convention of verifying schema against a
+    running system before migrating). If a *different* reason (e.g.
+    legal_hold, competitor) is ever recorded for the same email as an
+    unsubscribe, .limit(1) callers with no ORDER BY (both is_suppressed()
+    and dnc_registry.py do this) return a row nondeterministically — the
+    contact is still correctly blocked, but the *reported reason* is not
+    reliable when duplicates with different reasons exist for one email.
     """
     db_client.table("do_not_contact").insert(
         {

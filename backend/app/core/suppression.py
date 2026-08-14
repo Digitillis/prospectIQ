@@ -229,34 +229,75 @@ def is_suppressed(
                 if contact_email:
                     domain = contact_email.rsplit("@", 1)[-1] if "@" in contact_email else None
 
+                    # Two separate .eq() queries rather than one .or_() with
+                    # an interpolated filter string. contact_email is
+                    # attacker-adjacent, non-validated input (scraped/
+                    # imported from Apollo/ThomasNet); PostgREST's .or_()
+                    # syntax treats ",", ".", "(", ")" as structural, so a
+                    # malformed email (e.g. containing a comma — a real
+                    # pattern in scraped data) would break an interpolated
+                    # filter string and, if swallowed by a bare except, make
+                    # exactly the messiest contacts silently unsuppressible.
+                    # Separate .eq() calls have no string to break.
                     try:
-                        dnc_query = db.client.table("do_not_contact").select("id, reason, email, domain")
-                        dnc_filters = [f"email.eq.{contact_email}"]
+                        dnc_email_result = (
+                            db.client.table("do_not_contact")
+                            .select("id, reason, email, domain")
+                            .eq("email", contact_email)
+                            .limit(1)
+                            .execute()
+                        )
+                        if dnc_email_result.data:
+                            entry = dnc_email_result.data[0]
+                            return True, f"do_not_contact:email:{entry.get('reason', 'unspecified')}"
                         if domain:
-                            dnc_filters.append(f"domain.eq.{domain}")
-                        dnc_result = dnc_query.or_(",".join(dnc_filters)).limit(1).execute()
-                        if dnc_result.data:
-                            entry = dnc_result.data[0]
-                            scope = "email" if entry.get("email") else "domain"
-                            return True, f"do_not_contact:{scope}:{entry.get('reason', 'unspecified')}"
-                    except Exception:
-                        pass
+                            dnc_domain_result = (
+                                db.client.table("do_not_contact")
+                                .select("id, reason, email, domain")
+                                .eq("domain", domain)
+                                .limit(1)
+                                .execute()
+                            )
+                            if dnc_domain_result.data:
+                                entry = dnc_domain_result.data[0]
+                                return True, f"do_not_contact:domain:{entry.get('reason', 'unspecified')}"
+                    except Exception as exc:
+                        logger.warning(
+                            "is_suppressed: do_not_contact check failed for contact %s (non-fatal, "
+                            "treated as not-suppressed on this check): %s",
+                            contact_id,
+                            exc,
+                        )
 
                     try:
                         contact_suppression = (
                             db.client.table("suppression_log")
                             .select("reason")
                             .eq("scope", "contact")
-                            .or_(f"contact_id.eq.{contact_id},email.eq.{contact_email}")
+                            .eq("contact_id", contact_id)
                             .limit(1)
                             .execute()
                         )
+                        if not contact_suppression.data:
+                            contact_suppression = (
+                                db.client.table("suppression_log")
+                                .select("reason")
+                                .eq("scope", "contact")
+                                .eq("email", contact_email)
+                                .limit(1)
+                                .execute()
+                            )
                         if contact_suppression.data:
                             return True, f"suppression_log:{contact_suppression.data[0]['reason']}"
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as exc:
+                        logger.warning(
+                            "is_suppressed: contact-scope suppression_log check failed for "
+                            "contact %s (non-fatal, treated as not-suppressed on this check): %s",
+                            contact_id,
+                            exc,
+                        )
+        except Exception as exc:
+            logger.warning("is_suppressed: contact lookup failed for %s: %s", contact_id, exc)
 
     # 4. Competitor check
     research = db.get_research(company_id)

@@ -71,3 +71,27 @@ def test_bounce_rate_gate_is_transient_not_permanent():
 def test_suppressed_is_permanent():
     reason = "suppressed: company_status:not_interested"
     assert _is_permanent_assertion_failure(reason) is True
+
+
+def test_compliance_config_error_gets_its_own_code_not_the_generic_bucket():
+    """Regression test for a bug this same change introduced and an
+    independent review caught before merge: compliance_config_error (raised
+    by unsubscribe.py's ComplianceConfigError when physical_address or
+    backend_public_url is unconfigured) has no special-case here, so it fell
+    through to the generic "assertion_failed" default — the exact bucket
+    this whole function exists to disambiguate deferrals from. A test
+    asserting this classification would have caught it before merge; this
+    is that test, added after the fact.
+    """
+    reason = "compliance_config_error: sender.physical_address is not set in config/outreach_guidelines.yaml"
+    assert _classify_assertion_failure_code(reason) == "compliance_config_missing"
+
+
+def test_compliance_config_error_is_not_permanent():
+    """Must NOT be dead-lettered: it is a global, temporary
+    misconfiguration, not a per-contact fact. Marking every draft blocked by
+    it "permanently failed" and deleting the queue row would lose all of
+    them once the config is fixed, since nothing re-enqueues automatically.
+    """
+    reason = "compliance_config_error: backend_public_url is not configured"
+    assert _is_permanent_assertion_failure(reason) is False
