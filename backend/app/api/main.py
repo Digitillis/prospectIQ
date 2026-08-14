@@ -59,6 +59,7 @@ from backend.app.api.routes import (
     pipeline,
     analytics,
     webhooks,
+    unsubscribe,
     settings,
     actions,
     action_queue,
@@ -3039,6 +3040,49 @@ async def lifespan(app: FastAPI):
         logger.error("FATAL: scheduler signature validation failed — %s", _sig_err)
         raise
 
+    # CAN-SPAM 7704(a)(5) startup check — deliberately a loud WARNING, not a
+    # fatal error: this system does more than send outbound email (reply
+    # capture, dashboards, HITL, qualification all still need to run), so
+    # crashing the whole process over one missing sender-config field would
+    # take down unrelated capabilities to protect one. The actual send-time
+    # gate (backend/app/core/unsubscribe.py's compliance_footer_text(),
+    # ComplianceConfigError) is what blocks dispatch — this exists so a
+    # deploy makes the gap visible in boot logs before any drafts pile up
+    # against it, rather than only being discoverable via a generically-
+    # labeled dispatch failure days later. Fixable via
+    # PATCH /api/settings/outreach-guidelines {"sender_physical_address": "..."}
+    # without a redeploy.
+    try:
+        from backend.app.core.config import get_outreach_guidelines, get_settings as _get_settings
+
+        _address = (get_outreach_guidelines().get("sender", {}).get("physical_address") or "").strip()
+        if not _address:
+            logger.warning(
+                "STARTUP: sender.physical_address is not set in outreach_guidelines.yaml. "
+                "CAN-SPAM requires a physical mailing address in every commercial email — "
+                "ALL outbound dispatch will be blocked (compliance_config_missing) until this "
+                "is set via PATCH /api/settings/outreach-guidelines."
+            )
+        if not (_get_settings().backend_public_url or "").strip():
+            logger.warning(
+                "STARTUP: backend_public_url is not set. Unsubscribe links cannot be built — "
+                "ALL outbound dispatch will be blocked (compliance_config_missing) until this "
+                "is set to this service's own public domain. Do NOT set it to app_base_url; "
+                "that is the frontend, not this API, and an unsubscribe link pointing there "
+                "would 404 for every recipient."
+            )
+        if not (_get_settings().webhook_secret or "").strip():
+            logger.warning(
+                "STARTUP: webhook_secret is not set. Unsubscribe tokens cannot be signed or "
+                "verified (backend/app/core/unsubscribe.py's UnsubscribeConfigError) — ALL "
+                "outbound dispatch will be blocked until this is set. This is also the "
+                "inbound webhook signature secret (backend/app/core/webhook_auth.py); if it "
+                "was intentionally left unset because no webhooks are configured yet, setting "
+                "it now is still required before enabling sends."
+            )
+    except Exception as _addr_check_exc:
+        logger.warning("STARTUP: could not check compliance config: %s", _addr_check_exc)
+
     try:
         global _scheduler
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -3438,6 +3482,7 @@ app.include_router(approvals.router)
 app.include_router(pipeline.router)
 app.include_router(analytics.router)
 app.include_router(webhooks.router)
+app.include_router(unsubscribe.router)
 app.include_router(settings.router)
 app.include_router(actions.router)
 app.include_router(action_queue.router)

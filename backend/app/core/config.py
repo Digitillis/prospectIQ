@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""  # whsec_...
     app_base_url: str = "https://app.prospectiq.ai"
 
+    # The BACKEND's own publicly reachable URL (this FastAPI service, e.g.
+    # the Railway domain) — NOT app_base_url, which is the Next.js frontend
+    # (see workspaces.py's invite-link use of app_base_url). Used only for
+    # links that must resolve to a backend route with no frontend
+    # rewrite/proxy in front of it, starting with the one-click unsubscribe
+    # link (backend/app/core/unsubscribe.py). Deliberately left empty rather
+    # than defaulted to a guessed host — an unsubscribe link pointing at the
+    # wrong domain is a silent CAN-SPAM compliance failure, worse than a
+    # loud one. Set to the Railway backend's public domain before enabling
+    # sends.
+    backend_public_url: str = ""
+
     # Stripe price IDs — set per environment after creating products in Stripe dashboard.
     # Monthly prices:
     stripe_price_starter: str = ""  # $1,500/mo

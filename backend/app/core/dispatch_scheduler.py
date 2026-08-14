@@ -66,6 +66,67 @@ def _backoff_for(retry_count: int) -> int:
     return _BACKOFF_SECONDS[idx]
 
 
+def _is_permanent_assertion_failure(failure_reason: str) -> bool:
+    """True when an ASSERTION_FAILED outcome will never self-resolve and
+    should be dead-lettered immediately rather than retried.
+    """
+    return any(
+        failure_reason.startswith(p)
+        for p in (
+            "cluster_routing_skip:",
+            "outreach_eligible:",  # tier/eligibility flag — won't flip automatically
+            "suppressed:",  # suppression list — manual removal only
+            "contact_has_no_email",
+            "contact_fetch_failed",
+        )
+    )
+
+
+def _classify_assertion_failure_code(failure_reason: str) -> str:
+    """Map an ASSERTION_FAILED failure_reason to a send_attempts.failure_code.
+
+    Distinguishes a genuine assertion failure from an expected, self-resolving
+    scheduling deferral (company cooldown, hot-lead re-check window, prior
+    step in flight, minimum step gap). `send_attempts.status` stays
+    FAILED/PERMANENTLY_FAILED for all of these — the column is CHECK-
+    constrained to DISPATCHED|DELIVERED|FAILED|PERMANENTLY_FAILED, so there
+    is no DEFERRED value without a migration — but failure_code now records
+    which case this was.
+
+    Before this fix, all five collapsed into a single "assertion_failed"
+    bucket, which is why aggregate dashboards read as ~13.7k failures when
+    the majority were company-lock and step-gap deferrals re-evaluated (and
+    re-logged as a new "failure") on the next scheduler tick.
+
+    compliance_config_error: (added post-review) is a SIXTH case, and it is
+    neither a genuine gate failure nor a per-contact deferral — it is a
+    GLOBAL, temporary misconfiguration (missing physical_address or
+    backend_public_url, see backend/app/core/unsubscribe.py) that blocks
+    every draft in every workspace simultaneously until a human fixes
+    config. Without its own code, it fell into the same generic
+    "assertion_failed" bucket this function exists to disambiguate from —
+    the exact bug this function was written to fix, reintroduced by the fix
+    itself. See the dedicated retry-delay branch in
+    _dispatch_workspace_inner() for why it is also NOT routed through
+    _is_permanent_assertion_failure(): dead-lettering every blocked draft
+    would lose them once the config is fixed, since nothing re-enqueues a
+    deleted queue row automatically.
+    """
+    if failure_reason.startswith("cluster_routing_skip:"):
+        return "cluster_routing_skip"
+    if failure_reason.startswith("company_locked:"):
+        return "deferred_company_locked"
+    if failure_reason.startswith("hot_suppressed:"):
+        return "deferred_hot_suppressed"
+    if failure_reason.startswith("prior_step_sent:"):
+        return "deferred_prior_step"
+    if failure_reason.startswith("minimum_step_gap:"):
+        return "deferred_step_gap"
+    if failure_reason.startswith("compliance_config_error:"):
+        return "compliance_config_missing"
+    return "assertion_failed"
+
+
 def _resolve_provider_message_id(db_client, draft_id: str) -> Optional[str]:
     """Return resend_message_id from outreach_drafts for ALREADY_DELIVERED reconciliation.
 
@@ -726,30 +787,18 @@ def _dispatch_workspace_inner(
 
         elif outcome.status == "ASSERTION_FAILED":
             _failure_reason = (outcome.failure_reason or "pre-send assertion blocked")[:500]
-
-            # Classify assertion by self-resolution potential:
-            #   permanent  — will never resolve; dead-letter immediately
-            #   timed      — resolves after a known delay; set next_retry_at, don't burn retry_count
-            #   transient  — resolves soon (prior step in-flight); short backoff
-            _is_permanent = any(_failure_reason.startswith(p) for p in (
-                "cluster_routing_skip:",
-                "outreach_eligible:",   # tier/eligibility flag — won't flip automatically
-                "suppressed:",          # suppression list — manual removal only
-                "contact_has_no_email",
-                "contact_fetch_failed",
-            ))
+            _is_permanent = _is_permanent_assertion_failure(_failure_reason)
             _is_company_locked = _failure_reason.startswith("company_locked:")
             _is_hot_suppressed = _failure_reason.startswith("hot_suppressed:")
             _is_prior_step = _failure_reason.startswith("prior_step_sent:")
+            _is_step_gap = _failure_reason.startswith("minimum_step_gap:")
+            _is_compliance_config_error = _failure_reason.startswith("compliance_config_error:")
 
             _update_send_attempt(
                 db_client,
                 attempt_id,
                 status="PERMANENTLY_FAILED" if _is_permanent else "FAILED",
-                failure_code=(
-                    "cluster_routing_skip" if _failure_reason.startswith("cluster_routing_skip:")
-                    else "assertion_failed"
-                ),
+                failure_code=_classify_assertion_failure_code(_failure_reason),
                 failure_reason=_failure_reason,
                 resolved_at=_now_iso(),
             )
@@ -774,6 +823,32 @@ def _dispatch_workspace_inner(
             elif _is_prior_step:
                 # Prior step may be in-flight; retry in 6 h.
                 _set_queue_next_retry(db_client, queue_row_id, delay_seconds=6 * 3600)
+                result.assertion_skipped += 1
+            elif _is_step_gap:
+                # Post-review fix: minimum_step_gap previously fell to the
+                # generic `else` below — no delay, re-claimed on the very
+                # next 30-minute dispatch tick, writing a fresh send_attempts
+                # row each time. Observed gaps are 2-5 days
+                # ("minimum gap is 2d"/"5d" in the failure_reason text); a
+                # flat 24h re-check (matching hot_suppressed's cadence) cuts
+                # re-fire frequency by ~48x for a typical 2-day gap, without
+                # parsing the gap duration out of a log-style string.
+                _set_queue_next_retry(db_client, queue_row_id, delay_seconds=86400)
+                result.assertion_skipped += 1
+            elif _is_compliance_config_error:
+                # Post-review fix: a missing physical_address or
+                # backend_public_url (see unsubscribe.py) is a GLOBAL,
+                # temporary misconfiguration — every draft in every workspace
+                # hits this simultaneously. It must NOT be routed through
+                # _is_permanent_assertion_failure() / dead-lettered: deleting
+                # every blocked queue row would lose them all once the config
+                # is fixed, since nothing re-enqueues a deleted row
+                # automatically. 1h re-check balances "resume quickly once
+                # fixed" against not hammering every workspace's full queue
+                # every 30 minutes while broken. The startup warning in
+                # main.py's lifespan() is the primary discovery mechanism;
+                # this is the fallback for whoever doesn't read boot logs.
+                _set_queue_next_retry(db_client, queue_row_id, delay_seconds=3600)
                 result.assertion_skipped += 1
             else:
                 _release_queue_lock_bump_retry(db_client, queue_row_id, retry_count)

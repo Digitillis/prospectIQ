@@ -158,6 +158,12 @@ class GuidelinesPatch(BaseModel):
     sender_email: Optional[str] = None
     sender_phone: Optional[str] = None
     sender_signature: Optional[str] = None
+    # CAN-SPAM 7704(a)(5): required physical mailing address, appended to
+    # every outbound send by backend/app/core/unsubscribe.py's
+    # compliance_footer_text(). Previously only settable by hand-editing
+    # config/outreach_guidelines.yaml and redeploying — added here so it can
+    # be fixed without engineer/deploy access once sending is blocked on it.
+    sender_physical_address: Optional[str] = None
 
 
 @router.patch("/outreach-guidelines")
@@ -208,6 +214,8 @@ async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role(
         sender["phone"] = payload.sender_phone
     if payload.sender_signature is not None:
         sender["signature"] = payload.sender_signature
+    if payload.sender_physical_address is not None:
+        sender["physical_address"] = payload.sender_physical_address
 
     # Bump version
     ver = data.get("version", "1.0")
