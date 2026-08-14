@@ -84,7 +84,7 @@ def trace_draft_would_send(db: Database, draft: dict) -> dict:
     # would actually be blocked at send time by that gate, because this
     # diagnostic never called it.
     try:
-        compliance_footer_text(info["contact_email"], draft["id"])
+        compliance_footer_text(db.client, info["contact_email"], draft["id"])
         resend_unsubscribe_headers(info["contact_email"], draft["id"])
     except ComplianceConfigError as e:
         info["skip_reason"] = f"compliance_config_missing:{e}"

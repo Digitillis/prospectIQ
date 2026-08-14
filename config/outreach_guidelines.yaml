@@ -37,13 +37,18 @@ sender:
   email: "avi@digitillis.io"
   phone: "224.355.4500"
   website: "www.digitillis.com"
-  # REQUIRED before any send: CAN-SPAM 15 U.S.C. 7704(a)(5) requires a valid
-  # physical postal address in every commercial email. Left empty
-  # deliberately rather than filled with a placeholder — a fabricated
-  # address is itself a violation. backend/app/core/unsubscribe.py's
-  # get_compliance_footer() raises ComplianceConfigError and blocks the
-  # send if this is empty. Fill with Digitillis's real registered mailing
-  # address (a P.O. box is acceptable under CAN-SPAM) before enabling sends.
+  # DEPRECATED as of migration 065 (supabase_migrations/migrations/
+  # 065_outreach_send_config_physical_address.sql) — no longer read.
+  # This field lived on the Railway container's local filesystem, which
+  # has no attached persistent volume, so a value set here via
+  # PATCH /api/settings/outreach-guidelines was silently lost on the next
+  # redeploy. The real value now lives in
+  # outreach_send_config.sender_physical_address (DB-backed, survives
+  # redeploys) and is set the same way — same PATCH endpoint, same field
+  # name in the request body. Left here, empty, as a marker rather than
+  # deleted, so anyone grepping for "physical_address" finds this note
+  # instead of nothing. See backend/app/core/unsubscribe.py's
+  # compliance_footer_text() for the actual read path.
   physical_address: ""
   # Unified signature — used for all steps including step 1.
   signature: |

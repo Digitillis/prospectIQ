@@ -154,15 +154,18 @@ def test_resend_headers_reraises_as_compliance_config_error():
 
 
 def test_compliance_footer_raises_without_physical_address():
+    """As of migration 065, physical_address is read from
+    outreach_send_config.sender_physical_address (via db_client), not
+    config/outreach_guidelines.yaml — that file lives on the Railway
+    container's local filesystem, which has no attached persistent volume,
+    so a value written there was silently lost on every redeploy.
+    """
     from backend.app.core.unsubscribe import ComplianceConfigError, compliance_footer_text
 
-    guidelines = {"sender": {"physical_address": "", "company": "Acme"}}
-    with (
-        patch("backend.app.core.unsubscribe.get_settings", return_value=_settings()),
-        patch("backend.app.core.config.get_outreach_guidelines", return_value=guidelines),
-    ):
+    db_client = _FakeRecordUnsubscribeDB(physical_address="")
+    with patch("backend.app.core.unsubscribe.get_settings", return_value=_settings()):
         with pytest.raises(ComplianceConfigError):
-            compliance_footer_text("person@example.com", "draft-123")
+            compliance_footer_text(db_client, "person@example.com", "draft-123")
 
 
 def test_compliance_footer_reraises_backend_url_error_as_compliance_config_error():
@@ -172,32 +175,74 @@ def test_compliance_footer_reraises_backend_url_error_as_compliance_config_error
     """
     from backend.app.core.unsubscribe import ComplianceConfigError, compliance_footer_text
 
-    guidelines = {"sender": {"physical_address": "123 Main St, Chicago, IL 60601", "company": "Acme"}}
-    with (
-        patch(
-            "backend.app.core.unsubscribe.get_settings",
-            return_value=_settings(backend_public_url=""),
-        ),
-        patch("backend.app.core.config.get_outreach_guidelines", return_value=guidelines),
+    db_client = _FakeRecordUnsubscribeDB(physical_address="123 Main St, Chicago, IL 60601")
+    with patch(
+        "backend.app.core.unsubscribe.get_settings",
+        return_value=_settings(backend_public_url=""),
     ):
         with pytest.raises(ComplianceConfigError):
-            compliance_footer_text("person@example.com", "draft-123")
+            compliance_footer_text(db_client, "person@example.com", "draft-123")
 
 
 def test_compliance_footer_includes_address_and_link_when_configured():
     from backend.app.core.unsubscribe import compliance_footer_text
 
-    guidelines = {
-        "sender": {"physical_address": "123 Main St, Chicago, IL 60601", "company": "Acme"}
-    }
+    db_client = _FakeRecordUnsubscribeDB(physical_address="123 Main St, Chicago, IL 60601")
+    guidelines = {"sender": {"company": "Acme"}}
     with (
         patch("backend.app.core.unsubscribe.get_settings", return_value=_settings()),
         patch("backend.app.core.config.get_outreach_guidelines", return_value=guidelines),
     ):
-        footer = compliance_footer_text("person@example.com", "draft-123")
+        footer = compliance_footer_text(db_client, "person@example.com", "draft-123")
     assert "123 Main St, Chicago, IL 60601" in footer
     assert "Unsubscribe:" in footer
     assert "/api/unsubscribe" in footer
+
+
+def test_compliance_footer_uses_workspace_from_draft_not_default():
+    """Two workspaces can have different physical addresses (outreach_send_
+    config is per-workspace, UNIQUE on workspace_id) — the address used
+    must be the one for the workspace that actually owns the draft, not
+    whatever the default workspace's row happens to say.
+    """
+    from backend.app.core.unsubscribe import compliance_footer_text
+
+    class _MultiWorkspaceDB(_FakeRecordUnsubscribeDB):
+        def table(self, name):
+            if name == "outreach_send_config":
+                return _WorkspaceScopedConfigTable()
+            return super().table(name)
+
+    class _WorkspaceScopedConfigTable:
+        def __init__(self):
+            self._workspace_id = None
+
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, field, value, *a, **k):
+            if field == "workspace_id":
+                self._workspace_id = value
+            return self
+
+        def limit(self, *a, **k):
+            return self
+
+        def execute(self):
+            result = MagicMock()
+            addresses = {
+                "ws-from-draft": "1 Draft Workspace Way, Chicago, IL",
+                "00000000-0000-0000-0000-000000000001": "999 Default Workspace Blvd, Chicago, IL",
+            }
+            result.data = [{"sender_physical_address": addresses.get(self._workspace_id)}]
+            return result
+
+    db_client = _MultiWorkspaceDB(draft_workspace_id="ws-from-draft")
+    with patch("backend.app.core.unsubscribe.get_settings", return_value=_settings()):
+        footer = compliance_footer_text(db_client, "person@example.com", "draft-123")
+
+    assert "1 Draft Workspace Way" in footer
+    assert "999 Default Workspace Blvd" not in footer
 
 
 # ---------------------------------------------------------------------------
@@ -209,15 +254,25 @@ class _FakeRecordUnsubscribeDB:
     """do_not_contact.workspace_id is NOT NULL (migrations 016/017) with no
     default. A plain MagicMock() lets record_unsubscribe insert without
     workspace_id and never notices — exactly the blind spot that let this
-    bug ship and pass review once already. This double models both tables
-    record_unsubscribe touches precisely enough to catch a regression: a
-    missing workspace_id key in the do_not_contact payload is asserted on
-    directly below, not inferred from a mock accepting anything.
+    bug ship and pass review once already. This double models the tables
+    record_unsubscribe() and compliance_footer_text() touch precisely
+    enough to catch a regression: a missing workspace_id key in the
+    do_not_contact payload is asserted on directly below, not inferred
+    from a mock accepting anything.
+
+    Also models outreach_send_config (migration 065) for
+    compliance_footer_text()'s sender_physical_address read — pass
+    physical_address to control what that read returns.
     """
 
-    def __init__(self, draft_workspace_id: str | None = "ws-from-draft"):
+    def __init__(
+        self,
+        draft_workspace_id: str | None = "ws-from-draft",
+        physical_address: str | None = "123 Main St, Chicago, IL 60601",
+    ):
         self.insert_calls: list[tuple[str, dict]] = []
         self._draft_workspace_id = draft_workspace_id
+        self._physical_address = physical_address
 
     def table(self, name: str):
         return _FakeRecordUnsubscribeTable(self, name)
@@ -249,6 +304,8 @@ class _FakeRecordUnsubscribeTable:
                 if self._db._draft_workspace_id
                 else []
             )
+        elif self._name == "outreach_send_config":
+            result.data = [{"sender_physical_address": self._db._physical_address}]
         else:
             result.data = [{"id": "dnc-row-1"}]
         return result
