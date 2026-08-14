@@ -1070,7 +1070,14 @@ def _gmail_intake_workspace(ws: dict) -> None:
 
                             _company_id = None
                             try:
-                                _c = db.client.table("contacts").select("company_id").eq("id", contact_id).limit(1).execute().data
+                                _c = (
+                                    db.client.table("contacts")
+                                    .select("company_id")
+                                    .eq("id", contact_id)
+                                    .limit(1)
+                                    .execute()
+                                    .data
+                                )
                                 _company_id = _c[0]["company_id"] if _c else None
                             except Exception:
                                 pass
@@ -1086,10 +1093,16 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             )
                             logger.info(
                                 "Gmail intake [%s]: contact %s suppressed — departed/retired (email=%s)",
-                                ws["name"], contact_id, from_email,
+                                ws["name"],
+                                contact_id,
+                                from_email,
                             )
                         except Exception as _sup_err:
-                            logger.warning("Gmail intake [%s]: departed suppression failed: %s", ws["name"], _sup_err)
+                            logger.warning(
+                                "Gmail intake [%s]: departed suppression failed: %s",
+                                ws["name"],
+                                _sup_err,
+                            )
 
                         # Terminate the sequence and cancel remaining send slots
                         db.client.table("engagement_sequences").update({"status": "completed"}).eq(
@@ -1114,12 +1127,19 @@ def _gmail_intake_workspace(ws: dict) -> None:
                         if _return_date:
                             # Resume the day after they're back
                             delay_at = datetime(
-                                _return_date.year, _return_date.month, _return_date.day,
-                                9, 0, 0, tzinfo=timezone.utc,
+                                _return_date.year,
+                                _return_date.month,
+                                _return_date.day,
+                                9,
+                                0,
+                                0,
+                                tzinfo=timezone.utc,
                             ) + timedelta(days=1)
                             logger.info(
                                 "Gmail intake [%s]: OOO return date parsed for %s → %s",
-                                ws["name"], from_email, _return_date.isoformat(),
+                                ws["name"],
+                                from_email,
+                                _return_date.isoformat(),
                             )
                         else:
                             delay_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -1128,7 +1148,10 @@ def _gmail_intake_workspace(ws: dict) -> None:
                         ).eq("contact_id", contact_id).eq("status", "active").execute()
                         # Snooze pre-computed schedule steps until return day
                         try:
-                            snooze_date = (_return_date or (datetime.now(timezone.utc) + timedelta(days=7)).date()).isoformat()
+                            snooze_date = (
+                                _return_date
+                                or (datetime.now(timezone.utc) + timedelta(days=7)).date()
+                            ).isoformat()
                             db.client.table("send_schedule").update(
                                 {"scheduled_date": snooze_date}
                             ).eq("contact_id", contact_id).eq("workspace_id", ws_id).eq(
@@ -1183,7 +1206,9 @@ def _gmail_intake_workspace(ws: dict) -> None:
                             from_email,
                         )
                     except Exception as e:
-                        logger.warning(f"Gmail intake [{ws['name']}]: unknown HITL push failed: {e}")
+                        logger.warning(
+                            f"Gmail intake [{ws['name']}]: unknown HITL push failed: {e}"
+                        )
 
                 if intent in ("interested", "question", "objection", "referral"):
                     try:
@@ -2943,14 +2968,24 @@ def _run_orphan_attempt_cleanup() -> None:
         cleared = 0
         for did in blocked:
             # Skip drafts that are already marked as permanently failed
-            d = db.client.table("outreach_drafts").select("approval_status, sent_at").eq("id", did).execute().data
+            d = (
+                db.client.table("outreach_drafts")
+                .select("approval_status, sent_at")
+                .eq("id", did)
+                .execute()
+                .data
+            )
             if d and (d[0]["approval_status"] == "dispatch_failed" or d[0].get("sent_at")):
                 continue
             res = db.client.table("send_attempts").delete().eq("draft_id", did).execute()
             cleared += len(res.data) if res.data else 0
 
         if cleared:
-            logger.info("orphan_attempt_cleanup: cleared %d stale FAILED attempt(s) for %d draft(s)", cleared, len(blocked))
+            logger.info(
+                "orphan_attempt_cleanup: cleared %d stale FAILED attempt(s) for %d draft(s)",
+                cleared,
+                len(blocked),
+            )
     except Exception as e:
         logger.error("Scheduled orphan_attempt_cleanup failed: %s", e)
 
@@ -3053,12 +3088,31 @@ async def lifespan(app: FastAPI):
     # PATCH /api/settings/outreach-guidelines {"sender_physical_address": "..."}
     # without a redeploy.
     try:
-        from backend.app.core.config import get_outreach_guidelines, get_settings as _get_settings
+        from backend.app.core.config import get_settings as _get_settings
+        from backend.app.core.database import get_supabase_client as _get_supabase_client
 
-        _address = (get_outreach_guidelines().get("sender", {}).get("physical_address") or "").strip()
+        # Read from outreach_send_config (migration 065), not
+        # outreach_guidelines.yaml — the YAML file lives on the Railway
+        # container's local filesystem, which has no attached persistent
+        # volume, so a value written there via
+        # PATCH /api/settings/outreach-guidelines was silently lost on the
+        # next redeploy. This is exactly the check that needs to reflect
+        # what's actually live, not what's in a file this same startup
+        # check can't tell is stale.
+        _row = (
+            _get_supabase_client()
+            .table("outreach_send_config")
+            .select("sender_physical_address")
+            .eq("workspace_id", _get_settings().default_workspace_id)
+            .limit(1)
+            .execute()
+        )
+        _address = (
+            (_row.data[0].get("sender_physical_address") if _row.data else None) or ""
+        ).strip()
         if not _address:
             logger.warning(
-                "STARTUP: sender.physical_address is not set in outreach_guidelines.yaml. "
+                "STARTUP: outreach_send_config.sender_physical_address is not set. "
                 "CAN-SPAM requires a physical mailing address in every commercial email — "
                 "ALL outbound dispatch will be blocked (compliance_config_missing) until this "
                 "is set via PATCH /api/settings/outreach-guidelines."
@@ -3836,6 +3890,7 @@ async def trigger_dispatch(batch_size: int = 100):
 
     def _dispatch():
         from backend.app.core.workspace import WorkspaceContext, set_workspace_context
+
         ctx = WorkspaceContext(
             workspace_id=ws["id"],
             name=ws.get("name", ""),

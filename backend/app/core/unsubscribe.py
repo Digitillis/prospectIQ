@@ -90,8 +90,44 @@ def build_unsubscribe_url(email: str, draft_id: str) -> str:
 class ComplianceConfigError(RuntimeError):
     """Raised when required CAN-SPAM configuration (physical address) is
     missing. Sends must not proceed without it — see the comment on
-    config/outreach_guidelines.yaml's sender.physical_address field.
+    outreach_send_config.sender_physical_address (migration 065).
     """
+
+
+def _resolve_workspace_id_from_draft(db_client, draft_id: str | None) -> str:
+    """Resolve the workspace a draft belongs to, falling back to
+    settings.default_workspace_id if draft_id is None or the lookup fails.
+
+    Shared by record_unsubscribe() and compliance_footer_text() — both need
+    to know which workspace's row to read/write, and both must fail open to
+    the default workspace rather than raise, since a lookup failure here
+    should not itself become a new way to block sending or lose an
+    unsubscribe. Extracted from record_unsubscribe()'s original inline
+    version (migration 065) rather than duplicated a second time.
+    """
+    from backend.app.core.config import get_settings
+
+    workspace_id = get_settings().default_workspace_id
+    if not draft_id:
+        return workspace_id
+    try:
+        draft_result = (
+            db_client.table("outreach_drafts")
+            .select("workspace_id")
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+        )
+        if draft_result.data and draft_result.data[0].get("workspace_id"):
+            return draft_result.data[0]["workspace_id"]
+    except Exception as exc:
+        logger.warning(
+            "_resolve_workspace_id_from_draft: could not resolve workspace_id from "
+            "draft_id=%s (falling back to default_workspace_id): %s",
+            draft_id,
+            exc,
+        )
+    return workspace_id
 
 
 def resend_unsubscribe_headers(email: str, draft_id: str) -> dict[str, str]:
@@ -119,29 +155,63 @@ def resend_unsubscribe_headers(email: str, draft_id: str) -> dict[str, str]:
     }
 
 
-def compliance_footer_text(email: str, draft_id: str) -> str:
+def compliance_footer_text(db_client, email: str, draft_id: str) -> str:
     """Plain-text footer appended to every outbound message: physical
     address (CAN-SPAM §7704(a)(5)) + a visible unsubscribe link, for mail
     clients that don't surface the List-Unsubscribe header UI.
 
-    Raises ComplianceConfigError if sender.physical_address OR
+    db_client is a raw Supabase client (same convention as
+    record_unsubscribe(db.client, ...) — see backend/app/api/routes/
+    unsubscribe.py), used to resolve the sending workspace from draft_id
+    and read its outreach_send_config.sender_physical_address.
+
+    Reads from the database, NOT config/outreach_guidelines.yaml's
+    sender.physical_address (deprecated as of migration 065 — see that
+    migration and outreach_guidelines.yaml's comment for why: the YAML
+    file lives on the Railway container's local filesystem, which has no
+    attached persistent volume, so a value written there via
+    PATCH /api/settings/outreach-guidelines was silently lost on the next
+    redeploy). No YAML fallback is read here deliberately — a fallback
+    would reintroduce the exact ambiguity ("which value is actually live
+    right now") this fix exists to remove.
+
+    Raises ComplianceConfigError if sender_physical_address OR
     backend_public_url is unset — callers must not send without either.
     """
-    from backend.app.core.config import get_outreach_guidelines
+    workspace_id = _resolve_workspace_id_from_draft(db_client, draft_id)
+    try:
+        config_result = (
+            db_client.table("outreach_send_config")
+            .select("sender_physical_address")
+            .eq("workspace_id", workspace_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise ComplianceConfigError(
+            f"could not read outreach_send_config.sender_physical_address for "
+            f"workspace_id={workspace_id}: {exc}"
+        ) from exc
 
-    sender = get_outreach_guidelines().get("sender", {})
-    address = (sender.get("physical_address") or "").strip()
+    address = ""
+    if config_result.data:
+        address = (config_result.data[0].get("sender_physical_address") or "").strip()
     if not address:
         raise ComplianceConfigError(
-            "sender.physical_address is not set in config/outreach_guidelines.yaml — "
-            "CAN-SPAM requires a real physical mailing address in every commercial "
-            "email. Set it before enabling sends."
+            f"outreach_send_config.sender_physical_address is not set for "
+            f"workspace_id={workspace_id} — CAN-SPAM requires a real physical mailing "
+            f"address in every commercial email. Set it via PATCH "
+            f'/api/settings/outreach-guidelines {{"sender_physical_address": "..."}} '
+            f"before enabling sends."
         )
     try:
         unsub_url = build_unsubscribe_url(email, draft_id)
     except UnsubscribeConfigError as exc:
         raise ComplianceConfigError(str(exc)) from exc
-    company = sender.get("company", "")
+
+    from backend.app.core.config import get_outreach_guidelines
+
+    company = get_outreach_guidelines().get("sender", {}).get("company", "")
     return f"\n\n---\n{company}\n{address}\n\nDon't want these emails? Unsubscribe: {unsub_url}"
 
 
@@ -175,7 +245,10 @@ def record_unsubscribe(db_client, *, email: str, draft_id: str | None, source: s
     multi-workspace, and a no-op difference today since there is only one
     workspace in practice. Falls back to settings.default_workspace_id
     (the value both migrations backfilled existing rows with) only if the
-    draft lookup fails or draft_id is None.
+    draft lookup fails or draft_id is None. Resolution logic lives in
+    _resolve_workspace_id_from_draft() (migration 065) — shared with
+    compliance_footer_text(), which needs the same lookup to read the
+    right workspace's sender_physical_address.
 
     KNOWN LIMITATION, not fixed here: do_not_contact has no unique
     constraint on email (confirmed against the migration; not attempting a
@@ -188,34 +261,16 @@ def record_unsubscribe(db_client, *, email: str, draft_id: str | None, source: s
     contact is still correctly blocked, but the *reported reason* is not
     reliable when duplicates with different reasons exist for one email.
     """
-    from backend.app.core.config import get_settings
-
-    workspace_id = get_settings().default_workspace_id
-    if draft_id:
-        try:
-            draft_result = (
-                db_client.table("outreach_drafts")
-                .select("workspace_id")
-                .eq("id", draft_id)
-                .limit(1)
-                .execute()
-            )
-            if draft_result.data and draft_result.data[0].get("workspace_id"):
-                workspace_id = draft_result.data[0]["workspace_id"]
-        except Exception as exc:
-            logger.warning(
-                "record_unsubscribe: could not resolve workspace_id from draft_id=%s "
-                "(falling back to default_workspace_id): %s",
-                draft_id,
-                exc,
-            )
+    workspace_id = _resolve_workspace_id_from_draft(db_client, draft_id)
 
     db_client.table("do_not_contact").insert(
         {
             "email": email.strip().lower(),
             "reason": "unsubscribed",
             "added_by": source,
-            "notes": f"one-click unsubscribe, draft_id={draft_id}" if draft_id else "one-click unsubscribe",
+            "notes": f"one-click unsubscribe, draft_id={draft_id}"
+            if draft_id
+            else "one-click unsubscribe",
             "workspace_id": workspace_id,
         }
     ).execute()

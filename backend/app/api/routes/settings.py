@@ -1,5 +1,6 @@
 """Settings routes — expose YAML configuration to the dashboard."""
 
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +19,8 @@ from backend.app.core.config import (
     get_linkedin_messages_guidelines,
     get_offer_context,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -136,11 +139,38 @@ class SettingsPatch(BaseModel):
 
 @router.get("/outreach-guidelines")
 async def get_guidelines():
-    """Get the current outreach guidelines (tone, structure, rules, signature)."""
+    """Get the current outreach guidelines (tone, structure, rules, signature).
+
+    sender.physical_address is read from outreach_send_config (migration
+    065), not the YAML file — see GuidelinesPatch.sender_physical_address's
+    comment. Read here so the dashboard shows the value that is actually
+    live, not whatever's stale in the YAML file (or absent from it) now
+    that the field's storage has moved.
+    """
     try:
         data = get_outreach_guidelines()
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="outreach_guidelines.yaml not found")
+
+    from backend.app.core.config import get_settings
+    from backend.app.core.database import get_supabase_client
+
+    try:
+        _config_row = (
+            get_supabase_client()
+            .table("outreach_send_config")
+            .select("sender_physical_address")
+            .eq("workspace_id", get_settings().default_workspace_id)
+            .limit(1)
+            .execute()
+        )
+        data.setdefault("sender", {})
+        data["sender"]["physical_address"] = (
+            _config_row.data[0].get("sender_physical_address") if _config_row.data else None
+        )
+    except Exception as exc:
+        logger.warning("get_guidelines: could not read sender_physical_address from DB: %s", exc)
+
     return {"data": data}
 
 
@@ -160,9 +190,13 @@ class GuidelinesPatch(BaseModel):
     sender_signature: Optional[str] = None
     # CAN-SPAM 7704(a)(5): required physical mailing address, appended to
     # every outbound send by backend/app/core/unsubscribe.py's
-    # compliance_footer_text(). Previously only settable by hand-editing
-    # config/outreach_guidelines.yaml and redeploying — added here so it can
-    # be fixed without engineer/deploy access once sending is blocked on it.
+    # compliance_footer_text(). Writes to outreach_send_config.
+    # sender_physical_address (migration 065), NOT outreach_guidelines.yaml
+    # — the YAML file lives on the Railway container's local filesystem,
+    # which has no attached persistent volume, so a value written there was
+    # silently lost on the next redeploy. This field is why the endpoint
+    # exists: fixable "without engineer/deploy access once sending is
+    # blocked on it" is only true if the fix actually survives a deploy.
     sender_physical_address: Optional[str] = None
 
 
@@ -214,8 +248,42 @@ async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role(
         sender["phone"] = payload.sender_phone
     if payload.sender_signature is not None:
         sender["signature"] = payload.sender_signature
+
+    # sender_physical_address deliberately does NOT go into the YAML dict
+    # above — see the field's comment on GuidelinesPatch and migration 065.
+    # Written to outreach_send_config directly; independent of the YAML
+    # read/write below, so a failure in either path can't half-apply the
+    # other (there is no ordering dependency between the two — this field
+    # was never part of the YAML data structure to begin with).
+    _physical_address_updated = False
     if payload.sender_physical_address is not None:
-        sender["physical_address"] = payload.sender_physical_address
+        from backend.app.core.config import get_settings
+        from backend.app.core.database import get_supabase_client
+
+        _ws_id = get_settings().default_workspace_id
+        _update_result = (
+            get_supabase_client()
+            .table("outreach_send_config")
+            .update({"sender_physical_address": payload.sender_physical_address})
+            .eq("workspace_id", _ws_id)
+            .execute()
+        )
+        # Supabase's .update().eq() on a workspace_id with no matching row
+        # returns an empty data list — it does not raise. Silently doing
+        # nothing here would report success on a PATCH that changed nothing,
+        # the exact class of bug this repo's review discipline exists to
+        # catch (compare record_unsubscribe()'s workspace_id NOT NULL fix).
+        if not _update_result.data:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"outreach_send_config has no row for workspace_id={_ws_id} — "
+                    "sender_physical_address was NOT updated. This table should "
+                    "always have a row per migration 029's seed; investigate before "
+                    "retrying."
+                ),
+            )
+        _physical_address_updated = True
 
     # Bump version
     ver = data.get("version", "1.0")
@@ -230,8 +298,15 @@ async def patch_guidelines(payload: GuidelinesPatch, _role=Depends(require_role(
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     log_audit_event_from_ctx("settings.updated", resource_type="outreach_guidelines")
+    # sender_physical_address lives in the DB now (see above), not in `data`
+    # (the YAML dict) — surfaced separately here rather than silently
+    # dropped from the response just because its storage moved.
+    response_data = dict(data)
+    if _physical_address_updated:
+        response_data.setdefault("sender", {})
+        response_data["sender"]["physical_address"] = payload.sender_physical_address
     return {
-        "data": data,
+        "data": response_data,
         "message": "Outreach guidelines updated. Changes apply to the next outreach run.",
     }
 

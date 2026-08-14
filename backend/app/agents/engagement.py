@@ -700,7 +700,7 @@ class EngagementAgent(BaseAgent):
             )
 
             try:
-                body = body + compliance_footer_text(contact_email, draft["id"])
+                body = body + compliance_footer_text(self.db.client, contact_email, draft["id"])
                 _unsubscribe_headers = resend_unsubscribe_headers(contact_email, draft["id"])
             except ComplianceConfigError as _cc_exc:
                 console.print(
@@ -1501,7 +1501,7 @@ class EngagementAgent(BaseAgent):
         )
 
         try:
-            body = body + compliance_footer_text(contact_email, draft_id)
+            body = body + compliance_footer_text(self.db.client, contact_email, draft_id)
             _unsubscribe_headers = resend_unsubscribe_headers(contact_email, draft_id)
         except ComplianceConfigError as _cc_exc:
             logger.error(
