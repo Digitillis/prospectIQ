@@ -177,6 +177,27 @@ class PersonalizationEngine:
         6. Compute readiness score
         7. Persist results
         """
+        from backend.app.core.llm_generation_gate import generation_enabled
+
+        if not generation_enabled():
+            # RuntimeError, not a silent zeroed PersonalizationResult — every
+            # field but company_id has a default, so a zeroed result would
+            # be indistinguishable from a legitimate "no signal found"
+            # outcome. The caller (backend/app/api/routes/personalization.py)
+            # converts this to a 503, matching how outreach_agent.py's route
+            # already handles the equivalent gate on the sibling
+            # OutreachAgent.generate_draft() -- both were previously missed
+            # by this gate; found by adversarial review of the commit that
+            # first added PersonalizationBatch.run_batch()'s gate (this is
+            # the OTHER caller of the same generation work, reached directly
+            # by POST /api/personalization/run/{company_id}, not through the
+            # batch runner).
+            raise RuntimeError(
+                "LLM_GENERATION_ENABLED is false — generate via the Claude Code "
+                "workflow instead, or set LLM_GENERATION_ENABLED=true to use the "
+                "metered API deliberately."
+            )
+
         ws_id = workspace_id or self.workspace_id
         self._cost_accumulator = 0.0
 

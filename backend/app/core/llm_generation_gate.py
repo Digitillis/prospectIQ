@@ -20,20 +20,48 @@ send-path reconciliation, finding 9, and the follow-up subscription-
 migration work that added this gate.
 
 llm_generation_enabled defaults False in the deployed service
-(backend/app/core/config.py). When False, OutreachAgent.run(),
-ResearchAgent.run(), and PersonalizationBatch.run_batch() all skip their
-generation work and return a clean, zero-processed result rather than
-raising or silently proceeding to spend API tokens. This affects every
-caller of those three entry points uniformly — the three named scheduler
-jobs, but also the CLI scripts (run_research.py, run_sequence.py,
-weekend_run.py, backend/scripts/run_outreach.py) and the on-demand HTTP
-routes (/api/outreach/generate, /api/personalization/refresh, etc.) that
-share the same classes. That is intentional, not scope creep: a manual
-API call or a locally-run script is exactly as much "the backend
-generating" as a cron job is. An operator who wants metered generation
-from any of those paths sets LLM_GENERATION_ENABLED=true explicitly --
-the same conscious-choice pattern SEND_ENABLED already establishes for
-sending.
+(backend/app/core/config.py). When False, generation is refused at every
+entry point that reaches the Anthropic API for content generation:
+
+  - backend/app/agents/outreach.py:OutreachAgent.run() -- returns a clean,
+    zero-processed AgentResult. Reached by the three named scheduler jobs
+    (below) and CLI scripts (run_research.py, run_sequence.py,
+    weekend_run.py, backend/scripts/run_outreach.py).
+  - backend/app/agents/research.py:ResearchAgent.run() -- same pattern.
+  - backend/app/core/personalization_batch.py:PersonalizationBatch.run_batch()
+    -- returns a clean, zero-processed BatchResult. Reached by
+    _run_personalization_refresh and POST /api/personalization/run-batch.
+  - backend/app/core/personalization_engine.py:PersonalizationEngine.
+    run_full_pipeline() -- raises RuntimeError (caught -> HTTP 503 by its
+    route). Reached directly by POST /api/personalization/run/{company_id},
+    a DIFFERENT caller than run_batch() above -- both had to be gated
+    separately since neither wraps the other on this path.
+  - backend/app/agents/outreach_agent.py:OutreachAgent.generate_draft() /
+    .generate_batch() -- raises/returns empty (caught -> HTTP 503 by their
+    routes). This is a SEPARATE class, also named OutreachAgent, unrelated
+    to outreach.py's class of the same name. Reached by
+    POST /api/outreach/generate and /api/outreach/generate-batch.
+
+Two of the five were missed in this gate's first version and found by an
+independent adversarial review before merge: the review traced
+POST /api/outreach/generate to outreach.py's OutreachAgent and found it
+actually resolves to the unrelated class in outreach_agent.py; a route
+this docstring's first version cited as gated
+(/api/personalization/refresh) does not exist at all, and the route that
+does exist for single-company personalization
+(/api/personalization/run/{company_id}) calls PersonalizationEngine
+directly, not through the batch runner this gate already covered.
+
+Gating on-demand HTTP routes and CLI scripts, not just the three
+scheduler jobs, is intentional, not scope creep: a manual API call or a
+locally-run script is exactly as much "the backend generating" as a cron
+job is. An operator who wants metered generation from any of these paths
+sets LLM_GENERATION_ENABLED=true explicitly -- the same conscious-choice
+pattern SEND_ENABLED already establishes for sending.
+
+score_draft_quality() (also in outreach_agent.py) is deliberately NOT
+gated -- it evaluates an already-generated, human-reviewable draft, the
+same kind of evaluative call as classification, not content generation.
 """
 
 from __future__ import annotations

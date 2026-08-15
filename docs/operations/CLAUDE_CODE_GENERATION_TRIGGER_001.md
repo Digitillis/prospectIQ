@@ -60,11 +60,25 @@ about *generating content* (research, draft copy, personalization hooks) — not
 an event with a cheap classification call.
 
 CLI scripts (`run_research.py`, `run_instantly_research.py`, `run_sequence.py`, `weekend_run.py`,
-`backend/scripts/run_outreach.py`) and the on-demand HTTP routes that share the same generation
-classes (`POST /api/outreach/generate`, `/api/personalization/refresh`, etc.) are gated by the
-same `LLM_GENERATION_ENABLED` flag as the scheduler (§6) — they are not a blessed alternate path.
-An operator who wants metered generation from any of them sets `LLM_GENERATION_ENABLED=true`
+`backend/scripts/run_outreach.py`) and the on-demand HTTP routes that reach the same generation
+work (`POST /api/outreach/generate`, `/api/outreach/generate-batch`,
+`/api/personalization/run/{company_id}`, `/api/personalization/run-batch`) are gated by the same
+`LLM_GENERATION_ENABLED` flag as the scheduler (§6) — they are not a blessed alternate path. An
+operator who wants metered generation from any of them sets `LLM_GENERATION_ENABLED=true`
 explicitly, the same conscious-choice pattern `SEND_ENABLED` already establishes for sending.
+
+**Correction (same-session, caught by independent adversarial review before merge):** the first
+version of this section, and of `llm_generation_gate.py`'s own docstring, named
+`POST /api/outreach/generate` and `/api/personalization/refresh` as covered examples. Both
+citations were wrong: `/api/outreach/generate` resolves to a *different* class also named
+`OutreachAgent` (`backend/app/agents/outreach_agent.py`, unrelated to the gated class in
+`outreach.py`), which was still calling the Anthropic API directly; and
+`/api/personalization/refresh` does not exist anywhere in this repo — the real single-company
+route, `/api/personalization/run/{company_id}`, calls `PersonalizationEngine.run_full_pipeline()`
+directly, a caller the gate on `PersonalizationBatch.run_batch()` did not cover. Both are now
+gated (see `llm_generation_gate.py`'s docstring for the corrected, complete list of five entry
+points). Recorded here per this session's own review discipline: a claim in an operations doc is
+exactly as capable of being wrong as a claim in code.
 
 ## 5. Batch sizing — generate to a horizon, not to exhaust the corpus
 

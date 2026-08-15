@@ -70,6 +70,11 @@ async def run_personalization(company_id: str) -> PersonalizationResult:
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        # LLM_GENERATION_ENABLED=false, or a missing Anthropic key — same
+        # "generation unavailable" semantic outreach_agent.py's routes
+        # already use 503 for.
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"Personalization pipeline failed for {company_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)[:200]}")
