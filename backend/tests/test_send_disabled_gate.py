@@ -1,7 +1,7 @@
 """Tests for the send_enabled gate in dispatch_workspace() /
 _send_disabled_reason() (backend/app/core/dispatch_scheduler.py).
 
-Regression coverage for two findings from the 2026-08-15 send-path
+Regression coverage for findings from the 2026-08-15 send-path
 reconciliation:
 
   - POST /api/admin/trigger-dispatch called dispatch_workspace() directly,
@@ -12,10 +12,23 @@ reconciliation:
     the live dispatch path, making the staged-activation doctrine's
     Emergency Freeze step (UPDATE outreach_send_config SET
     send_enabled=false) a no-op (finding 4).
+  - An independent adversarial review of the first version of this fix
+    found that main.py's _dispatch_workspace() — the scheduled
+    dispatch_loop cron's own entry point, not just trigger-dispatch —
+    still had its own separate, untouched `if not
+    get_settings().send_enabled: return` BEFORE calling
+    dispatch_workspace() at all. With SEND_ENABLED=false live in both
+    Railway environments, that pre-check intercepted every scheduled tick
+    silently, so the new dispatch.aborted_send_disabled log line and
+    BatchResult never actually fired on the primary path the dark-launch
+    observation docs describe — only trigger-dispatch and
+    canary_send_test.py reached it. Fixed by deleting that pre-check;
+    TestMainDispatchWorkspaceReachesGate below covers it directly.
 
-These tests call dispatch_workspace() directly — the same entry point
-trigger-dispatch uses — with no env-level wrapper, so a regression of
-either finding shows up here even if main.py's own check is untouched.
+The TestEnvDisabled/TestDbDisabled/TestBothEnabled classes call
+dispatch_workspace() directly — the same entry point trigger-dispatch
+uses — with no env-level wrapper, so a regression of either finding shows
+up here even if main.py's own check is untouched.
 
 Each test disables backend/tests/conftest.py's autouse
 _dispatch_send_enabled_by_default fixture by re-patching
@@ -189,3 +202,50 @@ class TestBothEnabled:
         assert result.send_disabled is False
         assert result.send_disabled_reason is None
         client.rpc.assert_called_once()
+
+
+class TestMainDispatchWorkspaceReachesGate:
+    """The regression the adversarial review caught: main.py's
+    _dispatch_workspace() (the scheduled dispatch_loop cron's actual entry
+    point) must reach dispatch_scheduler's real gate on every call, not
+    short-circuit via its own separate send_enabled check first. Proven by
+    asserting _send_disabled_reason is invoked — before the fix, with
+    SEND_ENABLED=false, it was never called at all because
+    _dispatch_workspace() returned before dispatch_workspace() was ever
+    reached.
+    """
+
+    def test_dispatch_workspace_wrapper_always_reaches_the_gate(self):
+        from backend.app.api.main import _dispatch_workspace
+
+        gate_calls = []
+
+        def _fake_gate(db_client, workspace_id):
+            gate_calls.append(workspace_id)
+            return "env_send_enabled=false"
+
+        ws = {"id": WORKSPACE_ID, "name": "Test Workspace"}
+
+        with (
+            patch(
+                "backend.app.core.dispatch_scheduler._send_disabled_reason",
+                side_effect=_fake_gate,
+            ),
+            patch(
+                "backend.app.core.database.get_supabase_client",
+                return_value=MagicMock(),
+            ),
+        ):
+            # No get_settings patch at all here — this is deliberate. The
+            # old bug lived in _dispatch_workspace()'s own direct call to
+            # get_settings().send_enabled; removing that call is exactly
+            # what's under test, so an unpatched real get_settings() must
+            # not prevent the gate from being reached.
+            _dispatch_workspace(ws)
+
+        assert gate_calls == [WORKSPACE_ID], (
+            "dispatch_scheduler._send_disabled_reason was not called — "
+            "main.py's _dispatch_workspace() short-circuited before "
+            "reaching the real gate, reproducing the observability bug "
+            "the adversarial review found."
+        )

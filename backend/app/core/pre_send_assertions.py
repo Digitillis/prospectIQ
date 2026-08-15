@@ -429,6 +429,19 @@ def assert_workspace_under_daily_cap(
     no effect on dispatch — the live ceiling was whatever batch_size times
     cron ticks produced, not the configured daily_limit. See the 2026-08-15
     send-path reconciliation.
+
+    Disclosed asymmetry (found in adversarial review of the commit that
+    added this function): this gate fails OPEN on a DB read exception —
+    same as assert_sender_under_daily_cap immediately below — while the
+    newer _send_disabled_reason() in dispatch_scheduler.py fails CLOSED on
+    the identical failure mode (an outreach_send_config read exception).
+    Both are intentional for what they individually protect (a transient
+    read failure here blocks one over-cautious count check, not delivery
+    itself; the send_enabled gate is the actual kill switch and must not
+    silently open on a DB hiccup), but the two gates now sit right next to
+    each other in the same call path with opposite failure behavior. Not
+    changed here — flagging so a future reader doesn't assume it's
+    accidental drift.
     """
     today_start = (
         datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
