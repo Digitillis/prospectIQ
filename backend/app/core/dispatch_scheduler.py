@@ -70,6 +70,12 @@ class BatchResult:
     assertion_skipped: int = 0
     already_delivered_drained: int = 0
     errors: int = 0
+    # Set when dispatch_workspace() aborted before claiming anything because
+    # sending is disabled (env var, DB config, or both) — see
+    # _send_disabled_reason(). Distinct from an empty claim (dispatched=0
+    # with send_disabled=False means "ran normally, nothing was due").
+    send_disabled: bool = False
+    send_disabled_reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +668,57 @@ def screen_dispatch_queue(db_client, workspace_id: str, batch_size: int = 100) -
 # ---------------------------------------------------------------------------
 
 
+def _send_disabled_reason(db_client, workspace_id: str) -> Optional[str]:
+    """Returns a reason string if sending is disabled for this workspace,
+    or None if it is enabled.
+
+    This is the single enforced boundary for send_enabled — every caller of
+    dispatch_workspace() (the scheduled dispatch_loop tick AND the
+    POST /api/admin/trigger-dispatch endpoint, which previously bypassed the
+    check entirely) goes through this. Two independent switches are
+    required, and either one being off disables sending:
+
+      1. settings.send_enabled (the SEND_ENABLED env var). This was
+         previously the only thing checked, and only by one caller
+         (main.py's _dispatch_workspace), not by dispatch_workspace() itself.
+      2. outreach_send_config.send_enabled (the DB column). Previously read
+         nowhere on this path — the staged-activation doctrine's Emergency
+         Freeze step (UPDATE outreach_send_config SET send_enabled=false)
+         was a no-op prior to this change.
+
+    Fails CLOSED: a missing row, or a row that errors on read, disables
+    sending rather than defaulting to enabled. test_warm_isolation.py
+    documents exactly this danger for a workspace with no config row at
+    all ("send_enabled would DEFAULT TO TRUE") — fail-closed here is what
+    makes seeding an explicit row the correct fix rather than a convention
+    nothing enforces.
+    """
+    from backend.app.core.config import get_settings
+
+    if not get_settings().send_enabled:
+        return "env_send_enabled=false"
+
+    try:
+        rows = (
+            db_client.table("outreach_send_config")
+            .select("send_enabled")
+            .eq("workspace_id", workspace_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        return f"db_send_config_unreadable:{exc}"
+
+    if not rows:
+        return "db_send_config_missing"
+
+    if not rows[0].get("send_enabled"):
+        return "db_send_enabled=false"
+
+    return None
+
+
 def dispatch_workspace(
     db_client,
     workspace_id: str,
@@ -678,6 +735,18 @@ def dispatch_workspace(
     Returns BatchResult with per-outcome counts.
     """
     result = BatchResult()
+
+    disabled_reason = _send_disabled_reason(db_client, workspace_id)
+    if disabled_reason is not None:
+        logger.info(
+            "dispatch.aborted_send_disabled workspace_id=%s reason=%s",
+            workspace_id,
+            disabled_reason,
+        )
+        result.send_disabled = True
+        result.send_disabled_reason = disabled_reason
+        return result
+
     instance_id = str(uuid.uuid4())
 
     # Acquire the concurrency slot before making any Supabase calls.

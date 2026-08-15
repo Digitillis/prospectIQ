@@ -1,7 +1,7 @@
 # Dark-Launch Runtime Observation — 004
 ## ProspectIQ — Re-baselined Observation Checkpoint
 
-**Observation window:** NOT YET SCHEDULED — to be filled in when Avanish authorizes a real observation window. Must be a live Mon–Fri 8:00–11:00 AM CT window with the scheduler actually running.
+**Observation window:** NOT YET SCHEDULED — to be filled in when Avanish authorizes a real observation window. Must be a live Mon–Fri 8:00–11:30 AM CT window with the scheduler actually running (the `dispatch_loop` cron is `hour="8-11", minute="0,30"`, which fires 8 ticks — 8:00 through 11:30 — not 7; this doc and `_in_send_window`'s own docstring in `main.py` previously undercounted by one tick).
 **Author:** Avanish Mehrotra & Digitillis Architecture Team
 **Status:** RE-BASELINED, NOT YET RUN — see "Re-baseline note" below. Do not treat this as PASSED or as authorization to proceed; it is the observation *plan*, not its result.
 **Governing protocol:** `DARK_LAUNCH_RUNTIME_OBSERVATION_002.md` Section 12 (Emergency Freeze)
@@ -20,6 +20,11 @@ This document is re-baselined against the system's actual current state so that 
 2. **A real observation window is multiple hours of live wall-clock monitoring** (checking Railway logs and running the SQL below at each 30-minute tick), not something completable in a single sitting. It needs to be scheduled for an actual Mon–Fri morning.
 
 Given both of these, this document stops at "prepared and ready" — the scheduler has not been un-halted and no observation window has been run.
+
+**2026-08-15 send-path reconciliation — two changes to how this document should be read:**
+
+1. **The window is 8 ticks, not 7.** `dispatch_loop`'s cron is `hour="8-11", minute="0,30"`, which fires at 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00, **and 11:30**. The tick log below (§2) only templated 8:00–11:00. An 11:30 tick template has been added; do not stop recording at 11:00.
+2. **The "Log line" / "Abort confirmation" fields below could not previously be filled in as written.** Before this reconciliation, `SEND_ENABLED=false` caused `dispatch_workspace()` to abort via a bare, silent `return` inside `main.py`'s `_dispatch_workspace()` wrapper — no log line, no counter, nothing distinguishable from `workspace_scheduler.py`'s own `"dispatch_loop: running for N workspace(s)"` line. This has been fixed: `dispatch_workspace()` itself (in `dispatch_scheduler.py`) now logs `dispatch.aborted_send_disabled workspace_id=... reason=...` and returns a `BatchResult` with `send_disabled=True` before claiming anything. **"Abort confirmation" below now means: did that exact log line appear, and did the tick's `send_disabled_reason` read `env_send_enabled=false` (or `db_send_enabled=false`, if the DB column was also used to freeze)?** — not an inference from silence.
 
 ---
 
@@ -172,6 +177,14 @@ Unexpected events:
 ```
 [same template]
 ```
+
+### 11:30 AM CT Tick
+
+```
+[same template]
+```
+
+**This tick is easy to skip — the window's own header used to read "8:00–11:00 AM CT" and every prior version of this document stopped logging at 11:00. The cron actually fires here too (`hour="8-11", minute="0,30"`); do not close out the observation before recording it.**
 
 ---
 
@@ -338,11 +351,11 @@ Re-checked live 2026-08-14 — each item's checked/unchecked status below reflec
 [x] D9 — batch_size=1 confirmed in production outreach_send_config
     (verified live: main workspace daily_limit=1, batch_size=1, reset from an
     unauthorized 270/45 found during this session's reconciliation)
-[ ] D8 — WEBHOOK_SECRET set in Railway production env
-    UNVERIFIED this session -- not re-checked against the live Railway env vars.
-    Confirm via GET /api/admin/send-config or the Railway dashboard before
-    relying on this; do not assume it is still set correctly from any
-    earlier session's finding.
+[x] D8 — WEBHOOK_SECRET set in Railway production env
+    RE-VERIFIED 2026-08-15 directly against live Railway production
+    variables (railway variables, not assumed from a prior session): SET
+    (43 characters). This item can be checked off; no operator action
+    needed here.
 [ ] The scheduler must be un-halted before any tick can fire
     NOT DONE. Currently overridden to `sleep infinity` (2026-08-14 halt).
     Restoring the normal start command is a real production action on a
@@ -350,9 +363,18 @@ Re-checked live 2026-08-14 — each item's checked/unchecked status below reflec
     do so, not something to restore as a side effect of "preparing" this
     document.
 [ ] sender_physical_address set in outreach_send_config
-    NOT SET (confirmed live: NULL). Irrelevant to Stage 0 itself (which
-    never sends), but blocks every stage after it -- worth setting before
-    Stage 1 is attempted, not needed to run Stage 0.
+    NOT SET (confirmed live 2026-08-15: NULL, both workspaces). Irrelevant
+    to Stage 0 itself (which never sends), but blocks every stage after it
+    -- worth setting before Stage 1 is attempted, not needed to run Stage 0.
+[ ] BACKEND_PUBLIC_URL set in Railway production env — NEWLY IDENTIFIED
+    2026-08-15, not previously tracked in this document. Confirmed live
+    MISSING from Railway production. This is a second, independent hard
+    CAN-SPAM blocker on the same code path as sender_physical_address —
+    build_unsubscribe_url() (backend/app/core/unsubscribe.py) fails closed
+    without it, exactly like the physical address does. Also irrelevant to
+    Stage 0 (which never sends) but must be set, alongside the physical
+    address, before Stage 1. Suggested value: this service's own public
+    domain, https://prospectiq-production-4848.up.railway.app.
 [ ] D12 — This observation documented and CLEAN verdict issued
     NOT DONE -- no window has been run since this re-baseline.
 [ ] D13 — outbound_queue state verified immediately before the window
