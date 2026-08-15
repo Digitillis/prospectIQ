@@ -246,6 +246,16 @@ class ResearchAgent(BaseAgent):
         """
         result = AgentResult()
         settings = get_settings()
+
+        from backend.app.core.llm_generation_gate import (
+            generation_enabled,
+            log_generation_skipped,
+        )
+
+        if not generation_enabled():
+            log_generation_skipped("ResearchAgent.run", f"batch_id={batch_id} tier={tier or tiers}")
+            return result
+
         scoring_config = get_scoring_config()
 
         min_score = (

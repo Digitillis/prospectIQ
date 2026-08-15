@@ -45,6 +45,16 @@ class PersonalizationBatch:
             BatchResult with aggregate stats
         """
         filters = filters or {}
+
+        from backend.app.core.llm_generation_gate import (
+            generation_enabled,
+            log_generation_skipped,
+        )
+
+        if not generation_enabled():
+            log_generation_skipped("PersonalizationBatch.run_batch", f"filters={filters}")
+            return BatchResult()
+
         min_pqs = int(filters.get("min_pqs", _DEFAULT_MIN_PQS))
         cluster = filters.get("cluster")
         tranche = filters.get("tranche")

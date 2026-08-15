@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     # When false, approved drafts are staged but never pushed to Instantly.
     send_enabled: bool = False
 
+    # LLM generation gating — CLAUDE.md's own doctrine states email
+    # generation runs "ALWAYS via Claude Code workflow, NEVER the backend"
+    # (Pro Max session, no Anthropic API spend). Default False in the
+    # deployed service so that doctrine is enforced, not just documented.
+    # This gates research/draft/personalization generation specifically —
+    # NOT classification or reporting (title_classifier, reply_classifier,
+    # daily_report), which are cheap, genuinely runtime-reactive, and were
+    # never part of the "generate via Claude Code" doctrine. See
+    # backend/app/core/llm_generation_gate.py.
+    llm_generation_enabled: bool = False
+
     # Send window — hours in UTC (Railway server runs UTC).
     # 8am–11am Chicago CDT (UTC-5) → SEND_WINDOW_START=13 SEND_WINDOW_END=16
     # 8am–11am Chicago CST (UTC-6, Nov–Mar) → SEND_WINDOW_START=14 SEND_WINDOW_END=17

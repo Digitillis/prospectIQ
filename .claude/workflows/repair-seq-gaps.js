@@ -70,8 +70,10 @@ This company already has emails SENT to contacts. Your job is to generate the MI
    - Build a JSON array; each item: {company_id, contact_id, sequence_step, subject, body, personalization_notes, arm}.
    - personalization_notes = the real source URL + the specific fact used.
    - Use the Write tool to save it to /Users/avanish/prospectIQ/.pipeline-queues/gen_repair_${i}.json
-   - Then run: cd /Users/avanish/prospectIQ && python3 .pipeline-queues/piq_write_drafts.py .pipeline-queues/gen_repair_${i}.json
-   - Confirm the printed {"inserted": N} count.
+   - Then run: cd /Users/avanish/prospectIQ && python3 scripts/piq_write_drafts.py .pipeline-queues/gen_repair_${i}.json
+     (the tracked writer — it sets model provenance and runs the same quality gates
+     OutreachAgent applies, unlike an ad hoc insert; do not write your own insert code)
+   - Confirm the printed {"written": N, "rejected": N, "failed": N} counts.
 
 5. Return the status: company_id, company, arm ("A" or "C"), emails_written (the inserted count), contacts_done, skipped, and a short note (e.g. the event used, what the prior thread was about).
 

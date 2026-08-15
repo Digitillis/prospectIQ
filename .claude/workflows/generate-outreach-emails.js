@@ -240,52 +240,50 @@ phase('Write')
 
 const WRITE_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['written', 'failed', 'draft_ids'],
+  required: ['written', 'rejected', 'failed', 'draft_ids'],
   properties: {
     written:   { type: 'integer' },
+    rejected:  { type: 'integer' },
     failed:    { type: 'integer' },
     draft_ids: { type: 'array', items: { type: 'string' } },
   }
 }
 
+// Write via the tracked scripts/piq_write_drafts.py, not ad hoc insert code
+// written fresh each run. A prior version of this phase asked an agent to
+// write its own Python insert from a prose field list; that list never
+// mentioned `model`, so every draft this phase wrote had model=NULL and
+// was silently dropped from the send schedule by send_scheduler.py's
+// `if d.get("model")` filter. piq_write_drafts.py sets model in code (not
+// left to an agent's discretion each run) and applies the same
+// _check_draft_integrity / is_step_1_url_violation quality gates
+// OutreachAgent applies to its own drafts.
 const writeResult = await agent(
-  `Write these ${validDrafts.length} outreach drafts to Supabase as pending drafts (approval_status='pending', sent_at=NULL).
+  `Write these ${validDrafts.length} outreach drafts to Supabase as pending drafts via the tracked writer script — do not write your own insert code.
 Repo: /Users/avanish/prospectIQ. Run from that directory.
 
-Each draft must be inserted into outreach_drafts with:
-  - company_id, contact_id (from the draft)
-  - sequence_step = pending_step
-  - subject, body
-  - personalization_notes (the source URL + grounding facts)
-  - approval_status = 'pending'
-  - sequence_name = 'email_value_first'
-  - workspace_id = the default workspace id from config
-
-Do NOT set sent_at. These are pending approval only.
+1. Build a JSON array from the drafts below. Each item:
+   {company_id, contact_id, sequence_step (= the draft's pending_step), subject, body, personalization_notes}.
+2. Use the Write tool to save it to /tmp/piq_gen_outreach.json.
+3. Run: python3 scripts/piq_write_drafts.py /tmp/piq_gen_outreach.json
+4. Return the exact JSON it printed: {"written": N, "rejected": N, "failed": N, "draft_ids": [...]}.
+   written = clean drafts inserted as pending. rejected = drafts that failed a quality
+   gate (still inserted, visible in the dashboard, but as approval_status='rejected' —
+   this is not the same as failed). failed = a DB insert error.
 
 DRAFTS TO WRITE:
-${JSON.stringify(validDrafts, null, 1)}
-
-Use this Python pattern:
-\`\`\`python
-from backend.app.core.database import Database
-from backend.app.core.config import get_settings
-db = Database()
-ws_id = get_settings().default_workspace_id
-# insert each draft...
-\`\`\`
-
-Return count of written, failed, and list of inserted draft IDs.`,
+${JSON.stringify(validDrafts, null, 1)}`,
   { label: 'write-to-db', phase: 'Write', schema: WRITE_SCHEMA, model: 'sonnet' }
 )
 
-log(`Written: ${writeResult?.written || 0} | Failed: ${writeResult?.failed || 0}`)
+log(`Written: ${writeResult?.written || 0} | Rejected: ${writeResult?.rejected || 0} | Failed: ${writeResult?.failed || 0}`)
 
 return {
   mode,
   generated: validDrafts.length,
   written: writeResult?.written || 0,
+  rejected: writeResult?.rejected || 0,
   failed: writeResult?.failed || 0,
   draft_ids: writeResult?.draft_ids || [],
-  message: `${validDrafts.length} drafts generated with Opus (Pro Max session) and written to Supabase as pending. Review and approve in the dashboard before any email is sent.`
+  message: `${validDrafts.length} drafts generated with Opus (Pro Max session) and written to Supabase as pending (or rejected by a quality gate — see the 'rejected' count). Review and approve in the dashboard before any email is sent.`
 }

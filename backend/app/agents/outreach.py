@@ -746,6 +746,18 @@ class OutreachAgent(BaseAgent):
         """
         result = AgentResult()
         settings = get_settings()
+
+        from backend.app.core.llm_generation_gate import (
+            generation_enabled,
+            log_generation_skipped,
+        )
+
+        if not generation_enabled():
+            log_generation_skipped(
+                "OutreachAgent.run", f"sequence={sequence_name} step={sequence_step}"
+            )
+            return result
+
         seq_config = get_sequences_config()
         ontology = get_manufacturing_ontology()
 
