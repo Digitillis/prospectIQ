@@ -412,6 +412,70 @@ def assert_no_recent_company_send(
     )
 
 
+def assert_workspace_under_daily_cap(
+    db: Any, workspace_id: str, daily_cap: int, assertion_context: str = "draft_gen"
+) -> None:
+    """Workspace must not have exceeded its daily send quota across all
+    senders combined.
+
+    This is outreach_send_config.daily_limit (or the canonical capacity
+    fallback in EngagementAgent._load_send_config) enforced at send time.
+    It is distinct from assert_sender_under_daily_cap below, which caps one
+    mailbox — a pool of senders could each stay under their own per-mailbox
+    cap while the workspace total still exceeds the intended volume.
+
+    Previously daily_limit was loaded at the send-path call site
+    (engagement.py) and never passed into the assertion battery, so it had
+    no effect on dispatch — the live ceiling was whatever batch_size times
+    cron ticks produced, not the configured daily_limit. See the 2026-08-15
+    send-path reconciliation.
+
+    Disclosed asymmetry (found in adversarial review of the commit that
+    added this function): this gate fails OPEN on a DB read exception —
+    same as assert_sender_under_daily_cap immediately below — while the
+    newer _send_disabled_reason() in dispatch_scheduler.py fails CLOSED on
+    the identical failure mode (an outreach_send_config read exception).
+    Both are intentional for what they individually protect (a transient
+    read failure here blocks one over-cautious count check, not delivery
+    itself; the send_enabled gate is the actual kill switch and must not
+    silently open on a DB hiccup), but the two gates now sit right next to
+    each other in the same call path with opposite failure behavior. Not
+    changed here — flagging so a future reader doesn't assume it's
+    accidental drift.
+    """
+    today_start = (
+        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    )
+    try:
+        result = (
+            db.client.table("outreach_drafts")
+            .select("id", count="exact")
+            .eq("workspace_id", workspace_id)
+            .not_.is_("sent_at", "null")
+            .gte("sent_at", today_start)
+            .execute()
+        )
+        count = result.count or 0
+        if count >= daily_cap:
+            detail = f"workspace {workspace_id} has sent {count}/{daily_cap} today"
+            _log_assertion(db, None, None, "workspace_daily_cap", False, detail, assertion_context)
+            raise AssertionFailure("workspace_daily_cap", detail)
+    except AssertionFailure:
+        raise
+    except Exception as e:
+        logger.warning("Could not check workspace daily cap for %s: %s", workspace_id, e)
+
+    _log_assertion(
+        db,
+        None,
+        None,
+        "workspace_daily_cap",
+        True,
+        f"{workspace_id}: under cap",
+        assertion_context,
+    )
+
+
 def assert_sender_under_daily_cap(
     db: Any, sender_email: str, daily_cap: int, assertion_context: str = "draft_gen"
 ) -> None:
@@ -728,6 +792,8 @@ def run_pre_send_assertions(
     assertion_context: str = "draft_gen",
     current_draft_id: str | None = None,
     draft_id: str | None = None,
+    workspace_id: str | None = None,
+    workspace_daily_cap: int | None = None,
 ) -> None:
     """Run all pre-send invariants. Raises AssertionFailure on first violation.
 
@@ -744,6 +810,11 @@ def run_pre_send_assertions(
     bounce_rate_ok is a system-level gate that runs once per send invocation
     in send_path context only — it checks the 7-day rolling bounce rate and
     blocks the entire send batch if the rate exceeds MAX_BOUNCE_RATE.
+
+    workspace_daily_cap (with workspace_id) is the same kind of system-level
+    gate for outreach_send_config.daily_limit — send_path only, both must be
+    given together or neither runs. daily_cap above is a PER-MAILBOX limit;
+    this is the workspace total across every sender.
     """
     # Hard gate: reject drafts that were rejected/dispatch_failed — send_path only.
     # This must run first so a rejected draft can never reach Resend regardless of
@@ -752,10 +823,15 @@ def run_pre_send_assertions(
     if assertion_context == "send_path" and _draft_id:
         assert_not_rejected(db, _draft_id, assertion_context)
 
-    # System-level gate: check rolling bounce rate before per-contact checks.
-    # Only enforced in send_path — not advisory in draft_gen.
+    # System-level gates: check rolling bounce rate and workspace daily cap
+    # before per-contact checks. Only enforced in send_path — not advisory
+    # in draft_gen.
     if assertion_context == "send_path":
         assert_bounce_rate_ok(db, assertion_context)
+        if workspace_id and workspace_daily_cap is not None:
+            assert_workspace_under_daily_cap(
+                db, workspace_id, workspace_daily_cap, assertion_context
+            )
 
     assert_email_deliverable(db, contact, assertion_context)
     assert_email_status_verified(db, contact, assertion_context)

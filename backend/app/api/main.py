@@ -252,6 +252,18 @@ def _send_approved_workspace(ws: dict) -> None:
     # different config source from outreach_send_config.daily_limit (500).
     # That mismatch caused Railway ticks to be gated out after ~125 sends/day.
     # EngagementAgent._load_send_config + _count_sent_today enforce the correct limit.
+    #
+    # KNOWN GAP (disclosed, not fixed, in the 2026-08-15 send-path
+    # reconciliation): this retired/manual-only path — not scheduler-
+    # registered, see D7 above; reachable only via POST
+    # /api/admin/trigger-send — still checks only the env var here and
+    # never the DB outreach_send_config.send_enabled column, and its own
+    # call into run_pre_send_assertions (engagement.py's
+    # _send_approved_drafts) never passes workspace_id/workspace_daily_cap,
+    # so the new fail-closed DB gate and workspace daily cap added
+    # alongside dispatch_workspace() do NOT cover this path. Low exposure
+    # (manual, not cron-fired) but real; fixing dispatch_workspace() (the
+    # sole cron send path) was this fix's scope, not this legacy one.
     from backend.app.core.config import get_settings
 
     if not get_settings().send_enabled:
@@ -274,11 +286,23 @@ def _send_approved_workspace(ws: dict) -> None:
 
 
 def _dispatch_workspace(ws: dict) -> None:
-    """Dispatch one batch from outbound_queue for a single workspace (PR G path)."""
-    from backend.app.core.config import get_settings
+    """Dispatch one batch from outbound_queue for a single workspace (PR G path).
 
-    if not get_settings().send_enabled:
-        return
+    Deliberately does NOT pre-check send_enabled here. dispatch_workspace()
+    itself is now the single enforced gate (env AND DB, fail-closed) and
+    logs a dispatch.aborted_send_disabled line before returning when
+    disabled. An independent adversarial review of the commit that added
+    that gate found this function's own former pre-check
+    (`if not get_settings().send_enabled: return`) defeated it on exactly
+    the path it was meant to fix: with SEND_ENABLED=false — the live state
+    in both Railway environments — this function returned silently before
+    dispatch_workspace() was ever called, so the scheduled dispatch_loop
+    cron (the primary path the dark-launch observation docs describe)
+    never produced the new log line or BatchResult. Only
+    POST /api/admin/trigger-dispatch and scripts/canary_send_test.py,
+    which don't have this pre-check, ever reached it. Removed so every
+    caller — including this one — goes through the same observable gate.
+    """
     from backend.app.core.dispatch_scheduler import dispatch_workspace
     from backend.app.core.database import get_supabase_client
 
@@ -3667,10 +3691,14 @@ async def send_config_check():
         ).count or 0
     except Exception:
         sent_today = -1
+    default_workspace_id = "00000000-0000-0000-0000-000000000001"
     try:
         cfg_row = (
             client.table("outreach_send_config")
-            .select("daily_limit,batch_size,min_gap_minutes,send_enabled")
+            .select(
+                "daily_limit,batch_size,min_gap_minutes,send_enabled,notes,sender_physical_address"
+            )
+            .eq("workspace_id", default_workspace_id)
             .limit(1)
             .execute()
             .data
@@ -3688,19 +3716,28 @@ async def send_config_check():
         ).count or 0
     except Exception:
         pending = -1
-    # Test if the service key can actually UPDATE (not just SELECT)
-    # Uses a no-op update on a known config row
+    # Test if the service key can actually UPDATE (not just SELECT). Writes
+    # back the exact `notes` value read above rather than the previous
+    # `.update({"notes": None})`, which permanently clobbered the field on
+    # every call to this diagnostic — including the audit trail of the
+    # 2026-08-14 daily_limit/batch_size reset recorded there. A read-only
+    # diagnostic must not destroy state; see the 2026-08-15 send-path
+    # reconciliation, finding 6. Skips the probe (rather than guessing a
+    # value) if the read above didn't return a row for this workspace.
     update_test = "untested"
-    try:
-        test_r = (
-            client.table("outreach_send_config")
-            .update({"notes": None})
-            .eq("workspace_id", "00000000-0000-0000-0000-000000000001")
-            .execute()
-        )
-        update_test = "ok" if test_r.data else "blocked_empty_return"
-    except Exception as e:
-        update_test = f"error:{e}"
+    if "notes" in cfg_row:
+        try:
+            test_r = (
+                client.table("outreach_send_config")
+                .update({"notes": cfg_row["notes"]})
+                .eq("workspace_id", default_workspace_id)
+                .execute()
+            )
+            update_test = "ok" if test_r.data else "blocked_empty_return"
+        except Exception as e:
+            update_test = f"error:{e}"
+    else:
+        update_test = "skipped_no_row_for_workspace"
 
     # Fetch the first pending draft to verify the claim step would work
     claim_test = "untested"
@@ -3725,6 +3762,22 @@ async def send_config_check():
     except Exception as e:
         claim_test = f"error:{e}"
 
+    # Compliance readiness: the three blockers on the send path
+    # (backend/app/core/unsubscribe.py), gathered into one queryable state
+    # instead of three separate startup log WARNINGs an operator has to go
+    # find. sender_physical_address and backend_public_url both block
+    # compliance_footer_text() / build_unsubscribe_url() directly with
+    # ComplianceConfigError; webhook_secret blocks token signing one layer
+    # down (raises UnsubscribeConfigError in _signing_key(), which those
+    # same two callers catch and re-raise as ComplianceConfigError).
+    _missing_compliance: list[str] = []
+    if not (cfg_row.get("sender_physical_address") or "").strip():
+        _missing_compliance.append("sender_physical_address")
+    if not (s.backend_public_url or "").strip():
+        _missing_compliance.append("backend_public_url")
+    if not (s.webhook_secret or "").strip():
+        _missing_compliance.append("webhook_secret")
+
     return {
         "env_send_enabled": s.send_enabled,
         "env_resend_api_key_set": bool(s.resend_api_key),
@@ -3740,6 +3793,8 @@ async def send_config_check():
         "approved_unsent": pending,
         "update_permission_test": update_test,
         "draft_claim_test": claim_test,
+        "compliance_ready": not _missing_compliance,
+        "compliance_missing": _missing_compliance,
     }
 
 

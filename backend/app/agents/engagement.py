@@ -1452,6 +1452,8 @@ class EngagementAgent(BaseAgent):
                 sequence_step=_seq_step,
                 assertion_context="send_path",
                 current_draft_id=draft_id,
+                workspace_id=self.db.workspace_id,
+                workspace_daily_cap=daily_limit,
             )
         except AssertionFailure as af:
             logger.warning(
