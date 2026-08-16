@@ -274,6 +274,22 @@ class OutreachAgent(BaseAgent):
         Returns:
             The created outreach_drafts record as a dict.
         """
+        from backend.app.core.llm_generation_gate import generation_enabled
+
+        if not generation_enabled():
+            # RuntimeError (not a new exception type) deliberately — matches the
+            # missing-API-key case just below, which the route handler
+            # (backend/app/api/routes/outreach_agent.py) already converts to a
+            # 503. Same "generation unavailable" semantic, same response code.
+            raise RuntimeError(
+                "LLM_GENERATION_ENABLED is false — generate via the Claude Code "
+                "workflow instead (.claude/workflows/generate-outreach-emails.js), "
+                "or set LLM_GENERATION_ENABLED=true to use the metered API "
+                "deliberately. This is a content-generation call, gated the same "
+                "as OutreachAgent.run() in outreach.py — a different class of the "
+                "same name — found ungated here by adversarial review."
+            )
+
         settings = get_settings()
         if not settings.anthropic_api_key:
             raise RuntimeError("ANTHROPIC_API_KEY not set — cannot generate drafts")
@@ -485,6 +501,19 @@ class OutreachAgent(BaseAgent):
         Returns:
             List of created outreach_drafts records.
         """
+        from backend.app.core.llm_generation_gate import (
+            generation_enabled,
+            log_generation_skipped,
+        )
+
+        if not generation_enabled():
+            # Also gated per-company inside generate_draft() below, but that
+            # path is wrapped in a broad try/except here that would otherwise
+            # loop through every company_id, sleep 0.5s each, and log an
+            # error per company before returning an empty list anyway.
+            log_generation_skipped("OutreachAgent.generate_batch", f"companies={len(company_ids)}")
+            return []
+
         created: list[dict[str, Any]] = []
 
         for company_id in company_ids:
@@ -538,6 +567,13 @@ class OutreachAgent(BaseAgent):
         Returns:
             Dict with draft_id, scores (specificity/relevance/tone/cta each 1-5),
             overall (float), and suggestions (list[str]).
+
+        Deliberately NOT gated by LLM_GENERATION_ENABLED. This evaluates an
+        already-generated, human-reviewable draft — the same kind of
+        evaluative/critique call as classification, not content generation.
+        The LLM_GENERATION_ENABLED doctrine is about generating new content
+        (research, draft copy, personalization hooks), not about scoring
+        something a human is already looking at.
         """
         settings = get_settings()
         if not settings.anthropic_api_key:
