@@ -351,6 +351,21 @@ class OutreachAgent(BaseAgent):
         campaign_cluster: str = (company.get("campaign_cluster") or "other").lower()
         manufacturing_profile: dict[str, Any] = company.get("manufacturing_profile") or {}
 
+        # Abstention: refuse to generate without real grounding. Matches
+        # outreach.py's _NoResearchError — a company with no research_summary,
+        # hooks, or pain signals produces generic templated output that fails
+        # the verifiable-hook contract and is unlikely to reply. Found by
+        # adversarial review (2026-08-17): this class's own prompt instructs
+        # the model that the first sentence "MUST name a specific, verifiable
+        # fact" while supplying none when grounding is missing — a built-in
+        # hallucination pressure with nothing downstream to catch it.
+        if not research_summary and not personalization_hooks and not pain_signals:
+            raise ValueError(
+                f"Company {company_id} has no research grounding (no research_summary, "
+                f"personalization_hooks, or pain_signals) — refusing to generate an "
+                f"ungrounded draft. Run research on this company first."
+            )
+
         # Resolve persona
         persona_type = contact.get("persona_type")
         if not persona_type:
@@ -463,7 +478,38 @@ class OutreachAgent(BaseAgent):
             "body": body,
             "personalization_notes": full_notes,
             "approval_status": "pending",
+            "model": _draft_model,
         }
+
+        # Post-generation integrity check — auto-reject before save if the model
+        # produced fabricated customer claims, internal labels, or invented
+        # anecdotes. Ported from outreach.py's _check_draft_integrity (2026-08-17,
+        # adversarial review) — that module's writer had this gate and abstained
+        # when ungrounded; this one had neither, despite being reachable via a
+        # live dashboard button. require_hook_source=False: this class's hooks
+        # are free text with no URL-provenance mechanism, unlike outreach.py's —
+        # see that function's docstring for why enforcing it here would auto-
+        # reject every draft rather than gate bad ones.
+        from backend.app.agents.outreach import _check_draft_integrity
+
+        _violations = _check_draft_integrity(
+            body,
+            subject,
+            personalization_notes=full_notes,
+            sequence_step=_step_to_int(sequence_step),
+            require_hook_source=False,
+        )
+        if _violations:
+            _vstr = " | ".join(_violations[:4])
+            draft_data["approval_status"] = "rejected"
+            draft_data["rejection_reason"] = f"auto_rejected|{_vstr}"
+            self.logger.warning(
+                "Draft integrity check failed, auto-rejected: company_id=%s "
+                "contact_id=%s violations=%s",
+                company_id,
+                contact_id,
+                _vstr,
+            )
 
         # Hard block: step-1 cold opens may never contain a URL.
         # Reject the draft up-front instead of pushing it into the approval queue.

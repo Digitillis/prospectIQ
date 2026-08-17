@@ -103,7 +103,7 @@ class TestBuildRow:
 
 
 class TestMainQualityGating:
-    def _run_main(self, m, tmp_path, drafts, monkeypatch):
+    def _run_main(self, m, tmp_path, drafts, monkeypatch, require_hook_source=True):
         inserted = []
         db = MagicMock()
         db.workspace_id = WORKSPACE_ID
@@ -121,7 +121,7 @@ class TestMainQualityGating:
         draft_file = tmp_path / "drafts.json"
         draft_file.write_text(json.dumps(drafts))
 
-        m.main(str(draft_file))
+        m.main(str(draft_file), require_hook_source=require_hook_source)
         return inserted
 
     def test_clean_draft_inserted_as_pending(self, m, tmp_path, monkeypatch, capsys):
@@ -191,6 +191,88 @@ class TestMainQualityGating:
 
         assert inserted[0]["approval_status"] == "rejected"
         assert "missing_hook_source" in inserted[0]["rejection_reason"]
+
+    def test_workspace_id_override_used_instead_of_default(self, m, tmp_path, monkeypatch, capsys):
+        """2026-08-17 addition: generate-warm-outreach.js must be able to route
+        through this writer without landing drafts in the cold/default
+        workspace -- that would defeat the warm workspace's isolation."""
+        WARM_WS = "11111111-1111-1111-1111-111111111111"
+        captured_ws = {}
+
+        def _fake_database(workspace_id=None):
+            db = MagicMock()
+            db.workspace_id = workspace_id
+            captured_ws["value"] = workspace_id
+
+            def _fake_insert(row):
+                return {"id": "draft-1", **row}
+
+            db.insert_outreach_draft.side_effect = _fake_insert
+            return db
+
+        monkeypatch.setattr(m, "Database", _fake_database)
+        monkeypatch.setattr(
+            m, "get_settings", MagicMock(return_value=MagicMock(default_workspace_id=WORKSPACE_ID))
+        )
+
+        draft_file = tmp_path / "warm_drafts.json"
+        draft_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "company_id": "c1",
+                        "contact_id": "ct1",
+                        "pending_step": 1,
+                        "subject": "Great meeting you at the symposium",
+                        "body": "Hi Jane, great to co-attend the symposium this year.",
+                        "personalization_notes": "co-attended the 2026 Reliability Symposium",
+                    }
+                ]
+            )
+        )
+
+        m.main(str(draft_file), workspace_id=WARM_WS, require_hook_source=False)
+
+        assert captured_ws["value"] == WARM_WS, (
+            "must NOT silently fall back to default_workspace_id"
+        )
+
+    def test_pending_step_accepted_as_sequence_step_alias(self, m):
+        """generate-warm-outreach.js's DRAFT_SCHEMA uses pending_step, not
+        sequence_step -- _build_row must accept either."""
+        row = m._build_row(
+            {
+                "company_id": "c1",
+                "contact_id": "ct1",
+                "pending_step": 2,
+                "subject": "s",
+                "body": "b",
+            },
+            WORKSPACE_ID,
+        )
+        assert row["sequence_step"] == 2
+
+    def test_require_hook_source_false_does_not_reject_missing_url(
+        self, m, tmp_path, monkeypatch, capsys
+    ):
+        """The warm path's notes are verifiable-but-unlinkable (event
+        attendance, role, title) with no URL-provenance mechanism -- with
+        require_hook_source=True (the default), this would auto-reject every
+        warm draft, same failure mode fixed for outreach_agent.py."""
+        drafts = [
+            {
+                "company_id": "c1",
+                "contact_id": "ct1",
+                "sequence_step": 1,
+                "subject": "Great meeting you at the symposium",
+                "body": "Hi Jane, great to co-attend the symposium this year. How was your talk?",
+                "personalization_notes": "co-attended the 2026 Reliability Symposium — no URL",
+            }
+        ]
+        inserted = self._run_main(m, tmp_path, drafts, monkeypatch, require_hook_source=False)
+
+        assert inserted[0]["approval_status"] == "pending"
+        assert "rejection_reason" not in inserted[0]
 
     def test_insert_exception_counted_as_failed_not_raised(self, m, tmp_path, monkeypatch, capsys):
         db = MagicMock()
