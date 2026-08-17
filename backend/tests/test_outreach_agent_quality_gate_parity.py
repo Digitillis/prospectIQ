@@ -118,6 +118,62 @@ class TestAbstentionWithoutGrounding:
 
         mock_client.messages.create.assert_not_called()
 
+    def test_proceeds_when_research_summary_is_prose_not_json(self):
+        """Second independent review (2026-08-17) found the original abstention
+        check gated on the post-json.loads() research_summary dict, but
+        company.research_summary is always real prose in production (its only
+        writers never emit JSON) -- so json.loads() always raises and the dict
+        always collapses to {}, regardless of how much genuine research text
+        exists. That would make a company with real research prose but empty
+        hooks/pains incorrectly abstain. Must ground on the raw string instead."""
+        company = _company(research_summary="A real manufacturer of aerospace fasteners.")
+        contact = _contact()
+        agent, mock_client = _make_agent(
+            company,
+            contact,
+            resend_text=_llm_output(
+                "Hi", "Hi Jane, real body text grounded in research prose.", "internal notes"
+            ),
+        )
+
+        with (
+            patch(
+                "backend.app.core.llm_generation_gate.generation_enabled",
+                return_value=True,
+            ),
+            patch("backend.app.agents.outreach_agent.get_settings", return_value=_base_settings()),
+            patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            agent.generate_draft(company_id="co1", contact_id="ct1", sequence_step="touch_1")
+
+        mock_client.messages.create.assert_called_once()
+
+    def test_raises_when_hooks_are_present_but_empty_strings(self):
+        """Second independent review (2026-08-17): a list of empty/whitespace
+        strings is truthy in Python, so the original check would not abstain
+        even though there is no usable content -- reaching the prompt as
+        ungrounded filler, exactly the hallucination pressure this gate exists
+        to stop."""
+        company = _company(personalization_hooks=["", "   "], pain_signals=["  "])
+        contact = _contact()
+        agent, mock_client = _make_agent(company, contact, resend_text="unused")
+
+        with (
+            patch(
+                "backend.app.core.llm_generation_gate.generation_enabled",
+                return_value=True,
+            ),
+            patch("backend.app.agents.outreach_agent.get_settings", return_value=_base_settings()),
+            patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            try:
+                agent.generate_draft(company_id="co1", contact_id="ct1", sequence_step="touch_1")
+                assert False, "expected ValueError for whitespace-only hooks/pains"
+            except ValueError:
+                pass
+
+        mock_client.messages.create.assert_not_called()
+
     def test_proceeds_when_pain_signals_alone_provide_grounding(self):
         """Grounding check is OR across research_summary/hooks/pains — pain_signals
         alone must be enough, matching how the method actually reads company data."""
@@ -174,6 +230,43 @@ class TestFabricationGate:
         assert result["approval_status"] == "rejected"
         assert result["rejection_reason"].startswith("auto_rejected|")
         assert "step_label_leak" in result["rejection_reason"]
+
+    def test_reason_preserves_both_violations_when_draft_trips_two_checks(self):
+        """Second independent review (2026-08-17): the integrity check and the
+        step-1 URL check used to each unconditionally overwrite
+        rejection_reason in separate if-blocks, so a draft tripping both lost
+        the integrity violation's detail (which fabrication rule fired) --
+        approval_status stayed 'rejected' either way, so nothing was silently
+        accepted, but the diagnostic detail was clobbered. Both must survive."""
+        company = _company(pain_signals=["Unplanned downtime on line 3"])
+        contact = _contact()
+        # step 1 (default sequence_step="touch_1") + a URL -> url_in_step_1;
+        # "one plant identified" -> fabricated_anecdote. Both should fire.
+        agent, mock_client = _make_agent(
+            company,
+            contact,
+            resend_text=_llm_output(
+                "Quick question",
+                "Check this out: https://example.com/demo — one plant identified this last year.",
+                "internal notes, no url here",
+            ),
+        )
+
+        with (
+            patch(
+                "backend.app.core.llm_generation_gate.generation_enabled",
+                return_value=True,
+            ),
+            patch("backend.app.agents.outreach_agent.get_settings", return_value=_base_settings()),
+            patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            result = agent.generate_draft(
+                company_id="co1", contact_id="ct1", sequence_step="touch_1"
+            )
+
+        assert result["approval_status"] == "rejected"
+        assert "fabricated_anecdote" in result["rejection_reason"]
+        assert "url_in_step_1" in result["rejection_reason"]
 
     def test_require_hook_source_false_does_not_reject_clean_grounded_draft(self):
         """The URL-source requirement must NOT fire for this class -- its hooks
