@@ -3214,20 +3214,26 @@ async def lifespan(app: FastAPI):
         # )
         # schedule_recompute: nightly rebuild of the forward send schedule from live
         # state (absorbs sends, reply-pauses, bounces, mailbox changes, new drafts).
-        # SUSPENDED (Avanish 2026-06-11): the nightly recompute is paused so a manually
-        # packed forward schedule (270/day, follow-ups only, ramp off, company-cooldown=3,
-        # touches packed to the min-gap floor) is preserved while the in-flight backlog
-        # drains. The recompute would otherwise rebuild send_schedule with default rules
-        # (ramp on, cadence spacing, cooldown 14, new starts on) and overwrite it nightly.
-        # Re-enable by restoring the add_job call below once the backlog has gone out.
-        # scheduler.add_job(
-        #     _run_schedule_recompute,
-        #     "cron",
-        #     hour=2,
-        #     minute=30,
-        #     timezone="America/Chicago",
-        #     id="schedule_recompute",
-        # )
+        # RE-ENABLED 2026-08-17 (Avanish). Was SUSPENDED 2026-06-11 to preserve a
+        # manually-packed forward schedule (270/day, ramp off, cooldown=3) while an
+        # in-flight backlog drained -- that condition no longer applies: outbound_queue
+        # and send_schedule were both fully purged this same session (stale
+        # May/June-vintage rows, 1,894 send_schedule + 579 outbound_queue), so there is
+        # no packed schedule left to protect. Uses default rules (ramp on, real cadence
+        # spacing per CADENCE_DELTA, cooldown 14, new starts on) -- correct now that the
+        # deliberate override's reason is gone. SEND_ENABLED remains false at both the
+        # env and DB layer regardless, so this only rebuilds send_schedule; nothing
+        # dispatches. Flagged separately: ~2,970 pending/unsent drafts exist across all
+        # 5 steps, most May-vintage -- this job may schedule some of them; not purged
+        # here, a deliberate decision left to Avanish (see session record).
+        scheduler.add_job(
+            _run_schedule_recompute,
+            "cron",
+            hour=2,
+            minute=30,
+            timezone="America/Chicago",
+            id="schedule_recompute",
+        )
         # enqueue_schedule: Mon-Fri 7:55 AM Chicago — moves today's pre-computed
         # schedule slice into outbound_queue just before the dispatch window opens.
         scheduler.add_job(
