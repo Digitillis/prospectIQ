@@ -380,9 +380,21 @@ class OutreachAgent(BaseAgent):
         #    list. [""] / ["   "] is truthy in Python and would otherwise
         #    reach the prompt as ungrounded filler — the exact hallucination
         #    pressure this gate exists to stop.
-        has_research_text = bool(raw_research)
-        has_hooks = any(h and h.strip() for h in personalization_hooks)
-        has_pains = any(p and p.strip() for p in pain_signals)
+        #
+        # Three more corrections, a third independent review, same day, before
+        # merge: (1) bool(raw_research) didn't strip whitespace, so a
+        # whitespace-only or semantically-empty placeholder string
+        # ("null"/"{}"/"[]") would bypass abstention the same way an empty
+        # hooks list originally did; (2) h.strip()/p.strip() assumed every
+        # list element is a string — personalization_hooks/pain_signals are
+        # written from unvalidated LLM JSON (research.py) with no per-element
+        # type enforcement, so a non-string element would crash this method
+        # with an unhandled AttributeError instead of a clean ValueError or a
+        # normal proceed; (3) unrelated to abstention, a rejection_reason
+        # truncation/ordering issue below.
+        has_research_text = bool(raw_research and str(raw_research).strip())
+        has_hooks = any(isinstance(h, str) and h.strip() for h in personalization_hooks)
+        has_pains = any(isinstance(p, str) and p.strip() for p in pain_signals)
         if not has_research_text and not has_hooks and not has_pains:
             raise ValueError(
                 f"Company {company_id} has no research grounding (no research_summary, "
@@ -532,7 +544,12 @@ class OutreachAgent(BaseAgent):
             require_hook_source=False,
         )
         if is_step_1_url_violation(draft_data):
-            _violations = [*_violations, "url_in_step_1"]
+            # Prepended, not appended: a third independent review (2026-08-17)
+            # found the [:4] truncation below could still silently drop this
+            # violation if 4+ integrity violations already fired first.
+            # Prepending guarantees it survives the slice regardless of how
+            # many other violations exist.
+            _violations = ["url_in_step_1", *_violations]
 
         if _violations:
             _vstr = " | ".join(_violations[:4])

@@ -174,6 +174,55 @@ class TestAbstentionWithoutGrounding:
 
         mock_client.messages.create.assert_not_called()
 
+    def test_raises_when_research_summary_is_whitespace_only(self):
+        """Third independent review (2026-08-17): bool(raw_research) didn't
+        strip whitespace, so a whitespace-only research_summary would bypass
+        abstention the same way empty-string hooks originally did."""
+        company = _company(research_summary="   \n  ")
+        contact = _contact()
+        agent, mock_client = _make_agent(company, contact, resend_text="unused")
+
+        with (
+            patch(
+                "backend.app.core.llm_generation_gate.generation_enabled",
+                return_value=True,
+            ),
+            patch("backend.app.agents.outreach_agent.get_settings", return_value=_base_settings()),
+            patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            try:
+                agent.generate_draft(company_id="co1", contact_id="ct1", sequence_step="touch_1")
+                assert False, "expected ValueError for whitespace-only research_summary"
+            except ValueError:
+                pass
+
+        mock_client.messages.create.assert_not_called()
+
+    def test_non_string_hook_element_does_not_crash(self):
+        """Third independent review (2026-08-17): personalization_hooks is
+        written from unvalidated LLM JSON with no per-element type
+        enforcement -- a non-string element (e.g. a malformed row) must not
+        crash generate_draft() with an unhandled AttributeError."""
+        company = _company(personalization_hooks=["", 5, None], pain_signals=[])
+        contact = _contact()
+        agent, mock_client = _make_agent(company, contact, resend_text="unused")
+
+        with (
+            patch(
+                "backend.app.core.llm_generation_gate.generation_enabled",
+                return_value=True,
+            ),
+            patch("backend.app.agents.outreach_agent.get_settings", return_value=_base_settings()),
+            patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            try:
+                agent.generate_draft(company_id="co1", contact_id="ct1", sequence_step="touch_1")
+                assert False, "expected a clean ValueError, not a crash"
+            except ValueError:
+                pass  # correct: no real string content -> abstain cleanly
+            except AttributeError:
+                assert False, "non-string list element must not crash .strip()"
+
     def test_proceeds_when_pain_signals_alone_provide_grounding(self):
         """Grounding check is OR across research_summary/hooks/pains — pain_signals
         alone must be enough, matching how the method actually reads company data."""
@@ -266,6 +315,42 @@ class TestFabricationGate:
 
         assert result["approval_status"] == "rejected"
         assert "fabricated_anecdote" in result["rejection_reason"]
+        assert "url_in_step_1" in result["rejection_reason"]
+
+    def test_url_in_step_1_survives_truncation_with_four_other_violations(self):
+        """Third independent review (2026-08-17): the [:4] truncation could
+        still silently drop url_in_step_1 if 4+ integrity violations fired
+        first and it was only ever appended last. Four distinct, independently
+        firing tags (step_label_leak, fabricated_anecdote, past_customer_claim,
+        recycled_stat) plus a step-1 URL must all be representable -- at
+        minimum url_in_step_1 must survive regardless of ordering."""
+        company = _company(pain_signals=["Unplanned downtime on line 3"])
+        contact = _contact()
+        agent, mock_client = _make_agent(
+            company,
+            contact,
+            resend_text=_llm_output(
+                "Quick question",
+                "Check this out: https://example.com/demo — following up on step 1. "
+                "Here's what we found: one plant identified 15-20% of available "
+                "machine time lost to downtime.",
+                "internal notes, no url here",
+            ),
+        )
+
+        with (
+            patch(
+                "backend.app.core.llm_generation_gate.generation_enabled",
+                return_value=True,
+            ),
+            patch("backend.app.agents.outreach_agent.get_settings", return_value=_base_settings()),
+            patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            result = agent.generate_draft(
+                company_id="co1", contact_id="ct1", sequence_step="touch_1"
+            )
+
+        assert result["approval_status"] == "rejected"
         assert "url_in_step_1" in result["rejection_reason"]
 
     def test_require_hook_source_false_does_not_reject_clean_grounded_draft(self):
