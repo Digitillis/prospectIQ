@@ -555,9 +555,22 @@ def _run_dispatch_heartbeat_check() -> None:
     were eligible to send today but zero send_attempts were recorded during the
     window, the scheduler did not run. Fire a Slack alert so the failure is
     visible the same day rather than discovered days later.
+
+    Skips the alert (logs info instead) when every eligible row's workspace
+    has sending intentionally disabled (via _send_disabled_reason — the same
+    two-layer env+DB check dispatch_workspace() itself enforces). Added
+    2026-08-17: found by adversarial review of PR #174 (re-enabling
+    schedule_recompute) that this check had no SEND_ENABLED awareness at all,
+    and would very likely fire a false "scheduler died" alert every business
+    day once real due rows exist in outbound_queue but SEND_ENABLED correctly
+    keeps blocking dispatch -- a foreseeable, previously undisclosed
+    consequence of that PR. A row belonging to a workspace where sending IS
+    enabled still alerts as before; this only suppresses the false-positive
+    case where the queue is exactly as designed, not silently dead.
     """
     try:
         from backend.app.core.database import get_supabase_client
+        from backend.app.core.dispatch_scheduler import _send_disabled_reason
         from backend.app.utils.notifications import notify_slack
         from datetime import datetime as _dt, timezone as _tz
 
@@ -567,7 +580,7 @@ def _run_dispatch_heartbeat_check() -> None:
         now_iso = _dt.now(_tz.utc).isoformat()
         queue = (
             db_client.table("outbound_queue")
-            .select("id, next_retry_at, locked_by")
+            .select("id, workspace_id, next_retry_at, locked_by")
             .is_("locked_by", "null")
             .execute()
             .data
@@ -577,6 +590,26 @@ def _run_dispatch_heartbeat_check() -> None:
         if not eligible:
             logger.info("dispatch_heartbeat: no eligible queue items — nothing to verify")
             return
+
+        # Only workspaces where sending is actually enabled make the silence
+        # suspicious. If every eligible row belongs to a workspace where
+        # sending is intentionally disabled, zero send_attempts is the
+        # correct, expected outcome -- not evidence the scheduler died.
+        eligible_ws_ids = {q["workspace_id"] for q in eligible if q.get("workspace_id")}
+        ws_send_enabled = {
+            ws_id: _send_disabled_reason(db_client, ws_id) is None for ws_id in eligible_ws_ids
+        }
+        eligible_and_enabled = [q for q in eligible if ws_send_enabled.get(q.get("workspace_id"))]
+        if not eligible_and_enabled:
+            logger.info(
+                "dispatch_heartbeat: %d eligible queue item(s), but sending is disabled for "
+                "every workspace that owns them (%s) -- zero send_attempts is expected, not "
+                "a dead scheduler.",
+                len(eligible),
+                sorted(eligible_ws_ids),
+            )
+            return
+        eligible = eligible_and_enabled
 
         # Any send_attempts today? Use Chicago time so "today" matches the send window.
         try:
