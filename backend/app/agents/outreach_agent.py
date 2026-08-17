@@ -351,6 +351,45 @@ class OutreachAgent(BaseAgent):
         campaign_cluster: str = (company.get("campaign_cluster") or "other").lower()
         manufacturing_profile: dict[str, Any] = company.get("manufacturing_profile") or {}
 
+        # Abstention: refuse to generate without real grounding. Matches
+        # outreach.py's _NoResearchError — a company with no research grounding
+        # at all produces generic templated output that fails the verifiable-
+        # hook contract and is unlikely to reply. Found by adversarial review
+        # (2026-08-17): this class's own prompt instructs the model that the
+        # first sentence "MUST name a specific, verifiable fact" while
+        # supplying none when grounding is missing — a built-in hallucination
+        # pressure with nothing downstream to catch it.
+        #
+        # Two corrections from a second independent review, same day, before
+        # this ever merged:
+        #
+        # 1. Ground on raw_research (the string/dict actually stored), not the
+        #    post-json.loads() research_summary above. company.research_summary
+        #    is a plain TEXT column whose only real writers (research.py,
+        #    import_thomasnet.py) always write prose, never JSON — so
+        #    json.loads() always raises and research_summary always collapses
+        #    to {} regardless of how much genuine research text exists. That
+        #    collapse is pre-existing (predates this fix, and this fix does not
+        #    take on repairing the downstream prompt-context parsing it also
+        #    affects) — but gating abstention on its result would make a real
+        #    bug decision-bearing: refusing to generate for a company with real
+        #    research prose just because hooks/pains happened to come back
+        #    empty, which research.py populates independently and does not
+        #    guarantee alongside a description.
+        # 2. Require a non-empty, non-whitespace entry, not just a non-empty
+        #    list. [""] / ["   "] is truthy in Python and would otherwise
+        #    reach the prompt as ungrounded filler — the exact hallucination
+        #    pressure this gate exists to stop.
+        has_research_text = bool(raw_research)
+        has_hooks = any(h and h.strip() for h in personalization_hooks)
+        has_pains = any(p and p.strip() for p in pain_signals)
+        if not has_research_text and not has_hooks and not has_pains:
+            raise ValueError(
+                f"Company {company_id} has no research grounding (no research_summary, "
+                f"personalization_hooks, or pain_signals) — refusing to generate an "
+                f"ungrounded draft. Run research on this company first."
+            )
+
         # Resolve persona
         persona_type = contact.get("persona_type")
         if not persona_type:
@@ -463,19 +502,47 @@ class OutreachAgent(BaseAgent):
             "body": body,
             "personalization_notes": full_notes,
             "approval_status": "pending",
+            "model": _draft_model,
         }
 
-        # Hard block: step-1 cold opens may never contain a URL.
-        # Reject the draft up-front instead of pushing it into the approval queue.
+        # Post-generation integrity check — auto-reject before save if the model
+        # produced fabricated customer claims, internal labels, or invented
+        # anecdotes. Ported from outreach.py's _check_draft_integrity (2026-08-17,
+        # adversarial review) — that module's writer had this gate and abstained
+        # when ungrounded; this one had neither, despite being reachable via a
+        # live dashboard button. require_hook_source=False: this class's hooks
+        # are free text with no URL-provenance mechanism, unlike outreach.py's —
+        # see that function's docstring for why enforcing it here would auto-
+        # reject every draft rather than gate bad ones.
+        #
+        # Violations are accumulated into one list rather than checked in two
+        # separate if-blocks that each overwrite rejection_reason — a second
+        # independent review (2026-08-17) found the URL-violation check below
+        # would silently clobber this check's detail (which fabrication rule
+        # fired) if a draft tripped both. Matches piq_write_drafts.py's
+        # already-correct pattern of concatenating before building the reason.
+        from backend.app.agents.outreach import _check_draft_integrity
         from backend.app.core.draft_quality import is_step_1_url_violation
 
+        _violations = _check_draft_integrity(
+            body,
+            subject,
+            personalization_notes=full_notes,
+            sequence_step=_step_to_int(sequence_step),
+            require_hook_source=False,
+        )
         if is_step_1_url_violation(draft_data):
+            _violations = [*_violations, "url_in_step_1"]
+
+        if _violations:
+            _vstr = " | ".join(_violations[:4])
             draft_data["approval_status"] = "rejected"
-            draft_data["rejection_reason"] = "url_in_step_1"
+            draft_data["rejection_reason"] = f"auto_rejected|{_vstr}"
             self.logger.warning(
-                "Step-1 URL violation auto-rejected: company_id=%s contact_id=%s",
+                "Draft auto-rejected: company_id=%s contact_id=%s violations=%s",
                 company_id,
                 contact_id,
+                _vstr,
             )
 
         created = self.db.insert_outreach_draft(draft_data)

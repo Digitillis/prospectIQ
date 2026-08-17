@@ -178,43 +178,42 @@ phase('Write')
 
 const WRITE_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['written', 'failed', 'draft_ids'],
+  required: ['written', 'rejected', 'failed', 'draft_ids'],
   properties: {
     written:   { type: 'integer' },
+    rejected:  { type: 'integer', description: 'auto-rejected by the fabrication-detection gate, not silently dropped -- still inserted, visible, auditable' },
     failed:    { type: 'integer' },
     draft_ids: { type: 'array', items: { type: 'string' } },
   }
 }
 
+// Merge sequence_name onto every draft before handing off to the tracked
+// writer -- DRAFT_SCHEMA carries it at the workflow level (eventSlug), not
+// per-draft, and piq_write_drafts.py reads it per-draft.
+const draftsForWrite = validDrafts.map(d => ({ ...d, sequence_name: eventSlug }))
+
 const writeResult = await agent(
-  `Write these ${validDrafts.length} WARM drafts to Supabase as pending drafts in the WARM workspace.
+  `Write these ${draftsForWrite.length} WARM drafts to Supabase as pending drafts in the WARM workspace.
 Repo: /Users/avanish/prospectIQ. Run Python from that directory.
 
-CRITICAL: every insert MUST set workspace_id to the warm workspace id (get_settings().warm_workspace_id),
-NOT the default/cold workspace. sequence_name = '${eventSlug}'. approval_status = 'pending'. Do NOT set sent_at.
+1. Use the Write tool to save this JSON array to /Users/avanish/prospectIQ/.pipeline-queues/warm_${eventSlug}.json:
+${JSON.stringify(draftsForWrite, null, 1)}
 
-Insert each into outreach_drafts with: workspace_id (warm), company_id, contact_id,
-sequence_step = pending_step, subject, body, personalization_notes, channel = 'email',
-approval_status = 'pending', sequence_name = '${eventSlug}'.
+2. Then run:
+   cd /Users/avanish/prospectIQ && python3 scripts/piq_write_drafts.py .pipeline-queues/warm_${eventSlug}.json --workspace-id ${warmWs} --no-hook-source-required
+   (the tracked writer -- it sets model provenance and runs the same fabrication-detection
+   gate OutreachAgent applies, unlike a freehand insert; do not write your own insert code.
+   --workspace-id targets the ISOLATED warm workspace explicitly -- CRITICAL, never the
+   default/cold workspace. --no-hook-source-required because warm notes are grounded in
+   verifiable-but-unlinkable context (event attendance, role, title), not a cited URL.)
 
-Use this pattern and assert the warm id before writing:
-\`\`\`python
-from backend.app.core.database import get_supabase_client
-from backend.app.core.config import get_settings
-ws = get_settings().warm_workspace_id
-assert ws and ws != get_settings().default_workspace_id, "warm workspace not configured / equals cold"
-client = get_supabase_client()
-# insert each draft with workspace_id=ws ...
-\`\`\`
+3. Confirm the printed {"written": N, "rejected": N, "failed": N, "draft_ids": [...]} and return it verbatim.
 
-DRAFTS TO WRITE:
-${JSON.stringify(validDrafts, null, 1)}
-
-Return count written, failed, and the list of inserted draft IDs.`,
+Do not set sent_at. Do not write anything except by running that script.`,
   { label: 'write-warm', phase: 'Write', schema: WRITE_SCHEMA, model: 'sonnet' }
 )
 
-log(`Written: ${writeResult?.written || 0} | Failed: ${writeResult?.failed || 0}`)
+log(`Written: ${writeResult?.written || 0} | Rejected: ${writeResult?.rejected || 0} | Failed: ${writeResult?.failed || 0}`)
 
 return {
   event,
@@ -222,7 +221,8 @@ return {
   workspace_id: warmWs,
   generated: validDrafts.length,
   written: writeResult?.written || 0,
+  rejected: writeResult?.rejected || 0,
   failed: writeResult?.failed || 0,
   draft_ids: writeResult?.draft_ids || [],
-  message: `${validDrafts.length} warm drafts generated with Opus and written to the WARM workspace as pending. Review them, then send each personally from your own Gmail. Nothing is auto-dispatched.`
+  message: `${validDrafts.length} warm drafts generated with Opus and written to the WARM workspace as pending (${writeResult?.rejected || 0} auto-rejected by the fabrication gate, still visible for review). Review them, then send each personally from your own Gmail. Nothing is auto-dispatched.`
 }

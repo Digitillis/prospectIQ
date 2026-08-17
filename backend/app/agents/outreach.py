@@ -316,6 +316,7 @@ def _check_draft_integrity(
     *,
     personalization_notes: str = "",
     sequence_step: int = 1,
+    require_hook_source: bool = True,
 ) -> list[str]:
     """Return a list of violation tags found in the draft body/subject.
 
@@ -331,6 +332,16 @@ def _check_draft_integrity(
 
     Generic-hook leakage is also flagged at Step 1 — phrases like "manufacturers
     like yours" pass the existing regex but fail the specificity bar.
+
+    require_hook_source (default True, unchanged behavior for this module's own
+    callers): set False only for a caller whose hooks are structurally unsourced
+    free text with no URL-provenance mechanism at all — outreach_agent.py's
+    company.personalization_hooks, unlike this module's research_intelligence-
+    backed hooks. Added 2026-08-17 when porting this gate there: applying the
+    URL requirement unmodified would auto-reject every draft from that path
+    (verified against 200+ real personalization_hooks rows — zero contain a
+    URL), disabling it rather than gating it. The fabrication-detection rules
+    above still apply regardless of this flag.
     """
     text = (body + " " + subject).lower()
     violations: list[str] = []
@@ -348,9 +359,10 @@ def _check_draft_integrity(
     # in personalization_notes so the human reviewer can confirm the hook is real.
     # Step 2+ also enforces generic-hook patterns because templated follow-ups
     # are the single biggest reply-rate suppressor in the corpus.
-    notes = personalization_notes or ""
-    if not _URL_RE.search(notes):
-        violations.append("missing_hook_source:no_url_in_personalization_notes")
+    if require_hook_source:
+        notes = personalization_notes or ""
+        if not _URL_RE.search(notes):
+            violations.append("missing_hook_source:no_url_in_personalization_notes")
     for gp in _GENERIC_HOOK_PATTERNS:
         if gp.search(body):
             violations.append(f"generic_hook:{gp.pattern!r}")
