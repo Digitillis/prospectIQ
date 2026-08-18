@@ -166,8 +166,23 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
     # ── Past-customer fabrication claims ─────────────────────────────────────
     # Catches: "one/a [any word(s)] shop/plant/manufacturer/facility/operation/company/customer/client [verb]"
     # e.g. "one aerospace shop identified", "a tier supplier caught", "one process manufacturer using"
+    #
+    # The trailing (ed|ing|s)? was optional, so \w+ alone already matched the
+    # required word regardless of suffix -- making the "must look like a verb"
+    # check a no-op. This matched ANY "(a/an/one) + [0-3 words] + noun-from-list
+    # + any following word" sentence, including ordinary noun phrases with no
+    # anecdote shape at all: "a facility that size", "a customer complaint",
+    # "a customer scorecard [flags]" all tripped this and were auto-rejected as
+    # fabrication, though none named an unverified customer action. Observed
+    # directly 2026-08-17 across a real draft batch. The suffix is now
+    # mandatory. "s" is deliberately excluded from the required suffixes: in
+    # English it's the single most common plural-noun ending too ("a customer
+    # requests" vs. "a customer request"), so requiring it back would
+    # reintroduce the same class of false positive on ordinary plural nouns.
+    # "ed"/"ing" are reliably verb-only endings and cover the natural tense for
+    # a fabricated anecdote (recounting what a customer did, or is doing).
     (
-        r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem|processor|producer|fabricator|converter|integrator|distributor|company|tier)\s+\w+(ed|ing|s)?\b",
+        r"\b(one|a|an)\s+(\w+\s+){0,3}(shop|plant|manufacturer|facility|operation|supplier|customer|client|oem|processor|producer|fabricator|converter|integrator|distributor|company|tier)\s+\w+(?:ed|ing)\b",
         "fabricated_anecdote",
         "one/a [X] shop/plant/manufacturer/processor/...",
     ),
@@ -269,8 +284,18 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
         "your recent [event] — not in sourced research",
     ),
     # Catches "since you (recently|just) [verb]ed"
+    #
+    # (ed|d) is functionally just "any word ending in the letter d": every
+    # "-ed" word already ends in "d", so the "d" alternative alone matches
+    # everything "ed" would and far more besides -- "since you recently
+    # expand", "since you just rebrand", "since you recently attend" all
+    # matched despite none of "expand"/"rebrand"/"attend" being past tense.
+    # The rule's own comment states the intent as "[verb]ed" -- regular past
+    # tense -- so "d" was never a deliberate irregular-verb allowance here
+    # (contrast fabricated_anecdote's rule above, whose comment explicitly
+    # named irregular examples). Narrowed to require the real "-ed" ending.
     (
-        r"\bsince\s+you\s+(recently|just)\s+\w+(ed|d)\b",
+        r"\bsince\s+you\s+(recently|just)\s+\w+ed\b",
         "unsourced_company_event",
         "since you recently/just [verb]ed",
     ),

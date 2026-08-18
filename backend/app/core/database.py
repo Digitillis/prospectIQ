@@ -495,6 +495,17 @@ class Database:
         for the same (company_id, contact_id, sequence_step) with status
         'pending', 'approved', 'edited', or 'sent'. This prevents duplicate
         drafts from multiple scheduler runs or retriggers.
+
+        A 'rejected' existing row is the one exception: it is UPDATED in
+        place with the new payload rather than returned untouched. Treating
+        a rejected draft as an ordinary duplicate silently discarded every
+        retry-with-corrected-content — callers (e.g. scripts/piq_write_drafts.py)
+        report success based on their own locally-built row, not on what this
+        method actually persisted, so a "fixed" draft never reached the DB and
+        the original rejection (and its stale rejection_reason) stuck around
+        indefinitely. rejection_reason is explicitly cleared when the new
+        payload doesn't carry one, so a clean retry doesn't leave a stale
+        reason next to approval_status='pending'.
         """
         company_id = data.get("company_id")
         contact_id = data.get("contact_id")
@@ -511,14 +522,26 @@ class Database:
                 .execute()
             )
             if existing.data:
+                existing_row = existing.data[0]
                 import logging
+
+                if existing_row["approval_status"] == "rejected":
+                    logging.getLogger(__name__).debug(
+                        f"insert_outreach_draft: overwriting rejected draft for "
+                        f"contact={contact_id} step={sequence_step} "
+                        f"(existing id={existing_row['id']})"
+                    )
+                    update_payload = dict(data)
+                    update_payload.setdefault("rejection_reason", None)
+                    updated = self.update_outreach_draft(existing_row["id"], update_payload)
+                    return updated or existing_row
 
                 logging.getLogger(__name__).debug(
                     f"insert_outreach_draft: skipping duplicate for contact={contact_id} "
-                    f"step={sequence_step} (existing id={existing.data[0]['id']}, "
-                    f"status={existing.data[0]['approval_status']})"
+                    f"step={sequence_step} (existing id={existing_row['id']}, "
+                    f"status={existing_row['approval_status']})"
                 )
-                return existing.data[0]
+                return existing_row
 
         # Cross-company email dedup guard (step 1 only).
         # If the same email was already sent to under a different company record,
