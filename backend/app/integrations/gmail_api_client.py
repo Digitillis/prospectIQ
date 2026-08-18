@@ -94,8 +94,16 @@ def fetch_recent_replies(gmail_account: str) -> list[dict]:
         return []
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=_LOOKBACK_HOURS)
-    # Gmail search query — all mail in inbox after cutoff, not sent by us
-    query = f"in:inbox after:{cutoff.strftime('%Y/%m/%d')} -from:{gmail_account}"
+    # Gmail search query — all mail after cutoff, not sent by us. Deliberately
+    # NOT scoped to in:inbox: a reply quoting our own outbound email inherits
+    # its unsubscribe URL text, which can match an unrelated user-side Gmail
+    # filter and get archived (INBOX label removed) before this ever runs —
+    # observed directly 2026-08-18, where a real reply was captured by Gmail
+    # but permanently invisible to this in:inbox-scoped query. Dropping
+    # in:inbox still excludes Spam/Trash by default (messages.list's default
+    # behavior without includeSpamTrash=True), so this only widens the search
+    # to "All Mail", not to spam.
+    query = f"after:{cutoff.strftime('%Y/%m/%d')} -from:{gmail_account}"
 
     try:
         list_result = (
