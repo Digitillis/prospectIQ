@@ -211,6 +211,49 @@ def _resolve_provider_message_id(db_client, draft_id: str) -> Optional[str]:
     return None
 
 
+def _next_attempt_number(db_client, draft_id: str) -> int:
+    """Return the next attempt_number for draft_id, derived from actual
+    send_attempts rows rather than queue_row.retry_count.
+
+    retry_count and attempt_number used to be the same counter
+    (attempt_number = retry_count + 1), but they track different things:
+    retry_count is a budget spent only on genuine failed-send attempts
+    (deliberately NOT bumped for the four "timed" assertion outcomes —
+    company_locked/hot_suppressed/prior_step_sent/minimum_step_gap — see
+    _set_queue_next_retry's docstring, so a temporary external block
+    doesn't count toward max_retries dead-lettering). attempt_number is
+    the primary key alongside draft_id on send_attempts (an immutable
+    audit table per ADR-002/SEC-013 — rows are never deleted or reused).
+    Since a "timed" outcome still inserts a send_attempts row (the
+    invariant at the top of this module: a row must exist before any
+    Resend call is even considered) without bumping retry_count, the next
+    claim recomputed the same attempt_number and collided with the row
+    the previous attempt already wrote — a duplicate-key crash on retry,
+    observed directly 2026-08-17/18 during a real dispatch test. Deriving
+    attempt_number from the real row count keeps retry_count's budget
+    semantics intact while making every insert land on a fresh slot.
+    """
+    try:
+        rows = (
+            db_client.table("send_attempts")
+            .select("attempt_number")
+            .eq("draft_id", draft_id)
+            .order("attempt_number", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if rows:
+            return rows[0]["attempt_number"] + 1
+    except Exception as exc:
+        logger.warning(
+            "dispatch.next_attempt_number_lookup_failed draft_id=%s error=%s — defaulting to 1",
+            draft_id,
+            exc,
+        )
+    return 1
+
+
 def _insert_send_attempt(
     db_client,
     draft_id: str,
@@ -829,7 +872,7 @@ def _dispatch_workspace_inner(
         draft_id = queue_row["draft_id"]
         queue_row_id = queue_row["id"]
         retry_count = queue_row.get("retry_count", 0)
-        attempt_number = retry_count + 1
+        attempt_number = _next_attempt_number(db_client, draft_id)
         # Stable idempotency key: keyed on draft_id only (not attempt_number) so
         # Resend's 24-hour dedup window covers all retry attempts for the same draft.
         # A per-attempt key would generate a new key on every retry, defeating dedup

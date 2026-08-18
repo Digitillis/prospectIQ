@@ -212,16 +212,27 @@ def test_step_gap_assertion_blocks_when_only_one_calendar_day_has_passed():
 
 def test_idempotency_key_is_stable_draft_id_on_retry():
     """The idempotency key passed to dispatch_queued_draft must equal draft_id
-    (not draft_id:attempt_number), so Resend's 24h dedup catches retries."""
+    (not draft_id:attempt_number), so Resend's 24h dedup catches retries.
+
+    attempt_number is derived from the actual send_attempts row count for
+    this draft (_next_attempt_number), not from queue_row.retry_count — see
+    that function's docstring for why the two counters were decoupled. This
+    test stubs one prior send_attempts row (attempt_number=1) to represent
+    "this is the second real attempt", independent of whatever retry_count
+    happens to be on the queue row.
+    """
     from backend.app.core.dispatch_scheduler import dispatch_workspace
     from backend.app.agents.engagement import QueueDispatchOutcome
 
     DRAFT_ID = "draft-abc"
-    # retry_count=1 → this is the second attempt; the key must still be just draft_id.
     queue_row = {"id": "q1", "draft_id": DRAFT_ID, "workspace_id": "ws-1", "retry_count": 1}
 
     db_client = MagicMock()
     db_client.rpc.return_value.execute.return_value = MagicMock(data=[queue_row])
+    # _next_attempt_number's lookup: one prior send_attempts row on record.
+    db_client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[{"attempt_number": 1}]
+    )
     # send_attempts insert returns an id so dispatch proceeds
     db_client.table.return_value.insert.return_value.execute.return_value = MagicMock(
         data=[{"id": "attempt-1"}]
