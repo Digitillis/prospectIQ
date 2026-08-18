@@ -221,17 +221,36 @@ def _next_attempt_number(db_client, draft_id: str) -> int:
     (deliberately NOT bumped for the four "timed" assertion outcomes —
     company_locked/hot_suppressed/prior_step_sent/minimum_step_gap — see
     _set_queue_next_retry's docstring, so a temporary external block
-    doesn't count toward max_retries dead-lettering). attempt_number is
-    the primary key alongside draft_id on send_attempts (an immutable
-    audit table per ADR-002/SEC-013 — rows are never deleted or reused).
-    Since a "timed" outcome still inserts a send_attempts row (the
-    invariant at the top of this module: a row must exist before any
-    Resend call is even considered) without bumping retry_count, the next
-    claim recomputed the same attempt_number and collided with the row
-    the previous attempt already wrote — a duplicate-key crash on retry,
+    doesn't count toward max_retries dead-lettering). Since a "timed"
+    outcome still inserts a send_attempts row (the invariant at the top
+    of this module: a row must exist before any Resend call is even
+    considered) without bumping retry_count, the next claim recomputed
+    the same attempt_number and collided with (draft_id, attempt_number)'s
+    unique constraint on send_attempts — a duplicate-key crash on retry,
     observed directly 2026-08-17/18 during a real dispatch test. Deriving
     attempt_number from the real row count keeps retry_count's budget
     semantics intact while making every insert land on a fresh slot.
+
+    This does NOT delete or renumber existing rows — send_attempts rows
+    are append-only by convention here, matching _run_orphan_attempt_cleanup
+    (backend/app/api/main.py) which already deletes stale FAILED
+    attempt_number=1 rows as a workaround for this exact collision. That
+    cron becomes redundant for the case this fix addresses (it can likely
+    be retired once this has run in production for a while) but is left
+    running for now since it may still catch orphaned rows this fix
+    doesn't reach — a separate cleanup, not bundled here.
+    (Note: _ALLOWED_TRANSITIONS/_guard_status_transition below governs
+    illegal UPDATE status transitions on this table, not deletes — it
+    does not itself prevent a delete-based fix; append-only was a
+    deliberate choice for this fix, not something the guard forced.)
+
+    Known residual gap: on a lookup failure this falls back to 1
+    unconditionally, which could still collide if a prior attempt exists
+    and the SELECT fails transiently while a later INSERT succeeds. Bounded:
+    _insert_send_attempt's own try/except catches that INSERT failure,
+    logs it, and returns None; the caller then releases the queue lock
+    without bumping retry_count and retries on the next tick rather than
+    crashing the dispatch loop.
     """
     try:
         rows = (

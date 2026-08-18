@@ -216,16 +216,20 @@ def test_idempotency_key_is_stable_draft_id_on_retry():
 
     attempt_number is derived from the actual send_attempts row count for
     this draft (_next_attempt_number), not from queue_row.retry_count — see
-    that function's docstring for why the two counters were decoupled. This
-    test stubs one prior send_attempts row (attempt_number=1) to represent
-    "this is the second real attempt", independent of whatever retry_count
-    happens to be on the queue row.
+    that function's docstring for why the two counters were decoupled.
+    retry_count=3 is deliberately mismatched against a single prior
+    send_attempts row (attempt_number=1): the old formula (retry_count + 1)
+    would give 4, the new one (max prior attempt_number + 1) gives 2. If
+    this test's mock ever regressed to matching values where both formulas
+    coincidentally agree, it would pass regardless of which one the code
+    actually uses — this mismatch is what makes attempt == 2 a real
+    assertion about which derivation is live, not a tautology.
     """
     from backend.app.core.dispatch_scheduler import dispatch_workspace
     from backend.app.agents.engagement import QueueDispatchOutcome
 
     DRAFT_ID = "draft-abc"
-    queue_row = {"id": "q1", "draft_id": DRAFT_ID, "workspace_id": "ws-1", "retry_count": 1}
+    queue_row = {"id": "q1", "draft_id": DRAFT_ID, "workspace_id": "ws-1", "retry_count": 3}
 
     db_client = MagicMock()
     db_client.rpc.return_value.execute.return_value = MagicMock(data=[queue_row])

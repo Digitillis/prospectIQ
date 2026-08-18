@@ -284,8 +284,18 @@ _INTEGRITY_RULES: list[tuple[str, str, str]] = [
         "your recent [event] — not in sourced research",
     ),
     # Catches "since you (recently|just) [verb]ed"
+    #
+    # (ed|d) is functionally just "any word ending in the letter d": every
+    # "-ed" word already ends in "d", so the "d" alternative alone matches
+    # everything "ed" would and far more besides -- "since you recently
+    # expand", "since you just rebrand", "since you recently attend" all
+    # matched despite none of "expand"/"rebrand"/"attend" being past tense.
+    # The rule's own comment states the intent as "[verb]ed" -- regular past
+    # tense -- so "d" was never a deliberate irregular-verb allowance here
+    # (contrast fabricated_anecdote's rule above, whose comment explicitly
+    # named irregular examples). Narrowed to require the real "-ed" ending.
     (
-        r"\bsince\s+you\s+(recently|just)\s+\w+(ed|d)\b",
+        r"\bsince\s+you\s+(recently|just)\s+\w+ed\b",
         "unsourced_company_event",
         "since you recently/just [verb]ed",
     ),
